@@ -408,7 +408,7 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 	stmts = append(stmts, sqlite.Statement{
 		SQL: `INSERT INTO accounts(email, name, alias, is_default, sync_limit, sync_since_months, recv_auth, send_auth, status, username,
 			recv_protocol, recv_host, recv_port, recv_security, recv_path, send_protocol, send_host, send_port, send_security, created_at, provider, oauth_client_id, features, receive_only, position)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position) + 1, 0) FROM accounts))`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (` + nextListPosition + `))`,
 		Args: []any{in.Email, in.Name, in.Alias, b2i(isDefault), sync.Limit, sync.Months, recvAuth, sendAuth, in.username(),
 			in.receiving(), in.Receiving.Host, in.Receiving.Port, string(in.Receiving.Security), in.Receiving.Path, in.sending(), in.Sending.Host, in.Sending.Port, string(in.Sending.Security), time.Now().Unix(), in.Provider, in.oauthClientID, encodeFeatures(checked.desc), b2i(receiveOnly)},
 	})
@@ -499,7 +499,7 @@ func (s *Service) AddLocalArchive(ctx context.Context, name string) (Account, er
 	acc := "(SELECT id FROM accounts WHERE email = ?)"
 	res, err := s.db.Transaction(ctx, []sqlite.Statement{{
 		SQL: `INSERT INTO accounts(email, name, recv_auth, send_auth, status, username, created_at, provider, features, recv_protocol, send_protocol, kind, position)
-			VALUES (?, ?, 'none', 'none', 'ok', '', ?, 'local', '', '', '', ?, (SELECT COALESCE(MAX(position) + 1, 0) FROM accounts))`,
+			VALUES (?, ?, 'none', 'none', 'ok', '', ?, 'local', '', '', '', ?, (` + nextListPosition + `))`,
 		Args: []any{email, name, time.Now().Unix(), KindLocalArchive},
 	},
 		{SQL: "INSERT INTO folders(account_id, name, role, role_since) VALUES (" + acc + ", 'INBOX', 'inbox', unixepoch())", Args: []any{email}},
@@ -549,7 +549,7 @@ func b2i(b bool) int {
 const accountCols = `id, email, name, alias, COALESCE((SELECT html FROM signatures WHERE id = signature_id), ''), username, is_default, sync_limit, recv_auth, status,
 	recv_host, recv_port, recv_security, send_host, send_port, send_security, smtp_reauth, provider, status_detail,
 	sync_since_months, (SELECT count(*) FROM folders WHERE account_id = accounts.id), signature_id, icon, ai_instructions, oauth_client_id, label_keywords, kind, receive_only,
-	recv_protocol, send_protocol, features, recv_path, send_auth`
+	recv_protocol, send_protocol, features, recv_path, send_auth, position`
 
 // ErrAccountNotFound is returned for an account id that does not exist.
 var ErrAccountNotFound = errors.New("account not found")
@@ -574,7 +574,7 @@ func scanAccount(r []any) Account {
 		Sending:   Server{store.Str(r[29]), store.Str(r[13]), int(store.Int(r[14])), Security(store.Str(r[15])), "", store.Str(r[32])},
 		Provider:  store.Str(r[17]), StatusDetail: store.Str(r[18]), SignatureID: store.Int(r[21]), Icon: store.Str(r[22]),
 		AIInstructions: store.Str(r[23]), OAuthClientID: store.Str(r[24]), LabelKeywords: store.Int(r[25]) == 1, Kind: store.Str(r[26]),
-		ReceiveOnly: store.Int(r[27]) == 1,
+		ReceiveOnly: store.Int(r[27]) == 1, Position: int(store.Int(r[33])),
 	}
 	if p := a.Receiving.Protocol; p == auth.EWS || p == auth.JMAP || p == auth.GmailAPI {
 		// EWS, JMAP and Gmail API send through the receiving server, whose path and sign-in
@@ -602,6 +602,10 @@ func scanAccount(r []any) Account {
 	return a
 }
 
+// nextListPosition is the position after the accounts list's last row: mail
+// accounts and standalone address books share one sequence (ReorderAccountEntries).
+const nextListPosition = `SELECT COALESCE(MAX(p) + 1, 0) FROM (SELECT position AS p FROM accounts UNION ALL SELECT sort_order FROM address_books WHERE account_id IS NULL)`
+
 // ListAccounts returns all accounts in their order (ReorderAccounts), new ones last.
 func (s *Service) ListAccounts(ctx context.Context) ([]Account, error) {
 	rows, err := s.db.Query(ctx, "SELECT "+accountCols+" FROM accounts ORDER BY position, id")
@@ -617,6 +621,7 @@ func (s *Service) ListAccounts(ctx context.Context) ([]Account, error) {
 
 // ReorderAccounts puts the accounts in the order of ids, which names every account once.
 // An account added meanwhile fails the check or, added after it, goes last.
+// Standalone address books keep their places; ReorderAccountEntries orders both.
 func (s *Service) ReorderAccounts(ctx context.Context, ids []int64) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
@@ -665,8 +670,19 @@ func (s *Service) RemoveAccount(ctx context.Context, id int64) error {
 	}()
 	s.stopCalls(func(a int64) bool { return a == id })
 	s.stopWorker(id)
-	if _, err := s.db.DurableExecute(ctx, "DELETE FROM accounts WHERE id = ?", id); err != nil {
+	linked, err := s.db.Query(ctx, "SELECT id FROM address_books WHERE account_id = ?", id)
+	if err != nil {
 		return err
+	}
+	if _, err := s.db.DurableExecute(ctx, "DELETE FROM accounts WHERE id = ?", id); err != nil { // cascades to its address book
+		return err
+	}
+	var abErrs []error
+	for _, r := range linked.Values {
+		abErrs = append(abErrs, s.forgetAddressBook(store.Int(r[0])))
+	}
+	if len(linked.Values) > 0 {
+		s.notifyAddressBooksChanged(ctx)
 	}
 	s.tokMu.Lock()
 	delete(s.tokens, id)
@@ -676,9 +692,9 @@ func (s *Service) RemoveAccount(ctx context.Context, id int64) error {
 	s.credMu.Unlock()
 	// The files go even when the keychain fails: with the row gone, nothing
 	// else would ever remove them.
-	return errors.Join(s.deleteCredentials(id),
+	return errors.Join(append(abErrs, s.deleteCredentials(id),
 		os.RemoveAll(filepath.Join(s.dataDir, "cache", strconv.FormatInt(id, 10))),
-		store.RemoveAll(filepath.Join(s.dataDir, "archive", strconv.FormatInt(id, 10))))
+		store.RemoveAll(filepath.Join(s.dataDir, "archive", strconv.FormatInt(id, 10))))...)
 }
 
 // DetectProvider finds the provider for an email address; DNS gets 5 seconds in total.

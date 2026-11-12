@@ -663,7 +663,7 @@ func TestSenderAvatarCardDAVPriorityZeroNetAndOwnMail(t *testing.T) {
 	assert.Equal(t, photoBob, got.Data)
 
 	// 3. Reordering Book 2 ahead of Book 1 switches Alice's photo to photoAlice2.
-	require.NoError(t, s.ReorderAddressBooks(t.Context(), []int64{ab2.ID, ab1.ID}))
+	reorderBooks(t, s, ab2.ID, ab1.ID)
 	got, err = s.SenderAvatar(t.Context(), aliceMsg, false)
 	require.NoError(t, err)
 	assert.Equal(t, "carddav", got.Source)

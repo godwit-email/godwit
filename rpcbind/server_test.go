@@ -746,6 +746,18 @@ func TestAuditAddressBookEgress(t *testing.T) {
 
 	require.NoError(t, full.Call(ctx, "UpdateAddressBookAuth", nil, ab.ID, "secret", "", core.OAuthClient{}))
 
+	// Linking a mail account's address book signs in to the preset's host with
+	// the account's password: audited with that host. Reordering reaches no server.
+	core.SetAddressBookPresetURLForTest(t, core.PresetICloud, srv.URL())
+	ih, ip, sh, sp, user, pass := e.StartServers(t)
+	acc, err := e.Svc.AddAccount(ctx, core.AccountInput{Email: "alice@icloud.com", Username: user, Password: pass, Provider: "icloud",
+		Receiving: core.Server{Host: ih, Port: ip, Security: core.SecurityNone}, Sending: core.Server{Host: sh, Port: sp, Security: core.SecurityNone}})
+	require.NoError(t, err)
+	var linked core.AddressBook
+	require.NoError(t, full.Call(ctx, "AddAddressBook", &linked, core.AddressBookInput{Account: acc.ID, Preset: core.PresetICloud}))
+	assert.Equal(t, acc.ID, linked.Account)
+	require.NoError(t, full.Call(ctx, "ReorderAccountEntries", nil, []core.AccountEntry{{AddressBook: ab.ID}, {Account: acc.ID}}))
+
 	assert.Equal(t, [][]any{
 		{"local_api", "CheckAddressBook", nil, host},
 		{"local_api", "CheckAddressBook", nil, host},
@@ -755,6 +767,7 @@ func TestAuditAddressBookEgress(t *testing.T) {
 		{"local_api", "SyncAddressBook", nil, host},
 		{"local_api", "SyncAddressBook", int64(-1), ""},
 		{"local_api", "UpdateAddressBookAuth", ab.ID, host},
+		{"local_api", "AddAddressBook", nil, host},
 	}, auditRows(t, e.DataDir))
 
 	// Dropping audit_log stops egress before any request reaches the CardDAV server.

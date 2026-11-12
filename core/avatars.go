@@ -258,7 +258,7 @@ func (s *Service) carddavAvatar(ctx context.Context, email string, allowOwn bool
 			JOIN address_book_collections col ON col.id = c.collection_id
 			JOIN address_books ab ON ab.id = col.address_book_id
 			WHERE e.addr_key = ? AND col.enabled = 1 AND length(c.photo) > 0
-			ORDER BY ab.sort_order ASC, ab.id ASC, col.id ASC, c.href ASC
+			ORDER BY `+abPriority+`, col.id ASC, c.href ASC
 			LIMIT 1`, email)
 		if err != nil || len(rows.Values) == 0 {
 			return Avatar{}, nil, true, err
@@ -281,7 +281,7 @@ func (s *Service) carddavAvatar(ctx context.Context, email string, allowOwn bool
 		JOIN address_book_collections col ON col.id = c.collection_id
 		JOIN address_books ab ON ab.id = col.address_book_id
 		WHERE c.id IN (SELECT value FROM json_each(?)) AND col.enabled = 1 AND length(c.photo) > 0
-		ORDER BY ab.sort_order ASC, ab.id ASC, col.id ASC, c.href ASC
+		ORDER BY `+abPriority+`, col.id ASC, c.href ASC
 		LIMIT 1`, string(cb))
 	if err != nil || len(pRows.Values) == 0 {
 		return Avatar{}, comp.addrs, false, err

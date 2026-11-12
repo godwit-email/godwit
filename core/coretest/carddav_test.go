@@ -93,8 +93,8 @@ func TestAddressBookDiscoveryCRUDAndRedact(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Reorder swaps sort_order priority.
-	require.NoError(t, e.Svc.ReorderAddressBooks(ctx, []int64{ab2.ID, ab1.ID}))
+	// Reordering the accounts list swaps priority.
+	require.NoError(t, e.Svc.ReorderAccountEntries(ctx, []core.AccountEntry{{AddressBook: ab2.ID}, {AddressBook: ab1.ID}}))
 	books, err := e.Svc.ListAddressBooks(ctx)
 	require.NoError(t, err)
 	require.Len(t, books, 2)

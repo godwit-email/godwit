@@ -216,7 +216,7 @@ func (s *Service) enabledCardComponents(ctx context.Context, skip map[string]boo
 		FROM address_book_cards c
 		JOIN address_book_collections col ON col.id = c.collection_id AND col.enabled = 1
 		JOIN address_books ab ON ab.id = col.address_book_id
-		ORDER BY ab.sort_order ASC, ab.id ASC, col.id ASC, c.href ASC`)
+		ORDER BY `+abPriority+`, col.id ASC, c.href ASC`)
 	if err != nil || len(cardRows.Values) == 0 {
 		return nil, nil, err
 	}

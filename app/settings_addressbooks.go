@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -17,16 +18,18 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
-// addressBooksView is Settings › Address Books: read-only CardDAV address
-// books, dragged to order field priority, with per-collection enable switches.
+// addressBooksView is the read-only CardDAV address books in Settings'
+// accounts (ADR 0038): a mail account page's 通讯录 section, and the page of
+// an address book with no mail account (addressbook:<id>).
 type addressBooksView struct {
 	a *App
 
-	order   ui.ListState
-	heights map[int64]float32
-
 	syncing map[int64]bool
 	reauth  map[int64]bool
+	linking map[int64]bool // by mail account: its address book is being added
+
+	renameID int64 // the address book the name field is for
+	rename   string
 
 	dialog     string // "add", "password", "remove"; "" none
 	open       bool
@@ -52,30 +55,74 @@ type addressBooksView struct {
 func newAddressBooksView(a *App) *addressBooksView {
 	return &addressBooksView{
 		a:          a,
-		heights:    map[int64]float32{},
 		syncing:    map[int64]bool{},
 		reauth:     map[int64]bool{},
+		linking:    map[int64]bool{},
 		add:        a.svc.AddAddressBook,
 		updateAuth: a.svc.UpdateAddressBookAuth,
 	}
 }
 
-// addressBooksDot reports the worst sync status across configured address books
-// for the Settings sidebar's status indicator.
-func (a *App) addressBooksDot() (kit.Status, string, bool) {
-	retrying := false
-	for _, ab := range a.addressBooks {
-		switch {
-		case ab.Status == "reauth_required":
-			return kit.Error, "settings.dot.action", true
-		case ab.Status != "" && ab.Status != "ok":
-			retrying = true
+func addressBookRoute(id int64) string { return "addressbook:" + strconv.FormatInt(id, 10) }
+
+// linkedBook is the address book of mail account id, if it has one.
+func (a *App) linkedBook(id int64) (core.AddressBook, bool) {
+	i := slices.IndexFunc(a.addressBooks, func(ab core.AddressBook) bool { return ab.Account == id })
+	if i < 0 {
+		return core.AddressBook{}, false
+	}
+	return a.addressBooks[i], true
+}
+
+// standaloneBook is the address book id with no mail account, if there is one.
+func (a *App) standaloneBook(id int64) (core.AddressBook, bool) {
+	i := slices.IndexFunc(a.addressBooks, func(ab core.AddressBook) bool { return ab.ID == id && ab.Account == 0 })
+	if i < 0 {
+		return core.AddressBook{}, false
+	}
+	return a.addressBooks[i], true
+}
+
+// abTrouble says whether an address book needs the user (action) or failed
+// its last sync and tries again (retrying), for its row's badge.
+func abTrouble(ab core.AddressBook) (action, retrying bool) {
+	return ab.Status == "reauth_required", ab.Status != "" && ab.Status != "ok" && ab.Status != "reauth_required"
+}
+
+// entryRow is a row of Settings' accounts list: the mark with its status
+// badge, the name, and what it syncs under it.
+func (p *settingsPage) entryRow(c *ui.Context, e accountEntry, selected bool, route string) {
+	a := p.a
+	t, th := theme.Of(c), c.Theme()
+	name, kind := "", ""
+	var mark func()
+	var action, retrying bool
+	if acc := e.acc; acc != nil {
+		name, kind = accountName(*acc), i18n.T("settings.accounts.kind.mail")
+		if isArchive(*acc) {
+			kind = i18n.T("mail.archive.kind")
 		}
+		level := a.syncHealth(*acc).level
+		action, retrying = level == syncAction, level == syncRetrying
+		if ab, ok := a.linkedBook(acc.ID); ok {
+			kind += " · " + i18n.T("settings.addressbooks")
+			abAction, abRetrying := abTrouble(ab)
+			action, retrying = action || abAction, retrying || abRetrying
+		}
+		mark = func() { a.accountIcon(c, *acc, theme.MarkSm) }
+	} else {
+		name, kind = e.ab.Name, abKind(*e.ab)
+		action, retrying = abTrouble(*e.ab)
+		mark = func() { presetMark(c, e.ab.Preset, theme.MarkSm) }
 	}
-	if retrying {
-		return kit.Attention, "settings.dot.retrying", true
-	}
-	return 0, "", false
+	kit.SidebarItem(c, kit.SidebarItemOpts{Selected: selected, OnClick: func() { a.navigate(Route{Page: PageSettings, Settings: route}) }}).
+		Height(th.Space(11)).Children(func() {
+		badgedMark(c, mark, action, retrying)
+		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Children(func() {
+			ui.Text(c, name).SingleLine()
+			kit.Text(c, kind, t.Text.Xs).TextColor(t.Muted).SingleLine()
+		})
+	})
 }
 
 func (v *addressBooksView) close() {
@@ -89,12 +136,14 @@ func (v *addressBooksView) close() {
 	v.password, v.showSecret = "", false
 }
 
-func (v *addressBooksView) openAdd() {
+// openAdd opens the add dialog for an address book with no mail account, on
+// preset, the username and password filled in.
+func (v *addressBooksView) openAdd(preset, username, password string) {
 	v.close()
 	pub := auth.GoogleCardDAVOAuth().Public
 	v.dialog, v.open = "add", true
-	v.preset = core.PresetICloud
-	v.name, v.serverURL, v.username, v.password = "", "", "", ""
+	v.preset = preset
+	v.name, v.serverURL, v.username, v.password = "", "", username, password
 	v.client = clientForm{manual: true, public: pub != nil}
 }
 
@@ -108,156 +157,150 @@ func (v *addressBooksView) openRemove(ab core.AddressBook) {
 	v.dialog, v.open, v.dlgID = "remove", true, ab.ID
 }
 
-func (v *addressBooksView) view(c *ui.Context) {
-	a, th := v.a, c.Theme()
-	books := a.addressBooks
-	var add []func()
-	if len(books) > 0 {
-		add = append(add, func() {
-			kit.Button(c, i18n.T("settings.addressbooks.add"), kit.ButtonOpts{Icon: "plus"}).PaddingX(th.Space(3)).OnClick(v.openAdd)
-		})
-	}
-	pageHeading(c, i18n.T("settings.addressbooks"), i18n.T("settings.addressbooks.sub"), add...)
-	if len(books) == 0 {
-		kit.Empty(c, kit.EmptyOpts{
-			Icon:   "contacts",
-			Title:  i18n.T("settings.addressbooks.empty.title"),
-			Desc:   i18n.T("settings.addressbooks.empty.desc"),
-			Dashed: true,
-			Actions: func() {
-				kit.EmptyAction(c, i18n.T("settings.addressbooks.add"), kit.ButtonOpts{}).OnClick(v.openAdd)
-			},
-		})
-	} else {
-		settingsSection(c, i18n.T("settings.addressbooks.list"), i18n.T("settings.addressbooks.list.foot"), func() { v.list(c) })
-	}
-	v.dialogView(c)
-}
-
-func (v *addressBooksView) list(c *ui.Context) {
-	a, th := v.a, c.Theme()
-	n := len(a.addressBooks)
-	v.order.Key = func(i int) any { return a.addressBooks[i].ID }
-	v.order.Label = func(i int) string { return a.addressBooks[i].Name }
-	v.order.Reorder = func(rows []int, to int) { v.move(rows[0], to) }
-	var h float32
-	for _, ab := range a.addressBooks {
-		fallback := th.Space(16) + float32(len(ab.Collections))*th.Space(10)
-		h += cmp.Or(v.heights[ab.ID], fallback)
-	}
-	if _, wh := c.Size(); wh > 0 {
-		h = min(h, max(wh/2, th.Space(30)))
-	}
-	kit.List(c, &v.order, n, func(i int) {
-		id := a.addressBooks[i].ID
-		row := cardListRow(c, i, n, func() { v.row(c, a.addressBooks[i]) })
-		if b := row.LayoutBounds(); b.H > 0 && b.H != v.heights[id] {
-			v.heights[id] = b.H
-			c.Invalidate()
-		}
-	}).FillWidth().Height(h)
-}
-
-func (v *addressBooksView) move(i, to int) {
-	a := v.a
-	if to > i {
-		to--
-	}
-	if to == i {
+// accountSection is a mail account page's 通讯录: a switch that links the
+// address book its credentials reach, then its collections and sync.
+func (v *addressBooksView) accountSection(c *ui.Context, acc core.Account) {
+	preset := core.LinkedAddressBookPreset(acc)
+	if preset == "" || isArchive(acc) {
 		return
 	}
-	moved := slices.Clone(a.addressBooks)
-	ab := moved[i]
-	a.addressBooks = slices.Insert(slices.Delete(moved, i, i+1), to, ab)
-	ids := make([]int64, len(a.addressBooks))
-	for k, x := range a.addressBooks {
-		ids[k] = x.ID
+	a := v.a
+	ab, linked := a.linkedBook(acc.ID)
+	brand := presetPlaceholderName(preset)
+	desc := i18n.Tf("settings.addressbooks.link.help", brand)
+	if linked && len(ab.Collections) == 1 {
+		desc = i18n.Plural("settings.addressbooks.cards", ab.Collections[0].CardCount) + " · " + desc
 	}
-	a.writes.Chain("addressbooks", func(ctx context.Context) error { return a.svc.ReorderAddressBooks(ctx, ids) }, func(err error) {
-		if err != nil {
-			a.toastErr(err)
-			a.load()
+	rows := []func(){func() {
+		on := linked || v.linking[acc.ID]
+		if kit.SwitchRow(c, &on, i18n.Tf("settings.addressbooks.link", brand), desc).Disabled(v.linking[acc.ID]).Changed() {
+			if on {
+				v.link(acc)
+			} else {
+				v.unlink(ab)
+			}
 		}
-	})
+	}}
+	if linked {
+		rows = append(rows, v.bookRows(c, ab)...)
+	}
+	settingsSection(c, i18n.T("settings.addressbooks"), i18n.T("settings.addressbooks.foot"), rows...)
 }
 
-func (v *addressBooksView) row(c *ui.Context, ab core.AddressBook) {
-	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).FillWidth().Children(func() {
-		ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(3), th.Space(4)).AlignItems(ui.Center).Children(func() {
-			ui.Icon(c, icons.Get("grip")).Size(theme.Icon, theme.Icon).TextColor(t.Idle).Shrink(0)
-			presetMark(c, ab.Preset, theme.MarkMd)
-			ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(0.5)).Children(func() {
-				ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Wrap().Children(func() {
-					kit.Text(c, ab.Name, t.Text.Body).FontWeight(500).SingleLine().Shrink(1)
-					v.statusBadge(c, ab)
-				})
-				if sub := abSubtitle(ab); sub != "" {
-					kit.Text(c, sub, t.Text.Sm).Font(theme.Mono).TextColor(t.Muted).SingleLine()
-				}
-				if ab.Status != "" && ab.Status != "ok" {
-					if reason := abDetailText(ab); reason != "" {
-						color := t.WarningText
-						if ab.Status == "reauth_required" {
-							color = t.DangerText
-						}
-						kit.Text(c, reason, t.Text.Sm).TextColor(color)
-					}
-				}
-			})
-			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Shrink(0).Children(func() {
-				kit.Button(c, i18n.T("settings.account.sync_now"), kit.ButtonOpts{
-					Variant: kit.Outline, Size: kit.SizeSm, Disabled: v.syncing[ab.ID],
-				}).Label(i18n.Tf("settings.addressbooks.sync.aria", ab.Name)).OnClick(func() { v.syncNow(ab.ID) })
-				v.authAction(c, ab)
-				kit.IconButton(c, "trash-2", i18n.Tf("settings.addressbooks.remove.aria", ab.Name), kit.ButtonOpts{
-					Variant: kit.Ghost, Size: kit.SizeSm,
-				}).OnClick(func() { v.openRemove(ab) })
-			})
+// bookRows are an address book's rows: its reauth, its collections when the
+// server has more than one, and its sync. With one collection there is no
+// list: its count goes on the switch row (a linked one's) or the sync row.
+func (v *addressBooksView) bookRows(c *ui.Context, ab core.AddressBook) []func() {
+	var rows []func()
+	if ab.Status == "reauth_required" {
+		rows = append(rows, func() {
+			settingRow(c, i18n.T("settings.addressbooks.status.reauth"), abDetailText(ab), func() { v.authAction(c, ab) })
 		})
+	}
+	syncDesc := v.syncText(ab)
+	if ab.Account == 0 && len(ab.Collections) == 1 {
+		syncDesc = i18n.Plural("settings.addressbooks.cards", ab.Collections[0].CardCount) + " · " + syncDesc
+	}
+	if len(ab.Collections) > 1 {
 		for _, col := range ab.Collections {
-			col := col
-			ui.Row(c.Key(col.ID)).FillWidth().Gap(th.Space(3)).Padding(th.Space(2), th.Space(4), th.Space(2), th.Space(12)).
-				BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).AlignItems(ui.Center).Children(func() {
-				fg := t.Foreground
-				if !col.Enabled {
-					fg = t.Muted
-				}
-				kit.Text(c, col.Name, t.Text.Base).TextColor(fg).SingleLine().Grow(1).Shrink(1)
-				kit.Text(c, i18n.Plural("settings.addressbooks.cards", col.CardCount), t.Text.Sm).TextColor(t.Muted).Shrink(0)
+			rows = append(rows, func() {
 				on := col.Enabled
-				kit.Switch(c, &on).Label(i18n.Tf("settings.addressbooks.collection.toggle", col.Name))
-				if on != col.Enabled {
+				if kit.SwitchRow(c.Key(col.ID), &on, col.Name, i18n.Plural("settings.addressbooks.cards", col.CardCount)).
+					Label(i18n.Tf("settings.addressbooks.collection.toggle", col.Name)).Changed() {
 					v.toggleCollection(ab.ID, col.ID, on)
 				}
 			})
 		}
+	}
+	return append(rows, func() {
+		settingRow(c, i18n.T("settings.addressbooks.sync"), syncDesc, func() {
+			settingButton(c, i18n.T("settings.account.sync_now"), kit.Outline, v.syncing[ab.ID]).
+				Label(i18n.Tf("settings.addressbooks.sync.aria", ab.Name)).OnClick(func() { v.syncNow(ab.ID) })
+		})
 	})
 }
 
-func (v *addressBooksView) statusBadge(c *ui.Context, ab core.AddressBook) {
+// syncText is the sync row's description: the last sync, or what went wrong.
+func (v *addressBooksView) syncText(ab core.AddressBook) string {
+	switch {
+	case v.syncing[ab.ID]:
+		return i18n.T("shell.sync.syncing")
+	case ab.Status == "error":
+		return abDetailText(ab)
+	case !ab.LastSyncedAt.IsZero():
+		return i18n.Tf("settings.addressbooks.sync.last", v.a.ago(ab.LastSyncedAt))
+	}
+	return i18n.T("settings.addressbooks.sync.every")
+}
+
+// page is an address book with no mail account: its name, collections,
+// sign-in and removal, as an account's page.
+func (v *addressBooksView) page(c *ui.Context, ab core.AddressBook) {
 	a := v.a
 	t, th := theme.Of(c), c.Theme()
-	if v.syncing[ab.ID] {
-		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
-			kit.Spinner(c)
-			kit.Text(c, i18n.T("shell.sync.syncing"), t.Text.Sm).TextColor(t.Muted)
+	if v.renameID != ab.ID {
+		v.renameID, v.rename = ab.ID, ab.Name
+	}
+	ui.Row(c).Gap(th.Space(4)).Children(func() {
+		presetMark(c, ab.Preset, theme.MarkXl)
+		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
+			kit.Text(c, ab.Name, t.Text.Display).FontWeight(600).SingleLine()
+			ui.Text(c, abKind(ab)).TextColor(t.Muted)
 		})
-		return
-	}
-	dot, text, fg := kit.OK, i18n.T("settings.account.status.ok"), t.Muted
-	switch {
-	case ab.Status == "reauth_required":
-		dot, text, fg = kit.Error, i18n.T("settings.addressbooks.status.reauth"), t.DangerText
-	case ab.Status != "" && ab.Status != "ok":
-		dot, text, fg = kit.Attention, i18n.T("settings.addressbooks.status.error"), t.WarningText
-	case !ab.LastSyncedAt.IsZero():
-		text = i18n.Tf("shell.sync.synced", a.ago(ab.LastSyncedAt))
-	}
-	ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
-		kit.StatusDot(c, dot)
-		kit.Text(c, text, t.Text.Sm).TextColor(fg)
 	})
+	settingsSection(c, i18n.T("settings.account.basic"), "", func() {
+		settingRow(c, i18n.T("settings.account.alias"), "", func() {
+			if kit.Input(c, &v.rename, kit.InputOpts{}).Width(theme.SettingsInputWidth).Radius(t.Radius.Lg).Label(i18n.T("settings.account.alias")).Changed() {
+				if name, id := strings.TrimSpace(v.rename), ab.ID; name != "" {
+					a.writes.Chain("addressbooks", func(ctx context.Context) error { return a.svc.RenameAddressBook(ctx, id, name) }, func(err error) {
+						if err != nil {
+							a.toastErr(err)
+						}
+						a.load()
+					})
+				}
+			}
+		})
+	})
+	foot := ""
+	if len(ab.Collections) > 1 {
+		foot = i18n.T("settings.addressbooks.collections.foot")
+	}
+	settingsSection(c, i18n.T("settings.addressbooks"), foot, v.bookRows(c, ab)...)
+	settingsSection(c, i18n.T("settings.account.login"), "",
+		func() {
+			settingRow(c, i18n.T("settings.account.login.method"), abAuthText(ab), func() { v.authAction(c, ab) })
+		},
+		func() {
+			settingRow(c, "CardDAV", "", func() { kit.Text(c, ab.URL, t.Text.Sm).Font(theme.Mono).TextColor(t.Muted).Shrink(1) })
+		})
+	settingsSection(c, i18n.T("settings.account.remove"), "", func() {
+		settingRow(c, i18n.T("settings.addressbooks.remove.row"), strings.TrimRight(i18n.T("settings.addressbooks.remove.desc"), "。."), func() {
+			settingButton(c, i18n.T("settings.account.remove.button"), kit.DestructiveOutline, false).
+				Label(i18n.Tf("settings.addressbooks.remove.aria", ab.Name)).OnClick(func() { v.openRemove(ab) })
+		})
+	})
+}
+
+// abHost is the host of the address book's server.
+func abHost(ab core.AddressBook) string {
+	if u, err := url.Parse(ab.URL); err == nil && u.Hostname() != "" {
+		return u.Hostname()
+	}
+	return ab.URL
+}
+
+// abKind is an address book's second line in the sidebar and under its page's title.
+func abKind(ab core.AddressBook) string {
+	return strings.Join(slices.DeleteFunc([]string{i18n.T("settings.addressbooks"), abHost(ab)}, func(s string) bool { return s == "" }), " · ")
+}
+
+// abAuthText says how the address book signs in.
+func abAuthText(ab core.AddressBook) string {
+	if ab.AuthType == "oauth" {
+		return i18n.T("settings.account.login.oauth")
+	}
+	return i18n.Tf("settings.account.login.secret", presetSecretName(ab.Preset))
 }
 
 func (v *addressBooksView) authAction(c *ui.Context, ab core.AddressBook) {
@@ -278,6 +321,63 @@ func (v *addressBooksView) authAction(c *ui.Context, ab core.AddressBook) {
 	label := i18n.Tf("settings.account.login.update", presetSecretName(ab.Preset))
 	kit.Button(c, label, kit.ButtonOpts{Variant: variant, Size: kit.SizeSm}).
 		Label(aria).OnClick(func() { v.openPassword(ab) })
+}
+
+// link adds the address book acc's credentials reach (the switch turned on).
+func (v *addressBooksView) link(acc core.Account) {
+	a := v.a
+	id, preset, email := acc.ID, core.LinkedAddressBookPreset(acc), acc.Email
+	v.linking[id] = true
+	a.do(func(ctx context.Context) error { return a.linkAddressBook(ctx, id, preset, email) }, func(err error) {
+		delete(v.linking, id)
+		if preset == core.PresetGoogle && !errors.Is(err, context.Canceled) {
+			a.plat.ShowWindow()
+		}
+		if err != nil && !errors.Is(err, context.Canceled) {
+			a.toastErr(err)
+		}
+		a.load()
+	})
+}
+
+// linkAddressBook adds mail account id's address book: Google's after a
+// sign-in in the browser for its contacts, the others with the account's password.
+func (a *App) linkAddressBook(ctx context.Context, id int64, preset, email string) error {
+	in := core.AddressBookInput{Account: id, Preset: preset}
+	if preset == core.PresetGoogle {
+		oauth, plat, pub := a.oauth, a.plat, auth.GoogleCardDAVOAuth().Public
+		var authURL string
+		var err error
+		in.OAuthFlowID, authURL, err = oauth.Begin(ctx, core.ProviderGoogleCardDAV, email, in.Client)
+		if errors.Is(err, auth.ErrOAuthNotConfigured) && pub != nil {
+			in.Client = core.OAuthClient{ID: pub.ID, Secret: pub.Secret}
+			in.OAuthFlowID, authURL, err = oauth.Begin(ctx, core.ProviderGoogleCardDAV, email, in.Client)
+		}
+		if err != nil {
+			return err
+		}
+		if err := plat.OpenURL(authURL); err != nil {
+			oauth.Cancel(in.OAuthFlowID)
+			return err
+		}
+		if _, err := oauth.Await(ctx, in.OAuthFlowID); err != nil {
+			return err
+		}
+	}
+	_, err := a.svc.AddAddressBook(ctx, in)
+	return err
+}
+
+// unlink removes a mail account's address book (the switch turned off): its
+// cache goes; turning it on again syncs it anew.
+func (v *addressBooksView) unlink(ab core.AddressBook) {
+	a := v.a
+	a.writes.Chain("addressbooks", func(ctx context.Context) error { return a.svc.RemoveAddressBook(ctx, ab.ID) }, func(err error) {
+		if err != nil {
+			a.toastErr(err)
+		}
+		a.load()
+	})
 }
 
 func (v *addressBooksView) syncNow(id int64) {
@@ -463,8 +563,10 @@ func (v *addressBooksView) dialogView(c *ui.Context) {
 						if gen == v.dlgGen && v.dialog == "remove" {
 							v.busy, v.dlgErr = false, err
 							if err == nil {
-								delete(v.heights, id)
 								v.close()
+								if a.route.Page == PageSettings && a.route.Settings == addressBookRoute(id) {
+									a.navigate(Route{Page: PageSettings}) // the first account's page
+								}
 							}
 						}
 						a.load()
@@ -505,7 +607,6 @@ func (v *addressBooksView) addDialogView(c *ui.Context) {
 		for i := 0; i < len(presets); i += 2 {
 			ui.Row(c.Key(i)).Gap(th.Space(2)).AlignItems(ui.Stretch).Children(func() {
 				for _, pr := range presets[i:min(i+2, len(presets))] {
-					pr := pr
 					label := presetTitle(pr)
 					on := v.preset == pr.ID
 					tile := kit.Pressable(c.Key(pr.ID), kit.PressableOpts{
@@ -600,6 +701,19 @@ func (v *addressBooksView) addDialogView(c *ui.Context) {
 		body, footer)
 }
 
+// added closes the add dialog onto the new address book's page.
+func (v *addressBooksView) added(gen uint64, ab core.AddressBook, err error) {
+	a := v.a
+	if gen == v.dlgGen && v.dialog == "add" {
+		v.busy, v.dlgErr = false, err
+		if err == nil {
+			v.close()
+			a.navigate(Route{Page: PageSettings, Settings: addressBookRoute(ab.ID)})
+		}
+	}
+	a.load()
+}
+
 func (v *addressBooksView) submitPasswordAdd() {
 	if v.busy {
 		return
@@ -618,18 +732,11 @@ func (v *addressBooksView) submitPasswordAdd() {
 		Username: strings.TrimSpace(v.username),
 		Password: v.password,
 	}
-	a.writes.Chain("addressbooks", func(ctx context.Context) error {
-		_, err := add(ctx, in)
+	var ab core.AddressBook
+	a.writes.Chain("addressbooks", func(ctx context.Context) (err error) {
+		ab, err = add(ctx, in)
 		return err
-	}, func(err error) {
-		if gen == v.dlgGen && v.dialog == "add" {
-			v.busy, v.dlgErr = false, err
-			if err == nil {
-				v.close()
-			}
-		}
-		a.load()
-	})
+	}, func(err error) { v.added(gen, ab, err) })
 }
 
 func (v *addressBooksView) submitGoogleAdd(client core.OAuthClient) {
@@ -682,18 +789,11 @@ func (v *addressBooksView) submitGoogleAdd(client core.OAuthClient) {
 			OAuthFlowID: flow,
 			Client:      client,
 		}
-		a.writes.Chain("addressbooks", func(ctx context.Context) error {
-			_, err := add(ctx, in)
+		var ab core.AddressBook
+		a.writes.Chain("addressbooks", func(ctx context.Context) (err error) {
+			ab, err = add(ctx, in)
 			return err
-		}, func(err error) {
-			if gen == v.dlgGen && v.dialog == "add" {
-				v.busy, v.dlgErr = false, err
-				if err == nil {
-					v.close()
-				}
-			}
-			a.load()
-		})
+		}, func(err error) { v.added(gen, ab, err) })
 	})
 }
 
@@ -723,7 +823,7 @@ func presetMark(c *ui.Context, preset string, size float32) {
 		iconSz = theme.IconSm
 	}
 	ui.Box(c).Size(size, size).Shrink(0).Radius(r).Background(t.Hover).Border(theme.Hairline, t.Border).Center().Children(func() {
-		ui.Icon(c, icons.Get("globe")).Size(iconSz, iconSz).TextColor(t.Foreground)
+		ui.Icon(c, icons.Get("contacts")).Size(iconSz, iconSz).TextColor(t.Foreground)
 	})
 }
 
@@ -769,19 +869,6 @@ func presetHint(preset string) string {
 	}
 }
 
-func abSubtitle(ab core.AddressBook) string {
-	var parts []string
-	if ab.Username != "" {
-		parts = append(parts, ab.Username)
-	}
-	if u, err := url.Parse(ab.URL); err == nil && u.Host != "" {
-		parts = append(parts, u.Host)
-	} else if ab.URL != "" {
-		parts = append(parts, ab.URL)
-	}
-	return strings.Join(parts, " · ")
-}
-
 func abDetailText(ab core.AddressBook) string {
 	if ab.StatusDetail != "" {
 		if s := tr("settings.addressbooks.detail." + ab.StatusDetail); s != "" {
@@ -792,4 +879,95 @@ func abDetailText(ab core.AddressBook) string {
 		return i18n.T("settings.addressbooks.detail.auth_rejected")
 	}
 	return i18n.T("settings.addressbooks.detail.sync_failed")
+}
+
+// accountEntry is a row of Settings' accounts list: a mail account or an
+// address book with none.
+type accountEntry struct {
+	acc *core.Account
+	ab  *core.AddressBook
+}
+
+func (e accountEntry) key() core.AccountEntry {
+	if e.acc != nil {
+		return core.AccountEntry{Account: e.acc.ID}
+	}
+	return core.AccountEntry{AddressBook: e.ab.ID}
+}
+
+// accountEntries are the mail accounts and standalone address books in their
+// shared order, which is also the address books' priority.
+func (a *App) accountEntries() []accountEntry {
+	var es []accountEntry
+	for i := range a.accounts {
+		es = append(es, accountEntry{acc: &a.accounts[i]})
+	}
+	for i := range a.addressBooks {
+		if a.addressBooks[i].Account == 0 {
+			es = append(es, accountEntry{ab: &a.addressBooks[i]})
+		}
+	}
+	slices.SortStableFunc(es, func(x, y accountEntry) int { // as core's abPriority: the account first on a tie
+		px, py := 0, 0
+		if x.acc != nil {
+			px = x.acc.Position
+		} else {
+			px = x.ab.SortOrder
+		}
+		if y.acc != nil {
+			py = y.acc.Position
+		} else {
+			py = y.ab.SortOrder
+		}
+		return cmp.Or(cmp.Compare(px, py), cmp.Compare(boolInt(x.acc == nil), boolInt(y.acc == nil)))
+	})
+	return es
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// moveEntry puts the accounts list's row i before the one at to (len for the
+// end): at once here, then saved. A failed save reloads the order saved.
+func (p *settingsPage) moveEntry(i, to int) {
+	a := p.a
+	if to > i {
+		to-- // i is taken out first
+	}
+	if to == i {
+		return
+	}
+	es := a.accountEntries()
+	e := es[i]
+	es = slices.Insert(slices.Delete(es, i, i+1), to, e)
+	order := make([]core.AccountEntry, len(es))
+	pos := map[core.AccountEntry]int{}
+	for k, e := range es {
+		order[k], pos[e.key()] = e.key(), k
+	}
+	accs := slices.Clone(a.accounts)
+	for k := range accs {
+		accs[k].Position = pos[core.AccountEntry{Account: accs[k].ID}]
+	}
+	slices.SortStableFunc(accs, func(x, y core.Account) int { return cmp.Compare(x.Position, y.Position) })
+	books := slices.Clone(a.addressBooks)
+	for k := range books {
+		if books[k].Account != 0 {
+			books[k].SortOrder = pos[core.AccountEntry{Account: books[k].Account}]
+		} else {
+			books[k].SortOrder = pos[core.AccountEntry{AddressBook: books[k].ID}]
+		}
+	}
+	slices.SortStableFunc(books, func(x, y core.AddressBook) int { return cmp.Compare(x.SortOrder, y.SortOrder) })
+	a.accounts, a.addressBooks = accs, books
+	a.writes.Chain("accounts", func(ctx context.Context) error { return a.svc.ReorderAccountEntries(ctx, order) }, func(err error) {
+		if err != nil {
+			a.toastErr(err)
+			a.load()
+		}
+	})
 }

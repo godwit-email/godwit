@@ -18,235 +18,205 @@ func (h *harness) addressBooks() []core.AddressBook {
 	return books
 }
 
-func TestSettingsAddressBooksAddAndRemove(t *testing.T) {
+// addICloud adds an iCloud mail account on fake servers, signing in as
+// alice with password secret.
+func addICloud(t *testing.T, e *coretest.Env) core.Account {
+	t.Helper()
+	ih, ip, sh, sp, user, pass := e.StartServers(t)
+	acc, err := e.Svc.AddAccount(context.Background(), core.AccountInput{Email: "alice@icloud.com", Username: user, Password: pass, Provider: "icloud", IsDefault: true,
+		Receiving: core.Server{Host: ih, Port: ip, Security: core.SecurityNone}, Sending: core.Server{Host: sh, Port: sp, Security: core.SecurityNone}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return acc
+}
+
+const bobCard = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Bob\r\nEMAIL:bob@example.com\r\nEND:VCARD\r\n"
+
+// The iCloud account's page turns its address book on with the account's
+// password: one collection, so no list, its count on the switch row.
+func TestSettingsAccountLinksAddressBook(t *testing.T) {
+	var acc core.Account
+	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) { acc = addICloud(t, e) })
+	h.until("initial load", func() bool { return h.app.loaded })
+	srv := h.env.StartCardDAV(t)
+	srv.PutCard("contacts", "bob", bobCard)
+	core.SetAddressBookPresetURLForTest(t, core.PresetICloud, srv.URL())
+
+	h.openSettings(accountRoute(acc.ID))
+	h.see("用这个账户的登录读取，只读，不写回 iCloud")
+	if h.tt.HasText("通讯录同步") {
+		t.Fatal("sync row shown before the address book is on")
+	}
+	h.click("同步 iCloud 通讯录")
+	h.until("linked with the account's password", func() bool {
+		books := h.addressBooks()
+		return len(books) == 1 && books[0].Account == acc.ID && books[0].Status == "ok"
+	})
+	h.see("1 张名片 · 用这个账户的登录读取，只读，不写回 iCloud")
+	h.see("通讯录同步")
+	h.see("邮件 · 通讯录") // the sidebar row
+	if _, ok := h.tt.Find("启用子地址簿「contacts」"); ok {
+		t.Fatal("a one-collection address book lists its collection")
+	}
+	h.click("同步 iCloud 通讯录")
+	h.until("turned off", func() bool { return len(h.addressBooks()) == 0 && !h.tt.HasText("通讯录同步") })
+}
+
+// A reused password the CardDAV server refuses leaves the address book
+// waiting for its own; with two collections it lists them.
+func TestSettingsLinkedAddressBookRefusedPassword(t *testing.T) {
+	var acc core.Account
+	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) { acc = addICloud(t, e) })
+	h.until("initial load", func() bool { return h.app.loaded })
+	srv := h.env.StartCardDAV(t)
+	srv.SetBasicAuth("alice", "contacts-only")
+	srv.PutCollection("work", "Work")
+	srv.PutCollection("family", "Family")
+	srv.PutCard("work", "bob", bobCard)
+	core.SetAddressBookPresetURLForTest(t, core.PresetICloud, srv.URL())
+
+	h.openSettings(accountRoute(acc.ID))
+	h.click("同步 iCloud 通讯录")
+	h.see("需要更新凭据")
+	h.see("服务器拒绝了用户名或密码，请更新凭据。")
+	h.see("需要处理") // the account's sidebar badge
+	h.click("更新「iCloud」的登录凭据")
+	h.fill("应用专用密码", "contacts-only")
+	h.click("保存")
+	h.until("its own password works", func() bool {
+		books := h.addressBooks()
+		return len(books) == 1 && books[0].Status == "ok" && len(books[0].Collections) == 2 && !h.tt.HasText("需要更新凭据")
+	})
+	h.see("Work")
+	h.see("Family")
+	h.click("启用子地址簿「Family」")
+	h.until("Family off", func() bool {
+		books := h.addressBooks()
+		return len(books) == 1 && !books[0].Collections[1].Enabled
+	})
+}
+
+// 添加账户's 只有通讯录 adds a standalone address book, with its own page.
+func TestSettingsStandaloneAddressBook(t *testing.T) {
 	h, _ := withAccount(t)
+	srv := h.env.StartCardDAV(t)
+	srv.PutCollection("work", "Work")
+	srv.PutCollection("family", "Family")
+	srv.PutCard("work", "bob", bobCard)
 
-	srvCustom := h.env.StartCardDAV(t)
-	srvCustom.PutCollection("work", "Work")
-	srvCustom.PutCollection("family", "Family")
-	srvCustom.PutCard("work", "bob", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Bob Chen\r\nEMAIL:bob@example.com\r\nEND:VCARD\r\n")
-	srvCustom.PutCard("work", "carol", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Carol Wu\r\nEMAIL:carol@example.com\r\nEND:VCARD\r\n")
-	srvCustom.PutCard("family", "mom", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Mom\r\nEMAIL:mom@example.com\r\nEND:VCARD\r\n")
-
-	srvICloud := h.env.StartCardDAV(t)
-	srvICloud.SetBasicAuth("alice@icloud.com", "app-secret-1234")
-	srvICloud.PutCard("contacts", "dan", "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Dan Li\r\nEMAIL:dan@example.com\r\nEND:VCARD\r\n")
-	core.SetAddressBookPresetURLForTest(t, core.PresetICloud, srvICloud.URL())
-
-	h.click("设置")
-	h.click("通讯录")
-	h.see("还没有通讯录")
-
-	// Add a custom CardDAV server discovered via /.well-known/carddav.
-	h.click("添加通讯录")
-	h.click("其他 CardDAV 服务器")
-	h.fill("CardDAV 服务器地址", srvCustom.URL())
+	h.openSettings("general")
+	h.app.openAddAccount()
+	h.click("只有通讯录（CardDAV）")
+	h.see("添加通讯录")
+	h.fill("CardDAV 服务器地址", srv.URL())
 	h.fill("用户名", "alice")
 	h.fill("密码", "secret")
 	h.fill("显示名称（可选）", "公司通讯录")
 	h.click("连接")
-
-	h.see("公司通讯录")
-	h.see("Work")
-	h.see("2 张名片")
-	h.see("Family")
-	h.see("1 张名片")
-	h.until("custom address book saved", func() bool {
+	h.until("its page", func() bool {
 		books := h.addressBooks()
-		return len(books) == 1 && books[0].Name == "公司通讯录" && len(books[0].Collections) == 2
+		return len(books) == 1 && h.app.route.Settings == addressBookRoute(books[0].ID)
 	})
+	id := h.addressBooks()[0].ID
+	h.see("侧栏显示名称")
+	h.see("通讯录 · 127.0.0.1")
+	h.see("Work")
+	h.see("1 张名片")
+	h.see("服务器上的每个地址簿各有一个开关；关掉的那个，名片不会出现在联系人里。")
 
-	// Add an iCloud preset address book without entering a server URL.
-	h.click("添加通讯录")
-	h.click("如何获取应用专用密码 ↗")
-	h.until("help link opened", func() bool {
-		return slices.Contains(h.plat.Calls(), "OpenURL https://support.apple.com/102654")
-	})
-	h.fill("用户名", "alice@icloud.com")
-	h.fill("应用专用密码", "app-secret-1234")
-	h.click("连接")
+	h.fillRow("侧栏显示名称", "同事")
+	h.until("renamed", func() bool { return h.addressBooks()[0].Name == "同事" })
 
-	h.until("two address books saved", func() bool {
-		return len(h.addressBooks()) == 2
-	})
-	h.see("iCloud")
+	srv.SetBasicAuth("alice", "rotated")
+	h.click("立即同步「同事」")
+	h.until("the sidebar's action badge", func() bool { _, ok := h.tt.Find("需要处理"); return ok })
 
-	// Remove the iCloud address book.
-	h.click("删除通讯录「iCloud」")
-	h.see("删除通讯录「iCloud」？")
+	h.click("删除通讯录「同事」")
+	h.see("删除通讯录「同事」？")
 	h.click("删除")
-	h.until("iCloud removed", func() bool {
-		books := h.addressBooks()
-		return len(books) == 1 && books[0].Name == "公司通讯录" && !h.tt.HasText("alice@icloud.com")
+	h.until("removed, back to an account", func() bool {
+		return len(h.addressBooks()) == 0 && h.app.route.Settings != addressBookRoute(id)
 	})
 }
 
-func TestSettingsAddressBooksCollectionToggleAndSyncNow(t *testing.T) {
-	h, _ := mailHarness(t, []coretest.Option{coretest.WithoutAutoSync()}, "alice@example.com")
-
-	srv := h.env.StartCardDAV(t)
-	srv.PutCollection("work", "Work")
-	srv.PutCollection("archive", "Archive")
-	srv.PutCard("work", "bob", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Bob\r\nEMAIL:bob@example.com\r\nEND:VCARD\r\n")
-	srv.PutCard("work", "carol", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Carol\r\nEMAIL:carol@example.com\r\nEND:VCARD\r\n")
-	srv.PutCard("archive", "old", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Old Contact\r\nEMAIL:old@example.com\r\nEND:VCARD\r\n")
-
-	if _, err := h.env.Svc.AddAddressBook(context.Background(), core.AddressBookInput{
-		Preset: core.PresetFastmail, Name: "Fastmail 通讯录", URL: srv.HomeSetURL(), Username: "alice", Password: "secret",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	h.app.load()
-
-	h.openSettings("addressbooks")
-	h.see("Fastmail 通讯录")
-	h.see("Work")
-	h.see("2 张名片")
-	h.see("Archive")
-	h.see("1 张名片")
-
-	// Disable the Archive sub-address-book -> immediately clears cached cards to 0.
-	h.click("启用子地址簿「Archive」")
-	h.until("Archive disabled and cleared", func() bool {
-		books := h.addressBooks()
-		return len(books) == 1 &&
-			!books[0].Collections[1].Enabled &&
-			books[0].Collections[1].CardCount == 0 &&
-			h.tt.HasText("0 张名片")
-	})
-
-	// Add a new remote card to Work and click 立即同步 -> pulls new card into Work while Archive stays off.
-	srv.PutCard("work", "dan", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Dan\r\nEMAIL:dan@example.com\r\nEND:VCARD\r\n")
-	h.click("立即同步")
-	h.until("Work synced to 3 cards", func() bool {
-		books := h.addressBooks()
-		return len(books) == 1 &&
-			books[0].Collections[0].CardCount == 3 &&
-			books[0].Collections[1].CardCount == 0 &&
-			h.tt.HasText("3 张名片")
-	})
-
-	// Re-enable Archive and sync now -> pulls Archive's card back.
-	h.click("启用子地址簿「Archive」")
-	h.until("Archive re-enabled", func() bool {
-		books := h.addressBooks()
-		return len(books) == 1 && books[0].Collections[1].Enabled
-	})
-	h.click("立即同步")
-	h.until("Archive synced back to 1 card", func() bool {
-		books := h.addressBooks()
-		return len(books) == 1 &&
-			books[0].Collections[1].CardCount == 1 &&
-			h.tt.HasText("1 张名片")
-	})
-}
-
-func TestSettingsAddressBooksReorder(t *testing.T) {
-	h, _ := mailHarness(t, []coretest.Option{coretest.WithoutAutoSync()}, "alice@example.com")
-
-	srv1 := h.env.StartCardDAV(t)
-	srv1.PutCard("contacts", "a", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Alice Personal\r\nEMAIL:bob@example.com\r\nEND:VCARD\r\n")
-	ab1, err := h.env.Svc.AddAddressBook(context.Background(), core.AddressBookInput{
-		Preset: core.PresetCustom, Name: "个人通讯录", URL: srv1.URL(), Username: "alice", Password: "secret",
-	})
+// The accounts list is one order for mail accounts and standalone address
+// books, and that order is the address books' priority.
+func TestSettingsAccountsListOrdersAddressBooks(t *testing.T) {
+	var acc core.Account
+	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) { acc = addICloud(t, e) })
+	h.until("initial load", func() bool { return h.app.loaded })
+	linked := h.env.StartCardDAV(t)
+	linked.PutCard("contacts", "bob", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Bob iCloud\r\nEMAIL:bob@example.com\r\nEND:VCARD\r\n")
+	core.SetAddressBookPresetURLForTest(t, core.PresetICloud, linked.URL())
+	la, err := h.env.Svc.AddAddressBook(context.Background(), core.AddressBookInput{Account: acc.ID, Preset: core.PresetICloud})
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	srv2 := h.env.StartCardDAV(t)
-	srv2.PutCard("contacts", "b", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Alice Corp\r\nEMAIL:bob@example.com\r\nEND:VCARD\r\n")
-	ab2, err := h.env.Svc.AddAddressBook(context.Background(), core.AddressBookInput{
-		Preset: core.PresetCustom, Name: "团队通讯录", URL: srv2.URL(), Username: "alice", Password: "secret",
-	})
+	other := h.env.StartCardDAV(t)
+	other.PutCard("contacts", "bob", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Bob Corp\r\nEMAIL:bob@example.com\r\nEND:VCARD\r\n")
+	sa, err := h.env.Svc.AddAddressBook(context.Background(), core.AddressBookInput{Preset: core.PresetCustom, Name: "公司通讯录", URL: other.URL(), Username: "alice", Password: "secret"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	h.app.load()
+	h.openSettings("general")
+	h.see("公司通讯录")
 
-	h.openSettings("addressbooks")
-	h.see("个人通讯录")
-	h.see("团队通讯录")
-	h.see("从上到下按优先级排列；多张名片字段冲突时优先采用排在前面的通讯录，拖动可调整顺序。")
-
-	// Wait for measured row heights to settle before dragging.
-	h.tt.Frame()
-	h.tt.Frame()
-
-	first, ok1 := h.tt.Find("个人通讯录")
-	second, ok2 := h.tt.Find("团队通讯录")
-	if !ok1 || !ok2 {
-		t.Fatalf("missing rows: %v %v", ok1, ok2)
-	}
-	x, y := first.X+20, first.Y+24
-	endY := second.Y + second.H*0.75
+	first, _ := h.tt.Find("alice@icloud.com")
+	second, _ := h.tt.Find("公司通讯录")
+	x, y := second.X, second.Y+second.H/2
 	h.tt.Move(x, y)
 	h.tt.Press(x, y)
-	h.tt.Move(x, second.Y)
-	h.tt.Move(x, endY)
-	h.tt.Release(x, endY)
+	h.tt.Move(x, y-(second.Y-first.Y)/2)
+	h.tt.Move(x, first.Y-2) // above the account
+	h.tt.Release(x, first.Y-2)
 	h.drain()
-
-	h.until("priority order swapped", func() bool {
+	h.until("the standalone address book first", func() bool {
 		books := h.addressBooks()
-		return len(books) == 2 &&
-			books[0].ID == ab2.ID && books[0].SortOrder == 0 &&
-			books[1].ID == ab1.ID && books[1].SortOrder == 1
+		return len(books) == 2 && books[0].ID == sa.ID && books[1].ID == la.ID
 	})
+	m, err := h.env.Svc.SearchContacts(context.Background(), "bob@example.com", 5)
+	if err != nil || len(m) != 1 || m[0].Name != "Bob Corp" {
+		t.Fatalf("contact %+v, %v", m, err)
+	}
+	h.click("公司通讯录")
+	h.until("a row still opens its page", func() bool { return h.app.route.Settings == addressBookRoute(sa.ID) })
 }
 
-func TestSettingsAddressBooksStatusDotAndAuthRecovery(t *testing.T) {
-	h, _ := mailHarness(t, []coretest.Option{coretest.WithoutAutoSync()}, "alice@example.com")
-
+// Adding an iCloud account in the sheet adds its address book with the same
+// sign-in; unticking 邮件 goes to the address book alone.
+func TestAddAccountSheetMailAndContacts(t *testing.T) {
+	plaintext(t)
+	h, _ := withAccount(t)
 	srv := h.env.StartCardDAV(t)
-	srv.PutCard("contacts", "bob", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Bob\r\nEMAIL:bob@example.com\r\nEND:VCARD\r\n")
-	if _, err := h.env.Svc.AddAddressBook(context.Background(), core.AddressBookInput{
-		Preset: core.PresetICloud, Name: "iCloud", URL: srv.HomeSetURL(), Username: "alice", Password: "secret",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	h.app.load()
+	srv.PutCard("contacts", "bob", bobCard)
+	core.SetAddressBookPresetURLForTest(t, core.PresetICloud, srv.URL())
 
-	h.openSettings("addressbooks")
-	h.see("iCloud")
-	if _, hasAction := h.tt.Find("需要处理"); hasAction {
-		t.Fatal("unexpected action dot while healthy")
-	}
-	if _, hasRetry := h.tt.Find("正在重试"); hasRetry {
-		t.Fatal("unexpected retrying dot while healthy")
-	}
-
-	// Transient 503 failure lights up the amber status dot on 通讯录 in the sidebar.
-	srv.FailRequests(503)
-	h.click("立即同步")
-	h.until("amber status dot on sidebar", func() bool {
-		_, ok := h.tt.Find("正在重试")
-		return ok && h.tt.HasText("通讯录同步失败")
-	})
-
-	// Credential rotation causes 401 -> lights up the red action dot and shows reason.
-	srv.FailRequests(0)
-	srv.SetBasicAuth("alice", "rotated-app-9988")
-	h.click("立即同步")
-	h.until("red action dot on sidebar", func() bool {
-		_, ok := h.tt.Find("需要处理")
-		return ok && h.tt.HasText("需要更新凭据") && h.tt.HasText("服务器拒绝了用户名或密码，请更新凭据。")
-	})
-
-	// Updating with a wrong credential keeps the dialog open with an error alert;
-	// updating with the new credential recovers status to ok and clears the sidebar dot.
-	h.click("更新应用专用密码")
-	h.fill("应用专用密码", "wrong-secret")
-	h.click("保存")
-	h.see("服务器拒绝了登录")
-
-	h.fill("应用专用密码", "rotated-app-9988")
-	h.click("保存")
-	h.until("recovered and sidebar dot cleared", func() bool {
-		_, hasAction := h.tt.Find("需要处理")
-		_, hasRetry := h.tt.Find("正在重试")
+	h.app.openAddAccount()
+	h.click("iCloud")
+	h.see("要同步的内容")
+	h.see("只读同步 iCloud 通讯录里的姓名、公司职位、邮箱和头像")
+	h.fill("邮箱地址", "alice@icloud.com")
+	h.manualServers()
+	h.fill("应用专用密码", "secret")
+	h.click("连接")
+	h.see("连接成功")
+	h.click("完成")
+	h.until("the account and its address book", func() bool {
 		books := h.addressBooks()
-		return !hasAction && !hasRetry && len(books) == 1 && books[0].Status == "ok"
+		return h.app.addAccount == nil && len(books) == 1 && books[0].Account != 0 && books[0].Status == "ok"
 	})
+
+	h.app.openAddAccount()
+	h.click("iCloud")
+	h.post(func() { h.app.addAccount.noMail = true }) // the sheet's 邮件 box; the nav has a 邮件 too
+	h.until("the mail sign-in gone with 邮件 unticked", func() bool { _, ok := h.tt.Find("手动设置服务器"); return !ok })
+	h.click("继续")
+	h.see("添加通讯录")
+	if v := h.app.pages[PageSettings].(*settingsPage).addressBooks; v.preset != core.PresetICloud || h.app.addAccount != nil {
+		t.Fatalf("dialog on %q, sheet %v", v.preset, h.app.addAccount)
+	}
 }
 
 func TestSettingsAddressBooksGoogleOAuthAndSearch(t *testing.T) {
@@ -255,13 +225,12 @@ func TestSettingsAddressBooksGoogleOAuthAndSearch(t *testing.T) {
 	h.app.oauth = fo
 
 	p := h.openSettings("general")
-	for _, q := range []string{"CardDAV", "子地址簿", "通讯录"} {
-		if m := p.matching(q); !slices.Contains(m.apps, "addressbooks") {
-			t.Fatalf("query %q did not match addressbooks: %+v", q, m)
+	for _, q := range []string{"通讯录", "侧栏显示名称"} {
+		if m := p.matching(q); !m.accounts {
+			t.Fatalf("query %q did not match the accounts: %+v", q, m)
 		}
 	}
 
-	h.openSettings("addressbooks")
 	v := p.addressBooks
 	var added core.AddressBookInput
 	v.add = func(_ context.Context, in core.AddressBookInput) (core.AddressBook, error) {
@@ -270,8 +239,7 @@ func TestSettingsAddressBooksGoogleOAuthAndSearch(t *testing.T) {
 	}
 
 	// Closing the Add dialog mid-OAuth cancels the active OAuth flow.
-	h.click("添加通讯录")
-	h.click("Google CardDAV")
+	h.app.openAddressBook(core.PresetGoogle, "", "")
 	h.see("使用前请知悉")
 	h.click("在浏览器中登录")
 	h.until("browser opened for f1", func() bool {
@@ -283,8 +251,7 @@ func TestSettingsAddressBooksGoogleOAuthAndSearch(t *testing.T) {
 	})
 
 	// Sign in with user's own OAuth client and complete Google CardDAV setup.
-	h.click("添加通讯录")
-	h.click("Google CardDAV")
+	h.app.openAddressBook(core.PresetGoogle, "", "")
 	h.click("自己创建的")
 	h.fill("客户端 ID", "777-carddav.apps.googleusercontent.com")
 	v.client.secret = "GOCSPX-carddav"
@@ -313,10 +280,12 @@ func TestSettingsAddressBooksGoogleOAuthAndSearch(t *testing.T) {
 		h.app.addressBooks = []core.AddressBook{{
 			ID: 42, Preset: core.PresetGoogle, Name: "Google", AuthType: "oauth",
 			Username: "alice@gmail.com", Status: "reauth_required", StatusDetail: "token_revoked",
+			Collections: []core.AddressBookCollection{{ID: 1, AddressBookID: 42, Name: "Contacts", Enabled: true}},
 		}}
+		h.app.navigate(Route{Page: PageSettings, Settings: addressBookRoute(42)})
 	})
 	h.see("登录授权已过期或被撤销，请重新登录。")
-	h.click("重新登录")
+	h.click("更新「Google」的登录凭据")
 	h.until("browser opened for f3", func() bool {
 		return slices.Contains(h.plat.Calls(), "OpenURL https://login.example/authorize?n=3")
 	})
@@ -335,13 +304,11 @@ func TestSettingsAddressBooksPresetSwitchClearsCustomURL(t *testing.T) {
 	srvICloud.PutCard("contacts", "c1", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Ivy\r\nEMAIL:ivy@example.com\r\nEND:VCARD\r\n")
 	core.SetAddressBookPresetURLForTest(t, core.PresetICloud, srvICloud.URL())
 
-	h.click("设置")
-	h.click("通讯录")
-	h.click("添加通讯录")
-	h.click("其他 CardDAV 服务器")
+	h.openSettings("general")
+	h.app.openAddressBook(core.PresetCustom, "", "")
 	h.fill("CardDAV 服务器地址", srvCustom.URL())
 
-	// Switch back to iCloud without closing the dialog: custom URL must not be sent.
+	// Switch to iCloud without closing the dialog: custom URL must not be sent.
 	h.click("iCloud")
 	h.fill("用户名", "alice@icloud.com")
 	h.fill("应用专用密码", "icloud-app-pass")

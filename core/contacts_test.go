@@ -321,7 +321,7 @@ func TestContactsCardDAVMergePriorityAndOperations(t *testing.T) {
 	assert.True(t, got[3].Last.IsZero())
 
 	// Reorder Personal ahead of Work -> Name and primary PREF address flip to Personal's card.
-	require.NoError(t, e.s.ReorderAddressBooks(bg, []int64{abPers.ID, abWork.ID}))
+	reorderBooks(t, e.s, abPers.ID, abWork.ID)
 	got, err = e.s.Contacts(bg)
 	require.NoError(t, err)
 	assert.Equal(t, "Bob Personal", got[0].Name)
@@ -467,7 +467,7 @@ func TestBareFromAddressBookFallback(t *testing.T) {
 	assert.Equal(t, "PayPal Billing", cm.Items[0].FromName)
 
 	// Reordering Secondary ahead of Primary switches fallback to "Vendor Alt".
-	require.NoError(t, e.s.ReorderAddressBooks(bg, []int64{ab2.ID, ab1.ID}))
+	reorderBooks(t, e.s, ab2.ID, ab1.ID)
 	gm2, err := e.s.GetMessageLazyImages(bg, bareID, false)
 	require.NoError(t, err)
 	assert.Equal(t, "Vendor Alt", gm2.FromName)

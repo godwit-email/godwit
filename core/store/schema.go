@@ -837,6 +837,11 @@ var Migrations = [][]string{{
 		PRIMARY KEY(card_id, addr_key)
 	)`,
 	`CREATE INDEX IF NOT EXISTS address_book_emails_addr ON address_book_emails(addr_key)`,
+}, {
+	// An address book linked to a mail account goes with it and takes its
+	// place in the accounts list (ADR 0038); NULL is a standalone one.
+	`ALTER TABLE address_books ADD COLUMN account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE`,
+	`CREATE UNIQUE INDEX address_books_account ON address_books(account_id) WHERE account_id IS NOT NULL`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

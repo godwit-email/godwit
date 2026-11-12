@@ -158,9 +158,10 @@ RemoveAttachmentAt
 RemoveMCPServer
 RemoveModelFiles
 RemoveModelService
+RenameAddressBook
 RenameLocalFolder
+ReorderAccountEntries
 ReorderAccounts
-ReorderAddressBooks
 ReorderLabels
 ReorderRules
 ReorderViews

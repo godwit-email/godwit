@@ -65,9 +65,13 @@ type AddressBookPreset struct {
 	ID, Name, DefaultURL, AuthType, HelpURL string
 }
 
+// AddressBookInput adds an address book. With Account set it is that mail
+// account's (Preset must be LinkedAddressBookPreset's): a password preset signs
+// in with the account's username and keychain password, Google with OAuthFlowID.
 type AddressBookInput struct {
 	Preset, Name, URL, Username, Password, OAuthFlowID string
 	Client                                             OAuthClient
+	Account                                            int64
 }
 
 type AddressBookCollection struct {
@@ -77,17 +81,43 @@ type AddressBookCollection struct {
 	CardCount         int
 }
 
+// AddressBook is one sign-in to a CardDAV server and its cached collections.
+// Account is the mail account it is linked to, 0 for a standalone one. SortOrder is its place in the
+// accounts list (a linked one's is its account's Position), which is its priority.
 type AddressBook struct {
 	ID                                                          int64
 	Preset, Name, URL, AuthType, Username, Status, StatusDetail string
 	SortOrder                                                   int
 	LastSyncedAt                                                time.Time
 	Collections                                                 []AddressBookCollection
+	Account                                                     int64
 }
 
 type addressBookRecord struct {
 	AddressBook
 	OAuthClientID string
+}
+
+// abPriority orders address books (as ab) by the accounts list: a linked one at
+// its account's position, a standalone one at its own, the account first on a tie.
+const abPriority = `COALESCE((SELECT position FROM accounts WHERE id = ab.account_id), ab.sort_order), ab.account_id IS NULL, COALESCE(ab.account_id, ab.id)`
+
+// abCols are scanAddressBookRecord's columns of address_books ab.
+const abCols = `ab.id, ab.preset, ab.name, ab.url, ab.auth_type, ab.username, ab.oauth_client_id,
+	COALESCE((SELECT position FROM accounts WHERE id = ab.account_id), ab.sort_order), ab.status, ab.status_detail, ab.last_synced_at, COALESCE(ab.account_id, 0)`
+
+// LinkedAddressBookPreset is the preset of the address book acc's credentials
+// reach, "" when its provider has no CardDAV of its own.
+func LinkedAddressBookPreset(acc Account) string {
+	switch acc.Provider {
+	case "icloud":
+		return PresetICloud
+	case "fastmail":
+		return PresetFastmail
+	case "gmail":
+		return PresetGoogle
+	}
+	return ""
 }
 
 func (s *Service) addressBookKeyringUser(id int64) string {
@@ -356,6 +386,24 @@ func (s *Service) AddAddressBook(ctx context.Context, in AddressBookInput) (Addr
 	if err != nil {
 		return AddressBook{}, mapCardDAVErr(err)
 	}
+	// linked reuses the account's password: no copy is kept, and the server
+	// refusing it leaves the address book waiting for one of its own.
+	linked := in.Account != 0 && authType == "password"
+	if in.Account != 0 {
+		acc, err := s.account(ctx, in.Account)
+		if err != nil {
+			return AddressBook{}, err
+		}
+		if p := LinkedAddressBookPreset(acc); p == "" || p != preset {
+			return AddressBook{}, fmt.Errorf("account %d has no %q address book", in.Account, preset)
+		}
+		in.Username = cmp.Or(acc.Username, acc.Email)
+		if linked {
+			if in.Password, err = keychainGet(s.keyringUser(acc.ID)); err != nil {
+				return AddressBook{}, err
+			}
+		}
+	}
 
 	var (
 		creds    carddav.Credentials
@@ -395,8 +443,13 @@ func (s *Service) AddAddressBook(ctx context.Context, in AddressBookInput) (Addr
 	}
 
 	homeStr, disc, err := s.carddavClient().Discover(ctx, startURL, creds)
-	if err != nil {
+	refused := linked && errors.Is(err, carddav.ErrAuthFailed)
+	if err != nil && !refused {
 		return AddressBook{}, mapCardDAVErr(err)
+	}
+	status, detail := "ok", ""
+	if refused {
+		homeStr, status, detail = startURL.String(), "reauth_required", "auth_rejected"
 	}
 	homeURL, _ := url.Parse(homeStr)
 
@@ -409,27 +462,27 @@ func (s *Service) AddAddressBook(ctx context.Context, in AddressBookInput) (Addr
 	name := cmp.Or(strings.TrimSpace(in.Name), defaultAddressBookName(preset, homeURL))
 	now := s.clk().Now().Unix()
 
-	s.abWriteMu.Lock()
-	orderRows, err := s.db.Query(ctx, "SELECT COALESCE(MAX(sort_order) + 1, 0) FROM address_books")
-	if err != nil {
-		s.abWriteMu.Unlock()
-		return AddressBook{}, err
+	var account any // NULL: standalone, last in the accounts list
+	if in.Account != 0 {
+		account = in.Account
 	}
-	nextOrder := int(store.Int(orderRows.Values[0][0]))
+	s.abWriteMu.Lock()
 	res, err := s.db.Execute(ctx, `INSERT INTO address_books
-		(preset, name, url, auth_type, username, oauth_client_id, sort_order, status, status_detail, last_synced_at, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, 'ok', '', 0, ?)`,
-		preset, name, homeStr, authType, username, client.ID, nextOrder, now)
+		(preset, name, url, auth_type, username, oauth_client_id, sort_order, status, status_detail, last_synced_at, created_at, account_id)
+		VALUES (?, ?, ?, ?, ?, ?, (`+nextListPosition+`), ?, ?, 0, ?, ?)`,
+		preset, name, homeStr, authType, username, client.ID, status, detail, now, account)
 	if err != nil {
 		s.abWriteMu.Unlock()
 		return AddressBook{}, err
 	}
 	abID := res.LastInsertID
 
-	if err := keychainSet(s.addressBookKeyringUser(abID), secret); err != nil {
-		_, _ = s.db.Execute(context.WithoutCancel(ctx), "DELETE FROM address_books WHERE id = ?", abID)
-		s.abWriteMu.Unlock()
-		return AddressBook{}, fmt.Errorf("save credentials to keychain: %w", err)
+	if !linked { // a linked one signs in with the account's entry (addressBookCredentials)
+		if err := keychainSet(s.addressBookKeyringUser(abID), secret); err != nil {
+			_, _ = s.db.Execute(context.WithoutCancel(ctx), "DELETE FROM address_books WHERE id = ?", abID)
+			s.abWriteMu.Unlock()
+			return AddressBook{}, fmt.Errorf("save credentials to keychain: %w", err)
+		}
 	}
 	if client.ID != "" && client.Secret != "" {
 		s.secrets.Add(client.Secret)
@@ -466,7 +519,9 @@ func (s *Service) AddAddressBook(ctx context.Context, in AddressBookInput) (Addr
 	}
 	s.abWriteMu.Unlock()
 
-	_ = s.syncOneAddressBook(ctx, abID)
+	if !refused {
+		_ = s.syncOneAddressBook(ctx, abID)
+	}
 	if s.opts.AutoSync {
 		s.armAddressBookTimer(AddressBookSyncInterval)
 	}
@@ -475,8 +530,7 @@ func (s *Service) AddAddressBook(ctx context.Context, in AddressBookInput) (Addr
 }
 
 func (s *Service) addressBookRecord(ctx context.Context, id int64) (addressBookRecord, error) {
-	rows, err := s.db.Query(ctx, `SELECT id, preset, name, url, auth_type, username, oauth_client_id, sort_order, status, status_detail, last_synced_at
-		FROM address_books WHERE id = ?`, id)
+	rows, err := s.db.Query(ctx, `SELECT `+abCols+` FROM address_books ab WHERE ab.id = ?`, id)
 	if err != nil {
 		return addressBookRecord{}, err
 	}
@@ -503,6 +557,7 @@ func scanAddressBookRecord(r []any) addressBookRecord {
 			Status:       store.Str(r[8]),
 			StatusDetail: store.Str(r[9]),
 			LastSyncedAt: synced,
+			Account:      store.Int(r[11]),
 		},
 		OAuthClientID: store.Str(r[6]),
 	}
@@ -552,7 +607,8 @@ func (s *Service) listCollectionsForBooks(ctx context.Context, ids []int64) (map
 	return out, nil
 }
 
-// ListAddressBooks returns all configured CardDAV address books in priority order.
+// ListAddressBooks returns all configured CardDAV address books in priority
+// order: the accounts list's (ReorderAccountEntries).
 func (s *Service) ListAddressBooks(ctx context.Context) ([]AddressBook, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
@@ -560,8 +616,7 @@ func (s *Service) ListAddressBooks(ctx context.Context) ([]AddressBook, error) {
 	}
 	defer end()
 
-	rows, err := s.db.Query(ctx, `SELECT id, preset, name, url, auth_type, username, oauth_client_id, sort_order, status, status_detail, last_synced_at
-		FROM address_books ORDER BY sort_order ASC, id ASC`)
+	rows, err := s.db.Query(ctx, `SELECT `+abCols+` FROM address_books ab ORDER BY `+abPriority)
 	if err != nil {
 		return nil, err
 	}
@@ -603,56 +658,93 @@ func (s *Service) RemoveAddressBook(ctx context.Context, id int64) error {
 	if res.Changes == 0 {
 		return ErrAddressBookNotFound
 	}
-
-	s.abTokMu.Lock()
-	delete(s.abTokens, id)
-	delete(s.abRefreshLocks, id)
-	s.abTokMu.Unlock()
-
-	kerr := s.deleteAddressBookCredentials(id)
+	kerr := s.forgetAddressBook(id)
 	s.notifyAddressBooksChanged(ctx)
 	return kerr
 }
 
-// ReorderAddressBooks updates the priority order of all address books.
-func (s *Service) ReorderAddressBooks(ctx context.Context, ids []int64) error {
+// RenameAddressBook sets the name the address book shows under; blank names are refused.
+func (s *Service) RenameAddressBook(ctx context.Context, id int64, name string) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("an address book needs a name")
+	}
+	res, err := s.db.Execute(ctx, "UPDATE address_books SET name = ? WHERE id = ?", name, id)
+	if err != nil {
+		return err
+	}
+	if res.Changes == 0 {
+		return ErrAddressBookNotFound
+	}
+	s.notifyAddressBooksChanged(ctx)
+	return nil
+}
+
+// forgetAddressBook drops a deleted address book's tokens and keychain entries.
+func (s *Service) forgetAddressBook(id int64) error {
+	s.abTokMu.Lock()
+	delete(s.abTokens, id)
+	delete(s.abRefreshLocks, id)
+	s.abTokMu.Unlock()
+	return s.deleteAddressBookCredentials(id)
+}
+
+// AccountEntry is one row of the accounts list: a mail account (Account) or a
+// standalone address book (AddressBook).
+type AccountEntry struct{ Account, AddressBook int64 }
+
+// ReorderAccountEntries puts the accounts list in the order of entries, which
+// names every mail account and standalone address book once. The order is
+// also the address books' priority: a linked one goes with its account.
+func (s *Service) ReorderAccountEntries(ctx context.Context, entries []AccountEntry) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return err
 	}
 	defer end()
 
-	s.abWriteMu.Lock()
-	rows, err := s.db.Query(ctx, "SELECT id FROM address_books ORDER BY id")
-	if err != nil {
-		s.abWriteMu.Unlock()
-		return err
-	}
-	have := make([]int64, len(rows.Values))
-	for i, r := range rows.Values {
-		have[i] = store.Int(r[0])
-	}
-	want := slices.Clone(ids)
-	slices.Sort(want)
-	if !slices.Equal(have, want) {
-		s.abWriteMu.Unlock()
-		return errors.New("the new order must name every address book once")
-	}
-	stmts := make([]sqlite.Statement, len(ids))
-	for i, id := range ids {
-		stmts[i] = sqlite.Statement{
-			SQL:  "UPDATE address_books SET sort_order = ? WHERE id = ?",
-			Args: []any{i, id},
-		}
-	}
-	_, err = s.db.Transaction(ctx, stmts)
-	s.abWriteMu.Unlock()
-	if err != nil {
+	if err := s.reorderAccountEntries(ctx, entries); err != nil {
 		return err
 	}
 	s.notifyAddressBooksChanged(ctx)
 	return nil
 }
+
+func (s *Service) reorderAccountEntries(ctx context.Context, entries []AccountEntry) error {
+	s.abWriteMu.Lock()
+	defer s.abWriteMu.Unlock()
+	rows, err := s.db.Query(ctx, "SELECT id, 0 FROM accounts UNION ALL SELECT 0, id FROM address_books WHERE account_id IS NULL")
+	if err != nil {
+		return err
+	}
+	have := map[AccountEntry]bool{}
+	for _, r := range rows.Values {
+		have[AccountEntry{store.Int(r[0]), store.Int(r[1])}] = true
+	}
+	stmts := make([]sqlite.Statement, len(entries))
+	for i, e := range entries {
+		if !have[e] {
+			return errBadAccountOrder
+		}
+		delete(have, e)
+		stmts[i] = sqlite.Statement{SQL: "UPDATE accounts SET position = ? WHERE id = ?", Args: []any{i, e.Account}}
+		if e.Account == 0 {
+			stmts[i] = sqlite.Statement{SQL: "UPDATE address_books SET sort_order = ? WHERE id = ?", Args: []any{i, e.AddressBook}}
+		}
+	}
+	if len(have) > 0 {
+		return errBadAccountOrder
+	}
+	_, err = s.db.Transaction(ctx, stmts)
+	return err
+}
+
+var errBadAccountOrder = errors.New("the new order must name every account and standalone address book once")
 
 // SetAddressBookCollectionEnabled toggles a sub-collection; disabling immediately
 // deletes its cached cards, emails, and avatars and resets sync_token in the same transaction.
@@ -770,13 +862,21 @@ func (s *Service) UpdateAddressBookAuth(ctx context.Context, id int64, password,
 			return AddressBook{}, backend.ErrAuthFailed
 		}
 		s.secrets.Add(password)
-		if _, err := s.carddavClient().ListCollections(ctx, homeURL, carddav.Credentials{Username: rec.Username, Password: password}, false); err != nil {
+		creds := carddav.Credentials{Username: rec.Username, Password: password}
+		home := rec.URL
+		if cols, err := s.listCollectionsForBooks(ctx, []int64{id}); err != nil {
+			return AddressBook{}, err
+		} else if len(cols[id]) == 0 { // linked with a refused password: never discovered
+			if home, _, err = s.carddavClient().Discover(ctx, homeURL, creds); err != nil {
+				return AddressBook{}, mapCardDAVErr(err)
+			}
+		} else if _, err := s.carddavClient().ListCollections(ctx, homeURL, creds, false); err != nil {
 			return AddressBook{}, mapCardDAVErr(err)
 		}
 		if err := keychainSet(s.addressBookKeyringUser(id), password); err != nil {
 			return AddressBook{}, fmt.Errorf("save credentials to keychain: %w", err)
 		}
-		if _, err := s.db.Execute(ctx, "UPDATE address_books SET status = 'ok', status_detail = '' WHERE id = ?", id); err != nil {
+		if _, err := s.db.Execute(ctx, "UPDATE address_books SET url = ?, status = 'ok', status_detail = '' WHERE id = ?", home, id); err != nil {
 			return AddressBook{}, err
 		}
 	}
@@ -809,9 +909,9 @@ func (s *Service) SyncAddressBook(ctx context.Context, id int64) error {
 		return err
 	}
 
-	rows, err := s.db.Query(ctx, `SELECT DISTINCT ab.id, ab.sort_order FROM address_books ab
-		JOIN address_book_collections c ON c.address_book_id = ab.id AND c.enabled = 1
-		ORDER BY ab.sort_order ASC, ab.id ASC`)
+	rows, err := s.db.Query(ctx, `SELECT ab.id FROM address_books ab
+		WHERE EXISTS (SELECT 1 FROM address_book_collections c WHERE c.address_book_id = ab.id AND c.enabled = 1)
+		ORDER BY `+abPriority)
 	if err != nil {
 		return err
 	}
@@ -879,7 +979,13 @@ func (s *Service) readAddressBookSecret(ctx context.Context, id int64, user stri
 
 func (s *Service) addressBookCredentials(ctx context.Context, rec addressBookRecord, rejectedToken string) (carddav.Credentials, error) {
 	if rec.AuthType != "oauth" {
-		pw, err := s.readAddressBookSecret(ctx, rec.ID, s.addressBookKeyringUser(rec.ID))
+		user := s.addressBookKeyringUser(rec.ID)
+		if rec.Account != 0 { // its own password once the account's was refused, else the account's
+			if _, err := keychainGet(user); errors.Is(err, keyring.ErrNotFound) {
+				user = s.keyringUser(rec.Account)
+			}
+		}
+		pw, err := s.readAddressBookSecret(ctx, rec.ID, user)
 		if err != nil {
 			return carddav.Credentials{}, err
 		}
@@ -1479,10 +1585,10 @@ func (s *Service) startAddressBookSync() {
 }
 
 func (s *Service) syncDueAddressBooks(ctx context.Context) {
-	rows, err := s.db.Query(ctx, `SELECT DISTINCT ab.id, ab.sort_order FROM address_books ab
-		JOIN address_book_collections c ON c.address_book_id = ab.id AND c.enabled = 1
-		WHERE ab.status != 'reauth_required'
-		ORDER BY ab.sort_order ASC, ab.id ASC`)
+	rows, err := s.db.Query(ctx, `SELECT ab.id FROM address_books ab
+		WHERE EXISTS (SELECT 1 FROM address_book_collections c WHERE c.address_book_id = ab.id AND c.enabled = 1)
+		AND ab.status != 'reauth_required'
+		ORDER BY `+abPriority)
 	if err != nil || len(rows.Values) == 0 {
 		return
 	}
