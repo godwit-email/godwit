@@ -310,6 +310,17 @@ func gui(ctx context.Context, dataDir, open string) int {
 			SystemLanguage: lang, SetLanguage: setLanguage, Quit: mygo.App.Quit,
 			Vibrancy: opts.Vibrancy != mygo.VibrancyNone, Dev: mygo.IsDev()})
 		var composeMu sync.Mutex
+		reportCompose := func() { // the backend's 直接发送 leaves these drafts alone
+			composeMu.Lock()
+			defer composeMu.Unlock()
+			rctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+			if err := client.RPC().Call(rctx, "SetComposeOpen", nil, windows.OpenDrafts()); err != nil {
+				log.Printf("reporting the compose windows: %v", err)
+			}
+		}
+		// Before the editor exists, so no send slips in while it opens.
+		windows.OnOpening = reportCompose
 		windows.OnChange = func() { // no window is open yet
 			a.OnUI(a.ComposeWindowsChanged)
 			a.OnUI(func() {
@@ -317,13 +328,7 @@ func gui(ctx context.Context, dataDir, open string) int {
 					mc.close() // decided again, now that none is open
 				}
 			})
-			go func() { // the backend's 直接发送 leaves these drafts alone
-				composeMu.Lock()
-				defer composeMu.Unlock()
-				if err := client.RPC().Call(ctx, "SetComposeOpen", nil, windows.OpenDrafts()); err != nil {
-					log.Printf("reporting the compose windows: %v", err)
-				}
-			}()
+			go reportCompose()
 		}
 		opts.Content = bench.view(a)
 		win = mygo.NewWindow(opts)

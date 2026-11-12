@@ -105,6 +105,23 @@ func TestWindowsOpenFocusesExisting(t *testing.T) {
 	assert.Equal(t, 1, f.ws.Count())
 }
 
+// The draft is reported as being edited before its window is made, so the
+// backend's 直接发送 cannot take it while the editor opens.
+func TestWindowsOpeningReportedBeforeMade(t *testing.T) {
+	f := newWinFixture(t)
+	var seen []int64
+	f.ws.OnOpening = func() {
+		f.mu.Lock()
+		made := len(f.made)
+		f.mu.Unlock()
+		assert.Zero(t, made, "OnOpening after the window was made")
+		seen = f.ws.OpenDrafts()
+	}
+	f.ws.Open(7)
+	assert.Equal(t, []int64{7}, seen)
+	require.Len(t, f.made, 1)
+}
+
 func TestWindowsCloseWaitsForSave(t *testing.T) {
 	f := newWinFixture(t)
 	d := f.draft(t, "new", 0)

@@ -85,6 +85,10 @@ type Windows struct {
 	// registers and after a closed window's release, the empty-draft delete
 	// included: IsOpen has changed. Never under mu.
 	OnChange func()
+	// OnOpening, when set, is called once Open has reserved a draft and
+	// before its window is made, never under mu: IsOpen is already true. It
+	// may block, so whoever must know (the backend's 直接发送) knows first.
+	OnOpening func()
 }
 
 // IsOpen reports whether draftID's window is open or being made.
@@ -149,6 +153,9 @@ func (ws *Windows) Open(draftID int64) {
 	}
 	ws.opening[draftID] = false
 	ws.mu.Unlock()
+	if ws.OnOpening != nil {
+		ws.OnOpening()
+	}
 	ws.make(draftID)
 }
 
