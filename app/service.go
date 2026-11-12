@@ -56,6 +56,7 @@ type Service interface {
 	DownloadRecognitionModel(ctx context.Context, progress func(got, total int64)) error
 	DraftFromQuickReply(ctx context.Context, messageID int64, r core.QuickReply) (core.Draft, error)
 	EmptyFolder(ctx context.Context, folderID int64) ([]int64, error)
+	ExportAccounts(ctx context.Context) ([]byte, error)
 	FetchAttachments(ctx context.Context, attachmentIDs []int64, fn func(path string, info core.AttachmentInfo) error) (err error)
 	Find(ctx context.Context, q core.FindQuery) (core.FindResult, error)
 	FirstTimeRecipients(ctx context.Context, addrs []string) ([]string, error)
