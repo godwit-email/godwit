@@ -2258,7 +2258,6 @@
   "feature_reason_graph_no_all_mail": "Outlook에는 '전체보관함'이 없으므로 보관 시 보관 폴더로 이동합니다.",
   "feature_reason_graph_folders_pending": "Microsoft Graph를 통한 폴더 관리는 아직 지원되지 않습니다.",
   "feature_reason_graph_no_push": "데스크톱 앱은 Microsoft Graph 웹훅을 받을 수 없어 1분마다 새 메일을 확인합니다.",
-  "error_account_exists": "이 이메일 주소의 계정이 이미 다른 프로토콜로 등록되어 있습니다.",
   "error_bad_account_export": "올바른 Godwit 계정 내보내기 파일이 아닙니다.",
   "error_unsupported_export_version": "이 버전의 Godwit에서 인식할 수 없는 계정 내보내기 형식 버전입니다.",
   "settings_import_accounts": "계정 가져오기…",

@@ -23,8 +23,6 @@ var (
 	ErrBadAccountExport = errors.New("the account export file is invalid")
 	// ErrUnsupportedExportVersion refuses an account export file with an unknown format version.
 	ErrUnsupportedExportVersion = errors.New("the account export file version is not supported")
-	// ErrAccountExists refuses an imported account whose address is already used on another protocol.
-	ErrAccountExists = errors.New("an account with this email address already exists")
 )
 
 // AccountImportPreview describes the accounts in an export file before ImportAccounts writes them.

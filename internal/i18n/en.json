@@ -4031,7 +4031,6 @@
   "feature_reason_graph_no_all_mail": "Outlook has no All Mail: archiving moves mail to the Archive folder.",
   "feature_reason_graph_folders_pending": "Managing folders over Microsoft Graph isn't available yet.",
   "feature_reason_graph_no_push": "Desktop apps can't receive Microsoft Graph webhooks; Godwit checks every minute instead.",
-  "error_account_exists": "An account with this email address already exists on another protocol.",
   "error_bad_account_export": "This file is not a valid Godwit account export.",
   "error_unsupported_export_version": "This account export file uses a format version this copy of Godwit does not recognize.",
   "settings_import_accounts": "Import accounts…",

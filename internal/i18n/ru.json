@@ -2258,7 +2258,6 @@
   "feature_reason_graph_no_all_mail": "В Outlook нет папки «Вся почта»: архивирование перемещает письма в папку «Архив».",
   "feature_reason_graph_folders_pending": "Управление папками через Microsoft Graph пока недоступно.",
   "feature_reason_graph_no_push": "Настольные приложения не могут принимать вебхуки Microsoft Graph; Godwit проверяет почту каждую минуту.",
-  "error_account_exists": "Аккаунт с этим адресом электронной почты уже добавлен с другим протоколом.",
   "error_bad_account_export": "Этот файл не является корректным экспортом аккаунтов Godwit.",
   "error_unsupported_export_version": "Этот файл экспорта использует версию формата, которую эта версия Godwit не поддерживает.",
   "settings_import_accounts": "Импортировать аккаунты…",

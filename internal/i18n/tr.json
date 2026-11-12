@@ -2258,7 +2258,6 @@
   "feature_reason_graph_no_all_mail": "Outlook'ta “Tüm Postalar” yoktur: arşivleme, iletiyi Arşiv klasörüne taşır.",
   "feature_reason_graph_folders_pending": "Microsoft Graph üzerinden klasör yönetimi henüz kullanılamıyor.",
   "feature_reason_graph_no_push": "Masaüstü uygulamaları Microsoft Graph web kancalarını alamaz; Godwit bunun yerine her dakika kontrol eder.",
-  "error_account_exists": "Bu e-posta adresine sahip bir hesap başka bir protokolle zaten mevcut.",
   "error_bad_account_export": "Bu dosya geçerli bir Godwit hesap dışa aktarımı değil.",
   "error_unsupported_export_version": "Bu hesap dışa aktarma dosyası, Godwit’in bu sürümünün tanımadığı bir biçim sürümü kullanıyor.",
   "settings_import_accounts": "Hesapları içe aktar…",
