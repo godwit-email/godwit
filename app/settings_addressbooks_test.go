@@ -7,6 +7,7 @@ import (
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/internal/i18n"
 )
 
 func (h *harness) addressBooks() []core.AddressBook {
@@ -137,6 +138,40 @@ func TestSettingsStandaloneAddressBook(t *testing.T) {
 	h.click("删除")
 	h.until("removed, back to an account", func() bool {
 		return len(h.addressBooks()) == 0 && h.app.route.Settings != addressBookRoute(id)
+	})
+}
+
+// A sole collection left turned off (the server dropped the other) keeps its
+// switch: it is the only way back on.
+func TestSettingsSoleDisabledCollectionKeepsSwitch(t *testing.T) {
+	h, _ := withAccount(t)
+	srv := h.env.StartCardDAV(t)
+	srv.PutCollection("work", "Work")
+	srv.PutCollection("family", "Family")
+	ab, err := h.env.Svc.AddAddressBook(context.Background(), core.AddressBookInput{Preset: core.PresetCustom, URL: srv.URL(), Username: "alice", Password: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, col := range ab.Collections {
+		if col.Name == "Family" {
+			if err := h.env.Svc.SetAddressBookCollectionEnabled(context.Background(), col.ID, false); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	srv.RemoveCollection("work")
+	if err := h.env.Svc.SyncAddressBook(context.Background(), ab.ID); err != nil {
+		t.Fatal(err)
+	}
+	h.post(func() { h.app.load() })
+	h.openSettings(addressBookRoute(ab.ID))
+	h.until("the one collection left, still switchable", func() bool {
+		books := h.addressBooks()
+		if len(books) != 1 || len(books[0].Collections) != 1 {
+			return false
+		}
+		_, ok := h.tt.Find(i18n.Tf("settings.addressbooks.collection.toggle", "Family"))
+		return ok
 	})
 }
 

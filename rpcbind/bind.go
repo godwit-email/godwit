@@ -439,6 +439,9 @@ func addressBookEgress(svc *core.Service, method string, params []json.RawMessag
 				break
 			}
 			if target == 0 {
+				if len(ab.Collections) == 0 { // none left: sync-all still rediscovers it (core abPollable)
+					dests = append(dests, ab.URL)
+				}
 				for _, col := range ab.Collections {
 					if col.Enabled {
 						dests = append(dests, ab.URL)

@@ -679,6 +679,30 @@ func TestMultigetPerCardFailureRetainsSyncToken(t *testing.T) {
 	assert.ElementsMatch(t, []string{"one@example.com", "two@example.com"}, addrs)
 }
 
+// An address book whose server deleted its last collection keeps being
+// polled, so a collection added there later is found by sync-all.
+func TestAddressBookWithNoCollectionsKeepsDiscovering(t *testing.T) {
+	s := newCardDAVService(t, t.TempDir(), false)
+	srv := testmail.StartCardDAV(t)
+	srv.PutCollection("work", "Work")
+	ab, err := s.AddAddressBook(bg, AddressBookInput{Preset: PresetCustom, URL: srv.URL(), Username: "alice", Password: "secret"})
+	require.NoError(t, err)
+
+	srv.SetNoCollections(true)
+	require.NoError(t, s.SyncAddressBook(bg, ab.ID))
+	books, err := s.ListAddressBooks(bg)
+	require.NoError(t, err)
+	require.Empty(t, books[0].Collections)
+
+	srv.PutCollection("team", "Team")
+	srv.PutCard("team", "eve", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Eve\r\nEMAIL:eve@example.com\r\nEND:VCARD\r\n")
+	require.NoError(t, s.SyncAddressBook(bg, 0))
+	contacts, err := s.Contacts(bg)
+	require.NoError(t, err)
+	require.Len(t, contacts, 1)
+	assert.Equal(t, "eve@example.com", contacts[0].Address)
+}
+
 func TestHomeSetPropfindPartialFailurePreservesCollections(t *testing.T) {
 	s := newCardDAVService(t, t.TempDir(), false)
 

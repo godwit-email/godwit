@@ -550,6 +550,11 @@ func TestOnboardingClientFile(t *testing.T) {
 	dropOn := func(path string) {
 		h.t.Helper()
 		r, _ := h.tt.Find(drop)
+		if r.Y < 0 || r.Y+r.H > 820-8 { // the sheet grew with the Mail / Address book choice: bring the row into the window, as click does
+			h.tt.Scroll(900, 400, 0, r.Y-400)
+			h.tt.Frame()
+			r, _ = h.tt.Find(drop)
+		}
 		if !h.tt.DropFiles(r.X+r.W/2, r.Y+r.H/2, path) {
 			t.Fatal("the drop row took no file")
 		}

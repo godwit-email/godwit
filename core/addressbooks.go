@@ -910,7 +910,7 @@ func (s *Service) SyncAddressBook(ctx context.Context, id int64) error {
 	}
 
 	rows, err := s.db.Query(ctx, `SELECT ab.id FROM address_books ab
-		WHERE EXISTS (SELECT 1 FROM address_book_collections c WHERE c.address_book_id = ab.id AND c.enabled = 1)
+		WHERE `+abPollable+`
 		ORDER BY `+abPriority)
 	if err != nil {
 		return err
@@ -1584,9 +1584,15 @@ func (s *Service) startAddressBookSync() {
 	}()
 }
 
+// abPollable selects address books sync reaches: one with an enabled
+// collection, or one with none left, whose server may add one later. Only
+// every collection turned off by the user stops polling.
+const abPollable = `(EXISTS (SELECT 1 FROM address_book_collections c WHERE c.address_book_id = ab.id AND c.enabled = 1)
+	OR NOT EXISTS (SELECT 1 FROM address_book_collections c WHERE c.address_book_id = ab.id))`
+
 func (s *Service) syncDueAddressBooks(ctx context.Context) {
 	rows, err := s.db.Query(ctx, `SELECT ab.id FROM address_books ab
-		WHERE EXISTS (SELECT 1 FROM address_book_collections c WHERE c.address_book_id = ab.id AND c.enabled = 1)
+		WHERE `+abPollable+`
 		AND ab.status != 'reauth_required'
 		ORDER BY `+abPriority)
 	if err != nil || len(rows.Values) == 0 {

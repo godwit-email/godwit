@@ -198,10 +198,12 @@ func (v *addressBooksView) bookRows(c *ui.Context, ab core.AddressBook) []func()
 		})
 	}
 	syncDesc := v.syncText(ab)
-	if ab.Account == 0 && len(ab.Collections) == 1 {
+	// A sole collection the user turned off keeps its switch: nothing else turns it back on.
+	list := len(ab.Collections) > 1 || len(ab.Collections) == 1 && !ab.Collections[0].Enabled
+	if ab.Account == 0 && len(ab.Collections) == 1 && !list {
 		syncDesc = i18n.Plural("settings.addressbooks.cards", ab.Collections[0].CardCount) + " · " + syncDesc
 	}
-	if len(ab.Collections) > 1 {
+	if list {
 		for _, col := range ab.Collections {
 			rows = append(rows, func() {
 				on := col.Enabled
