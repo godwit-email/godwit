@@ -339,3 +339,40 @@ func TestContactsMultiAddressAndActions(t *testing.T) {
 	})
 	h.see("已屏蔽 · 0")
 }
+
+func TestContactsFilterHistoricalAndSecondaryMergedTerms(t *testing.T) {
+	h, accs := mailHarness(t, []coretest.Option{coretest.WithoutAutoSync()}, "alice@example.com")
+	acc := accs[0]
+
+	srv1 := h.env.StartCardDAV(t)
+	srv1.PutCard("contacts", "bob-work", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Bob Work\r\nORG:Acme Corp\r\nTITLE:CTO\r\nEMAIL;TYPE=PREF:bob.work@example.com\r\nEMAIL:bob.shared@example.com\r\nEND:VCARD\r\n")
+	if _, err := h.env.Svc.AddAddressBook(context.Background(), core.AddressBookInput{
+		Preset: core.PresetCustom, Name: "主通讯录", URL: srv1.URL(), Username: "alice", Password: "secret",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	srv2 := h.env.StartCardDAV(t)
+	srv2.PutCard("contacts", "bob-side", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Bobby Studio\r\nORG:Night Owl Labs\r\nTITLE:Founder\r\nEMAIL:bob.shared@example.com\r\nEMAIL:bob.home@example.com\r\nEND:VCARD\r\n")
+	if _, err := h.env.Svc.AddAddressBook(context.Background(), core.AddressBookInput{
+		Preset: core.PresetCustom, Name: "副通讯录", URL: srv2.URL(), Username: "alice", Password: "secret",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	h.deliverOne(acc, coretest.Msg("Robert Legacy <bob.home@example.com>", acc.Email, "Old Thread", "Hi"))
+	h.deliverOne(acc, coretest.Msg("Other <other@example.com>", acc.Email, "Other", "Hello"))
+
+	h.click("联系人")
+	h.see("全部联系人 · 2")
+
+	for _, query := range []string{"Robert Legacy", "Bobby Studio", "Night Owl Labs", "Founder"} {
+		h.fill("按名字或地址筛选", query)
+		h.see("全部联系人 · 1")
+		h.see("Bob Work")
+		if h.tt.HasText("other@example.com") {
+			t.Fatalf("unexpected match for query %q", query)
+		}
+	}
+}
+

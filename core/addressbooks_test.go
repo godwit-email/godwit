@@ -168,7 +168,7 @@ func TestAddressBookVCardFieldsPhotosAndCollectionToggle(t *testing.T) {
 	assert.Equal(t, "", store.Str(rows.Values[2][4]))
 
 	// Check Alice's emails: assistant@example.com from nested AGENT ignored; PREF=1 wins over PREF=2; duplicate merged.
-	emRows, err := s.db.Query(bg, `SELECT e.pos, e.addr_key, e.address, e.pref
+	emRows, err := s.db.Query(bg, `SELECT e.pos, e.addr_key, e.pref
 		FROM address_book_emails e
 		JOIN address_book_cards c ON c.id = e.card_id
 		WHERE c.collection_id = ? AND c.href LIKE '%/alice.vcf'
@@ -176,10 +176,9 @@ func TestAddressBookVCardFieldsPhotosAndCollectionToggle(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, emRows.Values, 2)
 	assert.Equal(t, "alice.secondary@example.com", store.Str(emRows.Values[0][1]))
-	assert.Equal(t, int64(0), store.Int(emRows.Values[0][3]), "PREF=2 is lower priority than PREF=1")
+	assert.Equal(t, int64(0), store.Int(emRows.Values[0][2]), "PREF=2 is lower priority than PREF=1")
 	assert.Equal(t, "alice.primary@example.com", store.Str(emRows.Values[1][1]))
-	assert.Equal(t, "Alice.Primary@Example.com", store.Str(emRows.Values[1][2]))
-	assert.Equal(t, int64(1), store.Int(emRows.Values[1][3]), "PREF=1 is marked pref=1")
+	assert.Equal(t, int64(1), store.Int(emRows.Values[1][2]), "PREF=1 is marked pref=1")
 
 	// Transient failure preserves cached cards and marks status = "error".
 	srv.FailRequests(http.StatusServiceUnavailable)
@@ -390,3 +389,217 @@ func TestAddressBookAndExternalPhotoUseSystemProxy(t *testing.T) {
 	assert.Equal(t, photoBytes, rows.Values[0][0].([]byte))
 	_ = strconv.Itoa(0)
 }
+
+func hostRouteConnectProxy(t *testing.T, routes map[string]string) *url.URL {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				br := bufio.NewReader(c)
+				req, err := http.ReadRequest(br)
+				if err != nil || req.Method != http.MethodConnect {
+					return
+				}
+				h, _, err := net.SplitHostPort(req.Host)
+				if err != nil {
+					h = req.Host
+				}
+				destPort, ok := routes[strings.ToLower(h)]
+				if !ok {
+					_, _ = io.WriteString(c, "HTTP/1.1 502 Bad Gateway\r\n\r\n")
+					return
+				}
+				up, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", destPort))
+				if err != nil {
+					return
+				}
+				defer up.Close()
+				_, _ = io.WriteString(c, "HTTP/1.1 200 OK\r\n\r\n")
+				go func() { _, _ = io.Copy(up, br); up.Close() }()
+				_, _ = io.Copy(c, up)
+			}()
+		}
+	}()
+	return &url.URL{Scheme: "http", Host: ln.Addr().String()}
+}
+
+func TestAddressBookDiscoveryRejectsCrossDomainAndAllowsSameDomain(t *testing.T) {
+	keyring.MockInit()
+	SerializeKeyringForTest()
+	prevRoots := conn.TLSRoots
+	conn.TLSRoots = testmail.CardDAVRoots()
+	t.Cleanup(func() { conn.TLSRoots = prevRoots })
+
+	good := testmail.StartCardDAV(t)
+	good.PutCard("contacts", "one", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:One\r\nEMAIL:one@example.com\r\nEND:VCARD\r\n")
+	evil := testmail.StartCardDAV(t)
+	evil.PutCard("contacts", "trap", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Trap\r\nEMAIL:trap@evil.example\r\nEND:VCARD\r\n")
+
+	portOf := func(raw string) string {
+		u, err := url.Parse(raw)
+		require.NoError(t, err)
+		_, p, err := net.SplitHostPort(u.Host)
+		require.NoError(t, err)
+		return p
+	}
+	goodPort, evilPort := portOf(good.URL()), portOf(evil.URL())
+	proxyURL := hostRouteConnectProxy(t, map[string]string{
+		"example.com":                     goodPort,
+		"dav.example.com":                 goodPort,
+		"contacts.icloud.com":             goodPort,
+		"p01-contacts.icloud.com":         goodPort,
+		"www.googleapis.com":              goodPort,
+		"apidata.googleusercontent.com":   goodPort,
+		"evil.example":                    evilPort,
+	})
+
+	s, err := New(bg, Options{
+		DataDir:     t.TempDir(),
+		AutoSync:    false,
+		SystemProxy: func(*url.URL) *url.URL { return proxyURL },
+	})
+	require.NoError(t, err)
+	defer s.Close()
+
+	resetGood := func() {
+		good.SetWellKnownRedirect("")
+		good.SetPrincipalOnlyURL("")
+		good.SetHomeSetURL("")
+		evil.ResetRequests()
+	}
+
+	for name, configure := range map[string]func(){
+		"cross-domain redirect": func() {
+			good.SetWellKnownRedirect("https://evil.example/dav/principals/alice/")
+		},
+		"cross-domain home-set href": func() {
+			good.SetWellKnownRedirect("/dav/")
+			good.SetHomeSetURL("https://evil.example/dav/addressbooks/alice/")
+		},
+		"cross-domain principal href": func() {
+			good.SetWellKnownRedirect("/dav/")
+			good.SetPrincipalOnlyURL("https://evil.example/dav/principals/alice/")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			resetGood()
+			configure()
+			in := AddressBookInput{
+				Preset: PresetCustom, URL: "https://example.com", Username: "alice", Password: "secret",
+			}
+			_, _, err := s.CheckAddressBook(bg, in)
+			require.Error(t, err)
+			_, err = s.AddAddressBook(bg, in)
+			require.Error(t, err)
+			for _, req := range evil.Requests() {
+				assert.False(t, req.HasAuth, "evil.example must never receive Authorization: %+v", req)
+			}
+			assert.Empty(t, evil.Requests(), "evil.example must not even be contacted")
+			books, err := s.ListAddressBooks(bg)
+			require.NoError(t, err)
+			assert.Empty(t, books)
+		})
+	}
+
+	// Same registrable domain redirect (contacts.icloud.com -> p01-contacts.icloud.com) succeeds.
+	resetGood()
+	good.SetWellKnownRedirect("https://p01-contacts.icloud.com/dav/principals/alice/")
+	cols, homeURL, err := s.CheckAddressBook(bg, AddressBookInput{
+		Preset: PresetCustom, URL: "https://contacts.icloud.com", Username: "alice", Password: "secret",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "https://p01-contacts.icloud.com/dav/addressbooks/alice/", homeURL)
+	require.Len(t, cols, 1)
+
+	// Same registrable domain XML home-set href (example.com -> dav.example.com) succeeds and persists.
+	resetGood()
+	good.SetHomeSetURL("https://dav.example.com/dav/addressbooks/alice/")
+	ab, err := s.AddAddressBook(bg, AddressBookInput{
+		Preset: PresetCustom, URL: "https://example.com", Username: "alice", Password: "secret",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "https://dav.example.com/dav/addressbooks/alice/", ab.URL)
+
+	// Google CardDAV well-known redirect (www.googleapis.com -> apidata.googleusercontent.com) succeeds.
+	resetGood()
+	good.SetWellKnownRedirect("https://apidata.googleusercontent.com/dav/principals/alice/")
+	_, homeURL, err = s.CheckAddressBook(bg, AddressBookInput{
+		Preset: PresetCustom, URL: "https://www.googleapis.com/.well-known/carddav", Username: "alice", Password: "secret",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "https://apidata.googleusercontent.com/dav/addressbooks/alice/", homeURL)
+}
+
+func TestAddAddressBookKeychainRaceAndRollback(t *testing.T) {
+	keyring.MockInit()
+	dir := t.TempDir()
+	s := newCardDAVService(t, dir, false)
+	defer s.Close()
+
+	srv := testmail.StartCardDAV(t)
+	srv.PutCard("contacts", "one", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:One\r\nEMAIL:one@example.com\r\nEND:VCARD\r\n")
+
+	origSet := keyringSet
+	syncDone := make(chan error, 1)
+	setFor(t, &keyringSet, func(service, user, pass string) error {
+		if !strings.Contains(user, "/addressbook:") {
+			return origSet(service, user, pass)
+		}
+		// Simulate transient server error after Discover, plus a concurrent sync poll
+		// arriving while AddAddressBook is still persisting credentials to the keychain.
+		srv.FailRequests(http.StatusServiceUnavailable)
+		go func() {
+			syncDone <- s.SyncAddressBook(bg, 0)
+		}()
+		time.Sleep(50 * time.Millisecond)
+		return origSet(service, user, pass)
+	})
+
+	ab, err := s.AddAddressBook(bg, AddressBookInput{
+		Preset: PresetCustom, Name: "RaceBook", URL: srv.URL(), Username: "alice", Password: "secret",
+	})
+	require.NoError(t, err)
+	syncErr := <-syncDone
+	assert.NotErrorIs(t, syncErr, keyring.ErrNotFound, "concurrent SyncAddressBook must never observe DB row before keychain credentials exist")
+	assert.NotErrorIs(t, syncErr, backend.ErrAuthFailed)
+
+	books, err := s.ListAddressBooks(bg)
+	require.NoError(t, err)
+	require.Len(t, books, 1)
+	assert.Equal(t, ab.ID, books[0].ID)
+	assert.NotEqual(t, "reauth_required", books[0].Status, "concurrent sync before keychainSet finished must not strand address book in reauth_required (detail=%s)", books[0].StatusDetail)
+	assert.NotEqual(t, "credentials_missing", books[0].StatusDetail)
+
+	// Restore server and verify subsequent sync recovers cleanly to status='ok'.
+	srv.FailRequests(0)
+	setFor(t, &keyringSet, origSet)
+	require.NoError(t, s.SyncAddressBook(bg, ab.ID))
+	books, err = s.ListAddressBooks(bg)
+	require.NoError(t, err)
+	assert.Equal(t, "ok", books[0].Status)
+
+	// Keychain write failure deletes the DB row cleanly while holding abWriteMu.
+	setFor(t, &keyringSet, func(service, user, pass string) error {
+		if strings.Contains(user, "/addressbook:") {
+			return assert.AnError
+		}
+		return origSet(service, user, pass)
+	})
+	_, err = s.AddAddressBook(bg, AddressBookInput{
+		Preset: PresetCustom, Name: "FailBook", URL: srv.URL(), Username: "alice", Password: "secret",
+	})
+	require.ErrorIs(t, err, ErrKeychainUnavailable)
+	books, err = s.ListAddressBooks(bg)
+	require.NoError(t, err)
+	require.Len(t, books, 1, "failed AddAddressBook must roll back inserted address_books row")
+}
+
+

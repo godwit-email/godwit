@@ -124,11 +124,11 @@ func (s *Service) findAttachments(ctx context.Context, q FindQuery) (FindGroup[F
 	return g, nil
 }
 
-func contactMatchesPerson(c Contact, terms []string, text string) bool {
+func contactMatchesPerson(c Contact, text string) bool {
 	if strings.Contains(strings.ToLower(c.Name), text) || strings.Contains(strings.ToLower(c.Subtitle), text) {
 		return true
 	}
-	return slices.ContainsFunc(terms, func(n string) bool { return strings.Contains(strings.ToLower(n), text) })
+	return slices.ContainsFunc(c.SearchTerms, func(n string) bool { return strings.Contains(strings.ToLower(n), text) })
 }
 
 func compareSearchedContacts(a, b Contact) int {
@@ -150,14 +150,14 @@ func compareSearchedContacts(a, b Contact) int {
 // zero-mail address-book contacts for 0) by any address, name, historical name,
 // or organization/title.
 func (s *Service) findContacts(ctx context.Context, q FindQuery) (FindGroup[Contact], error) {
-	all, names, _, err := s.contacts(ctx, q.AccountID)
+	all, err := s.contacts(ctx, q.AccountID)
 	if err != nil {
 		return FindGroup[Contact]{}, err
 	}
 	text := strings.ToLower(strings.TrimSpace(q.Text))
 	if text != "" {
 		all = slices.DeleteFunc(all, func(c Contact) bool {
-			return !contactMatchesPerson(c, names[c.Address], text) &&
+			return !contactMatchesPerson(c, text) &&
 				!slices.ContainsFunc(c.Addresses, func(ea ContactAddress) bool { return strings.Contains(ea.Address, text) })
 		})
 		// something typed: the latest mail first, zero-mail contacts after; else the people mailed most, as contacts come

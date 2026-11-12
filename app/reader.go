@@ -140,6 +140,7 @@ type msgBody struct {
 	attSel    map[int64]bool   // selected attachment IDs for batch save
 
 	avatar                                 ui.ImageSource
+	avatarSource                           string
 	avatarStop                             context.CancelFunc
 	avatarGen                              uint64
 	avatarDone, avatarAllow, avatarBlocked bool
@@ -323,9 +324,9 @@ func (r *reader) load(k [2]int64) {
 					if prev.folder != m.FolderID {
 						b.msg.MessageSummary = m
 						b.trusted = false
-						if !b.avatarAllow {
+						if !b.avatarAllow || b.avatarSource == "carddav" {
 							b.stopAvatar()
-							b.avatar, b.avatarDone, b.avatarBlocked = nil, false, true
+							b.avatar, b.avatarSource, b.avatarDone, b.avatarBlocked = nil, "", false, true
 						}
 						b.loading = false
 						r.loadBody(m.ID)
@@ -477,12 +478,13 @@ func (r *reader) loadAvatar(id int64, manual bool) {
 	a, gen, seq, get := r.p.a, r.gen, b.avatarGen, r.getAvatar
 	b.avatarAllow, b.avatarDone = manual, false
 	if !manual && a.settingsVer != a.settingsSavedVer {
-		b.avatar, b.avatarBlocked = nil, true
+		b.avatar, b.avatarSource, b.avatarBlocked = nil, "", true
 		return
 	}
 	ctx, stop := context.WithCancel(a.ctx)
 	b.avatarStop = stop
 	var image ui.ImageSource
+	var source string
 	var trusted, carddav bool
 	a.do(func(context.Context) (err error) {
 		trusted, err = a.svc.ImagesAllowed(ctx, id)
@@ -503,7 +505,8 @@ func (r *reader) loadAvatar(id int64, manual bool) {
 		if err != nil || len(avatar.Data) == 0 {
 			return err
 		}
-		carddav = avatar.Source == "carddav"
+		source = avatar.Source
+		carddav = source == "carddav"
 		if !manual && !trusted && !carddav {
 			return nil
 		}
@@ -525,8 +528,10 @@ func (r *reader) loadAvatar(id int64, manual bool) {
 		}
 		b.avatarStop, b.avatarDone = nil, true
 		b.avatarBlocked = !trusted && !manual && (err != nil || !carddav || image == nil)
-		if err == nil {
-			b.avatar = image
+		if err == nil && image != nil {
+			b.avatar, b.avatarSource = image, source
+		} else {
+			b.avatar, b.avatarSource = nil, ""
 		}
 	})
 }
@@ -547,7 +552,17 @@ func (r *reader) invalidateAvatars(revokeManual bool) {
 			continue
 		}
 		b.stopAvatar()
-		b.avatar, b.avatarDone, b.avatarAllow, b.avatarBlocked = nil, false, false, true
+		b.avatar, b.avatarSource, b.avatarDone, b.avatarAllow, b.avatarBlocked = nil, "", false, false, true
+	}
+}
+
+func (r *reader) invalidateCardDAVAvatars() {
+	for _, b := range r.bodies {
+		if b.avatarAllow && b.avatar != nil && b.avatarSource != "carddav" {
+			continue
+		}
+		b.stopAvatar()
+		b.avatar, b.avatarSource, b.avatarDone, b.avatarBlocked = nil, "", false, !b.avatarAllow
 	}
 }
 
@@ -1515,14 +1530,33 @@ func (r *reader) folded(c *ui.Context, m core.MessageSummary) {
 	})
 }
 
+func (r *reader) inJunk(m core.MessageSummary) bool {
+	if r.p == nil || r.p.a == nil || r.p.a.mail == nil {
+		return false
+	}
+	if f, ok := findFolder(r.p.a.mail.folders, m.FolderID); ok && f.Role == "junk" {
+		return true
+	}
+	for _, fid := range m.FolderIDs {
+		if f, ok := findFolder(r.p.a.mail.folders, fid); ok && f.Role == "junk" {
+			return true
+		}
+	}
+	return false
+}
+
 // shownAvatar is an avatar the thread already shows for m's sender: m's,
 // read when it was open, else one of the sender's other messages'. Only
 // those: an avatar loads as its message allows (loadAvatar).
 func (r *reader) shownAvatar(m core.MessageSummary) ui.ImageSource {
-	if m.Security.Status == gomail.SecurityFraud {
+	if r.inJunk(m) {
 		return nil
 	}
+	fraud := m.Security.Status == gomail.SecurityFraud
 	if b := r.bodies[m.ID]; b != nil && b.avatar != nil {
+		if fraud && (b.avatarSource == "carddav" || !b.avatarAllow) {
+			return nil
+		}
 		return b.avatar
 	}
 	_, addr := sender(m.From)
@@ -1531,6 +1565,9 @@ func (r *reader) shownAvatar(m core.MessageSummary) ui.ImageSource {
 	}
 	for _, b := range r.bodies {
 		if _, from := sender(b.msg.From); b.avatar != nil && !b.msg.InJunk && strings.EqualFold(from, addr) {
+			if fraud && (b.avatarSource == "carddav" || !b.avatarAllow) {
+				continue
+			}
 			return b.avatar
 		}
 	}

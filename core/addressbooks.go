@@ -412,6 +412,24 @@ func (s *Service) AddAddressBook(ctx context.Context, in AddressBookInput) (Addr
 	}
 	abID := res.LastInsertID
 
+	if err := keychainSet(s.addressBookKeyringUser(abID), secret); err != nil {
+		_, _ = s.db.Execute(context.WithoutCancel(ctx), "DELETE FROM address_books WHERE id = ?", abID)
+		s.abWriteMu.Unlock()
+		return AddressBook{}, fmt.Errorf("save credentials to keychain: %w", err)
+	}
+	if client.ID != "" && client.Secret != "" {
+		s.secrets.Add(client.Secret)
+		if err := keychainSet(s.addressBookOAuthClientUser(abID), client.Secret); err != nil {
+			_ = s.deleteAddressBookCredentials(abID)
+			_, _ = s.db.Execute(context.WithoutCancel(ctx), "DELETE FROM address_books WHERE id = ?", abID)
+			s.abWriteMu.Unlock()
+			return AddressBook{}, fmt.Errorf("save OAuth client secret to keychain: %w", err)
+		}
+	}
+	if authType == "oauth" {
+		s.cacheAddressBookToken(abID, grant.Grant)
+	}
+
 	stmts := make([]sqlite.Statement, 0, len(disc))
 	for _, d := range disc {
 		stmts = append(stmts, sqlite.Statement{
@@ -420,29 +438,19 @@ func (s *Service) AddAddressBook(ctx context.Context, in AddressBookInput) (Addr
 		})
 	}
 	if len(stmts) > 0 {
-		if _, err := s.db.Transaction(ctx, stmts); err != nil {
+		if _, err := s.db.Transaction(context.WithoutCancel(ctx), stmts); err != nil {
+			if authType == "oauth" {
+				s.abTokMu.Lock()
+				delete(s.abTokens, abID)
+				s.abTokMu.Unlock()
+			}
+			_ = s.deleteAddressBookCredentials(abID)
 			_, _ = s.db.Execute(context.WithoutCancel(ctx), "DELETE FROM address_books WHERE id = ?", abID)
 			s.abWriteMu.Unlock()
 			return AddressBook{}, err
 		}
 	}
 	s.abWriteMu.Unlock()
-
-	if err := keychainSet(s.addressBookKeyringUser(abID), secret); err != nil {
-		_, _ = s.db.Execute(context.WithoutCancel(ctx), "DELETE FROM address_books WHERE id = ?", abID)
-		return AddressBook{}, fmt.Errorf("save credentials to keychain: %w", err)
-	}
-	if client.ID != "" && client.Secret != "" {
-		s.secrets.Add(client.Secret)
-		if err := keychainSet(s.addressBookOAuthClientUser(abID), client.Secret); err != nil {
-			_ = s.deleteAddressBookCredentials(abID)
-			_, _ = s.db.Execute(context.WithoutCancel(ctx), "DELETE FROM address_books WHERE id = ?", abID)
-			return AddressBook{}, fmt.Errorf("save OAuth client secret to keychain: %w", err)
-		}
-	}
-	if authType == "oauth" {
-		s.cacheAddressBookToken(abID, grant.Grant)
-	}
 
 	_ = s.syncOneAddressBook(ctx, abID)
 	if s.opts.AutoSync {
@@ -835,18 +843,26 @@ func (s *Service) setAddressBookStatus(ctx context.Context, id int64, status, de
 		status, detail, id)
 }
 
+func (s *Service) readAddressBookSecret(ctx context.Context, id int64, user string) (string, error) {
+	v, err := keychainGet(user)
+	switch {
+	case errors.Is(err, keyring.ErrNotFound):
+		s.setAddressBookStatus(ctx, id, "reauth_required", "credentials_missing")
+		return "", fmt.Errorf("%w: %w", backend.ErrAuthFailed, err)
+	case err != nil:
+		s.setAddressBookStatus(ctx, id, "error", "keychain_unavailable")
+		return "", err
+	}
+	s.secrets.Add(v)
+	return v, nil
+}
+
 func (s *Service) addressBookCredentials(ctx context.Context, rec addressBookRecord, rejectedToken string) (carddav.Credentials, error) {
 	if rec.AuthType != "oauth" {
-		pw, err := keychainGet(s.addressBookKeyringUser(rec.ID))
-		switch {
-		case errors.Is(err, keyring.ErrNotFound):
-			s.setAddressBookStatus(ctx, rec.ID, "reauth_required", "credentials_missing")
-			return carddav.Credentials{}, fmt.Errorf("%w: %w", backend.ErrAuthFailed, err)
-		case err != nil:
-			s.setAddressBookStatus(ctx, rec.ID, "error", "keychain_unavailable")
+		pw, err := s.readAddressBookSecret(ctx, rec.ID, s.addressBookKeyringUser(rec.ID))
+		if err != nil {
 			return carddav.Credentials{}, err
 		}
-		s.secrets.Add(pw)
 		return carddav.Credentials{Username: rec.Username, Password: pw}, nil
 	}
 
@@ -872,32 +888,20 @@ func (s *Service) addressBookCredentials(ctx context.Context, rec addressBookRec
 		return carddav.Credentials{BearerToken: cached.AccessToken}, nil
 	}
 
-	rt, err := keychainGet(s.addressBookKeyringUser(rec.ID))
-	switch {
-	case errors.Is(err, keyring.ErrNotFound):
-		s.setAddressBookStatus(ctx, rec.ID, "reauth_required", "credentials_missing")
-		return carddav.Credentials{}, fmt.Errorf("%w: %w", backend.ErrAuthFailed, err)
-	case err != nil:
-		s.setAddressBookStatus(ctx, rec.ID, "error", "keychain_unavailable")
+	rt, err := s.readAddressBookSecret(ctx, rec.ID, s.addressBookKeyringUser(rec.ID))
+	if err != nil {
 		return carddav.Credentials{}, err
 	}
-	s.secrets.Add(rt)
 
 	cfg, err := oauthConfig(ProviderGoogleCardDAV)
 	if err != nil {
 		return carddav.Credentials{}, err
 	}
 	if rec.OAuthClientID != "" {
-		secret, err := keychainGet(s.addressBookOAuthClientUser(rec.ID))
-		switch {
-		case errors.Is(err, keyring.ErrNotFound):
-			s.setAddressBookStatus(ctx, rec.ID, "reauth_required", "credentials_missing")
-			return carddav.Credentials{}, fmt.Errorf("%w: %w", backend.ErrAuthFailed, err)
-		case err != nil:
-			s.setAddressBookStatus(ctx, rec.ID, "error", "keychain_unavailable")
+		secret, err := s.readAddressBookSecret(ctx, rec.ID, s.addressBookOAuthClientUser(rec.ID))
+		if err != nil {
 			return carddav.Credentials{}, err
 		}
-		s.secrets.Add(secret)
 		cfg.ClientID, cfg.ClientSecret = rec.OAuthClientID, secret
 	}
 
@@ -928,7 +932,9 @@ func (s *Service) addressBookCredentials(ctx context.Context, rec addressBookRec
 }
 
 func (s *Service) syncOneAddressBook(ctx context.Context, id int64) error {
+	s.abWriteMu.Lock()
 	rec, err := s.addressBookRecord(ctx, id)
+	s.abWriteMu.Unlock()
 	if err != nil {
 		return err
 	}
@@ -1158,7 +1164,6 @@ func (s *Service) syncOneCollection(ctx context.Context, client *carddav.Client,
 			item.emails = append(item.emails, carddav.CardEmail{
 				Pos:     i,
 				AddrKey: key,
-				Address: em.Address,
 				Pref:    em.Pref,
 			})
 		}
@@ -1236,9 +1241,9 @@ func (s *Service) syncOneCollection(ctx context.Context, client *carddav.Client,
 				pref = 1
 			}
 			stmts = append(stmts, sqlite.Statement{
-				SQL: `INSERT OR REPLACE INTO address_book_emails (card_id, pos, addr_key, address, pref)
-					VALUES ((SELECT id FROM address_book_cards WHERE collection_id = ? AND href = ?), ?, ?, ?, ?)`,
-				Args: []any{col.id, item.href, em.Pos, em.AddrKey, em.Address, pref},
+				SQL: `INSERT OR REPLACE INTO address_book_emails (card_id, pos, addr_key, pref)
+					VALUES ((SELECT id FROM address_book_cards WHERE collection_id = ? AND href = ?), ?, ?, ?)`,
+				Args: []any{col.id, item.href, em.Pos, em.AddrKey, pref},
 			})
 		}
 	}

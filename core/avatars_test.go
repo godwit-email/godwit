@@ -799,6 +799,36 @@ func TestSenderAvatarCardDAVAntiSpoofingGates(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "carddav", got.Source)
 	assert.Equal(t, cardPhoto, got.Data)
+
+	// 7. When a non-CardDAV remote avatar exists, SecurityFraud still suppresses CardDAV PHOTO
+	//    but honors explicit allowRemote=true for non-CardDAV sources (matching Junk behavior).
+	remotePhoto := avatarPNG(t)
+	f := newAvatarFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write(remotePhoto)
+	})
+	f.policy(t, "ask", false, false)
+	davRemote := newCardDAVServerForAvatarTest(t)
+	davRemote.PutCollection("contacts", "Contacts")
+	davRemote.PutCard("contacts", "alice", vcardWithPhoto("Alice", []string{"alice@example.com"}, encodeB64(cardPhoto), ""))
+	_, err = f.s.AddAddressBook(t.Context(), AddressBookInput{Preset: PresetCustom, URL: davRemote.URL(), Username: "alice", Password: "secret"})
+	require.NoError(t, err)
+
+	res, err = f.s.db.Execute(t.Context(), `INSERT INTO messages(account_id, subject, from_addr, date, body_text, body_html, snippet, has_attachments, auth_results)
+		VALUES (1, 'spoof', 'Alice <alice@example.com>', 7, 'urgent', '', 'snip', 0, 'mx.example.org; dmarc=fail header.from=example.com')`)
+	require.NoError(t, err)
+	fraudWithRemote := res.LastInsertID
+	showIn(t, f.s, fraudWithRemote, 1)
+
+	got, err = f.s.SenderAvatar(t.Context(), fraudWithRemote, false)
+	require.NoError(t, err)
+	assert.Empty(t, got.Data, "SecurityFraud under ask with allowRemote=false suppresses CardDAV PHOTO and fetches nothing")
+	assert.Empty(t, f.hits())
+
+	got, err = f.s.SenderAvatar(t.Context(), fraudWithRemote, true)
+	require.NoError(t, err)
+	assert.NotEqual(t, "carddav", got.Source, "SecurityFraud must never return CardDAV PHOTO")
+	assert.Equal(t, "favicon", got.Source, "explicit allowRemote=true on SecurityFraud still loads non-CardDAV remote avatar")
+	assert.Equal(t, remotePhoto, got.Data)
 }
 
 func TestContactAvatarZeroMailConnectedComponentAndFallback(t *testing.T) {

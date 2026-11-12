@@ -37,6 +37,7 @@ type ContactAddress struct {
 type Contact struct {
 	Name, Subtitle, Address       string
 	Addresses                     []ContactAddress
+	SearchTerms                   []string
 	FromAddressBook               bool
 	Messages                      int
 	Last                          time.Time
@@ -87,8 +88,7 @@ func (s *Service) roleFolderIDs(ctx context.Context, roles ...string) ([]any, er
 // Contacts lists everyone the user exchanged mail with and enabled address-book
 // contacts, contacts with mail first (most mail first) followed by zero-mail contacts.
 func (s *Service) Contacts(ctx context.Context) ([]Contact, error) {
-	all, _, _, err := s.contacts(ctx, 0)
-	return all, err
+	return s.contacts(ctx, 0)
 }
 
 // ContactMatch is a lightweight, read-only contact summary without binary avatars.
@@ -137,19 +137,19 @@ func (s *Service) CompleteContacts(ctx context.Context, query string, limit int)
 	if text == "" {
 		return []ContactCompletion{}, nil
 	}
-	all, terms, _, err := s.contacts(ctx, 0)
+	all, err := s.contacts(ctx, 0)
 	if err != nil {
 		return nil, err
 	}
 	all = slices.DeleteFunc(all, func(c Contact) bool {
-		return !contactMatchesPerson(c, terms[c.Address], text) &&
+		return !contactMatchesPerson(c, text) &&
 			!slices.ContainsFunc(c.Addresses, func(ea ContactAddress) bool { return strings.Contains(ea.Address, text) })
 	})
 	slices.SortStableFunc(all, compareSearchedContacts)
 	capN := clampLimit(limit)
 	out := make([]ContactCompletion, 0, min(len(all), capN))
 	for _, c := range all {
-		personHit := contactMatchesPerson(c, terms[c.Address], text)
+		personHit := contactMatchesPerson(c, text)
 		for _, ea := range c.Addresses {
 			if !personHit && !strings.Contains(ea.Address, text) {
 				continue
@@ -178,6 +178,7 @@ type cardComponent struct {
 	addrs    []string
 	prefs    map[string]bool
 	terms    []string
+	cardIDs  []int64
 }
 
 func formatCardSubtitle(org, title string) string {
@@ -215,7 +216,7 @@ func (s *Service) enabledCardComponents(ctx context.Context, skip map[string]boo
 		FROM address_book_cards c
 		JOIN address_book_collections col ON col.id = c.collection_id AND col.enabled = 1
 		JOIN address_books ab ON ab.id = col.address_book_id
-		ORDER BY ab.sort_order ASC, ab.id ASC, c.collection_id ASC, c.href ASC`)
+		ORDER BY ab.sort_order ASC, ab.id ASC, col.id ASC, c.href ASC`)
 	if err != nil || len(cardRows.Values) == 0 {
 		return nil, nil, err
 	}
@@ -238,6 +239,7 @@ func (s *Service) enabledCardComponents(ctx context.Context, skip map[string]boo
 	}
 
 	type cardEntry struct {
+		id             int64
 		fn, org, title string
 		emails         []cardEmailRow
 	}
@@ -259,7 +261,8 @@ func (s *Service) enabledCardComponents(ctx context.Context, skip map[string]boo
 	}
 
 	for _, r := range cardRows.Values {
-		ems := byCard[store.Int(r[0])]
+		cid := store.Int(r[0])
+		ems := byCard[cid]
 		if len(ems) == 0 {
 			continue
 		}
@@ -273,6 +276,7 @@ func (s *Service) enabledCardComponents(ctx context.Context, skip map[string]boo
 			union(first, em.addrKey)
 		}
 		valid = append(valid, cardEntry{
+			id:     cid,
 			fn:     store.Str(r[1]),
 			org:    store.Str(r[2]),
 			title:  store.Str(r[3]),
@@ -297,6 +301,7 @@ func (s *Service) enabledCardComponents(ctx context.Context, skip map[string]boo
 			comps = append(comps, cardComponent{prefs: map[string]bool{}})
 		}
 		comp := &comps[idx]
+		comp.cardIDs = append(comp.cardIDs, ce.id)
 		if comp.name == "" && ce.fn != "" {
 			comp.name = ce.fn
 		}
@@ -328,16 +333,15 @@ func (s *Service) enabledCardComponents(ctx context.Context, skip map[string]boo
 }
 
 // contacts gathers the contacts of accountID's mail (0: every account's plus
-// zero-mail enabled address-book contacts), with searchable person terms and
-// per-address newest mail timestamps.
-func (s *Service) contacts(ctx context.Context, accountID int64) ([]Contact, map[string][]string, map[string]time.Time, error) {
+// zero-mail enabled address-book contacts).
+func (s *Service) contacts(ctx context.Context, accountID int64) ([]Contact, error) {
 	skip, err := s.ownAddrSet(ctx)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 	blocked, err := s.BlockedSenders(ctx)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 	blockedSet := make(map[string]bool, len(blocked))
 	for _, b := range blocked {
@@ -345,15 +349,15 @@ func (s *Service) contacts(ctx context.Context, accountID int64) ([]Contact, map
 	}
 	comps, _, err := s.enabledCardComponents(ctx, skip)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 	left, err := s.roleFolderIDs(ctx, "sent", "drafts", "trash", "junk")
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 	sent, err := s.roleFolderIDs(ctx, "sent")
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 	acc, accArgs := "", []any(nil)
 	if accountID != 0 {
@@ -366,16 +370,16 @@ func (s *Service) contacts(ctx context.Context, accountID int64) ([]Contact, map
 	rows, err := s.db.Query(ctx, `SELECT m.from_addr, count(*), sum(instr(m.flags, '\Seen') = 0), sum(`+shownIn("(SELECT id FROM folders WHERE role = 'inbox')")+`), max(m.date), m.id`+
 		from+" GROUP BY m.from_addr ORDER BY 5, 1", args...)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 	lists, err := s.db.Query(ctx, "SELECT m.from_addr, max(m.date), m.id"+from+" AND m.list_unsubscribe <> '' GROUP BY m.from_addr", args...)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 	out, err := s.db.Query(ctx, "SELECT m.to_addrs, m.cc_addrs, m.date FROM messages m WHERE "+shownIn("("+placeholders(len(sent))+")")+acc+" ORDER BY m.date",
 		append(slices.Clone(sent), accArgs...)...)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
 	// how often and how lately each name came, by contact: in their mail, and in the user's to them
@@ -507,7 +511,6 @@ func (s *Service) contacts(ctx context.Context, accountID int64) ([]Contact, map
 	}
 
 	all := make([]Contact, 0, len(builds))
-	terms := make(map[string][]string, len(builds))
 	for _, cb := range builds {
 		msgs := cb.Received + cb.Sent
 		if accountID != 0 && msgs == 0 {
@@ -552,15 +555,22 @@ func (s *Service) contacts(ctx context.Context, accountID int64) ([]Contact, map
 				}
 			}
 		}
-		addUniqueTerm(&cb.terms, name)
+		nameLower, subLower := strings.ToLower(name), strings.ToLower(cb.subtitle)
+		var searchTerms []string
+		for _, t := range cb.terms {
+			tl := strings.ToLower(t)
+			if t != "" && !strings.Contains(nameLower, tl) && !strings.Contains(subLower, tl) {
+				addUniqueTerm(&searchTerms, t)
+			}
+		}
 
 		primary := addrs[0].Address
-		terms[primary] = cb.terms
 		all = append(all, Contact{
 			Name:            name,
 			Subtitle:        cb.subtitle,
 			Address:         primary,
 			Addresses:       addrs,
+			SearchTerms:     searchTerms,
 			FromAddressBook: cb.fromBook,
 			Messages:        msgs,
 			Last:            cb.Last,
@@ -587,7 +597,7 @@ func (s *Service) contacts(ctx context.Context, accountID int64) ([]Contact, map
 		}
 		return cmp.Or(cmp.Compare(b.Messages, a.Messages), b.Last.Compare(a.Last), strings.Compare(a.Address, b.Address))
 	})
-	return all, terms, addrLast, nil
+	return all, nil
 }
 
 // contactAddrKeys resolves addr to every AddrKey in its merged Contact

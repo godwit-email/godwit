@@ -13,11 +13,14 @@ import (
 	"path"
 	"strings"
 	"time"
+
+	"golang.org/x/net/publicsuffix"
 )
 
 var (
 	ErrInvalidURL       = errors.New("invalid CardDAV server URL")
 	ErrScheme           = errors.New("CardDAV server URL must use https")
+	ErrUntrustedOrigin  = errors.New("CardDAV discovery target outside server domain")
 	ErrAuthFailed       = errors.New("CardDAV authentication failed")
 	ErrNoAddressBooks   = errors.New("no CardDAV address books found")
 	ErrSyncTokenInvalid = errors.New("CardDAV sync-token expired or unsupported")
@@ -121,7 +124,46 @@ func defaultPortHost(u *url.URL) string {
 	return net.JoinHostPort(strings.ToLower(h), p)
 }
 
-func resolveChecked(base *url.URL, ref string, allowCrossHost bool) (*url.URL, error) {
+func canonicalHost(u *url.URL) string {
+	return strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+}
+
+func isGoogleCardDAVStart(h string) bool {
+	return h == "google.com" || strings.HasSuffix(h, ".google.com") ||
+		h == "googleapis.com" || strings.HasSuffix(h, ".googleapis.com")
+}
+
+func isGoogleCardDAVTarget(h string) bool {
+	return isGoogleCardDAVStart(h) || h == "apidata.googleusercontent.com"
+}
+
+func trustedDiscoveryHost(start, target *url.URL) bool {
+	sh, th := canonicalHost(start), canonicalHost(target)
+	if sh == "" || th == "" {
+		return false
+	}
+	if sh == th {
+		return true
+	}
+	if isLoopbackHost(sh) && isLoopbackHost(th) {
+		return true
+	}
+	if net.ParseIP(sh) != nil || net.ParseIP(th) != nil {
+		return false
+	}
+	if isGoogleCardDAVStart(sh) && isGoogleCardDAVTarget(th) {
+		return true
+	}
+	se, err1 := publicsuffix.EffectiveTLDPlusOne(sh)
+	te, err2 := publicsuffix.EffectiveTLDPlusOne(th)
+	return err1 == nil && err2 == nil && strings.EqualFold(se, te)
+}
+
+func isFatalDiscoverErr(err error) bool {
+	return errors.Is(err, ErrAuthFailed) || errors.Is(err, ErrScheme) || errors.Is(err, ErrUntrustedOrigin)
+}
+
+func resolveChecked(base *url.URL, ref string, trustStart *url.URL) (*url.URL, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		return nil, ErrInvalidURL
@@ -138,14 +180,18 @@ func resolveChecked(base *url.URL, ref string, allowCrossHost bool) (*url.URL, e
 	if next.Scheme != "https" && !(next.Scheme == "http" && isLoopbackHost(next.Hostname())) {
 		return nil, ErrScheme
 	}
-	if !allowCrossHost && !sameOrigin(base, next) {
+	if trustStart != nil {
+		if !trustedDiscoveryHost(trustStart, next) {
+			return nil, fmt.Errorf("%w: %s", ErrUntrustedOrigin, next.Hostname())
+		}
+	} else if !sameOrigin(base, next) {
 		return nil, fmt.Errorf("carddav: cross-origin reference %q refused", ref)
 	}
 	return next, nil
 }
 
 func canonHref(home *url.URL, rawHref string) (string, bool) {
-	u, err := resolveChecked(home, rawHref, false)
+	u, err := resolveChecked(home, rawHref, nil)
 	if err != nil {
 		return "", false
 	}
@@ -160,10 +206,13 @@ func equalCollectionPath(a, b string) bool {
 	return strings.TrimRight(a, "/") == strings.TrimRight(b, "/")
 }
 
-func (c *Client) doXML(ctx context.Context, method string, target *url.URL, depth string, body string, creds Credentials, allowCrossHost bool) (status int, respBody []byte, finalURL *url.URL, err error) {
+func (c *Client) doXML(ctx context.Context, method string, target *url.URL, depth string, body string, creds Credentials, trustStart *url.URL) (status int, respBody []byte, finalURL *url.URL, err error) {
+	if trustStart != nil && !trustedDiscoveryHost(trustStart, target) {
+		return 0, nil, nil, fmt.Errorf("%w: %s", ErrUntrustedOrigin, target.Hostname())
+	}
 	cur := *target
 	maxHops := 5
-	if allowCrossHost {
+	if trustStart != nil {
 		maxHops = 10
 	}
 	trustedOrigin := defaultPortHost(target)
@@ -173,7 +222,7 @@ func (c *Client) doXML(ctx context.Context, method string, target *url.URL, dept
 		if err != nil {
 			return 0, nil, nil, err
 		}
-		if resp.StatusCode == http.StatusUnauthorized && !sendCreds {
+		if resp.StatusCode == http.StatusUnauthorized && !sendCreds && trustStart != nil && trustedDiscoveryHost(trustStart, &cur) {
 			trustedOrigin = defaultPortHost(&cur)
 			resp, data, err = c.roundTripXML(ctx, method, &cur, depth, body, creds, true)
 			if err != nil {
@@ -187,7 +236,7 @@ func (c *Client) doXML(ctx context.Context, method string, target *url.URL, dept
 				return 0, nil, nil, errors.New("carddav: too many redirects")
 			}
 			loc := resp.Header.Get("Location")
-			next, err := resolveChecked(&cur, loc, allowCrossHost)
+			next, err := resolveChecked(&cur, loc, trustStart)
 			if err != nil {
 				return 0, nil, nil, err
 			}
@@ -401,8 +450,8 @@ func (c *Client) Discover(ctx context.Context, start *url.URL, creds Credentials
 	var lastErr error
 	sawEmptyHome := false
 	for _, cand := range candidates {
-		status, data, effURL, err := c.doXML(ctx, "PROPFIND", cand, "0", discoverPropfindBody, creds, true)
-		if errors.Is(err, ErrAuthFailed) || errors.Is(err, ErrScheme) {
+		status, data, effURL, err := c.doXML(ctx, "PROPFIND", cand, "0", discoverPropfindBody, creds, start)
+		if isFatalDiscoverErr(err) {
 			return "", nil, err
 		}
 		if err != nil {
@@ -445,9 +494,9 @@ func (c *Client) Discover(ctx context.Context, start *url.URL, creds Credentials
 		var homeURL *url.URL
 		switch {
 		case homeHref != "":
-			homeURL, err = resolveChecked(effURL, homeHref, true)
+			homeURL, err = resolveChecked(effURL, homeHref, start)
 			if err != nil {
-				if errors.Is(err, ErrScheme) {
+				if isFatalDiscoverErr(err) {
 					return "", nil, err
 				}
 				lastErr = err
@@ -456,16 +505,16 @@ func (c *Client) Discover(ctx context.Context, start *url.URL, creds Credentials
 		case isDirectAddressBook:
 			homeURL = effURL
 		case principalHref != "":
-			pURL, err := resolveChecked(effURL, principalHref, true)
+			pURL, err := resolveChecked(effURL, principalHref, start)
 			if err != nil {
-				if errors.Is(err, ErrScheme) {
+				if isFatalDiscoverErr(err) {
 					return "", nil, err
 				}
 				lastErr = err
 				continue
 			}
-			pStatus, pData, pEffURL, err := c.doXML(ctx, "PROPFIND", pURL, "0", homeSetPropfindBody, creds, true)
-			if errors.Is(err, ErrAuthFailed) || errors.Is(err, ErrScheme) {
+			pStatus, pData, pEffURL, err := c.doXML(ctx, "PROPFIND", pURL, "0", homeSetPropfindBody, creds, start)
+			if isFatalDiscoverErr(err) {
 				return "", nil, err
 			}
 			if err != nil || pStatus != http.StatusMultiStatus {
@@ -486,9 +535,9 @@ func (c *Client) Discover(ctx context.Context, start *url.URL, creds Credentials
 			if homeHref == "" {
 				continue
 			}
-			homeURL, err = resolveChecked(pEffURL, homeHref, true)
+			homeURL, err = resolveChecked(pEffURL, homeHref, start)
 			if err != nil {
-				if errors.Is(err, ErrScheme) {
+				if isFatalDiscoverErr(err) {
 					return "", nil, err
 				}
 				lastErr = err
@@ -499,8 +548,11 @@ func (c *Client) Discover(ctx context.Context, start *url.URL, creds Credentials
 			homeURL = effURL
 		}
 
+		if !trustedDiscoveryHost(start, homeURL) {
+			return "", nil, fmt.Errorf("%w: %s", ErrUntrustedOrigin, homeURL.Hostname())
+		}
 		cols, err := c.ListCollections(ctx, homeURL, creds, true)
-		if errors.Is(err, ErrAuthFailed) || errors.Is(err, ErrScheme) {
+		if isFatalDiscoverErr(err) {
 			return "", nil, err
 		}
 		if err != nil {
@@ -539,7 +591,7 @@ func defaultCollectionName(href string) string {
 
 // ListCollections lists all card:addressbook collections under home (or home itself if it is one).
 func (c *Client) ListCollections(ctx context.Context, home *url.URL, creds Credentials, countCards bool) ([]DiscoveredCollection, error) {
-	status, data, _, err := c.doXML(ctx, "PROPFIND", home, "1", collectionsPropfindBody, creds, false)
+	status, data, _, err := c.doXML(ctx, "PROPFIND", home, "1", collectionsPropfindBody, creds, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -591,11 +643,11 @@ func (c *Client) ListCollections(ctx context.Context, home *url.URL, creds Crede
 
 // ListCollectionETags lists every member vCard href -> ETag in colHref via PROPFIND Depth: 1.
 func (c *Client) ListCollectionETags(ctx context.Context, home *url.URL, colHref string, creds Credentials) (map[string]string, string, string, error) {
-	colURL, err := resolveChecked(home, colHref, false)
+	colURL, err := resolveChecked(home, colHref, nil)
 	if err != nil {
 		return nil, "", "", err
 	}
-	status, data, _, err := c.doXML(ctx, "PROPFIND", colURL, "1", collectionETagsPropfindBody, creds, false)
+	status, data, _, err := c.doXML(ctx, "PROPFIND", colURL, "1", collectionETagsPropfindBody, creds, nil)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -636,7 +688,7 @@ func (c *Client) ListCollectionETags(ctx context.Context, home *url.URL, colHref
 // SyncCollection queries incremental changes since syncToken via RFC 6578 sync-collection REPORT.
 // Returns ErrSyncTokenInvalid when the token is expired or the server does not support sync-collection.
 func (c *Client) SyncCollection(ctx context.Context, home *url.URL, colHref, syncToken string, creds Credentials) (SyncDelta, error) {
-	colURL, err := resolveChecked(home, colHref, false)
+	colURL, err := resolveChecked(home, colHref, nil)
 	if err != nil {
 		return SyncDelta{}, err
 	}
@@ -645,7 +697,7 @@ func (c *Client) SyncCollection(ctx context.Context, home *url.URL, colHref, syn
 	_ = xml.EscapeText(&reqBuf, []byte(syncToken))
 	reqBuf.WriteString(`</d:sync-token><d:sync-level>1</d:sync-level><d:prop><d:getetag/></d:prop></d:sync-collection>`)
 
-	status, data, _, err := c.doXML(ctx, "REPORT", colURL, "0", reqBuf.String(), creds, false)
+	status, data, _, err := c.doXML(ctx, "REPORT", colURL, "0", reqBuf.String(), creds, nil)
 	if err != nil {
 		return SyncDelta{}, err
 	}
@@ -697,7 +749,7 @@ func (c *Client) FetchCards(ctx context.Context, home *url.URL, colHref string, 
 	if len(hrefs) == 0 {
 		return nil, nil
 	}
-	colURL, err := resolveChecked(home, colHref, false)
+	colURL, err := resolveChecked(home, colHref, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -715,7 +767,7 @@ func (c *Client) FetchCards(ctx context.Context, home *url.URL, colHref string, 
 		}
 		reqBuf.WriteString(`</c:addressbook-multiget>`)
 
-		status, data, _, err := c.doXML(ctx, "REPORT", colURL, "1", reqBuf.String(), creds, false)
+		status, data, _, err := c.doXML(ctx, "REPORT", colURL, "1", reqBuf.String(), creds, nil)
 		if err != nil {
 			return nil, err
 		}

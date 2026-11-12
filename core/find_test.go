@@ -66,13 +66,13 @@ func TestFindContactsAreSendersByAddressLatestFirst(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []Contact{
 		{Name: "Bobby", Address: "bobby@y", Addresses: []ContactAddress{{Address: "bobby@y"}}, Messages: 1, Last: time.Unix(400, 0), Received: 1, Unread: 1, Inbox: 1, Latest: bobby},
-		{Name: "Robert B", Address: "bob@x", Addresses: []ContactAddress{{Address: "bob@x"}}, Messages: 3, Last: time.Unix(300, 0), Received: 3, Unread: 3, Inbox: 3, Latest: robert},
+		{Name: "Robert B", Address: "bob@x", Addresses: []ContactAddress{{Address: "bob@x"}}, SearchTerms: []string{"Bob"}, Messages: 3, Last: time.Unix(300, 0), Received: 3, Unread: 3, Inbox: 3, Latest: robert},
 	}, got.Contacts.Items)
 	require.Equal(t, 2, got.Contacts.Total)
 
 	got, err = s.Find(t.Context(), FindQuery{SearchQuery: SearchQuery{Text: "robert"}})
 	require.NoError(t, err)
-	require.Equal(t, []Contact{{Name: "Robert B", Address: "bob@x", Addresses: []ContactAddress{{Address: "bob@x"}}, Messages: 3, Last: time.Unix(300, 0), Received: 3, Unread: 3, Inbox: 3, Latest: robert}}, got.Contacts.Items, "any name it used")
+	require.Equal(t, []Contact{{Name: "Robert B", Address: "bob@x", Addresses: []ContactAddress{{Address: "bob@x"}}, SearchTerms: []string{"Bob"}, Messages: 3, Last: time.Unix(300, 0), Received: 3, Unread: 3, Inbox: 3, Latest: robert}}, got.Contacts.Items, "any name it used")
 
 	got, err = s.Find(t.Context(), FindQuery{SearchQuery: SearchQuery{Text: "me@"}})
 	require.NoError(t, err)

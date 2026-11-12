@@ -118,9 +118,13 @@ func (a *App) onEvent(ev events.Event) {
 	case events.ImportProgress: // only its toast shows it; MessagesChanged refreshes the rest
 		a.mail.importProgress(ev)
 		return
-	case events.SettingsChanged, events.AddressBooksChanged:
+	case events.SettingsChanged:
 		a.mail.reader.invalidateAvatars(false)
 		a.mail.reader.refreshAvatars() // core answers for the new settings; an unsaved local change still holds them
+		a.contacts().avatars = nil
+	case events.AddressBooksChanged:
+		a.mail.reader.invalidateCardDAVAvatars()
+		a.mail.reader.refreshAvatars()
 		a.contacts().avatars = nil
 	case events.SyncStarted:
 		a.syncing[ev.AccountID] = true

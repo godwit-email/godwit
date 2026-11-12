@@ -260,6 +260,9 @@ func (p *contactsPage) shown() []core.Contact {
 		return !strings.Contains(strings.ToLower(c.Address), q) &&
 			!strings.Contains(strings.ToLower(c.Name), q) &&
 			!strings.Contains(strings.ToLower(c.Subtitle), q) &&
+			!slices.ContainsFunc(c.SearchTerms, func(s string) bool {
+				return strings.Contains(strings.ToLower(s), q)
+			}) &&
 			!slices.ContainsFunc(c.Addresses, func(ea core.ContactAddress) bool {
 				return strings.Contains(strings.ToLower(ea.Address), q)
 			})

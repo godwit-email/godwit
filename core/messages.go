@@ -126,7 +126,7 @@ func (s *Service) addressBookNames(ctx context.Context, keys []string) (map[stri
 			JOIN address_book_collections col ON col.id = c.collection_id AND col.enabled = 1
 			JOIN address_books ab ON ab.id = col.address_book_id
 			WHERE e.addr_key IN (`+placeholders(len(c))+`) AND c.fn <> ''
-			ORDER BY ab.sort_order ASC, ab.id ASC, c.collection_id ASC, c.href ASC`, args...)
+			ORDER BY ab.sort_order ASC, ab.id ASC, col.id ASC, c.href ASC`, args...)
 		if err != nil {
 			return nil, err
 		}

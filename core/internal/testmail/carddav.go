@@ -67,6 +67,7 @@ type CardDAV struct {
 	rejectAuth            bool
 	failStatus            int
 	wellKnownRedirect     string
+	principalOverride     string
 	homeSetOverride       string
 	noCollections         bool
 	disableSyncCollection bool
@@ -93,6 +94,7 @@ var carddavCert = sync.OnceValues(func() (tls.Certificate, error) {
 			"example.com", "*.example.com",
 			"example.net", "*.example.net",
 			"example.org", "*.example.org",
+			"evil.example", "*.evil.example",
 		},
 		IPAddresses:           []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback, net.IPv4(93, 184, 216, 34)},
 		IsCA:                  true,
@@ -183,6 +185,12 @@ func (s *CardDAV) SetHomeSetURL(u string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.homeSetOverride = u
+}
+
+func (s *CardDAV) SetPrincipalOnlyURL(u string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.principalOverride = u
 }
 
 func (s *CardDAV) SetNoCollections(empty bool) {
@@ -422,9 +430,16 @@ func (s *CardDAV) serve(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case r.Method == "PROPFIND" && (p == "/" || p == "/dav/" || p == "/dav/principals/alice/"):
-		home := "/dav/addressbooks/alice/"
-		if s.homeSetOverride != "" {
-			home = s.homeSetOverride
+		principal := "/dav/principals/alice/"
+		homeXML := ""
+		if s.principalOverride != "" && p != "/dav/principals/alice/" {
+			principal = s.principalOverride
+		} else {
+			home := "/dav/addressbooks/alice/"
+			if s.homeSetOverride != "" {
+				home = s.homeSetOverride
+			}
+			homeXML = fmt.Sprintf(`<C:addressbook-home-set><D:href>%s</D:href></C:addressbook-home-set>`, xmlEsc(home))
 		}
 		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 		w.WriteHeader(http.StatusMultiStatus)
@@ -432,10 +447,10 @@ func (s *CardDAV) serve(w http.ResponseWriter, r *http.Request) {
 			`<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">`+
 			`<D:response><D:href>%s</D:href><D:propstat><D:prop>`+
 			`<D:resourcetype><D:collection/></D:resourcetype>`+
-			`<D:current-user-principal><D:href>/dav/principals/alice/</D:href></D:current-user-principal>`+
-			`<C:addressbook-home-set><D:href>%s</D:href></C:addressbook-home-set>`+
+			`<D:current-user-principal><D:href>%s</D:href></D:current-user-principal>`+
+			`%s`+
 			`</D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>`+
-			`</D:multistatus>`, xmlEsc(r.URL.Path), xmlEsc(home))
+			`</D:multistatus>`, xmlEsc(r.URL.Path), xmlEsc(principal), homeXML)
 		return
 
 	case r.Method == "PROPFIND" && p == "/dav/addressbooks/alice/":

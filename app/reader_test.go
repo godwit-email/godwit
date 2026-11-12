@@ -2113,6 +2113,163 @@ func TestReaderCardDAVAvatarAndBareFrom(t *testing.T) {
 	})
 }
 
+func TestReaderCrossFolderJunkAndFraudDonorAvatars(t *testing.T) {
+	var hits atomic.Int64
+	h, acc := avatarHarness(t, "ask", func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Write(readerAvatarSVG)
+	})
+	if err := h.env.IMAP(acc.ID).User.Create("Junk", nil); err != nil {
+		t.Fatal(err)
+	}
+	h.syncNow(acc)
+
+	srv := h.env.StartCardDAV(t)
+	photoB64 := base64.StdEncoding.EncodeToString(readerAvatarSVG)
+	srv.PutCard("contacts", "bob", "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Bob Friend\r\nEMAIL:bob@example.com\r\nPHOTO:data:image/svg+xml;base64,"+photoB64+"\r\nEND:VCARD\r\n")
+	if _, err := h.env.Svc.AddAddressBook(context.Background(), core.AddressBookInput{
+		Preset: core.PresetCustom, Name: "通讯录", URL: srv.URL(), Username: "alice", Password: "secret",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	base := h.clock.Now()
+	h.put(acc, "Junk", coretest.Msg("Bob <bob@example.com>", acc.Email, "Cross Thread", "First in junk", coretest.MessageID("cj1@x"), at(base, 2)))
+	h.put(acc, "INBOX", coretest.Msg("Bob <bob@example.com>", acc.Email, "Re: Cross Thread", "Second in inbox", coretest.MessageID("ci2@x"), coretest.InReplyTo("cj1@x"), at(base, 1)))
+	h.syncNow(acc)
+
+	h.waitMail("cross-folder thread", func() bool { return len(h.items()) == 1 })
+	thID := h.items()[0].ID
+	msgs := h.messages(thID)
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages in thread, got %d", len(msgs))
+	}
+	mJunk, mInbox := msgs[0], msgs[1]
+
+	h.openThread(thID)
+	h.seeBody(mInbox.ID)
+	r := h.app.mail.reader
+	h.until("inbox message loaded CardDAV avatar", func() bool {
+		b := r.bodies[mInbox.ID]
+		return b != nil && b.avatarDone && b.avatar != nil
+	})
+	h.tt.Frame()
+	if r.open[mJunk.ID] {
+		t.Fatal("older junk message should start folded")
+	}
+	if !slices.Contains(h.tt.Texts(), "B") {
+		t.Fatalf("folded Junk message borrowed Inbox message's CardDAV PHOTO instead of showing initial B: %q", h.tt.Texts())
+	}
+
+	// Cross-message SecurityFraud thread: CardDAV donor is suppressed on folded fraud message,
+	// whereas explicit manual non-CardDAV allowRemote donor is permitted.
+	h.put(acc, "INBOX", coretest.Msg("PayPal <bob@example.com>", acc.Email, "Fraud Thread", "Folded spoof", coretest.MessageID("fd1@x"), at(base, 4)))
+	h.put(acc, "INBOX", coretest.Msg("Bob <bob@example.com>", acc.Email, "Re: Fraud Thread", "Legit inbox", coretest.MessageID("fd2@x"), coretest.InReplyTo("fd1@x"), at(base, 3)))
+	h.syncNow(acc)
+
+	fraudMsgs, err := h.env.Svc.Search(context.Background(), acc.ID, "Legit inbox", 10)
+	if err != nil || len(fraudMsgs) != 1 {
+		t.Fatalf("search fraud thread: %v %v", fraudMsgs, err)
+	}
+	h.openThread(fraudMsgs[0].ThreadID)
+	h.seeBody(fraudMsgs[0].ID)
+	h.until("legit message loaded CardDAV avatar", func() bool {
+		b := r.bodies[fraudMsgs[0].ID]
+		return b != nil && b.avatarDone && b.avatar != nil
+	})
+	h.tt.Frame()
+	if !slices.Contains(h.tt.Texts(), "P") {
+		t.Fatalf("folded SecurityFraud message borrowed CardDAV PHOTO instead of showing initial P: %q", h.tt.Texts())
+	}
+
+	// Now test folded SecurityFraud message when another SecurityFraud message from the same sender
+	// was explicitly granted allowRemote ("加载") and loaded a non-CardDAV remote avatar.
+	h.put(acc, "INBOX", coretest.Msg("PayPal <bob@example.com>", acc.Email, "Manual Fraud", "Folded spoof 1", coretest.MessageID("mf1@x"), at(base, 6)))
+	h.put(acc, "INBOX", coretest.Msg("PayPal <bob@example.com>", acc.Email, "Re: Manual Fraud", "Expanded spoof 2", coretest.MessageID("mf2@x"), coretest.InReplyTo("mf1@x"), at(base, 5)))
+	h.syncNow(acc)
+
+	mfFound, err := h.env.Svc.Search(context.Background(), acc.ID, "Expanded spoof 2", 10)
+	if err != nil || len(mfFound) != 1 {
+		t.Fatalf("search manual fraud thread: %v %v", mfFound, err)
+	}
+	h.openThread(mfFound[0].ThreadID)
+	h.seeBody(mfFound[0].ID)
+	h.see("1 张图片未加载")
+	h.click("加载")
+	h.until("manual non-CardDAV avatar loaded on SecurityFraud message", func() bool {
+		b := r.bodies[mfFound[0].ID]
+		return b != nil && b.avatarDone && b.avatar != nil && b.avatarSource != "carddav"
+	})
+	h.until("folded SecurityFraud message reuses explicit non-CardDAV avatar", func() bool {
+		h.tt.Frame()
+		return !slices.Contains(h.tt.Texts(), "P")
+	})
+}
+
+func TestReaderAddressBooksChangedInvalidatesManualAllowAvatars(t *testing.T) {
+	h, acc := avatarHarness(t, "ask", http.NotFound)
+
+	srv := h.env.StartCardDAV(t)
+	photoB64 := base64.StdEncoding.EncodeToString(readerAvatarSVG)
+	srv.PutCard("contacts", "carol", "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Carol\r\nEMAIL:carol@example.com\r\nPHOTO:data:image/svg+xml;base64,"+photoB64+"\r\nEND:VCARD\r\n")
+	ab, err := h.env.Svc.AddAddressBook(context.Background(), core.AddressBookInput{
+		Preset: core.PresetCustom, Name: "通讯录", URL: srv.URL(), Username: "alice", Password: "secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	colID := ab.Collections[0].ID
+
+	m := h.deliverOne(acc, coretest.Msg(
+		"Carol <carol@example.com>",
+		acc.Email,
+		"Banner Mail",
+		"Plain",
+		coretest.HTML(`<p>Hello</p><img src="https://cdn.example.com/banner.png" width="200" height="80">`),
+	))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	r := h.app.mail.reader
+	h.until("CardDAV avatar loaded", func() bool {
+		b := r.bodies[m.ID]
+		return b != nil && b.avatarDone && b.avatar != nil && b.avatarSource == "carddav"
+	})
+
+	// User clicks 加载 for body images, setting avatarAllow=true while avatarSource=="carddav".
+	h.see("1 张图片未加载")
+	h.click("加载")
+	h.until("manual allow set with CardDAV avatar", func() bool {
+		b := r.bodies[m.ID]
+		return b != nil && b.avatarDone && b.avatarAllow && b.avatar != nil && b.avatarSource == "carddav"
+	})
+
+	// Disabling the collection emits AddressBooksChanged: deleted CardDAV PHOTO must be cleared
+	// while preserving avatarAllow=true.
+	if err := h.env.Svc.SetAddressBookCollectionEnabled(context.Background(), colID, false); err != nil {
+		t.Fatal(err)
+	}
+	h.until("deleted CardDAV avatar cleared even with avatarAllow=true", func() bool {
+		h.drain()
+		h.tt.Frame()
+		b := r.bodies[m.ID]
+		return b != nil && b.avatarDone && b.avatar == nil && b.avatarAllow && slices.Contains(h.tt.Texts(), "C")
+	})
+
+	// Re-enabling and syncing restores CardDAV PHOTO even though avatarAllow=true and avatar==nil.
+	if err := h.env.Svc.SetAddressBookCollectionEnabled(context.Background(), colID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.env.Svc.SyncAddressBook(context.Background(), ab.ID); err != nil {
+		t.Fatal(err)
+	}
+	h.until("restored CardDAV avatar loaded on message with avatarAllow=true", func() bool {
+		h.drain()
+		h.tt.Frame()
+		b := r.bodies[m.ID]
+		return b != nil && b.avatarDone && b.avatar != nil && b.avatarSource == "carddav" && b.avatarAllow
+	})
+}
+
 // TestReplySkipsOwnForward: the reader and the list answer the conversation,
 // not the recipient of the user's own forward in it, but forward that forward
 // again; read alone, it still answers its recipient.

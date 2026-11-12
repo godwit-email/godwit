@@ -831,7 +831,6 @@ var Migrations = [][]string{{
 		card_id INTEGER NOT NULL REFERENCES address_book_cards(id) ON DELETE CASCADE,
 		pos INTEGER NOT NULL,
 		addr_key TEXT NOT NULL,
-		address TEXT NOT NULL,
 		pref INTEGER NOT NULL DEFAULT 0,
 		PRIMARY KEY(card_id, addr_key)
 	)`,

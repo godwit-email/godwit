@@ -64,9 +64,6 @@ func (s *Service) SenderAvatar(ctx context.Context, messageID int64, allowRemote
 	} else {
 		sec = gomail.EvaluateSecurity(from, authRes)
 	}
-	if sec.Status == gomail.SecurityFraud {
-		return Avatar{}, nil
-	}
 	if _, err := mail.ParseAddress(from); err != nil {
 		return Avatar{}, nil
 	}
@@ -74,7 +71,7 @@ func (s *Service) SenderAvatar(ctx context.Context, messageID int64, allowRemote
 	if email == "" {
 		return Avatar{}, nil
 	}
-	if !isJunk {
+	if !isJunk && sec.Status != gomail.SecurityFraud {
 		if av, _, _, err := s.carddavAvatar(ctx, email, true); err != nil {
 			return Avatar{}, err
 		} else if len(av.Data) > 0 {
@@ -247,15 +244,9 @@ func scanCardDAVPhoto(r []any) Avatar {
 // returns the highest-priority cached PHOTO along with all non-own AddrKeys in
 // that component.
 func (s *Service) carddavAvatar(ctx context.Context, email string, allowOwn bool) (av Avatar, compAddrs []string, isOwn bool, err error) {
-	ownRows, err := s.db.Query(ctx, "SELECT email FROM accounts")
+	own, err := s.ownAddrSet(ctx)
 	if err != nil {
 		return Avatar{}, nil, false, err
-	}
-	own := make(map[string]bool, len(ownRows.Values))
-	for _, r := range ownRows.Values {
-		if k := gomail.AddrKey(store.Str(r[0])); k != "" {
-			own[k] = true
-		}
 	}
 	if own[email] {
 		if !allowOwn {
@@ -267,7 +258,7 @@ func (s *Service) carddavAvatar(ctx context.Context, email string, allowOwn bool
 			JOIN address_book_collections col ON col.id = c.collection_id
 			JOIN address_books ab ON ab.id = col.address_book_id
 			WHERE e.addr_key = ? AND col.enabled = 1 AND length(c.photo) > 0
-			ORDER BY ab.sort_order ASC, c.collection_id ASC, c.href ASC
+			ORDER BY ab.sort_order ASC, ab.id ASC, col.id ASC, c.href ASC
 			LIMIT 1`, email)
 		if err != nil || len(rows.Values) == 0 {
 			return Avatar{}, nil, true, err
@@ -275,68 +266,25 @@ func (s *Service) carddavAvatar(ctx context.Context, email string, allowOwn bool
 		return scanCardDAVPhoto(rows.Values[0]), nil, true, nil
 	}
 
-	seenAddrs := map[string]bool{email: true}
-	seenCards := map[int64]bool{}
-	frontier := []string{email}
-	for len(frontier) > 0 {
-		fb, _ := json.Marshal(frontier)
-		cRows, err := s.db.Query(ctx, `SELECT DISTINCT c.id FROM address_book_emails e
-			JOIN address_book_cards c ON c.id = e.card_id
-			JOIN address_book_collections col ON col.id = c.collection_id
-			WHERE col.enabled = 1 AND e.addr_key IN (SELECT value FROM json_each(?))`, string(fb))
-		if err != nil {
-			return Avatar{}, nil, false, err
-		}
-		var newCards []int64
-		for _, r := range cRows.Values {
-			cid := store.Int(r[0])
-			if !seenCards[cid] {
-				seenCards[cid] = true
-				newCards = append(newCards, cid)
-			}
-		}
-		if len(newCards) == 0 {
-			break
-		}
-		cb, _ := json.Marshal(newCards)
-		eRows, err := s.db.Query(ctx, `SELECT addr_key FROM address_book_emails WHERE card_id IN (SELECT value FROM json_each(?))`, string(cb))
-		if err != nil {
-			return Avatar{}, nil, false, err
-		}
-		var next []string
-		for _, r := range eRows.Values {
-			k := store.Str(r[0])
-			if k != "" && !own[k] && !seenAddrs[k] {
-				seenAddrs[k] = true
-				next = append(next, k)
-			}
-		}
-		frontier = next
+	comps, addrToComp, err := s.enabledCardComponents(ctx, own)
+	if err != nil {
+		return Avatar{}, nil, false, err
 	}
-
-	compAddrs = make([]string, 0, len(seenAddrs))
-	for k := range seenAddrs {
-		compAddrs = append(compAddrs, k)
+	idx, ok := addrToComp[email]
+	if !ok {
+		return Avatar{}, []string{email}, false, nil
 	}
-	slices.Sort(compAddrs)
-
-	if len(seenCards) == 0 {
-		return Avatar{}, compAddrs, false, nil
-	}
-	cardIDs := make([]int64, 0, len(seenCards))
-	for cid := range seenCards {
-		cardIDs = append(cardIDs, cid)
-	}
-	cb, _ := json.Marshal(cardIDs)
+	comp := comps[idx]
+	cb, _ := json.Marshal(comp.cardIDs)
 	pRows, err := s.db.Query(ctx, `SELECT c.photo, c.photo_format, c.photo_width, c.photo_height
 		FROM address_book_cards c
 		JOIN address_book_collections col ON col.id = c.collection_id
 		JOIN address_books ab ON ab.id = col.address_book_id
 		WHERE c.id IN (SELECT value FROM json_each(?)) AND col.enabled = 1 AND length(c.photo) > 0
-		ORDER BY ab.sort_order ASC, c.collection_id ASC, c.href ASC
+		ORDER BY ab.sort_order ASC, ab.id ASC, col.id ASC, c.href ASC
 		LIMIT 1`, string(cb))
 	if err != nil || len(pRows.Values) == 0 {
-		return Avatar{}, compAddrs, false, err
+		return Avatar{}, comp.addrs, false, err
 	}
-	return scanCardDAVPhoto(pRows.Values[0]), compAddrs, false, nil
+	return scanCardDAVPhoto(pRows.Values[0]), comp.addrs, false, nil
 }
