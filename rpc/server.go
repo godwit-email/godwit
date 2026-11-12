@@ -34,7 +34,8 @@ type ServerOptions struct {
 	// DisableExternal starts the Server with external access (RoleFull,
 	// RoleMCP and api-token) off until SetExternal(true) turns it on.
 	DisableExternal bool
-	// Codec encodes errors (nil: every error is "internal error"). Every
+	// Codec encodes errors (nil: every error is "internal error", whose
+	// message for RoleUI is the error's own text). Every
 	// string it sends, and every error logged, has the UI and API tokens and
 	// then whatever Redact (nil = nothing more) finds replaced.
 	Codec  *Codec
@@ -323,6 +324,17 @@ func (s *Server) encode(err error) *WireError {
 	return we
 }
 
+// encodeUI is encode for RoleUI, Godwit's own interface: an unregistered
+// error keeps its redacted text, which the interface shows as it would in
+// process.
+func (s *Server) encodeUI(err error) *WireError {
+	we := s.encode(err)
+	if we.Code == CodeInternal {
+		we.Message = s.redact(err.Error())
+	}
+	return we
+}
+
 func (s *Server) connOptions(done chan struct{}) ConnOptions {
 	co := s.opts.Conn
 	co.EncodeError = s.encode
@@ -353,6 +365,7 @@ func (s *Server) hello(ctx context.Context, c *conn, done chan struct{}, params 
 		if s.opts.Conn.MaxActive <= 0 {
 			c.opts.MaxActive = 256
 		}
+		c.opts.EncodeError = s.encodeUI
 	case RoleFull, RoleMCP:
 		s.mu.Lock()
 		ok := !s.closed && s.external && s.apiToken != "" && subtle.ConstantTimeCompare([]byte(token), []byte(s.apiToken)) == 1

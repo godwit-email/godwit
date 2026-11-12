@@ -427,6 +427,27 @@ func TestAuditFailure(t *testing.T) {
 	}
 }
 
+// Godwit's own interface gets an unregistered error's text, redacted, to show
+// it; an external client still gets "internal error".
+func TestUnregisteredErrorTextForUI(t *testing.T) {
+	dir := shortDir(t)
+	startServer(t, dir, rpc.ServerOptions{
+		Redact: func(s string) string { return strings.ReplaceAll(s, "hunter2", "[redacted]") },
+		Audit:  func(string, string, []json.RawMessage) error { return errors.New("config plan: bad, pw hunter2") },
+	})
+	for role, want := range map[string]string{rpc.RoleUI: "config plan: bad, pw [redacted]", rpc.RoleFull: "internal error"} {
+		c, err := rpc.Dial(dir, role, "t", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var we *rpc.WireError
+		if err := c.Call(context.Background(), "Send", nil, 7); !errors.As(err, &we) || we.Code != rpc.CodeInternal || we.Message != want {
+			t.Errorf("%s Send = %v, want %q", role, err, want)
+		}
+		c.Close()
+	}
+}
+
 // The token never reaches an error response or the log.
 func TestTokenRedacted(t *testing.T) {
 	logged := logs(t)
