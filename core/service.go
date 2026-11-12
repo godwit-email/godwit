@@ -88,9 +88,15 @@ type Options struct {
 	// display names and context windows come from; "" fetches none (the apps set it).
 	ModelsDev string
 	// ConfirmWindow: a window can confirm godwit mcp's sends (每次确认) even
-	// with no ui client connected (tests set it). Without one, and with no ui
-	// client connected, 每次确认 refuses them, as 不允许.
+	// with no ui client connected (tests set it). Without one, with no ui
+	// client connected and no notification (NotifyMCPSend), 每次确认 refuses
+	// them, as 不允许.
 	ConfirmWindow bool
+	// NotifyMCPSend posts a notification, with no mail content, pointing to
+	// send request id that waits for the user (每次确认) while no ui client is
+	// connected to show it; false: it cannot post one, and 每次确认 refuses the
+	// send. nil: none is posted, as false.
+	NotifyMCPSend func(id int64) bool
 	// ComposeOpen reports whether draftID's compose window is open or
 	// opening; the GUI sets it, and 直接发送 leaves such a draft alone. nil: none is.
 	ComposeOpen func(draftID int64) bool

@@ -264,6 +264,7 @@
   "mcp_send_first": "Впервые",
   "mcp_send_notify": "ИИ-инструмент просит отправить «{arg1}». Подтвердите в Godwit.",
   "mcp_send_title": "Отправить это письмо?",
+  "mcp_send_waiting": "ИИ-инструмент просит отправить письмо. Подтвердите в Godwit.",
   "notify_new_mail": "Новое письмо",
   "notify_new_mails": "Новые сообщения ({arg1, number, ::group-off})",
   "oauth_page_fail_body": "Вернитесь в Godwit и попробуйте снова.",

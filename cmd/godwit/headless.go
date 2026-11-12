@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -196,6 +197,10 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 	if uiStarted {
 		opts.StopUIBackend = onStop
 	}
+	var notifyMCP func(id int64) bool // set with the platform, before the Local API serves
+	if d != nil && d.newPlatform != nil {
+		opts.NotifyMCPSend = func(id int64) bool { return notifyMCP != nil && notifyMCP(id) }
+	}
 	svc, err := core.New(ctx, opts)
 	if err != nil {
 		fmt.Fprintln(stderr, "godwit:", err)
@@ -242,6 +247,7 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 		if d.newPlatform != nil {
 			if plat := d.newPlatform(dataDir, svc); plat != nil {
 				sink = plat
+				notifyMCP = func(id int64) bool { return notifyMCPSend(plat, id) }
 				tray = newBackendTray(svc, plat, lang, post, clock, logWarn, func(what string) { showUI(svc, dataDir, what) },
 					func() { quitFromTray(svc, onStop) })
 			}
@@ -306,6 +312,19 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 		}
 		return 0
 	}, 0
+}
+
+// notifyMCPSend posts send request id's notification on sink, naming no mail
+// content; its click opens the request's confirmation (app.App.Open).
+func notifyMCPSend(sink app.NotificationSink, id int64) bool {
+	if !sink.NotificationsSupported() {
+		return false
+	}
+	err := sink.Notify(app.Notification{ID: "mcp_send:" + strconv.FormatInt(id, 10), Title: "Godwit", Body: i18n.McpSendWaiting()})
+	if err != nil {
+		slog.Warn("notify: MCP send", "err", err)
+	}
+	return err == nil
 }
 
 // followLocalAPI turns external access on srv on or off as Settings.LocalAPI

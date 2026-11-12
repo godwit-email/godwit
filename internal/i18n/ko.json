@@ -264,6 +264,7 @@
   "mcp_send_first": "처음 보냄",
   "mcp_send_notify": "AI 도구가 ‘{arg1}’ 발송을 요청했습니다. Godwit에서 확인하세요.",
   "mcp_send_title": "이 메일을 보낼까요?",
+  "mcp_send_waiting": "AI 도구가 메일 발송을 요청했습니다. Godwit에서 확인하세요.",
   "notify_new_mail": "새 메일",
   "notify_new_mails": "새 메일 {arg1, number, ::group-off}통",
   "oauth_page_fail_body": "Godwit으로 돌아가 다시 시도하세요.",

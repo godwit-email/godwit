@@ -322,6 +322,7 @@ func TestRunSkill(t *testing.T) {
 func TestAskApproval(t *testing.T) {
 	runContract(t, func(t *testing.T, api contract.API, env *coretest.Env) any {
 		ctx := t.Context()
+		core.WithUISession(ctx, env.Svc) // an interface to take the approval (ErrNoUI)
 		l := env.LLM(t)
 		defer l.Release()
 		env.AddAccount(t, "alice@example.com")
@@ -367,6 +368,26 @@ func TestAskApproval(t *testing.T) {
 	})
 }
 
+// With no interface connected, a Wit run and an action needing approval are
+// refused before they start; an action needing none runs.
+func TestApprovalsNeedUI(t *testing.T) {
+	runContract(t, func(t *testing.T, api contract.API, env *coretest.Env) any {
+		ctx := core.WithExternalSource(t.Context(), core.AuditLocalAPI) // as the Local API marks it
+		acc := env.AddAccount(t, "alice@example.com")
+		env.InstallPlugin(t, "egress-action")
+		env.Deliver(t, acc.ID, "INBOX", coretest.Msg("shop@example.com", "alice@example.com", "Invoice 7", "pay",
+			coretest.MessageID("m1@contract"), coretest.Date(day1)))
+		conv, err := api.NewConversation(ctx, "ask", 0)
+		require.NoError(t, err)
+		_, err = api.Ask(ctx, conv.ID, "draft one")
+		out := map[string]any{"ask": errInfo(err)}
+		target := core.Target{Kind: "message", ID: firstMessage(t, api).ID}
+		out["action"] = res(api.RunAction(ctx, "egress-action/ping", target, core.RunActionOptions{ApproveEgress: true}))
+		out["hits"] = env.EgressHits()
+		return out
+	})
+}
+
 func TestEvents(t *testing.T) {
 	runContract(t, func(t *testing.T, api contract.API, env *coretest.Env) any {
 		acc := env.AddAccount(t, "alice@example.com")
@@ -396,6 +417,7 @@ func TestEvents(t *testing.T) {
 func TestPluginAction(t *testing.T) {
 	runContract(t, func(t *testing.T, api contract.API, env *coretest.Env) any {
 		ctx := t.Context()
+		core.WithUISession(ctx, env.Svc) // an interface to take the approval (ErrNoUI)
 		acc := env.AddAccount(t, "alice@example.com")
 		env.InstallPlugin(t, "egress-action")
 		env.Deliver(t, acc.ID, "INBOX", coretest.Msg("shop@example.com", "alice@example.com", "Invoice 7", "pay",

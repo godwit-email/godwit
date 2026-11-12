@@ -12,11 +12,23 @@ import (
 )
 
 // NotificationClicked shows the window with what a notification was about:
-// its message, or the account's inbox for a gathered one. Only the newest
+// its message, the account's inbox for a gathered one, or the confirmation
+// of godwit mcp's send requests (mcp_send:<id>). Only the newest
 // click navigates, and only if the route has not changed meanwhile; a click
 // before the first load waits for it. A click taken already is dropped: the
 // backend and the interface may both be given it.
 func (a *App) NotificationClicked(id string) {
+	if num, ok := strings.CutPrefix(id, "mcp_send:"); ok { // its card shows over the page, which stays
+		a.plat.ShowWindow()
+		if req, err := strconv.ParseInt(num, 10, 64); err == nil {
+			if a.mcpSend.notified == nil {
+				a.mcpSend.notified = map[int64]bool{}
+			}
+			a.mcpSend.notified[req] = true // the user came from its notification
+		}
+		a.loadMCPSends()
+		return
+	}
 	if a.noteSeen[id] {
 		return
 	}
