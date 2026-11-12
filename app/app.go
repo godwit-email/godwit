@@ -46,9 +46,9 @@ type Platform interface {
 	// ext (no dot), as a size by size pixel PNG. Blocks: call it off the UI
 	// thread.
 	TypeIcon(ext string, size int) ([]byte, error)
-	// SetLocalAPI starts (on) or stops the Local API server for request
-	// gen, returning its socket's path while on. Off when it fails. Blocks:
-	// call off the UI thread.
+	// SetLocalAPI enables (on) or disables external access to the Local API
+	// for request gen, returning its socket's path while on. Off when it
+	// fails. Blocks: call off the UI thread.
 	SetLocalAPI(gen uint64, on bool) (path string, err error)
 	// DataDir is the data directory; custom: it is not the default one.
 	DataDir() (dir string, custom bool)
@@ -535,6 +535,15 @@ func (a *App) load() {
 			a.NotificationClicked(id)
 		}
 	})
+}
+
+// MailReady reports whether the initial load has settled on onboarding or a
+// loaded mail list. UI thread.
+func (a *App) MailReady() bool {
+	if !a.loaded {
+		return false
+	}
+	return a.route.Page == PageOnboarding || (a.route.Page == PageMail && !a.mail.loading)
 }
 
 // Close cancels all work in flight, whose done callbacks never run, closes

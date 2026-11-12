@@ -36,6 +36,7 @@ type API interface {
 	SaveDraft(ctx context.Context, d core.Draft) (core.Draft, error)
 	Send(ctx context.Context, draftID int64) error
 	SendAcknowledged(ctx context.Context, draftID int64, digest string) error
+	RequestMCPSend(ctx context.Context, draftID, revision int64) (sent bool, err error)
 	ListOutbox(ctx context.Context, accountID int64) ([]core.OutboxItem, error)
 	CancelOutbox(ctx context.Context, id int64) error
 	GetSettings(ctx context.Context) (core.Settings, error)
@@ -63,6 +64,8 @@ type API interface {
 // UIAPI extends API with the methods exposed only to RoleUI.
 type UIAPI interface {
 	API
+	SetUIForeground(ctx context.Context, on bool) error
+	SetComposeOpen(ctx context.Context, draftIDs []int64) error
 	SetInboxOnly(on bool)
 	InboxOnly() bool
 	GetMessageLazyImages(ctx context.Context, id int64, loadRemoteImages bool) (core.Message, error)
@@ -271,6 +274,10 @@ func (r *Remote) SendAcknowledged(ctx context.Context, draftID int64, digest str
 	return r.C.Call(ctx, "SendAcknowledged", nil, draftID, digest)
 }
 
+func (r *Remote) RequestMCPSend(ctx context.Context, draftID, revision int64) (bool, error) {
+	return call[bool](r, ctx, "RequestMCPSend", draftID, revision)
+}
+
 func (r *Remote) ListOutbox(ctx context.Context, accountID int64) ([]core.OutboxItem, error) {
 	return call[[]core.OutboxItem](r, ctx, "ListOutbox", accountID)
 }
@@ -399,6 +406,14 @@ func streamFallible[T any](r *Remote, ctx context.Context, wrapErr func(error) T
 		}
 	}()
 	return out, nil
+}
+
+func (r *Remote) SetUIForeground(ctx context.Context, on bool) error {
+	return r.C.Call(ctx, "SetUIForeground", nil, on)
+}
+
+func (r *Remote) SetComposeOpen(ctx context.Context, draftIDs []int64) error {
+	return r.C.Call(ctx, "SetComposeOpen", nil, draftIDs)
 }
 
 func (r *Remote) SetInboxOnly(on bool) {

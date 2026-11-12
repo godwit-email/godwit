@@ -143,6 +143,10 @@ type Service struct {
 	inboxRounds atomic.Bool                   // background rounds cover the inbox only; the window's state (SetInboxOnly)
 	timeZone    atomic.Pointer[time.Location] // the UI's current IANA time zone (SetTimeZone); nil is time.Local
 
+	uiMu       sync.Mutex              // connected RoleUI sessions and in-process UI state
+	uiSessions map[*uiSession]struct{} // live RoleUI connections (WithUISession)
+	localUI    uiSession               // direct in-process SetUIForeground / SetComposeOpen calls
+
 	callsMu     sync.Mutex
 	modelMu     sync.RWMutex // writers: a model service's row and key change together; readers see both or neither (ponytail: global, per-id if contended)
 	modelHTTP   *http.Client // model-service HTTP; nil = ai.NoRedirectClient; tests swap it

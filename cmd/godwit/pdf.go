@@ -21,6 +21,9 @@ var offline = sync.OnceValues(func() (*mygo.ContentRules, error) {
 // with the system's fonts, CJK included, and PrintToPDF puts back the
 // ideographs macOS names as radicals, so its text copies and searches.
 func printPDF(ctx context.Context, html string) ([]byte, error) {
+	if !mygo.WebViewAvailable() {
+		return nil, errors.New("printing a PDF: no system web view")
+	}
 	rules, err := offline()
 	if err != nil {
 		return nil, err

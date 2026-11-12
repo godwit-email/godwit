@@ -65,7 +65,7 @@ func startUIServer(t *testing.T, svc *core.Service) (*rpc.Server, *uiclient.Clie
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = release() })
 
-	srv, err := rpcbind.Listen(dir, svc, "test")
+	srv, err := rpcbind.ListenWith(dir, svc, rpcbind.ListenOptions{Version: "test", External: false})
 	require.NoError(t, err)
 	go srv.Serve(context.Background())
 	t.Cleanup(func() { _ = srv.Close() })
@@ -467,7 +467,7 @@ func TestCallbacksAndDiskPathsNeverCrossWire(t *testing.T) {
 	_, _, dir := startUIServer(t, env.Svc)
 
 	// Dial manually with countingConn to measure exact JSON-RPC bytes over the socket.
-	tok, err := os.ReadFile(filepath.Join(dir, rpc.TokenName))
+	tok, err := os.ReadFile(filepath.Join(dir, rpc.UITokenName))
 	require.NoError(t, err)
 	rawConn, err := net.Dial("unix", filepath.Join(dir, rpc.SocketName))
 	require.NoError(t, err)

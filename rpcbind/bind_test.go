@@ -283,6 +283,7 @@ func TestUISurfacePinned(t *testing.T) {
 
 	for _, m := range []string{
 		"Close", "Redact", "AuditExternal", "Proxy", "FollowConversation",
+		"UIConnected", "UIForeground", "IsComposeOpen",
 		"InlineImages", "FetchAttachments",
 		"InstallPluginFromRegistryWithProgress", "PrepareModelWithProgress", "DownloadRecognitionModel",
 		"SetPluginNetForTest",

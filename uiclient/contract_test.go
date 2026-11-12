@@ -29,6 +29,7 @@ import (
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mail"
+	"github.com/godwit-email/godwit/rpc"
 	"github.com/godwit-email/godwit/rpcbind"
 	"github.com/godwit-email/godwit/uiclient"
 	"github.com/godwit-email/godwit/webui"
@@ -72,7 +73,7 @@ func runUIContract(t *testing.T, makeOpts func(t *testing.T) []coretest.Option, 
 		start := time.Now()
 		env := coretest.New(t, optsFor(t)...)
 		_, cl, dir := startUIServer(t, env.Svc)
-		tok, err := os.ReadFile(filepath.Join(dir, "api-token"))
+		tok, err := os.ReadFile(filepath.Join(dir, rpc.UITokenName))
 		require.NoError(t, err)
 		v := s(t, cl, env)
 		got[1] = normalizeContract(t, v, start, time.Now())
