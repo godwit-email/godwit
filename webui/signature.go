@@ -85,7 +85,7 @@ type Signature struct {
 	EmitLink  func(SignatureLinkAnswer)
 
 	mu      sync.Mutex
-	svc     *core.Service
+	svc     Service
 	live    bool // the page called State: it ran, and may hold edits
 	shown   int64
 	next    int64
@@ -100,7 +100,7 @@ func NewSignature(pages *Pages, pick func(ctx context.Context) (string, error)) 
 }
 
 // SetService gives the page the service, once the data is open.
-func (s *Signature) SetService(svc *core.Service) {
+func (s *Signature) SetService(svc Service) {
 	s.mu.Lock()
 	s.svc = svc
 	s.mu.Unlock()
@@ -137,7 +137,7 @@ type SignaturePage struct{ s *Signature }
 // NewSignaturePage is the bound facade of s.
 func NewSignaturePage(s *Signature) *SignaturePage { return &SignaturePage{s: s} }
 
-func (s *Signature) caller(ctx context.Context) (*core.Service, error) {
+func (s *Signature) caller(ctx context.Context) (Service, error) {
 	if _, err := s.pages.Caller(ctx, "signature"); err != nil {
 		return nil, err
 	}

@@ -83,3 +83,42 @@ go run golang.org/x/perf/cmd/benchstat@latest /tmp/sync-before.txt /tmp/sync-aft
 ```
 
 Paste the `benchstat` output into the PR description, and remove the temporary `/tmp/sync-*.txt` files when done.
+
+## Arrival-to-notification latency (`BenchmarkNotifyLatency`)
+
+`BenchmarkNotifyLatency` in `app/notify_bench_test.go` measures end-to-end latency from a new message landing in `INBOX` on the fake IMAP server (`IMAP.User.Append`) until `app.Platform.Notify` receives the formatted notification. Asserting at `Platform.Notify` keeps the benchmark independent of whether notification filtering and batching run in the UI process or in a separate backend process.
+
+Each sub-benchmark pre-populates one account with the same deterministic mailbox builder as `BenchmarkSyncRound` (`coretest.Seeded(coretest.ScaleSmall, coretest.DefaultSeed)` — 5 folders, 50 messages, seed `716`) and completes the initial sync and `App` load before starting the timer, so seeded messages never trigger notifications.
+
+### Push (`idle`) vs polling (`poll`) and what `ns/op` means
+
+- **Fixed `1s` batching wait (`NotifyWait`) is deducted.** In production (`app/mail_notifier.go`), `MailNotifier` arms a fixed `NotifyWait = 1s` timer before querying inbox arrivals, filtering blocked senders and sign-in codes, and calling `Platform.Notify`. `BenchmarkNotifyLatency` drives `App` with `fakeClock` and advances `1s` immediately as soon as that batch timer is armed. Reported `ns/op` is therefore pure pipeline latency without the constant `1s` sleep; user-visible wall delay for a lone arrival is `ns/op + 1s`.
+- **`idle` (IMAP `IDLE` push):** `imapbackend.PollInterval` stays at its `5m` production default so wakes come strictly from IMAP `IDLE` (`core.SetChatterWithinForTest(b, 0)` disables `#453`'s multi-second chatter backoff across back-to-back benchmark iterations). Note that `core/internal/testmail`'s in-memory `IDLE` polls `Session.Poll` on a `10ms` ticker, contributing ~5 ms on average before unilateral `* EXISTS` reaches the client.
+- **`poll` (`WithoutIdle()` fallback):** `coretest.WithoutIdle()` removes `IDLE` from `CAPABILITY`, so `Receiver.Watch` returns `backend.ErrUnsupported` and the worker sleeps for `imapbackend.PollInterval` between rounds. To measure protocol, SQLite, and notification overhead without sleeping 5 minutes per iteration, the benchmark sets `imapbackend.PollInterval` to `50ms` by default (override with `GODWIT_BENCH_POLL`, e.g. `GODWIT_BENCH_POLL=1ms` to minimize timer sleep). Reported `ns/op` includes one configured poll wait plus the narrowed `INBOX` sync and notification delivery; in production (`5m` poll interval), polling adds `0–5m` (`2.5m` on average) plus `1s` (`notifyWait`).
+- **`bytes-down/op`, `B/op`, `allocs/op`:** Per-arrival server-to-client IMAP bytes and Go heap allocations (`idle` opens both the `Watch` session and the `syncNow` session, whereas `poll` opens only `syncNow`).
+
+### Running once
+
+```sh
+mise run generate
+CGO_ENABLED=0 go test -run='^$' -bench='^BenchmarkNotifyLatency$' ./app
+```
+
+To inspect polling pipeline cost with a custom poll interval:
+
+```sh
+GODWIT_BENCH_POLL=1ms CGO_ENABLED=0 go test -run='^$' -bench='^BenchmarkNotifyLatency/poll$' ./app
+```
+
+Example output (macOS, Apple M5 Max, `go1.27.3`, default `GODWIT_BENCH_POLL=50ms`, for illustration rather than a pinned baseline):
+
+```text
+goos: darwin
+goarch: arm64
+pkg: github.com/godwit-email/godwit/app
+cpu: Apple M5 Max
+BenchmarkNotifyLatency/idle-18         	     100	  17937388 ns/op	      4099 bytes-down/op	 3794424 B/op	   77448 allocs/op
+BenchmarkNotifyLatency/poll-18         	      21	  56152907 ns/op	      2576 bytes-down/op	 2257566 B/op	   40025 allocs/op
+```
+
+For PRs touching background sync, `IDLE`, event delivery, or notifications, compare 6 samples before and after with `benchstat` the same way as `BenchmarkSyncRound`, substituting `./app` and `-bench='^BenchmarkNotifyLatency$'`.

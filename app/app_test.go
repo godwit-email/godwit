@@ -187,3 +187,37 @@ func TestStartCtxStopsEventPump(t *testing.T) {
 		t.Fatalf("%d callbacks posted after the pump stopped", n)
 	}
 }
+
+func TestMailReadyWaitsForInboxList(t *testing.T) {
+	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) {
+		acc := e.AddAccount(t, "alice@example.com")
+		e.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Bench hello", "body"))
+	})
+	if h.app.MailReady() {
+		t.Fatal("MailReady before first load drained")
+	}
+	releaseList := make(chan struct{})
+	inReload := make(chan struct{}, 1)
+	h.app.mail.fetched = func() {
+		inReload <- struct{}{}
+		<-releaseList
+	}
+	h.until("accounts loaded and mail reload started", func() bool { return h.app.loaded })
+	<-inReload
+	if h.app.MailReady() {
+		t.Fatal("MailReady while inbox list reload is still in flight")
+	}
+	close(releaseList)
+	h.until("mail list ready", h.app.MailReady)
+	if !h.tt.HasText("Bench hello") {
+		t.Fatalf("mail list missing seeded subject; texts %q", h.tt.Texts())
+	}
+}
+
+func TestMailReadyOnboarding(t *testing.T) {
+	h := newHarness(t)
+	if h.app.MailReady() {
+		t.Fatal("MailReady before onboarding load drained")
+	}
+	h.until("onboarding ready", h.app.MailReady)
+}

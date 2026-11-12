@@ -27,6 +27,13 @@ var (
 	chatterWithin = 10 * time.Second
 )
 
+// SetChatterWithinForTest replaces chatterWithin until t ends. Tests only.
+func SetChatterWithinForTest(t interface{ Cleanup(func()) }, d time.Duration) {
+	old := chatterWithin
+	chatterWithin = d
+	t.Cleanup(func() { chatterWithin = old })
+}
+
 // Test hooks, nil in production: beforeWorkerExit runs as a worker exits (tests
 // make exits slow), onParked each time a worker parks on reauth_required.
 var (
