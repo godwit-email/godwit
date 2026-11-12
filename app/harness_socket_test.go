@@ -1,11 +1,20 @@
 package app
 
 import (
+	"os"
 	"testing"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 )
+
+// inProcessOnly skips t over the ui socket, where the backend, not the App,
+// does what t checks.
+func inProcessOnly(t *testing.T) {
+	if os.Getenv(uiTransport) == "socket" {
+		t.Skip("in process only")
+	}
+}
 
 // backendArrive delivers subject to acc's INBOX and waits until the
 // backend's notifier has taken the arrival.
