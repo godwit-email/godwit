@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"slices"
 )
 
 // SystemTranslator is the operating system's on-device translation, which
@@ -21,6 +22,19 @@ type SystemTranslator interface {
 // SystemTranslator returns the operating system's translator, if any.
 func (s *Service) SystemTranslator() SystemTranslator {
 	return s.opts.SystemTranslator
+}
+
+// SystemTranslatorLanguages returns the BCP 47 language identifiers downloaded
+// for system translation, an empty non-nil slice when none are downloaded, or
+// nil when the operating system offers no translator.
+func (s *Service) SystemTranslatorLanguages() []string {
+	if s.opts.SystemTranslator == nil {
+		return nil
+	}
+	if langs := s.opts.SystemTranslator.InstalledLanguages(); langs != nil {
+		return slices.Clone(langs)
+	}
+	return []string{}
 }
 
 var (
