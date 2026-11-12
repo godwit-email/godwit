@@ -344,6 +344,34 @@ func TestClientStreamDropping(t *testing.T) {
 	}
 }
 
+// An event that may not go at the head of a full buffer (a run's end) stays,
+// in order, while a later droppable one makes room: the stream goes on.
+func TestClientStreamDroppingKeepsHead(t *testing.T) {
+	tg := newTarget()
+	c, _ := client(t, newDispatcher(t, tg))
+	keep := func(ev json.RawMessage) bool { return string(ev) != "0" && string(ev) != "999" }
+	flood, cancel, err := c.StreamDropping(context.Background(), "Flood", keep, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	wait(t, tg.floodDone, "the flood pump to finish")
+	var s string
+	if err := c.Call(context.Background(), "Echo", &s, "a", 1); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for ev := range flood {
+		got = append(got, string(ev))
+	}
+	if len(got) == 0 || got[0] != "0" || got[len(got)-1] != "999" || len(got) >= 1000 {
+		t.Errorf("flood delivered %d events, first %v last %v; want 0 first, 999 last, some dropped", len(got), got[:min(1, len(got))], got[max(0, len(got)-1):])
+	}
+	if err := c.StreamErr(flood); err != nil {
+		t.Errorf("StreamErr = %v, want nil", err)
+	}
+}
+
 func TestTargetErrorsAlwaysEncoded(t *testing.T) {
 	c, _ := client(t, newDispatcher(t, newTarget()))
 	err := c.Call(context.Background(), "Leak", nil)

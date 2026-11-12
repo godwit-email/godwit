@@ -112,8 +112,8 @@ func (c *Client) Stream(ctx context.Context, method string, args ...any) (events
 }
 
 // StreamDropping is Stream whose reader, once StreamBuffer behind, loses the
-// oldest unread event instead while drop says it may go; the stream overflows
-// only when the oldest may not.
+// oldest unread event drop lets go instead; the stream overflows only when
+// none of the buffered events may go.
 func (c *Client) StreamDropping(ctx context.Context, method string, drop func(json.RawMessage) bool, args ...any) (events <-chan json.RawMessage, cancel func(), err error) {
 	_, s, err := c.request(ctx, method, args, true, drop)
 	if err != nil {
@@ -345,8 +345,8 @@ func (c *Client) handleResponse(id uint64, m message) {
 }
 
 // pushLocked queues ev on s, making room by dropping the oldest unread event
-// if s.drop lets it go: taken off the head, the rest keep their order. The
-// reader may take that head first, which leaves room all the same.
+// s.drop lets go; the rest keep their order. With none to drop the stream
+// overflows. Pushes happen under c.mu only, so what it takes out fits back.
 func (c *Client) pushLocked(s *clientStream, ev json.RawMessage) bool {
 	select {
 	case s.ch <- ev:
@@ -356,19 +356,29 @@ func (c *Client) pushLocked(s *clientStream, ev json.RawMessage) bool {
 	if s.drop == nil {
 		return false
 	}
-	select {
-	case old := <-s.ch:
-		if !s.drop(old) {
-			return false // an event that may not go is lost all the same: the stream ends with ErrStreamOverflow
+	var buf []json.RawMessage
+	for len(buf) < cap(s.ch) {
+		select {
+		case old := <-s.ch:
+			buf = append(buf, old)
+			continue
+		default:
 		}
-	default:
+		break
 	}
-	select {
-	case s.ch <- ev:
-		return true
-	default:
+	dropped := false
+	for _, old := range buf {
+		if !dropped && s.drop(old) {
+			dropped = true
+			continue
+		}
+		s.ch <- old
+	}
+	if !dropped && len(buf) == cap(s.ch) {
 		return false
 	}
+	s.ch <- ev
+	return true
 }
 
 func (c *Client) handleNotification(m message) {
