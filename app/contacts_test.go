@@ -168,6 +168,26 @@ func TestContactsAvatarPolicy(t *testing.T) {
 	}
 }
 
+// An avatar read before the contact's first received mail (none then) does
+// not stick: that mail is the newest, and its sender avatar loads.
+func TestContactsAvatarFollowsNewestMessage(t *testing.T) {
+	var hits atomic.Int64
+	h, acc := avatarHarness(t, "auto", func(w http.ResponseWriter, req *http.Request) { hits.Add(1); w.Write(readerAvatarSVG) })
+	h.post(func() { h.app.contacts().avatar(core.Contact{Address: "bob@example.com"}) })
+	for range 5 {
+		h.tt.Frame()
+		h.drain()
+	}
+	h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "Avatar", "plain body"))
+	h.click("联系人")
+	h.see("bob@example.com")
+	h.until("the avatar", func() bool {
+		h.drain()
+		h.tt.Frame()
+		return hits.Load() > 0 && !slices.Contains(h.tt.Texts(), "B")
+	})
+}
+
 func TestContactsSidebarRefreshAndZeroMail(t *testing.T) {
 	h, accs := mailHarness(t, []coretest.Option{coretest.WithoutAutoSync()}, "alice@example.com")
 	acc := accs[0]

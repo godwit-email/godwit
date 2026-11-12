@@ -43,7 +43,7 @@ type contactsPage struct {
 	unsubID  int64
 	unsubDlg bool
 
-	avatars    map[string]*contactAvatar // by primary address, as settingsSavedVer was
+	avatars    map[string]*contactAvatar // by primary address and newest message, as settingsSavedVer was
 	avatarsVer uint64
 }
 
@@ -749,7 +749,9 @@ func (p *contactsPage) avatar(ct core.Contact) ui.ImageSource {
 	if p.avatarsVer != a.settingsSavedVer {
 		p.avatars, p.avatarsVer = nil, a.settingsSavedVer
 	}
-	if av := p.avatars[addr]; av != nil {
+	// keyed by the newest message too: a sent-only contact's first received mail brings a sender avatar
+	key := addr + "\x00" + strconv.FormatInt(ct.Latest, 10)
+	if av := p.avatars[key]; av != nil {
 		return av.img
 	}
 	if a.settingsVer != a.settingsSavedVer {
@@ -759,7 +761,7 @@ func (p *contactsPage) avatar(ct core.Contact) ui.ImageSource {
 		p.avatars = map[string]*contactAvatar{}
 	}
 	av := &contactAvatar{}
-	p.avatars[addr] = av
+	p.avatars[key] = av
 	var img ui.ImageSource
 	a.do(func(ctx context.Context) error {
 		got, err := a.svc.ContactAvatar(ctx, addr)

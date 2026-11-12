@@ -42,6 +42,12 @@ func (m *Masker) SetKnownNames(names []string) {
 // headerRe is a From, To or Cc line, as mailHeader writes one.
 var headerRe = regexp.MustCompile(`(?im)^(?:from|to|cc)[ \t]*:[ \t]*(.+)$`)
 
+// contactRe is the Name line of a contact a tool returned, as ai.Untrusted
+// wraps it (source contact:N; a tag inside content is escaped, so mail
+// cannot write one): stored with the conversation, its name is learned again
+// when the history is read back, as a header's is.
+var contactRe = regexp.MustCompile(`(?m)^<untrusted_email source="contact:\d+"[^>]*>\nName:[ \t]*(.+)$`)
+
 // LearnNames makes names known values, as learnNames does a header's
 // display names: for names read from mail outside a header (a contact).
 func (m *Masker) LearnNames(names []string) error {
@@ -58,10 +64,18 @@ func (m *Masker) LearnNames(names []string) error {
 	return nil
 }
 
-// learnNames makes the display names in s's header lines known values.
+// learnNames makes the display names in s's header lines, and its contacts'
+// names, known values.
 func (m *Masker) learnNames(s string) error {
 	if !m.namesOn.Load() {
 		return nil
+	}
+	for _, sm := range contactRe.FindAllStringSubmatch(s, -1) {
+		if n := strings.TrimSpace(sm[1]); !shortName(n) && !strings.Contains(n, "@") {
+			if _, err := m.placeholder(nameKind, n, false, true); err != nil {
+				return err
+			}
+		}
 	}
 	for _, sm := range headerRe.FindAllStringSubmatch(s, -1) {
 		as, _ := mail.ParseAddressList(strings.TrimSpace(sm[1]))

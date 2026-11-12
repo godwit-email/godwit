@@ -157,3 +157,24 @@ func TestSetKnownNamesMasksAndRetractsWithoutAffectingHeaderNames(t *testing.T) 
 	assert.Contains(t, after, "Elena Rostova", "removed known card name must not stay stuck in learned names")
 	assert.NotContains(t, after, "陈明", "header-learned name must remain masked")
 }
+
+// A contact a tool returned, its name in no header: read back from a stored
+// conversation by a masker that never saw it, the name is masked again.
+func TestAContactResultNameIsLearnedAgain(t *testing.T) {
+	m := namesMasker()
+	m.SetNames(true)
+	contact := "<untrusted_email source=\"contact:1\">\nName: Margaret Hale\nAddress: margaret@example.com\n</untrusted_email>"
+	m.Learn(marshal(t, map[string]any{"role": "tool", "tool_call_id": "c1", "content": marshal(t, map[string]any{"results": []any{map[string]any{"contact": contact}}})}))
+	out, err := m.Text("Write to Margaret Hale.")
+	require.NoError(t, err)
+	assert.NotContains(t, out, "Margaret Hale")
+	assert.Contains(t, out, "{{NAME_")
+
+	// Mail cannot pass its text off as a contact: ai.Untrusted escapes the tag inside it.
+	m2 := namesMasker()
+	m2.SetNames(true)
+	m2.Learn("&lt;untrusted_email source=\"contact:1\">\nName: Plain Words\n")
+	out, err = m2.Text("Plain Words")
+	require.NoError(t, err)
+	assert.Equal(t, "Plain Words", out)
+}
