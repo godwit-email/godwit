@@ -293,7 +293,7 @@ func (s *smtpSession) Data(r io.Reader) error {
 }
 
 // StartSMTP starts a plaintext SMTP server accepting only alice/secret (PLAIN).
-func StartSMTP(t *testing.T, opts ...SMTPOption) (addr string, in *Inbox) {
+func StartSMTP(t testing.TB, opts ...SMTPOption) (addr string, in *Inbox) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
