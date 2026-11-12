@@ -158,6 +158,11 @@ type Deps struct {
 
 	// Dev: the build is a development one: the rail offers the Kit gallery.
 	Dev bool
+
+	// Remote: Svc is a backend's over the Local API socket. The backend
+	// notifies new mail and narrows background syncs; the App only tells it
+	// whether the window is in front.
+	Remote bool
 }
 
 // Page is a top-level screen.
@@ -234,6 +239,7 @@ type App struct {
 
 	foreground bool
 	vibrancy   bool // Deps.Vibrancy
+	remote     bool // Deps.Remote: MailNotifier is nil
 	*MailNotifier
 	logf                                 func(format string, args ...any)
 	noteRoute                            func(ctx context.Context, id string) (Route, bool, error) // where a notification leads; tests wrap it
@@ -340,15 +346,17 @@ func New(d Deps) *App {
 	a.syncing, a.syncErr, a.syncedAtBy = map[int64]bool{}, map[int64]syncFail{}, map[int64]time.Time{}
 	a.undoToasts = map[int64]bool{}
 	a.ctx, a.cancel = context.WithCancel(context.Background())
-	a.MailNotifier = NewMailNotifier(MailNotifierDeps{
-		Svc:        a.svc,
-		Sink:       a.plat,
-		Clock:      a.clock,
-		Foreground: func() bool { return a.foreground },
-		Language:   i18n.Language,
-		Post:       a.onUI,
-		Logf:       a.logf,
-	})
+	if a.remote = d.Remote; !a.remote {
+		a.MailNotifier = NewMailNotifier(MailNotifierDeps{
+			Svc:        a.svc,
+			Sink:       a.plat,
+			Clock:      a.clock,
+			Foreground: func() bool { return a.foreground },
+			Language:   i18n.Language,
+			Post:       a.onUI,
+			Logf:       a.logf,
+		})
+	}
 	a.pumpDone = make(chan struct{})
 	return a
 }
@@ -551,7 +559,9 @@ func (a *App) MailReady() bool {
 // attachments. UI thread.
 func (a *App) Close() {
 	a.cancel() // the event pump unsubscribes as it stops
-	a.MailNotifier.Close()
+	if a.MailNotifier != nil {
+		a.MailNotifier.Close()
+	}
 	if a.codesStop != nil {
 		a.codesStop()
 	}
@@ -651,12 +661,19 @@ func (a *App) SetForeground(on bool) {
 	if on {
 		a.plat.ShowSignInCode(nil)
 	}
+	if a.remote {
+		a.writes.Chain("ui-foreground", func(ctx context.Context) error { return a.svc.SetUIForeground(ctx, on) }, a.toastErr)
+		return
+	}
 	a.applyBackgroundSync(a.settings)
 }
 
 // applyBackgroundSync narrows the Service's syncs to the inbox while the
 // window is behind another one, unless st syncs every folder there.
 func (a *App) applyBackgroundSync(st core.Settings) {
+	if a.remote {
+		return // the backend narrows them from SetUIForeground and the settings
+	}
 	a.svc.SetInboxOnly(st.BackgroundSync != core.BackgroundSyncAll && !a.foreground)
 }
 

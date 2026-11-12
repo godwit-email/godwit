@@ -178,6 +178,7 @@ type Service interface {
 	SetRuleEnabled(ctx context.Context, id int64, on bool) error
 	SetSettings(ctx context.Context, st core.Settings) (core.Settings, error)
 	SetSkillEnabled(ctx context.Context, name string, enabled bool) error
+	SetUIForeground(ctx context.Context, on bool) error
 	SetViewException(ctx context.Context, id, threadID int64, kind string) error
 	SignatureCode(ctx context.Context, id int64) (string, error)
 	SignatureEditor(ctx context.Context, id int64) (string, error)
