@@ -82,9 +82,22 @@ func TestBudget(t *testing.T) {
 
 func TestDataURL(t *testing.T) {
 	pic := pngOf(t, 1, 1)
-	got, err := DataURL("data:image/png;base64," + base64.StdEncoding.EncodeToString(pic))
-	if err != nil || !bytes.Equal(got, pic) {
-		t.Fatalf("round trip: %v", err)
+	b64 := base64.StdEncoding.EncodeToString(pic)
+	for _, src := range []string{
+		"data:image/png;base64," + b64,
+		"DATA:IMAGE/PNG; charset=utf-8; base64,\r\n " + b64[:12] + "\r\n " + b64[12:],
+		"data:image/png," + url.PathEscape(string(pic)),
+	} {
+		got, err := DataURL(src)
+		if err != nil || !bytes.Equal(got, pic) {
+			t.Fatalf("%q: %v", src, err)
+		}
+	}
+	nearMax := make([]byte, MaxImageBytes-16)
+	wrapped := base64.StdEncoding.EncodeToString(nearMax)
+	wrapped = wrapped[:64] + strings.Repeat("\r\n", 1024) + wrapped[64:]
+	if got, err := DataURL("data:image/png;base64," + wrapped); err != nil || len(got) != len(nearMax) {
+		t.Fatalf("wrapped near max: %v (%d)", err, len(got))
 	}
 	big := "data:image/png;base64," + base64.StdEncoding.EncodeToString(make([]byte, MaxImageBytes+1))
 	if _, err := DataURL(big); !errors.Is(err, ErrTooLarge) {
@@ -92,6 +105,16 @@ func TestDataURL(t *testing.T) {
 	}
 	if _, err := DataURL("https://x.example/a.png"); !errors.Is(err, ErrScheme) {
 		t.Errorf("not data: %v", err)
+	}
+	for _, bad := range []string{
+		"data:text/html;base64," + b64,
+		"data:;base64," + b64,
+		"data:image/;base64," + b64,
+		"data:image/png;base64",
+	} {
+		if _, err := DataURL(bad); !errors.Is(err, ErrFormat) {
+			t.Errorf("%q: %v", bad, err)
+		}
 	}
 }
 

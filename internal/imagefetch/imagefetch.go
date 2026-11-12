@@ -427,7 +427,7 @@ func Fetch(ctx context.Context, c *http.Client, src string) (data []byte, format
 // UserAgent is what the proxy sends: no browser, no app version.
 const UserAgent = "Mozilla/5.0 (compatible; ImageProxy)"
 
-// DataURL decodes a data: URL's bytes, at most MaxImageBytes of them.
+// DataURL decodes a data:image URL's bytes, at most MaxImageBytes of them.
 func DataURL(src string) ([]byte, error) {
 	if len(src) < len("data:") || !strings.EqualFold(src[:len("data:")], "data:") {
 		return nil, ErrScheme
@@ -436,13 +436,21 @@ func DataURL(src string) ([]byte, error) {
 	if !ok {
 		return nil, ErrFormat
 	}
-	if len(payload) > MaxImageBytes/3*4+4 {
+	parts := strings.Split(strings.ToLower(meta), ";")
+	if mt := strings.TrimSpace(parts[0]); !strings.HasPrefix(mt, "image/") || len(mt) == len("image/") {
+		return nil, ErrFormat
+	}
+	if len(payload) > MaxImageBytes*2 {
 		return nil, ErrTooLarge
 	}
 	var data []byte
 	var err error
-	if strings.HasSuffix(strings.ToLower(meta), ";base64") {
-		data, err = base64.StdEncoding.DecodeString(strings.Join(strings.Fields(payload), ""))
+	if len(parts) > 1 && strings.TrimSpace(parts[len(parts)-1]) == "base64" {
+		b64 := strings.Join(strings.Fields(payload), "")
+		if len(b64) > (MaxImageBytes+2)/3*4 {
+			return nil, ErrTooLarge
+		}
+		data, err = base64.StdEncoding.DecodeString(b64)
 	} else {
 		var s string
 		s, err = url.PathUnescape(payload)

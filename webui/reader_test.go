@@ -1069,6 +1069,22 @@ func TestReaderInlineImageEndToEnd(t *testing.T) {
 	assert.Equal(t, pic, rec.Body.Bytes())
 }
 
+// A message with an inline data:image bitmap shows it at once, even when
+// remote images ask first (#706).
+func TestReaderInlineDataImageEndToEnd(t *testing.T) {
+	const blueSquare = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFklEQVR4nGPQKLpFEmIY1TCqYfhqAAASZ3QQWUKpQAAAAABJRU5ErkJggg=="
+	f := newReaderFixture(t)
+	raw := "From: Sender <sender@example.com>\r\nTo: " + f.acc.Email + "\r\nDate: Thu, 12 Nov 2026 12:00:00 +0800\r\n" +
+		"Subject: Inline Base64 PNG\r\nMessage-ID: <b64@example.com>\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n" +
+		"<p>Inline Base64 PNG:</p>\r\n<img alt=\"Blue square\" width=\"16\" height=\"16\" src=\"data:image/png;base64," + blueSquare + "\">\r\n"
+	m := f.deliverOne(t, []byte(raw))
+	b, err := f.p.Load(pageCtx(f.page(m.ID)))
+	require.NoError(t, err)
+	assert.False(t, b.Remote)
+	assert.Zero(t, b.Blocked)
+	assert.Contains(t, b.HTML, `src="data:image/png;base64,`+blueSquare+`"`)
+}
+
 func TestPrepareBodyProxiesRemoteImages(t *testing.T) {
 	dims := func(src string) (int, int, bool) { return 40, 30, src == "https://cdn.example/known.png" }
 	in := `<img src="https://cdn.example/known.png" alt="a"><img src="https://cdn.example/sized.png" width="9">` +
