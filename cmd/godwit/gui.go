@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/egoist/mygo"
 	mygoi18n "github.com/egoist/mygo/i18n"
@@ -293,9 +294,8 @@ func gui(ctx context.Context, dataDir, open string) int {
 
 		opts := windowOptions(runtime.GOOS)
 		bench.configureWindow(&opts)
-		mainClosed := false  // the window closed: the interface goes with its last compose window
-		quitAsked := false   // a quit closes the compose windows: their going is not the window's close
-		var closeMain func() // set below, before any compose window opens
+		quitAsked := false // a quit closes the compose windows: their going is not the window's close
+		var mc *mainClose  // set below, before any compose window opens
 		plat = &platform{
 			dataDir: dataDir,
 			svc:     client,
@@ -313,8 +313,8 @@ func gui(ctx context.Context, dataDir, open string) int {
 		windows.OnChange = func() { // no window is open yet
 			a.OnUI(a.ComposeWindowsChanged)
 			a.OnUI(func() {
-				if mainClosed && !quitAsked && windows.Count() == 0 {
-					closeMain() // decided again, now that none is open
+				if mc.closed && !quitAsked && windows.Count() == 0 {
+					mc.close() // decided again, now that none is open
 				}
 			})
 			go func() { // the backend's 直接发送 leaves these drafts alone
@@ -345,8 +345,32 @@ func gui(ctx context.Context, dataDir, open string) int {
 			a.SetWitPage(v, wit.SetConversation, wit.SetCreated)
 			a.SetWitAsk(wit.Handoff)
 		}
+		mc = &mainClose{
+			action: func(expired bool) closeAction {
+				return mainCloseAction(a.KeepInBackground(), expired, windows.Count(), runtime.GOOS, a.TrayIconShown())
+			},
+			do: func(act closeAction) {
+				switch act {
+				case closeExit:
+					win.Hide()
+					leaveBackend.Store(true)
+					mygo.App.Quit()
+				case closeHide:
+					win.Hide()
+				case closeMinimize:
+					win.Minimize()
+				case closeQuit:
+					mygo.App.Quit()
+				}
+			},
+			hidden: func() bool { return !win.IsVisible() || win.IsMinimized() },
+			after: func(d time.Duration, f func()) func() bool {
+				return time.AfterFunc(d, func() { a.OnUI(f) }).Stop
+			},
+		}
 		win.OnFocus(func() {
-			mainClosed, quitAsked = false, false
+			mc.shown() // every way back (tray, Dock, notification, App.Open) shows and focuses it
+			quitAsked = false
 			leaveBackend.Store(false) // a quit the user kept (a failed save asked) is over
 			a.SetForeground(true)
 		})
@@ -397,33 +421,19 @@ func gui(ctx context.Context, dataDir, open string) int {
 		})
 
 		// Closing the window while the App keeps running in the background
-		// exits the interface, the backend staying, once no compose window is
-		// open; otherwise closing quits (mainCloseAction). Every quit goes
-		// through quitHook: first the compose windows close, each flushing
-		// its page, then nq waits for the main window's writes (a failed or
-		// slow one asks first) and quits again. Hiding needs no save.
+		// hides it; hidden for hiddenExitAfter, the interface exits, the
+		// backend staying, once no compose window is open; otherwise closing
+		// quits (mainCloseAction, mainClose). Every quit goes through
+		// quitHook: first the compose windows close, each flushing its page,
+		// then nq waits for the main window's writes (a failed or slow one
+		// asks first) and quits again. Hiding needs no save.
 		nq := &nativeQuit{beforeClose: a.BeforeClose, close: a.Close, quit: func() { go quitAgain() }} // mygo's calls are goroutine-safe
-		closeMain = func() {
-			mainClosed = true
-			switch mainCloseAction(a.KeepInBackground(), closeExitsUI, windows.Count(), runtime.GOOS, a.TrayIconShown()) {
-			case closeExit:
-				win.Hide()
-				leaveBackend.Store(true)
-				mygo.App.Quit()
-			case closeHide:
-				win.Hide()
-			case closeMinimize:
-				win.Minimize()
-			case closeQuit:
-				mygo.App.Quit()
-			}
-		}
 		win.OnClose(func(e *mygo.CloseEvent) {
 			if nq.flushed {
 				return // the quit's last step closes it
 			}
 			e.PreventDefault()
-			closeMain()
+			mc.close()
 		})
 		hook := quitHook(windows, nq.onQuit, nq.reset)
 		mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) { quitAsked = true; hook(e) })

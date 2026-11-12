@@ -524,11 +524,11 @@ type trayBox struct{ w, h, inkW float32 }
 // can bring back a hidden window, and a minimized one keeps its taskbar entry.
 func closeMinimizes(goos string, hasTray bool) bool { return !hasTray && goos != "darwin" }
 
-// closeExitsUI: closing the main window while Godwit keeps running in the
-// background exits the interface process; the backend and its tray stay.
-// shortcut: false hides the window instead, the interface staying; switch if
-// the interface's cold start proves too slow (#738).
-const closeExitsUI = true
+// hiddenExitAfter is how long the main window stays hidden after its close
+// before the interface exits, the backend and its tray staying: reopening
+// sooner is instant, later a cold start, but the interface's memory is freed
+// (ADR 0038, #738).
+const hiddenExitAfter = 5 * time.Minute
 
 // closeAction is what closing the main window does (mainCloseAction).
 type closeAction int
@@ -541,19 +541,69 @@ const (
 )
 
 // mainCloseAction is what closing the main window does: with keep
-// (App.KeepInBackground) off, the quit; on, the interface exits (exits:
-// closeExitsUI) once none of its compose windows is open, hiding the window
-// meanwhile, or else the window hides or minimizes (closeMinimizes).
-func mainCloseAction(keep, exits bool, compose int, goos string, hasTray bool) closeAction {
+// (App.KeepInBackground) off, the quit; on, the window hides or minimizes
+// (closeMinimizes) until it stayed so for hiddenExitAfter (expired), then the
+// interface exits once none of its compose windows is open.
+func mainCloseAction(keep, expired bool, compose int, goos string, hasTray bool) closeAction {
 	switch {
 	case !keep:
 		return closeQuit
-	case exits && compose == 0:
+	case expired && compose == 0:
 		return closeExit
-	case !exits && closeMinimizes(goos, hasTray):
+	case expired:
+		return closeHide // already hidden; decided again once the last compose window closes
+	case closeMinimizes(goos, hasTray):
 		return closeMinimize
 	}
 	return closeHide
+}
+
+// mainClose is closing the main window over time: close hides it and starts
+// the hiddenExitAfter timer, whose firing closes again, expired, if the
+// window is still hidden; shown cancels it. Used on the UI thread: after's f
+// must run there.
+type mainClose struct {
+	action  func(expired bool) closeAction // mainCloseAction now
+	do      func(closeAction)
+	hidden  func() bool                                        // the main window is hidden or minimized
+	after   func(d time.Duration, f func()) (stop func() bool) // app.Clock.AfterFunc
+	closed  bool                                               // the window closed and has not shown since
+	expired bool
+	stop    func() bool
+	gen     int // voids a timer that fired after shown stopped it
+}
+
+// close is the window's close, or deciding it again while closed (a compose
+// window went, the timer fired).
+func (m *mainClose) close() {
+	m.closed = true
+	act := m.action(m.expired)
+	if (act == closeHide || act == closeMinimize) && !m.expired && m.stop == nil {
+		gen := m.gen
+		m.stop = m.after(hiddenExitAfter, func() {
+			if gen != m.gen {
+				return
+			}
+			m.stop = nil
+			if !m.hidden() { // shown without telling us
+				m.shown()
+				return
+			}
+			m.expired = true
+			m.close()
+		})
+	}
+	m.do(act)
+}
+
+// shown is the window showing again: the interface stays.
+func (m *mainClose) shown() {
+	if m.stop != nil {
+		m.stop()
+		m.stop = nil
+	}
+	m.closed, m.expired = false, false
+	m.gen++
 }
 
 func trayBoxFor(goos string) trayBox {

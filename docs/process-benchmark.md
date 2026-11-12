@@ -253,4 +253,4 @@ The one remaining helper process (~9 MiB RSS, ~2 MiB footprint, no context switc
 | Bg `CSW` / 30s, Godwit | 2,694 | 231 | −2,463 (−91.4%) | 3,190 | 290 | −2,900 (−90.9%) |
 | Bg `CSW` / 30s, tree | 4,216 | 231 | −3,985 (−94.5%) | 4,737 | 290 | −4,447 (−93.9%) |
 
-The decision on closing-the-window behaviour (keep "closing the window exits the UI process" or go back to "hide the UI, backend separate") is the maintainer's, recorded in ADR 0038.
+Decision: closing the window hides the UI, which exits after 5 minutes hidden; see [ADR 0038](adr/0038-backend-process-owns-the-engine.md#关窗的取舍738).
