@@ -1067,16 +1067,26 @@ func (s *Service) syncAddressBookWithCreds(ctx context.Context, rec addressBookR
 }
 
 type preparedCard struct {
-	href        string
-	etag        string
-	fn          string
-	org         string
-	title       string
-	photo       []byte
-	photoFormat string
-	photoWidth  int
-	photoHeight int
-	emails      []carddav.CardEmail
+	href            string
+	etag            string
+	fn              string
+	org             string
+	title           string
+	photo           []byte
+	photoFormat     string
+	photoWidth      int
+	photoHeight     int
+	photoPendingURL string
+	emails          []carddav.CardEmail
+}
+
+type retriedPhoto struct {
+	href   string
+	etag   string
+	photo  []byte
+	format string
+	width  int
+	height int
 }
 
 func (s *Service) syncOneCollection(ctx context.Context, client *carddav.Client, homeURL *url.URL, col localCollectionState, creds carddav.Credentials) error {
@@ -1107,14 +1117,19 @@ func (s *Service) syncOneCollectionOnce(ctx context.Context, client *carddav.Cli
 	snapSyncGen := store.Int(snapRows.Values[0][2])
 	snapName := store.Str(snapRows.Values[0][3])
 
-	etagRows, err := s.db.Query(ctx, "SELECT href, etag FROM address_book_cards WHERE collection_id = ?", colID)
+	etagRows, err := s.db.Query(ctx, "SELECT href, etag, photo_pending_url FROM address_book_cards WHERE collection_id = ?", colID)
 	s.abWriteMu.Unlock()
 	if err != nil {
 		return false, err
 	}
 	localETags := make(map[string]string, len(etagRows.Values))
+	pendingPhotos := make(map[string]string)
 	for _, r := range etagRows.Values {
-		localETags[store.Str(r[0])] = store.Str(r[1])
+		h := store.Str(r[0])
+		localETags[h] = store.Str(r[1])
+		if u := store.Str(r[2]); u != "" {
+			pendingPhotos[h] = u
+		}
 	}
 
 	var (
@@ -1212,6 +1227,12 @@ func (s *Service) syncOneCollectionOnce(ctx context.Context, client *carddav.Cli
 			if len(raw) == 0 && ph.URL != "" {
 				downloaded, derr := imagefetch.DownloadAvatar(ctx, photoHTTP, ph.URL)
 				if derr != nil {
+					if ctx.Err() != nil {
+						return false, ctx.Err()
+					}
+					if !errors.Is(derr, imagefetch.ErrAvatarMiss) && !errors.Is(derr, imagefetch.ErrScheme) && item.photoPendingURL == "" {
+						item.photoPendingURL = ph.URL
+					}
 					continue
 				}
 				raw = downloaded
@@ -1227,9 +1248,46 @@ func (s *Service) syncOneCollectionOnce(ctx context.Context, client *carddav.Cli
 			item.photoFormat = format
 			item.photoWidth = w
 			item.photoHeight = h
+			item.photoPendingURL = ""
 			break
 		}
 		prepared = append(prepared, item)
+	}
+
+	deletedSet := make(map[string]bool, len(deleted))
+	for _, h := range deleted {
+		deletedSet[h] = true
+	}
+	var retried []retriedPhoto
+	if len(pendingPhotos) > 0 {
+		pendingHrefs := make([]string, 0, len(pendingPhotos))
+		for h := range pendingPhotos {
+			if !fetchedHrefs[h] && !deletedSet[h] {
+				pendingHrefs = append(pendingHrefs, h)
+			}
+		}
+		slices.Sort(pendingHrefs)
+		for _, h := range pendingHrefs {
+			downloaded, derr := imagefetch.DownloadAvatar(ctx, photoHTTP, pendingPhotos[h])
+			if derr != nil {
+				if ctx.Err() != nil {
+					return false, ctx.Err()
+				}
+				if errors.Is(derr, imagefetch.ErrAvatarMiss) || errors.Is(derr, imagefetch.ErrScheme) {
+					retried = append(retried, retriedPhoto{href: h, etag: localETags[h]})
+				}
+				continue
+			}
+			checked, format, pw, ph, cerr := imagefetch.CheckAvatarImage(downloaded, "carddav")
+			if cerr != nil {
+				retried = append(retried, retriedPhoto{href: h, etag: localETags[h]})
+				continue
+			}
+			retried = append(retried, retriedPhoto{
+				href: h, etag: localETags[h],
+				photo: checked, format: format, width: pw, height: ph,
+			})
+		}
 	}
 
 	s.abWriteMu.Lock()
@@ -1267,18 +1325,19 @@ func (s *Service) syncOneCollectionOnce(ctx context.Context, client *carddav.Cli
 		stmts = append(stmts,
 			sqlite.Statement{
 				SQL: `INSERT INTO address_book_cards
-					(collection_id, href, etag, fn, org, title, photo, photo_format, photo_width, photo_height)
-					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+					(collection_id, href, etag, fn, org, title, photo, photo_format, photo_width, photo_height, photo_pending_url)
+					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					ON CONFLICT(collection_id, href) DO UPDATE SET
 						etag = excluded.etag,
 						fn = excluded.fn,
 						org = excluded.org,
 						title = excluded.title,
-						photo = excluded.photo,
-						photo_format = excluded.photo_format,
-						photo_width = excluded.photo_width,
-						photo_height = excluded.photo_height`,
-				Args: []any{colID, item.href, item.etag, item.fn, item.org, item.title, photoArg, item.photoFormat, item.photoWidth, item.photoHeight},
+						photo = CASE WHEN excluded.photo IS NULL AND excluded.photo_pending_url <> '' THEN address_book_cards.photo ELSE excluded.photo END,
+						photo_format = CASE WHEN excluded.photo IS NULL AND excluded.photo_pending_url <> '' THEN address_book_cards.photo_format ELSE excluded.photo_format END,
+						photo_width = CASE WHEN excluded.photo IS NULL AND excluded.photo_pending_url <> '' THEN address_book_cards.photo_width ELSE excluded.photo_width END,
+						photo_height = CASE WHEN excluded.photo IS NULL AND excluded.photo_pending_url <> '' THEN address_book_cards.photo_height ELSE excluded.photo_height END,
+						photo_pending_url = excluded.photo_pending_url`,
+				Args: []any{colID, item.href, item.etag, item.fn, item.org, item.title, photoArg, item.photoFormat, item.photoWidth, item.photoHeight, item.photoPendingURL},
 			},
 			sqlite.Statement{
 				SQL:  `DELETE FROM address_book_emails WHERE card_id = (SELECT id FROM address_book_cards WHERE collection_id = ? AND href = ?)`,
@@ -1294,6 +1353,21 @@ func (s *Service) syncOneCollectionOnce(ctx context.Context, client *carddav.Cli
 				SQL: `INSERT OR REPLACE INTO address_book_emails (card_id, pos, addr_key, pref)
 					VALUES ((SELECT id FROM address_book_cards WHERE collection_id = ? AND href = ?), ?, ?, ?)`,
 				Args: []any{colID, item.href, em.Pos, em.AddrKey, pref},
+			})
+		}
+	}
+	for _, rp := range retried {
+		if len(rp.photo) > 0 {
+			stmts = append(stmts, sqlite.Statement{
+				SQL: `UPDATE address_book_cards
+					SET photo = ?, photo_format = ?, photo_width = ?, photo_height = ?, photo_pending_url = ''
+					WHERE collection_id = ? AND href = ? AND etag = ?`,
+				Args: []any{rp.photo, rp.format, rp.width, rp.height, colID, rp.href, rp.etag},
+			})
+		} else {
+			stmts = append(stmts, sqlite.Statement{
+				SQL:  `UPDATE address_book_cards SET photo_pending_url = '' WHERE collection_id = ? AND href = ? AND etag = ?`,
+				Args: []any{colID, rp.href, rp.etag},
 			})
 		}
 	}

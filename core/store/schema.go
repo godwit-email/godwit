@@ -826,6 +826,7 @@ var Migrations = [][]string{{
 		photo_format TEXT NOT NULL DEFAULT '',
 		photo_width INTEGER NOT NULL DEFAULT 0,
 		photo_height INTEGER NOT NULL DEFAULT 0,
+		photo_pending_url TEXT NOT NULL DEFAULT '',
 		UNIQUE(collection_id, href)
 	)`,
 	`CREATE TABLE IF NOT EXISTS address_book_emails (

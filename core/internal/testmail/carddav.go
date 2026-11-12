@@ -50,6 +50,7 @@ type cardCollection struct {
 type photoAsset struct {
 	contentType string
 	data        []byte
+	failStatus  int
 	hits        int
 }
 
@@ -359,12 +360,18 @@ func (s *CardDAV) serve(w http.ResponseWriter, r *http.Request) {
 	if after, ok := strings.CutPrefix(r.URL.Path, "/photos/"); ok {
 		s.mu.Lock()
 		p := s.photos[after]
+		var failStatus int
 		if p != nil {
 			p.hits++
+			failStatus = p.failStatus
 		}
 		s.mu.Unlock()
 		if p == nil {
 			http.NotFound(w, r)
+			return
+		}
+		if failStatus != 0 {
+			http.Error(w, "photo unavailable", failStatus)
 			return
 		}
 		if p.contentType != "" {
@@ -635,4 +642,14 @@ func (s *CardDAV) SetCollectionPropfindHook(fn func(slug string) string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.colPropfindHook = fn
+}
+
+// SetPhotoStatus injects an HTTP failure status (0 = normal 200 OK) for a named
+// asset previously registered with ServePhoto.
+func (s *CardDAV) SetPhotoStatus(name string, status int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if p := s.photos[name]; p != nil {
+		p.failStatus = status
+	}
 }

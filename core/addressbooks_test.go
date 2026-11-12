@@ -42,12 +42,14 @@ func makePNGBytes(t *testing.T, w, h int) []byte {
 func newCardDAVService(t *testing.T, dir string, autoSync bool) *Service {
 	t.Helper()
 	SerializeKeyringForTest()
+	keyring.MockInit()
 	roots := testmail.CardDAVRoots()
 	prevRoots := conn.TLSRoots
 	conn.TLSRoots = roots
 	t.Cleanup(func() { conn.TLSRoots = prevRoots })
 	s, err := New(bg, Options{DataDir: dir, AutoSync: autoSync, ImageClient: loopbackImageClient()})
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
 
@@ -745,4 +747,77 @@ func TestHomeSetPropfindPartialFailurePreservesCollections(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, contacts, 1)
 	assert.Equal(t, "bob@example.com", contacts[0].Address)
+}
+
+func TestTransientPhotoDownloadFailurePreservesExistingAndRetries(t *testing.T) {
+	keyring.MockInit()
+	s := newCardDAVService(t, t.TempDir(), false)
+	defer s.Close()
+
+	srv := testmail.StartCardDAV(t)
+	png1 := makePNGBytes(t, 20, 20)
+	png2 := makePNGBytes(t, 28, 28)
+	url1 := srv.ServePhoto("p1.png", "image/png", png1)
+	url2 := srv.ServePhoto("p2.png", "image/png", png2)
+	urlNew := srv.ServePhoto("new.png", "image/png", png2)
+	url404 := srv.URL() + "/photos/never.png"
+
+	// "existing" starts with a valid cached external photo; "fresh" fails transiently (503);
+	// "missing" fails deterministically (404).
+	srv.SetPhotoStatus("new.png", http.StatusServiceUnavailable)
+	srv.PutCard("contacts", "existing", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Existing\r\nEMAIL:existing@example.com\r\nPHOTO;VALUE=URI:"+url1+"\r\nEND:VCARD\r\n")
+	srv.PutCard("contacts", "fresh", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Fresh\r\nEMAIL:fresh@example.com\r\nPHOTO;VALUE=URI:"+urlNew+"\r\nEND:VCARD\r\n")
+	srv.PutCard("contacts", "missing", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Missing\r\nEMAIL:missing@example.com\r\nPHOTO;VALUE=URI:"+url404+"\r\nEND:VCARD\r\n")
+
+	ab, err := s.AddAddressBook(bg, AddressBookInput{
+		Preset: PresetCustom, Name: "PhotoRetry", URL: srv.URL(), Username: "alice", Password: "secret",
+	})
+	require.NoError(t, err)
+
+	avExisting, err := s.ContactAvatar(bg, "existing@example.com")
+	require.NoError(t, err)
+	assert.Equal(t, 20, avExisting.Width)
+
+	avFresh, err := s.ContactAvatar(bg, "fresh@example.com")
+	require.NoError(t, err)
+	assert.Empty(t, avFresh.Data, "503 photo not cached yet, without blocking card import")
+
+	// Update "existing" to point to p2.png while p2.png transiently returns 503:
+	// previously cached 20x20 avatar must NOT be wiped to NULL.
+	srv.SetPhotoStatus("p2.png", http.StatusServiceUnavailable)
+	srv.PutCard("contacts", "existing", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Existing Updated\r\nEMAIL:existing@example.com\r\nPHOTO;VALUE=URI:"+url2+"\r\nEND:VCARD\r\n")
+	require.NoError(t, s.SyncAddressBook(bg, ab.ID))
+
+	avExisting, err = s.ContactAvatar(bg, "existing@example.com")
+	require.NoError(t, err)
+	assert.Equal(t, 20, avExisting.Width, "transient photo failure on card update must preserve previously cached photo")
+
+	hits404Before := 0
+	for _, r := range srv.Requests() {
+		if r.Path == "/photos/never.png" {
+			hits404Before++
+		}
+	}
+
+	// Both photo endpoints recover, with NO further vCard/ETag edits on the CardDAV server:
+	// the next sync retries pending photo URLs (and does NOT retry deterministic 404).
+	srv.SetPhotoStatus("new.png", 0)
+	srv.SetPhotoStatus("p2.png", 0)
+	require.NoError(t, s.SyncAddressBook(bg, ab.ID))
+
+	avFresh, err = s.ContactAvatar(bg, "fresh@example.com")
+	require.NoError(t, err)
+	assert.Equal(t, 28, avFresh.Width, "unchanged card's pending photo fetched once server recovers")
+
+	avExisting, err = s.ContactAvatar(bg, "existing@example.com")
+	require.NoError(t, err)
+	assert.Equal(t, 28, avExisting.Width, "updated card's pending photo replaces preserved fallback once server recovers")
+
+	hits404After := 0
+	for _, r := range srv.Requests() {
+		if r.Path == "/photos/never.png" {
+			hits404After++
+		}
+	}
+	assert.Equal(t, hits404Before, hits404After, "deterministic 404 miss is not retried on subsequent syncs")
 }
