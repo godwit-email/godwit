@@ -78,6 +78,50 @@ func TestMCPSendConfirmWhileUIConnected(t *testing.T) {
 	require.ErrorIs(t, err, ErrMCPSendOff)
 }
 
+// With no ui client connected, a backend that can post notifications keeps
+// 每次确认's request waiting and notifies the user of it (ADR 0038); one that
+// cannot post refuses it, as with no notifications at all. A connected ui
+// client shows the request itself: nothing is notified.
+func TestMCPSendConfirmNotifiesWithoutUI(t *testing.T) {
+	e, d := mcpSendEnv(t, MCPSendConfirm, false)
+	var notified []int64
+	posts := true
+	e.s.opts.NotifyMCPSend = func(id int64) bool {
+		notified = append(notified, id)
+		return posts
+	}
+	sent, err := e.s.RequestMCPSend(bg, d.ID, d.Revision)
+	require.NoError(t, err)
+	assert.False(t, sent)
+	ps := e.pendingSends(t)
+	require.Len(t, ps, 1)
+	assert.Equal(t, []int64{ps[0].ID}, notified)
+	assert.Zero(t, e.outboxLen(t))
+
+	_, err = e.s.RequestMCPSend(bg, d.ID, d.Revision) // asked already: no second notification
+	require.NoError(t, err)
+	assert.Len(t, notified, 1)
+
+	ctx, disconnect := context.WithCancel(bg)
+	defer disconnect()
+	WithUISession(ctx, e.s)
+	d.Subject = "changed"
+	d, err = e.s.SaveDraft(bg, d)
+	require.NoError(t, err)
+	_, err = e.s.RequestMCPSend(bg, d.ID, d.Revision)
+	require.NoError(t, err)
+	assert.Len(t, notified, 1, "a connected interface shows it")
+	disconnect()
+	require.Eventually(t, func() bool { return !e.s.UIConnected() }, time.Second, time.Millisecond)
+
+	require.NoError(t, e.s.ResolveMCPSend(bg, e.pendingSends(t)[0].ID, false))
+	posts = false
+	_, err = e.s.RequestMCPSend(bg, d.ID, d.Revision)
+	require.ErrorIs(t, err, ErrMCPSendOff)
+	assert.Empty(t, e.pendingSends(t))
+	assert.Zero(t, e.outboxLen(t))
+}
+
 func TestMCPSendConfirm(t *testing.T) {
 	e, d := mcpSendEnv(t, MCPSendConfirm, true)
 	evs, stop := e.s.bus.Subscribe()

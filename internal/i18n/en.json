@@ -29,6 +29,17 @@
   "wit_skill_output_replace_draft": "Replace the draft",
   "app_another_owner": "Godwit is already running (the app or godwit --headless) for this data directory.",
   "app_backend_lost": "Godwit’s background process stopped unexpectedly. Open Godwit again to restart it.",
+  "app_backend_version": "Godwit {arg1} is running in the background, started with godwit --headless; this is Godwit {arg2}. Stop it, then open Godwit again.",
+  "@app_backend_version": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
   "app_lock_failed": "Godwit could not open its data directory.",
   "app_open_failed": "Godwit could not open its data directory: {arg1}.",
   "@app_open_failed": {
@@ -499,6 +510,7 @@
     }
   },
   "mcp_send_title": "Send this email?",
+  "mcp_send_waiting": "An AI tool asks to send an email. Confirm it in Godwit.",
   "notify_new_mail": "New mail",
   "notify_new_mails": "{arg1, number, ::group-off} new messages",
   "@notify_new_mails": {
@@ -1796,8 +1808,11 @@
   "settings_general": "General",
   "settings_general_sub": "Appearance, interface language, startup, notifications and threads.",
   "settings_heading": "Settings",
-  "settings_keep_in_background": "Keep running after the window closes",
-  "settings_keep_in_background_help": "Keeps syncing and notifying; open it again from the menu bar icon, Dock or taskbar",
+  "settings_background_receive": "Background receiving",
+  "settings_background_receive_help": "Whether Godwit keeps receiving mail and notifying after the window closes or Godwit quits",
+  "settings_background_receive_stop_on_close": "Stop when the window closes",
+  "settings_background_receive_until_quit": "Keep after closing, stop on quit",
+  "settings_background_receive_always": "Always keep receiving",
   "settings_keychain": "System keychain",
   "settings_keychain_checking": "Checking…",
   "settings_keychain_ok": "The system keychain works",
@@ -1924,6 +1939,7 @@
   "settings_background_sync_inbox": "Inbox only",
   "settings_background_sync_all": "All folders",
   "settings_launch_at_login_help": "Starts Godwit in the background after login",
+  "settings_login_item_off": "Login startup is off for Godwit in your system's settings; turn it back on there",
   "settings_local_api": "Local API",
   "settings_local_api_client_off": "Disconnected {arg1}.",
   "settings_local_api_client_on": "Connected {arg1}. Restart it to use Godwit.",
@@ -2431,6 +2447,7 @@
   "tray_hidden_toast": "Menu bar icon hidden. You can turn it back on in Settings.",
   "tray_open": "Open Godwit",
   "tray_quit": "Quit",
+  "tray_quit_stop": "Quit and Stop Receiving",
   "tray_sync_all": "Sync all accounts now",
   "wit_add": "Add",
   "wit_approval_allow": "Allow",

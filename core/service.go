@@ -88,9 +88,15 @@ type Options struct {
 	// display names and context windows come from; "" fetches none (the apps set it).
 	ModelsDev string
 	// ConfirmWindow: a window can confirm godwit mcp's sends (每次确认) even
-	// with no ui client connected (tests set it). Without one, and with no ui
-	// client connected, 每次确认 refuses them, as 不允许.
+	// with no ui client connected (tests set it). Without one, with no ui
+	// client connected and no notification (NotifyMCPSend), 每次确认 refuses
+	// them, as 不允许.
 	ConfirmWindow bool
+	// NotifyMCPSend posts a notification, with no mail content, pointing to
+	// send request id that waits for the user (每次确认) while no ui client is
+	// connected to show it; false: it cannot post one, and 每次确认 refuses the
+	// send. nil: none is posted, as false.
+	NotifyMCPSend func(id int64) bool
 	// ComposeOpen reports whether draftID's compose window is open or
 	// opening; the GUI sets it, and 直接发送 leaves such a draft alone. nil: none is.
 	ComposeOpen func(draftID int64) bool
@@ -578,10 +584,14 @@ func (s *Service) Publish(ev events.Event) { s.bus.Publish(ev) }
 
 // StopUIBackend shuts down a backend the interface started (Options.StopUIBackend),
 // as quitting Godwit does; it returns before the shutdown runs. A backend the
-// user started (--headless) refuses and keeps running.
-func (s *Service) StopUIBackend(context.Context) error {
+// user started (--headless), or one whose 后台收信 is BackgroundReceiveAlways,
+// refuses and keeps running.
+func (s *Service) StopUIBackend(ctx context.Context) error {
 	if s.opts.StopUIBackend == nil {
 		return errors.New("the user started this backend; it keeps running")
+	}
+	if st, err := s.GetSettings(ctx); err == nil && st.BackgroundReceive == BackgroundReceiveAlways {
+		return errors.New("background receiving is always on; the backend keeps running")
 	}
 	s.opts.StopUIBackend()
 	return nil

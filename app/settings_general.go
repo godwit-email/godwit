@@ -65,9 +65,10 @@ func (a *App) settingsEffects(old, st core.Settings) {
 	if st.Theme != old.Theme {
 		a.plat.SetThemeSource(st.Theme)
 	}
-	if on := st.LaunchAtLogin; on != old.LaunchAtLogin {
+	if on := opensAtLogin(st); on != opensAtLogin(old) {
 		plat := a.plat
 		a.writes.Chain("open-at-login", func(context.Context) error { return plat.SetOpenAtLogin(on) }, a.toastErr)
+		a.checkLoginItem()
 	}
 	if st.UILanguage != old.UILanguage {
 		a.setLanguage(st.UILanguage)
@@ -80,6 +81,22 @@ func (a *App) settingsEffects(old, st core.Settings) {
 		a.showUnread(a.inboxUnread)
 	}
 	a.syncLocalAPI()
+}
+
+// opensAtLogin reports whether st wants Godwit's one login item: for the
+// interface (开机时自动启动) or for the backend (一直继续), which Linux
+// leaves to the user's own service (README: Receive mail from login on Linux).
+func opensAtLogin(st core.Settings) bool {
+	return st.LaunchAtLogin || st.BackgroundReceive == core.BackgroundReceiveAlways && goos != "linux"
+}
+
+// checkLoginItem asks the system, after the open-at-login requests before
+// it, whether the login item runs: one the user turned off there shows as
+// off under the settings, and Godwit does not turn it on again by itself.
+func (a *App) checkLoginItem() {
+	plat, want, on := a.plat, opensAtLogin(a.settings), false
+	a.writes.Chain("open-at-login", func(context.Context) error { on = want && plat.OpenAtLogin(); return nil },
+		func(error) { a.loginItemOff = want && !on })
 }
 
 // syncLocalAPI asks the platform to serve the Local API as a.settings say.
@@ -284,9 +301,26 @@ func (p *settingsPage) generalView(c *ui.Context) {
 			}
 			return settingSelect(c, i18n.T("settings.ui_language"), &st.UILanguage, opts)
 		}))
+	loginHelp := func(key string, wants bool) string { // the system's login item turned off says so where it is asked for
+		if wants && p.a.loginItemOff {
+			return i18n.T("settings.login_item_off")
+		}
+		return i18n.T(key)
+	}
 	startup := []func(){
-		sw(&st.LaunchAtLogin, i18n.T("settings.launch_at_login"), i18n.T("settings.launch_at_login.help")),
-		sw(&st.KeepInBackground, i18n.T("settings.keep_in_background"), i18n.T("settings.keep_in_background.help")),
+		sw(&st.LaunchAtLogin, i18n.T("settings.launch_at_login"), loginHelp("settings.launch_at_login.help", st.LaunchAtLogin)),
+		sel(i18n.T("settings.background_receive"), loginHelp("settings.background_receive.help", st.BackgroundReceive == core.BackgroundReceiveAlways), func() ui.Element {
+			cur := cmp.Or(st.BackgroundReceive, core.BackgroundReceiveUntilQuit)
+			el := settingSelect(c, i18n.T("settings.background_receive"), &cur, []kit.Option[string]{
+				{Value: core.BackgroundReceiveStopOnClose, Label: i18n.T("settings.background_receive.stop_on_close")},
+				{Value: core.BackgroundReceiveUntilQuit, Label: i18n.T("settings.background_receive.until_quit")},
+				{Value: core.BackgroundReceiveAlways, Label: i18n.T("settings.background_receive.always")},
+			})
+			if cur != cmp.Or(st.BackgroundReceive, core.BackgroundReceiveUntilQuit) {
+				st.BackgroundReceive = cur
+			}
+			return el
+		}),
 		sel(i18n.T("settings.background_sync"), i18n.T("settings.background_sync.help"), func() ui.Element {
 			cur := cmp.Or(st.BackgroundSync, core.BackgroundSyncInbox)
 			el := settingSelect(c, i18n.T("settings.background_sync"), &cur, []kit.Option[string]{

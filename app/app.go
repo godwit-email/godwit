@@ -33,6 +33,9 @@ type Platform interface {
 	Notify(n Notification) error
 	NotificationsSupported() bool
 	SetOpenAtLogin(on bool) error
+	// OpenAtLogin reports whether the login item runs: false once the user
+	// turned it off in the system. Blocks: call it off the UI thread.
+	OpenAtLogin() bool
 	SetTrayVisible(visible bool)
 	SetTrayUnread(n int)              // the inboxes' unread total on the tray; 0 clears it
 	SetAppUnread(n int)               // the inboxes' unread total on the app icon; 0 clears it
@@ -236,6 +239,8 @@ type App struct {
 	localAPIPath string // the Local API's socket while it serves
 	localAPIErr  error  // why the Local API last failed; the privacy page shows it
 
+	loginItemOff bool // the settings want the login item, but the user turned it off in the system (checkLoginItem)
+
 	foreground bool
 	vibrancy   bool   // Deps.Vibrancy
 	quit       func() // Deps.Quit
@@ -373,6 +378,7 @@ func (a *App) Start(ctx context.Context) {
 		}
 	}()
 	a.load()
+	a.checkLoginItem()
 	a.after(latestFirst, a.watchLatest)
 }
 
@@ -517,6 +523,7 @@ func (a *App) load() {
 		a.refreshSignInCodes()
 		if first {
 			a.setLanguage(st.UILanguage)
+			a.loadMCPSends() // asked while no interface was open: no event of them reached this one
 		}
 		gone := func(id int64, _ bool) bool { _, ok := unread[id]; return !ok } // a removed account
 		maps.DeleteFunc(a.syncing, gone)
@@ -648,6 +655,7 @@ func (a *App) SetForeground(on bool) {
 	a.foreground = on
 	if on {
 		a.plat.ShowSignInCode(nil)
+		a.checkLoginItem() // the user may come back from the system's login items
 	}
 	a.writes.Chain("ui-foreground", func(ctx context.Context) error { return a.svc.SetUIForeground(ctx, on) }, a.toastErr)
 }

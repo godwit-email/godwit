@@ -233,7 +233,7 @@ func seedDataDir(ctx context.Context, dataDir string, srv *loopbackMail, scale s
 	if err != nil {
 		return err
 	}
-	st.KeepInBackground = true
+	st.BackgroundReceive = core.BackgroundReceiveUntilQuit
 	st.ShowTrayIcon = true
 	st.AutoLabel = false
 	if _, err := svc.SetSettings(ctx, st); err != nil {

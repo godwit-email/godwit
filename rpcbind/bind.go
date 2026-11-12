@@ -112,6 +112,7 @@ var table = []Error{
 	{Code: "mcp_send_off", Err: core.ErrMCPSendOff},
 	{Code: "mcp_send_composing", Err: core.ErrMCPSendComposing},
 	{Code: "mcp_send_busy", Err: core.ErrMCPSendBusy},
+	{Code: "no_ui", Err: core.ErrNoUI},
 	{Code: "no_outbox_draft", Err: core.ErrNoOutboxDraft},
 	{Code: "no_unsubscribe", Err: core.ErrNoUnsubscribe},
 	{Code: "unsubscribe_web", Err: core.ErrUnsubscribeWeb},
@@ -255,8 +256,9 @@ func ExposeUI(method string) bool {
 
 // ListenOptions configures ListenWith.
 type ListenOptions struct {
-	Version  string
-	External bool // allow RoleFull and RoleMCP connections and write api-token
+	Version   string
+	External  bool // allow RoleFull and RoleMCP connections and write api-token
+	UIStarted bool // see rpc.ServerOptions
 }
 
 // Listen serves svc's exposed methods on <dataDir>/godwit.sock with external
@@ -285,6 +287,7 @@ func ListenWith(dataDir string, svc *core.Service, opts ListenOptions) (*rpc.Ser
 		Conn:            rpc.ConnOptions{MaxActive: 256},
 		Version:         opts.Version,
 		DisableExternal: !opts.External,
+		UIStarted:       opts.UIStarted,
 		Codec:           NewCodec(),
 		Redact:          svc.Redact,
 		UIDispatcher:    ui,

@@ -59,8 +59,14 @@ jobs:
             (Get-Content $manifest -Raw) -replace '(<PublisherDisplayName>)[^<]*', "`${1}$env:MSIX_PUBLISHER_DISPLAY_NAME" `
               -replace '(<DisplayName>)[^<]*', "`${1}$env:MSIX_DISPLAY_NAME" `
               -replace '(<uap:VisualElements\s+DisplayName=")[^"]*', "`${1}$env:MSIX_DISPLAY_NAME" | Set-Content $manifest.FullName -NoNewline
+            # The login item (开机时自动启动, 一直继续): a startup task for the same Godwit.exe, off until
+            # Godwit's settings turn it on through WinRT StartupTask (cmd/godwit/login_windows.go).
+            $text = Get-Content $manifest -Raw
+            if ($text.Contains('<Extensions>')) { throw "the manifest has Extensions already: add the startup task to them" }
+            if (-not $text.Contains('xmlns:uap5=')) { $text = $text -replace '<Package\s', '<Package xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5" ' }
+            $text -replace '</Application>', '<Extensions><uap5:Extension Category="windows.startupTask" Executable="Godwit.exe" EntryPoint="Windows.FullTrustApplication"><uap5:StartupTask TaskId="GodwitStartup" Enabled="false" DisplayName="Godwit"/></uap5:Extension></Extensions></Application>' | Set-Content $manifest.FullName -NoNewline
             $text = Get-Content $manifest -Raw # a replace that matches nothing is silent: the Store would reject the package
-            foreach ($want in "<DisplayName>$env:MSIX_DISPLAY_NAME<", ('DisplayName="' + $env:MSIX_DISPLAY_NAME + '"'), "<PublisherDisplayName>$env:MSIX_PUBLISHER_DISPLAY_NAME<") {
+            foreach ($want in "<DisplayName>$env:MSIX_DISPLAY_NAME<", ('DisplayName="' + $env:MSIX_DISPLAY_NAME + '"'), "<PublisherDisplayName>$env:MSIX_PUBLISHER_DISPLAY_NAME<", 'xmlns:uap5=', 'TaskId="GodwitStartup"') {
               if (-not $text.Contains($want)) { throw "the manifest lacks $want" }
             }
             Pop-Location

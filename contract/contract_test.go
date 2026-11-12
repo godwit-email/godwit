@@ -298,6 +298,7 @@ var sentinels = map[string]error{
 	"signature_not_found": core.ErrSignatureNotFound, "signature_name": core.ErrSignatureName,
 	"not_grantable":   core.ErrNotGrantable,
 	"needs_answer":    core.ErrNeedsAnswer,
+	"no_ui":           core.ErrNoUI,
 	"skill_not_found": core.ErrSkillNotFound, "closed": core.ErrClosed, "canceled": context.Canceled,
 	"account_exists": core.ErrAccountExists, "bad_account_export": core.ErrBadAccountExport, "unsupported_export_version": core.ErrUnsupportedExportVersion,
 	"deadline": context.DeadlineExceeded, "oauth_not_configured": auth.ErrOAuthNotConfigured,

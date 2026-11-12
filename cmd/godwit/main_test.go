@@ -2,13 +2,38 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"github.com/godwit-email/godwit/internal/theme"
 	"image/png"
 	"testing"
 
 	"github.com/egoist/mygo"
 	"github.com/godwit-email/godwit/app"
+	"github.com/godwit-email/godwit/core"
 )
+
+func TestBackendOnlyAtLogin(t *testing.T) {
+	always := core.Settings{BackgroundReceive: core.BackgroundReceiveAlways}
+	both := core.Settings{LaunchAtLogin: true, BackgroundReceive: core.BackgroundReceiveAlways}
+	for _, tc := range []struct {
+		name    string
+		atLogin bool
+		st      core.Settings
+		err     error
+		want    bool
+	}{
+		{"一直继续 at login: the backend alone", true, always, nil, true},
+		{"both at login: the window, one backend", true, both, nil, false},
+		{"开机时自动启动 at login", true, core.Settings{LaunchAtLogin: true}, nil, false},
+		{"a login item nothing wants", true, core.Settings{}, nil, true},
+		{"unreadable settings keep the window", true, always, errors.New("x"), false},
+		{"opened by the user", false, always, nil, false},
+	} {
+		if got := backendOnlyAtLogin(tc.atLogin, tc.st, tc.err); got != tc.want {
+			t.Errorf("%s: %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
 
 func TestWindowOptionsPerOS(t *testing.T) {
 	for _, tc := range []struct {
@@ -73,8 +98,8 @@ func TestCloseMinimizes(t *testing.T) {
 }
 
 // Closing the main window while Godwit keeps running in the background exits
-// the interface, but not while a compose window is open; with 后台常驻 off it
-// quits as ever. Without closeExitsUI (#738) it hides as before.
+// the interface, but not while a compose window is open; with 后台收信 at
+// 关窗后停止 it quits, stopping the backend. Without closeExitsUI (#738) it hides as before.
 func TestMainCloseAction(t *testing.T) {
 	for _, tc := range []struct {
 		keep, exits bool

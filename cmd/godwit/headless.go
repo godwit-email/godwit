@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -33,6 +34,7 @@ type headlessPlatform interface {
 	app.NotificationSink
 	BindTray(trayActions)
 	SetTrayVisible(visible bool)
+	SetTrayQuitStop(on bool)
 	SetTrayUnread(n int)
 	SetSignInCodes(codes []core.SignInCode)
 	ShowSignInCode(code *core.SignInCode)
@@ -196,6 +198,10 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 	if uiStarted {
 		opts.StopUIBackend = onStop
 	}
+	var notifyMCP func(id int64) bool // set with the platform, before the Local API serves
+	if d != nil && d.newPlatform != nil {
+		opts.NotifyMCPSend = func(id int64) bool { return notifyMCP != nil && notifyMCP(id) }
+	}
 	svc, err := core.New(ctx, opts)
 	if err != nil {
 		fmt.Fprintln(stderr, "godwit:", err)
@@ -216,7 +222,7 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 		st, err := svc.GetSettings(ctx)
 		external = err == nil && st.LocalAPI
 	}
-	srv, err := rpcbind.ListenWith(dataDir, svc, rpcbind.ListenOptions{Version: app.Version, External: external})
+	srv, err := rpcbind.ListenWith(dataDir, svc, rpcbind.ListenOptions{Version: app.Version, External: external, UIStarted: uiStarted})
 	if err != nil {
 		slog.Error("listen", "err", err)
 		closeSvc()
@@ -242,6 +248,7 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 		if d.newPlatform != nil {
 			if plat := d.newPlatform(dataDir, svc); plat != nil {
 				sink = plat
+				notifyMCP = func(id int64) bool { return notifyMCPSend(plat, id) }
 				tray = newBackendTray(svc, plat, lang, post, clock, logWarn, func(what string) { showUI(svc, dataDir, what) },
 					func() { quitFromTray(svc, onStop) })
 			}
@@ -306,6 +313,19 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 		}
 		return 0
 	}, 0
+}
+
+// notifyMCPSend posts send request id's notification on sink, naming no mail
+// content; its click opens the request's confirmation (app.App.Open).
+func notifyMCPSend(sink app.NotificationSink, id int64) bool {
+	if !sink.NotificationsSupported() {
+		return false
+	}
+	err := sink.Notify(app.Notification{ID: "mcp_send:" + strconv.FormatInt(id, 10), Title: "Godwit", Body: i18n.McpSendWaiting()})
+	if err != nil {
+		slog.Warn("notify: MCP send", "err", err)
+	}
+	return err == nil
 }
 
 // followLocalAPI turns external access on srv on or off as Settings.LocalAPI
@@ -447,11 +467,12 @@ func newBackendTray(svc *core.Service, plat headlessPlatform, sysLang string, po
 func (t *backendTray) Start() {
 	t.codesStarted = t.clock.Now().Truncate(time.Second)
 	t.plat.BindTray(trayActions{
-		open:    func() { t.show(app.OpenWindow) },
-		compose: func() { t.show(app.OpenCompose) },
-		syncAll: t.syncAll,
-		hide:    t.hideTrayIcon,
-		quit:    t.onQuit,
+		open:     func() { t.show(app.OpenWindow) },
+		compose:  func() { t.show(app.OpenCompose) },
+		syncAll:  t.syncAll,
+		hide:     t.hideTrayIcon,
+		quit:     t.quit,
+		quitStop: t.onQuit,
 	})
 	snap, err := t.readSnapshot(t.ctx, t.clock.Now())
 	if err != nil {
@@ -462,11 +483,25 @@ func (t *backendTray) Start() {
 	t.plat.SetThemeSource(snap.st.Theme)
 	t.plat.SetLanguage(snap.st.UILanguage, t.sysLang)
 	t.plat.SetTrayVisible(snap.st.ShowTrayIcon)
+	t.plat.SetTrayQuitStop(snap.st.BackgroundReceive == core.BackgroundReceiveAlways)
 	t.updateUnread(snap.inboxUnread)
 	if err == nil {
 		t.applyCodes(snap.codes)
 	}
 	t.scheduleCodesTimer()
+}
+
+// quit is the tray's Quit: under 一直继续 (BackgroundReceiveAlways) it only
+// asks the interface to quit, receiving going on; otherwise it is onQuit.
+func (t *backendTray) quit() {
+	go func() {
+		st, err := t.svc.GetSettings(t.ctx)
+		if err == nil && st.BackgroundReceive == core.BackgroundReceiveAlways {
+			t.svc.Publish(events.Event{Type: events.QuitRequested})
+			return
+		}
+		t.onQuit()
+	}()
 }
 
 func (t *backendTray) syncAll() {
@@ -642,6 +677,9 @@ func (t *backendTray) applySnapshot(snap traySnapshot, err error) {
 		}
 		if snap.st.ShowTrayIcon != t.settings.ShowTrayIcon {
 			t.plat.SetTrayVisible(snap.st.ShowTrayIcon)
+		}
+		if snap.st.BackgroundReceive != t.settings.BackgroundReceive {
+			t.plat.SetTrayQuitStop(snap.st.BackgroundReceive == core.BackgroundReceiveAlways)
 		}
 		t.settings = snap.st
 		t.updateUnread(snap.inboxUnread)

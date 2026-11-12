@@ -345,6 +345,8 @@ type fakePlatform struct {
 	autoUpdates  bool   // UpdatesInstallThemselves' answer
 	gh           bool   // the GitHub CLI is signed in
 	starred      bool
+	login        bool     // SetOpenAtLogin's last request
+	loginOff     bool     // the user turned the login item off in the system
 	files        []string // OpenFiles
 	dir          string   // OpenDirectory
 	savePath     string   // SaveFile
@@ -646,7 +648,18 @@ func (p *fakePlatform) NotificationsSupported() bool {
 	defer p.mu.Unlock()
 	return p.supported
 }
-func (p *fakePlatform) SetOpenAtLogin(on bool) error { p.record("SetOpenAtLogin", on); return nil }
+func (p *fakePlatform) SetOpenAtLogin(on bool) error {
+	p.record("SetOpenAtLogin", on)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.login = on
+	return nil
+}
+func (p *fakePlatform) OpenAtLogin() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.login && !p.loginOff
+}
 func (p *fakePlatform) SetLocalAPI(_ uint64, on bool) (string, error) {
 	p.record("SetLocalAPI", on)
 	p.mu.Lock()
