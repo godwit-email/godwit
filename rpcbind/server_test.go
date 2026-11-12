@@ -708,3 +708,62 @@ func TestAuditSetSettingsConcurrentWidening(t *testing.T) {
 		assert.Equal(t, core.MCPSendOff, got.MCPSend, "widening after off cannot commit without audit_log")
 	}
 }
+
+// CardDAV calls over full that reach a server now or enable unattended polling
+// record destination-aware audit rows, and stop before dialing when audit_log fails.
+func TestAuditAddressBookEgress(t *testing.T) {
+	logs(t)
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	ctx := t.Context()
+	srv := e.StartCardDAV(t)
+	srv.PutCard("contacts", "one", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:One\r\nEMAIL:one@example.com\r\nEND:VCARD\r\n")
+	host := strings.TrimPrefix(srv.URL(), "https://")
+
+	dir := listen(t, e.Svc)
+	full := dial(t, dir, rpc.RoleFull)
+
+	in := core.AddressBookInput{Preset: core.PresetCustom, Name: "Corp", URL: srv.URL(), Username: "alice", Password: "secret"}
+	require.NoError(t, full.Call(ctx, "CheckAddressBook", nil, in))
+	var ab core.AddressBook
+	require.NoError(t, full.Call(ctx, "AddAddressBook", &ab, in))
+	require.Len(t, ab.Collections, 1)
+	colID := ab.Collections[0].ID
+
+	// Disabling a collection stops polling (not audited); re-enabling resumes polling (audited).
+	require.NoError(t, full.Call(ctx, "SetAddressBookCollectionEnabled", nil, colID, false))
+	require.NoError(t, full.Call(ctx, "SetAddressBookCollectionEnabled", nil, colID, true))
+	require.NoError(t, full.Call(ctx, "SyncAddressBook", nil, ab.ID))
+	require.NoError(t, full.Call(ctx, "UpdateAddressBookAuth", nil, ab.ID, "secret", "", core.OAuthClient{}))
+
+	assert.Equal(t, [][]any{
+		{"local_api", "CheckAddressBook", nil, host},
+		{"local_api", "AddAddressBook", nil, host},
+		{"local_api", "SetAddressBookCollectionEnabled", colID, host},
+		{"local_api", "SyncAddressBook", ab.ID, host},
+		{"local_api", "UpdateAddressBookAuth", ab.ID, host},
+	}, auditRows(t, e.DataDir))
+
+	// Dropping audit_log stops egress before any request reaches the CardDAV server.
+	db, err := store.Open(ctx, filepath.Join(e.DataDir, "godwit.db"))
+	require.NoError(t, err)
+	_, err = db.Execute(ctx, "DROP TABLE audit_log")
+	require.NoError(t, err)
+	db.Close()
+
+	reqsBefore := len(srv.Requests())
+	for _, call := range []struct {
+		method string
+		args   []any
+	}{
+		{"CheckAddressBook", []any{in}},
+		{"AddAddressBook", []any{in}},
+		{"SyncAddressBook", []any{ab.ID}},
+		{"UpdateAddressBookAuth", []any{ab.ID, "secret", "", core.OAuthClient{}}},
+		{"SetAddressBookCollectionEnabled", []any{colID, true}},
+	} {
+		var we *rpc.WireError
+		require.ErrorAs(t, full.Call(ctx, call.method, nil, call.args...), &we, call.method)
+		assert.Equal(t, rpc.CodeInternal, we.Code, call.method)
+	}
+	assert.Len(t, srv.Requests(), reqsBefore, "no network traffic when audit_log fails")
+}

@@ -255,13 +255,14 @@ func Listen(dataDir string, svc *core.Service, version string) (*rpc.Server, err
 
 // audit records full's Send, SendAcknowledged and their Revision forms (by draft), ResolveOutbox
 // "resend" (by outbox item), Unsubscribe (by message), BeginPluginLogin, the rule calls that
-// make a rule forward (ruleForward) and the extension grants (egressGrant: GrantMCPServer,
-// SetMCPToolTrusted turning trust on, GrantPermission), and mcp's NewDraft (by source message)
+// make a rule forward (ruleForward), the extension grants (egressGrant: GrantMCPServer,
+// SetMCPToolTrusted turning trust on, GrantPermission), and the CardDAV calls that reach or
+// schedule polling of an address-book host (addressBookEgress), and mcp's NewDraft (by source message)
 // and SaveDraft (by draft); SetSettings widening MCPSend is audited inside SetSettings in the
 // same transaction as the write, and nothing else is audited. A row it cannot write stops the call.
 func audit(svc *core.Service, role, method string, params []json.RawMessage) error {
 	if role == rpc.RoleFull {
-		for _, check := range []func(*core.Service, string, []json.RawMessage) (int64, []string, bool, error){ruleForward, egressGrant} {
+		for _, check := range []func(*core.Service, string, []json.RawMessage) (int64, []string, bool, error){ruleForward, egressGrant, addressBookEgress} {
 			target, dests, ok, err := check(svc, method, params)
 			if err != nil {
 				return err
@@ -385,6 +386,104 @@ func egressGrant(_ *core.Service, method string, params []json.RawMessage) (targ
 			return 0, nil, false, nil
 		}
 		return 0, []string{name}, true, nil
+	}
+	return 0, nil, false, nil
+}
+
+// addressBookEgress reports whether a full call reaches a CardDAV server now or
+// leaves an enabled collection that background polling reaches later (ADR 0003).
+// Params that do not decode are left to the dispatcher to refuse.
+func addressBookEgress(svc *core.Service, method string, params []json.RawMessage) (target int64, dests []string, ok bool, err error) {
+	switch method {
+	case "AddAddressBook", "CheckAddressBook":
+		var in core.AddressBookInput
+		if len(params) != 1 || json.Unmarshal(params[0], &in) != nil {
+			return 0, nil, false, nil
+		}
+		raw := strings.TrimSpace(in.URL)
+		preset := strings.ToLower(strings.TrimSpace(in.Preset))
+		if preset != "" && preset != core.PresetCustom {
+			raw = ""
+		}
+		if raw == "" {
+			if preset == "" && in.OAuthFlowID != "" {
+				preset = core.PresetGoogle
+			}
+			for _, p := range svc.ListAddressBookPresets() {
+				if p.ID == preset {
+					raw = p.DefaultURL
+					break
+				}
+			}
+		}
+		if raw != "" {
+			if !strings.Contains(raw, "://") {
+				raw = "https://" + raw
+			}
+			dests = []string{raw}
+		}
+		return 0, dests, true, nil
+	case "UpdateAddressBookAuth":
+		var pw, flow string
+		var client core.OAuthClient
+		if len(params) != 4 || json.Unmarshal(params[0], &target) != nil || json.Unmarshal(params[1], &pw) != nil ||
+			json.Unmarshal(params[2], &flow) != nil || json.Unmarshal(params[3], &client) != nil {
+			return 0, nil, false, nil
+		}
+		books, err := svc.ListAddressBooks(context.Background())
+		if err != nil {
+			return 0, nil, false, err
+		}
+		for _, ab := range books {
+			if ab.ID == target && ab.URL != "" {
+				dests = []string{ab.URL}
+				break
+			}
+		}
+		return target, dests, true, nil
+	case "SyncAddressBook":
+		if len(params) != 1 || json.Unmarshal(params[0], &target) != nil {
+			return 0, nil, false, nil
+		}
+		books, err := svc.ListAddressBooks(context.Background())
+		if err != nil {
+			return 0, nil, false, err
+		}
+		for _, ab := range books {
+			if ab.URL == "" {
+				continue
+			}
+			if target > 0 && ab.ID == target {
+				dests = []string{ab.URL}
+				break
+			}
+			if target == 0 {
+				for _, col := range ab.Collections {
+					if col.Enabled {
+						dests = append(dests, ab.URL)
+						break
+					}
+				}
+			}
+		}
+		return target, dests, true, nil
+	case "SetAddressBookCollectionEnabled":
+		var on bool
+		if len(params) != 2 || json.Unmarshal(params[0], &target) != nil || json.Unmarshal(params[1], &on) != nil || !on {
+			return 0, nil, false, nil
+		}
+		books, err := svc.ListAddressBooks(context.Background())
+		if err != nil {
+			return 0, nil, false, err
+		}
+		for _, ab := range books {
+			for _, col := range ab.Collections {
+				if col.ID == target && ab.URL != "" {
+					return target, []string{ab.URL}, true, nil
+				}
+			}
+		}
+		return target, nil, true, nil
 	}
 	return 0, nil, false, nil
 }

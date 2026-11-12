@@ -452,13 +452,13 @@ func TestAddressBookDiscoveryRejectsCrossDomainAndAllowsSameDomain(t *testing.T)
 	}
 	goodPort, evilPort := portOf(good.URL()), portOf(evil.URL())
 	proxyURL := hostRouteConnectProxy(t, map[string]string{
-		"example.com":                     goodPort,
-		"dav.example.com":                 goodPort,
-		"contacts.icloud.com":             goodPort,
-		"p01-contacts.icloud.com":         goodPort,
-		"www.googleapis.com":              goodPort,
-		"apidata.googleusercontent.com":   goodPort,
-		"evil.example":                    evilPort,
+		"example.com":                   goodPort,
+		"dav.example.com":               goodPort,
+		"contacts.icloud.com":           goodPort,
+		"p01-contacts.icloud.com":       goodPort,
+		"www.googleapis.com":            goodPort,
+		"apidata.googleusercontent.com": goodPort,
+		"evil.example":                  evilPort,
 	})
 
 	s, err := New(bg, Options{
@@ -602,4 +602,77 @@ func TestAddAddressBookKeychainRaceAndRollback(t *testing.T) {
 	require.Len(t, books, 1, "failed AddAddressBook must roll back inserted address_books row")
 }
 
+func TestCollectionResetDuringInFlightSyncRejectsStaleDelta(t *testing.T) {
+	s := newCardDAVService(t, t.TempDir(), false)
 
+	srv := testmail.StartCardDAV(t)
+	srv.PutCard("contacts", "unchanged", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Unchanged\r\nEMAIL:keep@example.com\r\nEND:VCARD\r\n")
+
+	ab, err := s.AddAddressBook(bg, AddressBookInput{
+		Preset: PresetCustom, Name: "ResetBook", URL: srv.URL(), Username: "alice", Password: "secret",
+	})
+	require.NoError(t, err)
+	require.Len(t, ab.Collections, 1)
+	colID := ab.Collections[0].ID
+
+	// Add a second card so the next sync uses incremental sync-collection for "delta" only.
+	srv.PutCard("contacts", "delta", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Delta\r\nEMAIL:delta@example.com\r\nEND:VCARD\r\n")
+
+	var toggled sync.Once
+	srv.SetMultigetHook(func(href string) int {
+		if strings.HasSuffix(href, "/delta.vcf") {
+			toggled.Do(func() {
+				require.NoError(t, s.SetAddressBookCollectionEnabled(bg, colID, false))
+				require.NoError(t, s.SetAddressBookCollectionEnabled(bg, colID, true))
+			})
+		}
+		return http.StatusOK
+	})
+
+	require.NoError(t, s.SyncAddressBook(bg, ab.ID))
+	srv.SetMultigetHook(nil)
+
+	contacts, err := s.Contacts(bg)
+	require.NoError(t, err)
+	addrs := make([]string, len(contacts))
+	for i, c := range contacts {
+		addrs[i] = c.Address
+	}
+	assert.ElementsMatch(t, []string{"keep@example.com", "delta@example.com"}, addrs, "stale incremental delta must not drop unchanged cards after disable+re-enable")
+}
+
+func TestMultigetPerCardFailureRetainsSyncToken(t *testing.T) {
+	s := newCardDAVService(t, t.TempDir(), false)
+
+	srv := testmail.StartCardDAV(t)
+	srv.PutCard("contacts", "one", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:One\r\nEMAIL:one@example.com\r\nEND:VCARD\r\n")
+
+	ab, err := s.AddAddressBook(bg, AddressBookInput{
+		Preset: PresetCustom, Name: "MultigetFailBook", URL: srv.URL(), Username: "alice", Password: "secret",
+	})
+	require.NoError(t, err)
+
+	// Add a second card, but fail its individual multiget propstat with 500.
+	srv.PutCard("contacts", "two", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Two\r\nEMAIL:two@example.com\r\nEND:VCARD\r\n")
+	srv.SetMultigetHook(func(href string) int {
+		if strings.HasSuffix(href, "/two.vcf") {
+			return http.StatusInternalServerError
+		}
+		return http.StatusOK
+	})
+
+	err = s.SyncAddressBook(bg, ab.ID)
+	require.Error(t, err, "per-card 500 in multiget must fail the sync so sync_token does not advance")
+
+	// Server recovers without modifying "two": next incremental sync still fetches "two".
+	srv.SetMultigetHook(nil)
+	require.NoError(t, s.SyncAddressBook(bg, ab.ID))
+
+	contacts, err := s.Contacts(bg)
+	require.NoError(t, err)
+	addrs := make([]string, len(contacts))
+	for i, c := range contacts {
+		addrs[i] = c.Address
+	}
+	assert.ElementsMatch(t, []string{"one@example.com", "two@example.com"}, addrs)
+}

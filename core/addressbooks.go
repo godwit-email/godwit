@@ -668,7 +668,7 @@ func (s *Service) SetAddressBookCollectionEnabled(ctx context.Context, collectio
 	} else {
 		stmts = []sqlite.Statement{
 			{SQL: "DELETE FROM address_book_cards WHERE collection_id = ?", Args: []any{collectionID}},
-			{SQL: "UPDATE address_book_collections SET enabled = 0, sync_token = '', card_count = 0 WHERE id = ?", Args: []any{collectionID}},
+			{SQL: "UPDATE address_book_collections SET enabled = 0, sync_token = '', sync_gen = sync_gen + 1, card_count = 0 WHERE id = ?", Args: []any{collectionID}},
 		}
 	}
 	_, err = s.db.Transaction(ctx, stmts)
@@ -1080,9 +1080,37 @@ type preparedCard struct {
 }
 
 func (s *Service) syncOneCollection(ctx context.Context, client *carddav.Client, homeURL *url.URL, col localCollectionState, creds carddav.Credentials) error {
-	etagRows, err := s.db.Query(ctx, "SELECT href, etag FROM address_book_cards WHERE collection_id = ?", col.id)
+	for attempt := range 2 {
+		retry, err := s.syncOneCollectionOnce(ctx, client, homeURL, col.id, col.href, creds)
+		if err != nil || !retry {
+			return err
+		}
+		if attempt == 1 && s.opts.AutoSync {
+			s.wakeAddressBooks()
+		}
+	}
+	return nil
+}
+
+func (s *Service) syncOneCollectionOnce(ctx context.Context, client *carddav.Client, homeURL *url.URL, colID int64, colHref string, creds carddav.Credentials) (retry bool, err error) {
+	s.abWriteMu.Lock()
+	snapRows, err := s.db.Query(ctx, "SELECT enabled, sync_token, sync_gen, name FROM address_book_collections WHERE id = ?", colID)
 	if err != nil {
-		return err
+		s.abWriteMu.Unlock()
+		return false, err
+	}
+	if len(snapRows.Values) == 0 || store.Int(snapRows.Values[0][0]) == 0 {
+		s.abWriteMu.Unlock()
+		return false, nil
+	}
+	snapSyncToken := store.Str(snapRows.Values[0][1])
+	snapSyncGen := store.Int(snapRows.Values[0][2])
+	snapName := store.Str(snapRows.Values[0][3])
+
+	etagRows, err := s.db.Query(ctx, "SELECT href, etag FROM address_book_cards WHERE collection_id = ?", colID)
+	s.abWriteMu.Unlock()
+	if err != nil {
+		return false, err
 	}
 	localETags := make(map[string]string, len(etagRows.Values))
 	for _, r := range etagRows.Values {
@@ -1093,10 +1121,11 @@ func (s *Service) syncOneCollection(ctx context.Context, client *carddav.Client,
 		toFetch       []string
 		deleted       []string
 		nextSyncToken string
+		newName       string
 		usedDelta     bool
 	)
-	if col.syncToken != "" {
-		delta, err := client.SyncCollection(ctx, homeURL, col.href, col.syncToken, creds)
+	if snapSyncToken != "" {
+		delta, err := client.SyncCollection(ctx, homeURL, colHref, snapSyncToken, creds)
 		switch {
 		case err == nil:
 			usedDelta = true
@@ -1111,18 +1140,18 @@ func (s *Service) syncOneCollection(ctx context.Context, client *carddav.Client,
 		case errors.Is(err, carddav.ErrSyncTokenInvalid):
 			// Fall back to full PROPFIND reconciliation below.
 		default:
-			return err
+			return false, err
 		}
 	}
 
 	if !usedDelta {
-		remoteETags, tok, displayName, err := client.ListCollectionETags(ctx, homeURL, col.href, creds)
+		remoteETags, tok, displayName, err := client.ListCollectionETags(ctx, homeURL, colHref, creds)
 		if err != nil {
-			return err
+			return false, err
 		}
 		nextSyncToken = tok
-		if displayName != "" && displayName != col.name {
-			_, _ = s.db.Execute(ctx, "UPDATE address_book_collections SET name = ? WHERE id = ?", displayName, col.id)
+		if displayName != "" && displayName != snapName {
+			newName = displayName
 		}
 		for href := range localETags {
 			if _, ok := remoteETags[href]; !ok {
@@ -1139,9 +1168,20 @@ func (s *Service) syncOneCollection(ctx context.Context, client *carddav.Client,
 	slices.Sort(toFetch)
 	slices.Sort(deleted)
 
-	fetched, err := client.FetchCards(ctx, homeURL, col.href, toFetch, creds)
+	fetched, err := client.FetchCards(ctx, homeURL, colHref, toFetch, creds)
 	if err != nil {
-		return err
+		return false, err
+	}
+	fetchedHrefs := make(map[string]bool, len(fetched))
+	for _, fc := range fetched {
+		fetchedHrefs[fc.Href] = true
+	}
+	for _, href := range toFetch {
+		if !fetchedHrefs[href] {
+			if _, existed := localETags[href]; existed {
+				deleted = append(deleted, href)
+			}
+		}
 	}
 
 	photoHTTP := s.photoClient()
@@ -1195,18 +1235,28 @@ func (s *Service) syncOneCollection(ctx context.Context, client *carddav.Client,
 	s.abWriteMu.Lock()
 	defer s.abWriteMu.Unlock()
 
-	// Verify collection is still enabled (SetAddressBookCollectionEnabled(false) or
-	// RemoveAddressBook may have run while network requests were in flight).
-	still, err := s.db.Query(ctx, "SELECT enabled FROM address_book_collections WHERE id = ?", col.id)
+	// Verify collection is still enabled and at the exact sync generation and token
+	// snapshot we queried against (SetAddressBookCollectionEnabled(false) -> (true)
+	// or a concurrent sync may have reset or advanced it while requests were in flight).
+	still, err := s.db.Query(ctx, "SELECT enabled, sync_token, sync_gen FROM address_book_collections WHERE id = ?", colID)
 	if err != nil || len(still.Values) == 0 || store.Int(still.Values[0][0]) == 0 {
-		return err
+		return false, err
+	}
+	if store.Int(still.Values[0][2]) != snapSyncGen || store.Str(still.Values[0][1]) != snapSyncToken {
+		return store.Int(still.Values[0][2]) != snapSyncGen, nil
 	}
 
 	var stmts []sqlite.Statement
+	if newName != "" {
+		stmts = append(stmts, sqlite.Statement{
+			SQL:  "UPDATE address_book_collections SET name = ? WHERE id = ?",
+			Args: []any{newName, colID},
+		})
+	}
 	for _, href := range deleted {
 		stmts = append(stmts, sqlite.Statement{
 			SQL:  "DELETE FROM address_book_cards WHERE collection_id = ? AND href = ?",
-			Args: []any{col.id, href},
+			Args: []any{colID, href},
 		})
 	}
 	for _, item := range prepared {
@@ -1228,11 +1278,11 @@ func (s *Service) syncOneCollection(ctx context.Context, client *carddav.Client,
 						photo_format = excluded.photo_format,
 						photo_width = excluded.photo_width,
 						photo_height = excluded.photo_height`,
-				Args: []any{col.id, item.href, item.etag, item.fn, item.org, item.title, photoArg, item.photoFormat, item.photoWidth, item.photoHeight},
+				Args: []any{colID, item.href, item.etag, item.fn, item.org, item.title, photoArg, item.photoFormat, item.photoWidth, item.photoHeight},
 			},
 			sqlite.Statement{
 				SQL:  `DELETE FROM address_book_emails WHERE card_id = (SELECT id FROM address_book_cards WHERE collection_id = ? AND href = ?)`,
-				Args: []any{col.id, item.href},
+				Args: []any{colID, item.href},
 			},
 		)
 		for _, em := range item.emails {
@@ -1243,18 +1293,18 @@ func (s *Service) syncOneCollection(ctx context.Context, client *carddav.Client,
 			stmts = append(stmts, sqlite.Statement{
 				SQL: `INSERT OR REPLACE INTO address_book_emails (card_id, pos, addr_key, pref)
 					VALUES ((SELECT id FROM address_book_cards WHERE collection_id = ? AND href = ?), ?, ?, ?)`,
-				Args: []any{col.id, item.href, em.Pos, em.AddrKey, pref},
+				Args: []any{colID, item.href, em.Pos, em.AddrKey, pref},
 			})
 		}
 	}
 	stmts = append(stmts, sqlite.Statement{
 		SQL: `UPDATE address_book_collections
 			SET sync_token = ?, card_count = (SELECT COUNT(*) FROM address_book_cards WHERE collection_id = ?)
-			WHERE id = ? AND enabled = 1`,
-		Args: []any{nextSyncToken, col.id, col.id},
+			WHERE id = ? AND enabled = 1 AND sync_gen = ? AND sync_token = ?`,
+		Args: []any{nextSyncToken, colID, colID, snapSyncGen, snapSyncToken},
 	})
 	_, err = s.db.Transaction(ctx, stmts)
-	return err
+	return false, err
 }
 
 func (s *Service) wakeAddressBooks() {

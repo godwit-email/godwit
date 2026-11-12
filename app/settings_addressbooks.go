@@ -496,6 +496,7 @@ func (v *addressBooksView) addDialogView(c *ui.Context) {
 			a.do(func(context.Context) error { oauth.Cancel(fid); return nil }, nil)
 		}
 		v.preset = id
+		v.serverURL = ""
 		v.dlgErr = nil
 		v.showSecret = false
 	}
@@ -606,10 +607,14 @@ func (v *addressBooksView) submitPasswordAdd() {
 	a := v.a
 	v.busy, v.dlgErr = true, nil
 	gen, add := v.dlgGen, v.add
+	rawURL := ""
+	if v.preset == core.PresetCustom {
+		rawURL = strings.TrimSpace(v.serverURL)
+	}
 	in := core.AddressBookInput{
 		Preset:   v.preset,
 		Name:     strings.TrimSpace(v.name),
-		URL:      strings.TrimSpace(v.serverURL),
+		URL:      rawURL,
 		Username: strings.TrimSpace(v.username),
 		Password: v.password,
 	}

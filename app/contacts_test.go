@@ -375,4 +375,3 @@ func TestContactsFilterHistoricalAndSecondaryMergedTerms(t *testing.T) {
 		}
 	}
 }
-

@@ -810,6 +810,7 @@ var Migrations = [][]string{{
 		name TEXT NOT NULL DEFAULT '',
 		enabled INTEGER NOT NULL DEFAULT 1,
 		sync_token TEXT NOT NULL DEFAULT '',
+		sync_gen INTEGER NOT NULL DEFAULT 0,
 		card_count INTEGER NOT NULL DEFAULT 0,
 		UNIQUE(address_book_id, href)
 	)`,

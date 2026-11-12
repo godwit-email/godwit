@@ -71,6 +71,7 @@ type CardDAV struct {
 	homeSetOverride       string
 	noCollections         bool
 	disableSyncCollection bool
+	multigetHook          func(href string) int
 	colSeq                int
 	collections           map[string]*cardCollection
 	photos                map[string]*photoAsset
@@ -575,6 +576,17 @@ func (s *CardDAV) serve(w http.ResponseWriter, r *http.Request) {
 				if u, err := url.Parse(rawHref); err == nil && u.Path != "" {
 					h = u.Path
 				}
+				hook := s.multigetHook
+				if hook != nil {
+					s.mu.Unlock()
+					status := hook(h)
+					s.mu.Lock()
+					if status >= 400 {
+						fmt.Fprintf(&b, `<D:response><D:href>%s</D:href><D:propstat><D:prop><C:address-data/></D:prop><D:status>HTTP/1.1 %d %s</D:status></D:propstat></D:response>`,
+							xmlEsc(h), status, http.StatusText(status))
+						continue
+					}
+				}
 				ce := col.cards[h]
 				if ce == nil || ce.deleted {
 					fmt.Fprintf(&b, `<D:response><D:href>%s</D:href><D:status>HTTP/1.1 404 Not Found</D:status></D:response>`, xmlEsc(h))
@@ -599,4 +611,13 @@ func xmlEsc(s string) string {
 	var b strings.Builder
 	_ = xml.EscapeText(&b, []byte(s))
 	return b.String()
+}
+
+// SetMultigetHook installs an optional callback invoked per requested href in
+// addressbook-multiget without holding the server mutex. Returning an HTTP status
+// >= 400 emits a failing propstat for that href.
+func (s *CardDAV) SetMultigetHook(fn func(href string) int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.multigetHook = fn
 }

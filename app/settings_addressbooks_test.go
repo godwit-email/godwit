@@ -326,3 +326,31 @@ func TestSettingsAddressBooksGoogleOAuthAndSearch(t *testing.T) {
 	})
 }
 
+func TestSettingsAddressBooksPresetSwitchClearsCustomURL(t *testing.T) {
+	h, _ := withAccount(t)
+	srvCustom := h.env.StartCardDAV(t)
+	srvCustom.SetBasicAuth("other", "otherpass")
+	srvICloud := h.env.StartCardDAV(t)
+	srvICloud.SetBasicAuth("alice@icloud.com", "icloud-app-pass")
+	srvICloud.PutCard("contacts", "c1", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Ivy\r\nEMAIL:ivy@example.com\r\nEND:VCARD\r\n")
+	core.SetAddressBookPresetURLForTest(t, core.PresetICloud, srvICloud.URL())
+
+	h.click("设置")
+	h.click("通讯录")
+	h.click("添加通讯录")
+	h.click("其他 CardDAV 服务器")
+	h.fill("CardDAV 服务器地址", srvCustom.URL())
+
+	// Switch back to iCloud without closing the dialog: custom URL must not be sent.
+	h.click("iCloud")
+	h.fill("用户名", "alice@icloud.com")
+	h.fill("应用专用密码", "icloud-app-pass")
+	h.click("连接")
+	h.until("iCloud address book saved", func() bool {
+		books := h.addressBooks()
+		return len(books) == 1 && books[0].Preset == core.PresetICloud
+	})
+	if len(srvCustom.Requests()) != 0 {
+		t.Fatalf("expected zero requests to stale custom URL, got %+v", srvCustom.Requests())
+	}
+}

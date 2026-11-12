@@ -362,13 +362,58 @@ func okProps(r xmlResponse) (xmlProp, bool) {
 		code := parseHTTPStatusCode(r.Status)
 		return xmlProp{}, code == 0 || (code >= 200 && code < 300)
 	}
+	var merged xmlProp
+	found := false
 	for _, ps := range r.PropStats {
 		code := parseHTTPStatusCode(ps.Status)
 		if code == 0 || (code >= 200 && code < 300) {
-			return ps.Prop, true
+			found = true
+			if ps.Prop.ResourceType.IsCollection {
+				merged.ResourceType.IsCollection = true
+			}
+			if ps.Prop.ResourceType.IsAddressBook {
+				merged.ResourceType.IsAddressBook = true
+			}
+			if merged.DisplayName == "" {
+				merged.DisplayName = ps.Prop.DisplayName
+			}
+			if merged.GetETag == "" {
+				merged.GetETag = ps.Prop.GetETag
+			}
+			if merged.SyncToken == "" {
+				merged.SyncToken = ps.Prop.SyncToken
+			}
+			if merged.AddressData == "" {
+				merged.AddressData = ps.Prop.AddressData
+			}
+			if merged.CurrentUserPrincipal.Href == "" {
+				merged.CurrentUserPrincipal = ps.Prop.CurrentUserPrincipal
+			}
+			if merged.AddressBookHomeSet.Href == "" {
+				merged.AddressBookHomeSet = ps.Prop.AddressBookHomeSet
+			}
 		}
 	}
-	return xmlProp{}, false
+	return merged, found
+}
+
+func responseFailure(r xmlResponse, op, href string) error {
+	if code := parseHTTPStatusCode(r.Status); code >= 400 && code != http.StatusNotFound && code != http.StatusGone {
+		if code == http.StatusUnauthorized || code == http.StatusForbidden {
+			return ErrAuthFailed
+		}
+		return fmt.Errorf("carddav: %s %s: HTTP %d", op, href, code)
+	}
+	for _, ps := range r.PropStats {
+		code := parseHTTPStatusCode(ps.Status)
+		if code >= 400 && code != http.StatusNotFound && code != http.StatusGone {
+			if code == http.StatusUnauthorized || code == http.StatusForbidden {
+				return ErrAuthFailed
+			}
+			return fmt.Errorf("carddav: %s %s: propstat HTTP %d", op, href, code)
+		}
+	}
+	return nil
 }
 
 func isDeletedResponse(r xmlResponse) bool {
@@ -667,9 +712,15 @@ func (c *Client) ListCollectionETags(ctx context.Context, home *url.URL, colHref
 		if !ok {
 			continue
 		}
+		if isDeletedResponse(r) {
+			continue
+		}
+		if err := responseFailure(r, "PROPFIND", h); err != nil {
+			return nil, "", "", err
+		}
 		p, ok := okProps(r)
 		if !ok {
-			continue
+			return nil, "", "", fmt.Errorf("carddav: PROPFIND %s: missing ok propstat", h)
 		}
 		if equalCollectionPath(h, colCanon) || p.ResourceType.IsCollection {
 			if p.SyncToken != "" && syncToken == "" {
@@ -732,9 +783,12 @@ func (c *Client) SyncCollection(ctx context.Context, home *url.URL, colHref, syn
 			delta.Deleted = append(delta.Deleted, h)
 			continue
 		}
+		if err := responseFailure(r, "sync-collection", h); err != nil {
+			return SyncDelta{}, err
+		}
 		p, ok := okProps(r)
 		if !ok {
-			continue
+			return SyncDelta{}, fmt.Errorf("carddav: sync-collection %s: missing ok propstat", h)
 		}
 		if p.ResourceType.IsCollection {
 			continue
@@ -778,20 +832,34 @@ func (c *Client) FetchCards(ctx context.Context, home *url.URL, colHref string, 
 		if err := xml.Unmarshal(data, &ms); err != nil {
 			return nil, err
 		}
+		seen := make(map[string]bool, len(batch))
 		for _, r := range ms.Responses {
 			h, ok := canonHref(home, r.Href)
-			if !ok || isDeletedResponse(r) {
+			if !ok {
+				return nil, fmt.Errorf("carddav: addressbook-multiget %s: invalid href %q", colURL.Path, r.Href)
+			}
+			if isDeletedResponse(r) {
+				seen[h] = true
 				continue
+			}
+			if err := responseFailure(r, "addressbook-multiget", h); err != nil {
+				return nil, err
 			}
 			p, ok := okProps(r)
 			if !ok || strings.TrimSpace(p.AddressData) == "" {
-				continue
+				return nil, fmt.Errorf("carddav: addressbook-multiget %s: missing address-data", h)
 			}
+			seen[h] = true
 			out = append(out, FetchedCard{
 				Href:     h,
 				ETag:     strings.TrimSpace(p.GetETag),
 				RawVCard: p.AddressData,
 			})
+		}
+		for _, reqHref := range batch {
+			if canon, ok := canonHref(home, reqHref); ok && !seen[canon] {
+				return nil, fmt.Errorf("carddav: addressbook-multiget %s: missing response for %s", colURL.Path, canon)
+			}
 		}
 	}
 	return out, nil
