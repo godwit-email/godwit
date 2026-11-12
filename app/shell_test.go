@@ -19,6 +19,9 @@ import (
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/theme"
+	"github.com/godwit-email/godwit/ownerlock"
+	"github.com/godwit-email/godwit/rpcbind"
+	"github.com/godwit-email/godwit/uiclient"
 )
 
 // withAccount is a harness with one account, its initial load applied.
@@ -455,6 +458,51 @@ func TestReportUnknownError(t *testing.T) {
 	long, _ := url.Parse(issueURL(strings.Repeat("错", 5000), log))
 	if n := len(long.String()); n > issueURLMax || !strings.Contains(long.Query().Get("logs"), "newest") {
 		t.Fatalf("link of %d bytes without the newest log line", n)
+	}
+}
+
+func TestReportUnknownErrorOverSocket(t *testing.T) {
+	h, _ := withAccount(t)
+	const secretKey = "sk-report-socket-secret-7788"
+	if _, err := h.env.Svc.AddModelService(t.Context(), core.ModelServiceInput{
+		Name: "OpenAI", Kind: "openai", BaseURL: "https://example.com/v1", APIKey: secretKey, Models: []string{"m1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	dir, err := os.MkdirTemp("", "gw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	release, err := ownerlock.Acquire(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = release() })
+	srv, err := rpcbind.Listen(dir, h.env.Svc, Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve(context.Background())
+	t.Cleanup(func() { _ = srv.Close() })
+	cl, err := uiclient.Dial(dir, "app-report-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cl.Close() })
+	h.app.svc = cl
+
+	fmt.Fprintf(RecentLog, "sync bob@example.com auth %s: EOF\n", secretKey)
+	h.app.toastErr(errors.New("unexpected backend fault"))
+	h.click("报告问题")
+	u, err := url.Parse(h.callArg("OpenURL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	logs := u.Query().Get("logs")
+	if strings.Contains(u.String(), secretKey) || !strings.Contains(logs, "sync <email> auth [redacted]: EOF") {
+		t.Fatalf("unexpected report logs: %q", logs)
 	}
 }
 

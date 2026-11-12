@@ -36,7 +36,7 @@ func TestImportBoundary(t *testing.T) {
 		}
 	}
 	checked := 0
-	for _, dir := range []string{".", "../internal", "../cmd/godwit"} {
+	for _, dir := range []string{".", "../internal", "../cmd/godwit", "../uiclient", "../webui"} {
 		err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
 				return err
@@ -97,8 +97,10 @@ func TestServiceInterface(t *testing.T) {
 			}
 			return false
 		})
-		if declared["FollowConversation"] {
-			t.Errorf("%s/service.go must not list FollowConversation", dir)
+		for _, bad := range []string{"FollowConversation", "Redact", "ImageCache", "SystemTranslator"} {
+			if declared[bad] {
+				t.Errorf("%s/service.go must not list non-wire method %s", dir, bad)
+			}
 		}
 
 		called := map[string]bool{}

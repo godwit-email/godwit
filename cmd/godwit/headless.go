@@ -43,7 +43,7 @@ func headless(ctx context.Context, dataDir string, stderr io.Writer) int {
 		return 1
 	}
 	old := slog.Default() // the log package follows slog's default
-	slog.SetDefault(slog.New(newLogHandler(stderr, svc.Redact)))
+	slog.SetDefault(slog.New(newLogHandler(logOutput(stderr), svc.Redact)))
 	defer func() {
 		svc.Close() // still logging through Redact
 		slog.SetDefault(old)

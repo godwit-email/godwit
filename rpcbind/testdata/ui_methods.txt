@@ -13,6 +13,8 @@ InstallPluginFromRegistryStream
 ModelServiceAvatar
 PluginReadme
 PrepareModelStream
+RecentLog
 SenderAvatar
 SetInboxOnly
+SetTimeZone
 SystemTranslatorLanguages
