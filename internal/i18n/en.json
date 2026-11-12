@@ -29,6 +29,17 @@
   "wit_skill_output_replace_draft": "Replace the draft",
   "app_another_owner": "Godwit is already running (the app or godwit --headless) for this data directory.",
   "app_backend_lost": "Godwit’s background process stopped unexpectedly. Open Godwit again to restart it.",
+  "app_backend_version": "Godwit {arg1} is running in the background, started with godwit --headless; this is Godwit {arg2}. Stop it, then open Godwit again.",
+  "@app_backend_version": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
   "app_lock_failed": "Godwit could not open its data directory.",
   "app_open_failed": "Godwit could not open its data directory: {arg1}.",
   "@app_open_failed": {

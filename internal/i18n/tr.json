@@ -29,6 +29,7 @@
   "wit_skill_output_replace_draft": "Taslağı değiştir",
   "app_another_owner": "Bu veri dizini için Godwit zaten çalışıyor (uygulama veya godwit --headless).",
   "app_backend_lost": "Godwit’in arka plan işlemi beklenmedik şekilde durdu. Yeniden başlatmak için Godwit’i tekrar açın.",
+  "app_backend_version": "Arka planda Godwit {arg1} çalışıyor (godwit --headless ile başlatıldı); bu Godwit {arg2}. Onu durdurup Godwit’i yeniden açın.",
   "app_lock_failed": "Godwit veri dizinini açamadı.",
   "app_open_failed": "Godwit veri dizinini açamadı: {arg1}.",
   "app_open_failed_other": "veritabanı açılamadı",

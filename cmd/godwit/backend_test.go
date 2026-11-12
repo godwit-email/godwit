@@ -14,6 +14,7 @@ import (
 
 	"github.com/godwit-email/godwit/app"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/ownerlock"
@@ -176,6 +177,9 @@ func TestUIConnectsToUserHeadless(t *testing.T) {
 	if s.count() != 0 {
 		t.Fatalf("%d backends started beside the user's", s.count())
 	}
+	if h := c.RPC().Hello(); h.Server != "godwit/"+app.Version || h.UIStarted {
+		t.Fatalf("hello %+v", h)
+	}
 	if err := c.RPC().Call(t.Context(), "StopUIBackend", nil); err == nil {
 		t.Fatal("the user's backend accepted the interface's stop")
 	}
@@ -185,6 +189,104 @@ func TestUIConnectsToUserHeadless(t *testing.T) {
 	}
 	if code := stop(); code != 0 {
 		t.Fatalf("exit code %d", code)
+	}
+}
+
+// oldBackend runs a backend of another version on dir: an earlier interface's
+// when uiStarted, else the user's --headless. Its result is its exit.
+func oldBackend(t *testing.T, dir string, uiStarted bool) <-chan error {
+	t.Helper()
+	args := []string{"--headless", "--data-dir", dir}
+	if uiStarted {
+		args = append(args, "--"+uiStartedFlag)
+	}
+	cmd := exec.Command(os.Args[0], args...)
+	cmd.Env = append(os.Environ(), "GODWIT_TEST_MAIN=1", "GODWIT_HEADLESS_DESKTOP=0", "GODWIT_TEST_VERSION=old")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait(); close(done) }() // closed: the cleanup's receive never blocks
+	t.Cleanup(func() { cmd.Process.Kill(); <-done })
+	waitCond(t, "the old backend to answer", func() bool {
+		c, err := uiclient.Dial(dir, "")
+		if err == nil {
+			c.Close()
+		}
+		return err == nil
+	})
+	return done
+}
+
+// An interface meeting the backend an earlier one started, of another
+// version, stops it through its close path and starts its own; the outbox
+// goes through the restart as it was.
+func TestUIReplacesOutdatedBackend(t *testing.T) {
+	env := coretest.New(t, coretest.WithoutAutoSync())
+	s := startsBackends(t)
+	dir := shortDir(t)
+	old := oldBackend(t, dir, true)
+	oc, err := uiclient.Dial(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer oc.Close()
+	if h := oc.RPC().Hello(); h.Server != "godwit/old" || !h.UIStarted {
+		t.Fatalf("hello %+v", h)
+	}
+	acc, _ := addTestAccount(t, env, oc.RPC())
+	var d core.Draft
+	if err := oc.RPC().Call(t.Context(), "NewDraft", &d, acc.ID, "new", 0); err != nil {
+		t.Fatal(err)
+	}
+	d.To, d.Subject = []string{"bob@example.com"}, "queued"
+	if err := oc.RPC().Call(t.Context(), "SaveDraft", &d, d); err != nil {
+		t.Fatal(err)
+	}
+	if err := oc.RPC().Call(t.Context(), "Send", nil, d.ID); err != nil { // queued for its undo window
+		t.Fatal(err)
+	}
+
+	c := connect(t, dir)
+	select {
+	case err := <-old:
+		if err != nil {
+			t.Fatalf("the old backend exited with %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the old backend still runs")
+	}
+	if s.count() != 1 {
+		t.Fatalf("%d backends started", s.count())
+	}
+	if h := c.RPC().Hello(); h.Server != "godwit/"+app.Version || !h.UIStarted {
+		t.Fatalf("hello %+v", h)
+	}
+	out, err := c.ListOutbox(t.Context(), acc.ID)
+	if err != nil || len(out) != 1 || out[0].Subject != "queued" || out[0].State != "queued" {
+		t.Fatalf("outbox %+v, %v", out, err)
+	}
+	stopBackend(c)
+	exited(t, dir)
+}
+
+// A backend of another version the user started is left running, and the
+// interface tells the user rather than connect.
+func TestUIRefusesOutdatedUserBackend(t *testing.T) {
+	s := startsBackends(t)
+	dir := shortDir(t)
+	old := oldBackend(t, dir, false)
+	_, err := connectBackend(dir, 5*time.Second)
+	if msg, code := startupFailure(err); code != 1 || msg != i18n.Tf("app.backend_version", "old", app.Version) {
+		t.Fatalf("%v: %q %d", err, msg, code)
+	}
+	if s.count() != 0 {
+		t.Fatalf("%d backends started", s.count())
+	}
+	select {
+	case err := <-old:
+		t.Fatalf("the user's backend exited: %v", err)
+	case <-time.After(200 * time.Millisecond):
 	}
 }
 

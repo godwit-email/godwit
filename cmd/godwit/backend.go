@@ -7,9 +7,12 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/godwit-email/godwit/app"
+	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/ownerlock"
 	"github.com/godwit-email/godwit/uiclient"
 )
@@ -48,20 +51,37 @@ type startupError int
 
 func (e startupError) Error() string { return fmt.Sprintf("the backend exited with code %d", int(e)) }
 
+// versionError is a backend of another version the interface will not
+// replace: the user's --headless, or one it started itself. It is the
+// backend's version.
+type versionError string
+
+func (e versionError) Error() string { return "the backend runs version " + string(e) }
+
 // connectBackend dials dataDir's backend as the ui role: one already
 // running, the user's --headless included, or else one it starts
 // (backendCmd), waiting up to wait for it to answer. A started backend that
 // finds another owner (one still quitting, or another interface's starting)
 // is started again for up to ownerWait more; one that fails otherwise is its
-// startupError at once.
+// startupError at once. A backend of another version that an interface
+// started is stopped (stopBackend) and replaced; the user's is a versionError.
 func connectBackend(dataDir string, wait time.Duration) (*uiclient.Client, error) {
 	deadline := time.Now().Add(wait)
 	var exited chan error // the started backend's Wait; nil while none runs
 	var last error = errors.New("the backend did not answer")
+	started := false
 	for {
 		c, err := uiclient.Dial(dataDir, "")
 		if err == nil {
-			return c, nil
+			h := c.RPC().Hello()
+			if h.Server == "godwit/"+app.Version {
+				return c, nil
+			}
+			if !h.UIStarted || started {
+				c.Close()
+				return nil, versionError(strings.TrimPrefix(h.Server, "godwit/"))
+			}
+			stopBackend(c) // ours, started next, waits for its exit (exitAnotherOwner)
 		}
 		if time.Now().After(deadline) {
 			return nil, last
@@ -74,6 +94,7 @@ func connectBackend(dataDir string, wait time.Duration) (*uiclient.Client, error
 			if err != nil {
 				return nil, err
 			}
+			started = true
 			exited = make(chan error, 1)
 			go func() { exited <- cmd.Wait() }()
 		}
@@ -100,6 +121,10 @@ func connectBackend(dataDir string, wait time.Duration) (*uiclient.Client, error
 // fails, as the GUI did when it opened the data directory itself, and its
 // exit code. The message never carries err's text.
 func startupFailure(err error) (msg string, code int) {
+	var ve versionError
+	if errors.As(err, &ve) {
+		return i18n.Tf("app.backend_version", string(ve), app.Version), 1
+	}
 	var se startupError
 	errors.As(err, &se)
 	switch se {

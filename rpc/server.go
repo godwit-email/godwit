@@ -31,6 +31,9 @@ type ServerOptions struct {
 	Conn     ConnOptions // per connection; Hello and EncodeError are set by the Server
 	MaxConns int         // simultaneous connections, 16
 	Version  string      // hello answers "godwit/<Version>"
+	// UIStarted: the interface started this backend; hello tells the ui role
+	// (Hello.UIStarted), which can then replace it on a version change.
+	UIStarted bool
 	// DisableExternal starts the Server with external access (RoleFull,
 	// RoleMCP and api-token) off until SetExternal(true) turns it on.
 	DisableExternal bool
@@ -397,7 +400,11 @@ func (s *Server) hello(ctx context.Context, c *conn, done chan struct{}, params 
 		}
 		return nil
 	}
-	return allow, ctx, map[string]string{"server": "godwit/" + s.opts.Version, "role": role}, nil
+	result := map[string]any{"server": "godwit/" + s.opts.Version, "role": role}
+	if role == RoleUI && s.opts.UIStarted {
+		result["uiStarted"] = true
+	}
+	return allow, ctx, result, nil
 }
 
 // Dial connects to the Server in dataDir with the token for role and says
@@ -421,7 +428,7 @@ func Dial(dataDir, role, client string, codec *Codec) (*Client, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := c.Call(ctx, "hello", nil, string(tok), role, client); err != nil {
+	if err := c.Call(ctx, "hello", &c.hello, string(tok), role, client); err != nil {
 		c.Close()
 		return nil, err
 	}

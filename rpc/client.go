@@ -38,7 +38,19 @@ type Client struct {
 	pending map[uint64]*pending
 	streams map[uint64]*clientStream
 	errs    map[<-chan json.RawMessage]error
+
+	hello Hello // Dial's
 }
+
+// Hello is a Server's answer to hello.
+type Hello struct {
+	Server    string // "godwit/<Version>"
+	Role      string
+	UIStarted bool // the ui role's: the interface started this backend, which StopUIBackend stops
+}
+
+// Hello is what the Server answered to Dial's hello.
+func (c *Client) Hello() Hello { return c.hello }
 
 type pending struct {
 	ch        chan message // closed if the connection drops

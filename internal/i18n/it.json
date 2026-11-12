@@ -29,6 +29,7 @@
   "wit_skill_output_replace_draft": "Sostituisci la bozza",
   "app_another_owner": "Godwit è già in esecuzione (l’app o godwit --headless) per questa cartella dati.",
   "app_backend_lost": "Il processo in background di Godwit si è interrotto inaspettatamente. Apri di nuovo Godwit per riavviarlo.",
+  "app_backend_version": "In background è in esecuzione Godwit {arg1} (avviato con godwit --headless), mentre questa è Godwit {arg2}. Arrestalo e poi riapri Godwit.",
   "app_lock_failed": "Godwit non è riuscito ad aprire la cartella dati.",
   "app_open_failed": "Godwit non è riuscito ad aprire la cartella dati: {arg1}.",
   "app_open_failed_other": "impossibile aprire il database",
