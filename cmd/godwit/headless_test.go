@@ -1184,3 +1184,22 @@ func TestHeadlessTraySignInCodesAndBanner(t *testing.T) {
 		t.Fatalf("exit code %d; stderr %q", code, stderr.String())
 	}
 }
+
+// On macOS the backend starts an interface inside a .app through LaunchServices,
+// so its window comes to the front; elsewhere, and outside a bundle, it runs exe.
+func TestUIArgv(t *testing.T) {
+	args := []string{"--data-dir", "/d", "--open", "window"}
+	for _, c := range []struct {
+		goos, exe string
+		want      []string
+	}{
+		{"darwin", "/Applications/Godwit.app/Contents/MacOS/Godwit",
+			[]string{"/usr/bin/open", "-n", "-a", "/Applications/Godwit.app", "--args", "--data-dir", "/d", "--open", "window"}},
+		{"darwin", "/usr/local/bin/godwit", []string{"/usr/local/bin/godwit", "--data-dir", "/d", "--open", "window"}},
+		{"linux", "/opt/Godwit.app/Contents/MacOS/Godwit", []string{"/opt/Godwit.app/Contents/MacOS/Godwit", "--data-dir", "/d", "--open", "window"}},
+	} {
+		if got := uiArgv(c.goos, c.exe, args...); !slices.Equal(got, c.want) {
+			t.Errorf("uiArgv(%q, %q) = %q, want %q", c.goos, c.exe, got, c.want)
+		}
+	}
+}

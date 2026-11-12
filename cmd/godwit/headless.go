@@ -9,8 +9,11 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -370,9 +373,20 @@ var uiCmd = func(dataDir, what string) (*exec.Cmd, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(exe, "--data-dir", dataDir, "--open", what)
+	argv := uiArgv(runtime.GOOS, exe, "--data-dir", dataDir, "--open", what)
+	cmd := exec.Command(argv[0], argv[1:]...)
 	detachBackend(cmd)
 	return cmd, nil
+}
+
+// uiArgv runs exe with args: on macOS, from inside a .app, through
+// LaunchServices (open -n -a), so the interface's window comes to the front.
+func uiArgv(goos, exe string, args ...string) []string {
+	macOS := filepath.Dir(exe)
+	if bundle := filepath.Dir(filepath.Dir(macOS)); goos == "darwin" && filepath.Base(macOS) == "MacOS" && strings.HasSuffix(bundle, ".app") {
+		return append([]string{"/usr/bin/open", "-n", "-a", bundle, "--args"}, args...)
+	}
+	return append([]string{exe}, args...)
 }
 
 // showUI opens what in the interface (app.App.Open: app.OpenWindow,
