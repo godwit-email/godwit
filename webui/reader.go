@@ -398,8 +398,13 @@ func (r *Reader) build(ctx context.Context, svc Service, message, v int64, allow
 	var tokens map[string]string
 	budget := imagefetch.NewBudget() // the message's images, inline and remote
 	if m.HTML != "" {
+		dims := map[string]core.ImageDims{}
 		b.HTML, tokens = prepareBody(m.HTML, budget, message, func(src string) (int, int, bool) {
-			d := svc.CachedImageDims(src)
+			d, ok := dims[src]
+			if !ok {
+				d = svc.CachedImageDims(src)
+				dims[src] = d
+			}
 			return d.Width, d.Height, d.OK
 		})
 	} else {
