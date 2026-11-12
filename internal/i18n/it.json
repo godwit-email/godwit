@@ -264,6 +264,7 @@
   "mcp_send_first": "Prima volta",
   "mcp_send_notify": "Uno strumento IA chiede di inviare «{arg1}». Confermalo in Godwit.",
   "mcp_send_title": "Inviare questa email?",
+  "mcp_send_waiting": "Uno strumento IA chiede di inviare un’email. Confermalo in Godwit.",
   "notify_new_mail": "Nuova email",
   "notify_new_mails": "{arg1, number, ::group-off} nuovi messaggi",
   "oauth_page_fail_body": "Torna a Godwit e riprova.",

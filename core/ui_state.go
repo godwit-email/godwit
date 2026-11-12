@@ -1,6 +1,9 @@
 package core
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 type uiSessionKey struct{}
 
@@ -58,6 +61,19 @@ func (s *Service) applyUIBackgroundSync(st Settings) {
 	fg := s.uiForegroundLocked()
 	s.SetInboxOnly(!fg && st.BackgroundSync != BackgroundSyncAll)
 	s.uiMu.Unlock()
+}
+
+// ErrNoUI: a Wit run or a plugin action that waits on the user's approval,
+// asked over the Local API while no Godwit window is open to take it.
+var ErrNoUI = errors.New("this needs the user's approval in Godwit, and no Godwit window is open; ask again once the user has opened Godwit")
+
+// needUI is ErrNoUI for a call over the Local API (WithExternalSource) while
+// no window can take the approvals it waits on: they would wait unseen.
+func (s *Service) needUI(ctx context.Context) error {
+	if _, ext := ctx.Value(externalSourceKey{}).(string); ext && !s.opts.ConfirmWindow && !s.UIConnected() {
+		return ErrNoUI
+	}
+	return nil
 }
 
 // UIConnected reports whether any RoleUI client connection is currently open.

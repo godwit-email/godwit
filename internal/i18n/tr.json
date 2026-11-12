@@ -264,6 +264,7 @@
   "mcp_send_first": "İlk kez",
   "mcp_send_notify": "Bir yapay zeka aracı “{arg1}” iletisini göndermek istiyor. Godwit’te onaylayın.",
   "mcp_send_title": "Bu e-posta gönderilsin mi?",
+  "mcp_send_waiting": "Bir yapay zeka aracı bir e-posta göndermek istiyor. Godwit’te onaylayın.",
   "notify_new_mail": "Yeni e-posta",
   "notify_new_mails": "{arg1, number, ::group-off} yeni ileti",
   "oauth_page_fail_body": "Godwit’e dönüp tekrar deneyin.",

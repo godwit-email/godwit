@@ -772,6 +772,9 @@ type SkillOptions struct {
 }
 
 func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, name string, opts SkillOptions) (*witStream, error) {
+	if err := s.needUI(ctx); err != nil {
+		return nil, err
+	}
 	sel := opts.Selection
 	if sel != nil { // the caller keeps its struct: work on a copy
 		c := *sel

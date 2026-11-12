@@ -264,6 +264,7 @@
   "mcp_send_first": "首次傳送",
   "mcp_send_notify": "AI 工具請求傳送「{arg1}」，請在 Godwit 中確認。",
   "mcp_send_title": "傳送這封郵件？",
+  "mcp_send_waiting": "AI 工具請求傳送一封郵件，請在 Godwit 中確認。",
   "notify_new_mail": "新郵件",
   "notify_new_mails": "{arg1, number, ::group-off} 封新郵件",
   "oauth_page_fail_body": "請回到 Godwit 重試。",

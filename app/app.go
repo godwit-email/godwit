@@ -523,6 +523,7 @@ func (a *App) load() {
 		a.refreshSignInCodes()
 		if first {
 			a.setLanguage(st.UILanguage)
+			a.loadMCPSends() // asked while no interface was open: no event of them reached this one
 		}
 		gone := func(id int64, _ bool) bool { _, ok := unread[id]; return !ok } // a removed account
 		maps.DeleteFunc(a.syncing, gone)

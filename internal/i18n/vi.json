@@ -264,6 +264,7 @@
   "mcp_send_first": "Lần đầu",
   "mcp_send_notify": "Một công cụ AI yêu cầu gửi “{arg1}”. Hãy xác nhận trong Godwit.",
   "mcp_send_title": "Gửi thư này?",
+  "mcp_send_waiting": "Một công cụ AI yêu cầu gửi một email. Hãy xác nhận trong Godwit.",
   "notify_new_mail": "Thư mới",
   "notify_new_mails": "{arg1, number, ::group-off} thư mới",
   "oauth_page_fail_body": "Hãy quay lại Godwit và thử lại.",

@@ -264,6 +264,7 @@
   "mcp_send_first": "初めての宛先",
   "mcp_send_notify": "AI ツールが「{arg1}」の送信を求めています。Godwit で確認してください。",
   "mcp_send_title": "このメールを送信しますか？",
+  "mcp_send_waiting": "AI ツールがメールの送信を求めています。Godwit で確認してください。",
   "notify_new_mail": "新着メール",
   "notify_new_mails": "{arg1, number, ::group-off} 通の新着メール",
   "oauth_page_fail_body": "Godwit に戻ってやり直してください。",

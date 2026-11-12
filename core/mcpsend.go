@@ -27,7 +27,8 @@ const mcpSendTTL = 10 * time.Minute
 const maxMCPSends = 5
 
 var (
-	// ErrMCPSendOff: 通过 MCP 发送 is 不允许, or 每次确认 with no window to confirm in (--headless).
+	// ErrMCPSendOff: 通过 MCP 发送 is 不允许, or 每次确认 with no window to
+	// confirm in and no notification to open one (--headless with no graphical session).
 	ErrMCPSendOff = errors.New("sending through MCP is off; the user can turn it on in Godwit under Settings › Intelligence › AI apps › Send through MCP")
 	// ErrMCPSendComposing: 直接发送 of a draft open in a compose window,
 	// which may hold edits not saved yet.
@@ -63,12 +64,13 @@ type mcpSend struct {
 func (r *mcpSend) expired() bool { return time.Since(r.created) >= mcpSendTTL }
 
 // RequestMCPSend is godwit mcp's send_draft: what it does follows
-// Settings.MCPSend. 不允许 (or 每次确认 with no window to confirm it: neither
-// ConfirmWindow nor a connected ui client) is ErrMCPSendOff. 每次确认
-// records a request bound to the draft's revision, one per draft (a newer
-// revision's replaces the older), at most maxMCPSends (ErrMCPSendBusy), for
-// the user to confirm (PendingMCPSends, ResolveMCPSend), and announces
-// mcp_sends.changed; sent is false. 直接发送 queues the draft as Send does,
+// Settings.MCPSend. 不允许 (or 每次确认 with no way to confirm it: neither
+// ConfirmWindow, a connected ui client nor a notification NotifyMCPSend
+// posts) is ErrMCPSendOff. 每次确认 records a request bound to the draft's
+// revision, one per draft (a newer revision's replaces the older), at most
+// maxMCPSends (ErrMCPSendBusy), for the user to confirm (PendingMCPSends,
+// ResolveMCPSend), notifies it while no ui client is connected, and
+// announces mcp_sends.changed; sent is false. 直接发送 queues the draft as Send does,
 // audited as an MCP send, unless a compose window has it
 // (ErrMCPSendComposing); sent is true. A revision other than the draft's is
 // ErrStaleDraft.
@@ -95,7 +97,7 @@ func (s *Service) RequestMCPSend(ctx context.Context, draftID, revision int64) (
 			slog.Default().Warn("could not audit an MCP send", "draft", draftID, "err", err)
 		}
 		return true, nil
-	case level == MCPSendOff || !s.opts.ConfirmWindow && !s.UIConnected():
+	case level == MCPSendOff || !s.opts.ConfirmWindow && !s.UIConnected() && s.opts.NotifyMCPSend == nil:
 		return false, ErrMCPSendOff
 	}
 	s.editMu.Lock()
@@ -155,8 +157,15 @@ func (s *Service) RequestMCPSend(ctx context.Context, draftID, revision int64) (
 		s.sendReqs = map[int64]*mcpSend{}
 	}
 	s.sendReqID++
-	s.sendReqs[s.sendReqID] = &mcpSend{draftID: draftID, revision: revision, created: time.Now(), from: acc.Email, firstTime: first}
+	id := s.sendReqID
+	s.sendReqs[id] = &mcpSend{draftID: draftID, revision: revision, created: time.Now(), from: acc.Email, firstTime: first}
 	s.sendReqMu.Unlock()
+	if !s.opts.ConfirmWindow && !s.UIConnected() && (s.opts.NotifyMCPSend == nil || !s.opts.NotifyMCPSend(id)) {
+		s.sendReqMu.Lock()
+		delete(s.sendReqs, id) // never offered to the user: the older ones stay
+		s.sendReqMu.Unlock()
+		return false, ErrMCPSendOff
+	}
 	endOlder()
 	s.bus.Publish(events.Event{Type: events.MCPSendsChanged})
 	return false, nil

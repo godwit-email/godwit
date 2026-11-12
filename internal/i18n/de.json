@@ -269,6 +269,7 @@
   "mcp_send_first": "Erstes Mal",
   "mcp_send_notify": "Ein KI-Werkzeug möchte „{arg1}“ senden. Bestätige es in Godwit.",
   "mcp_send_title": "Diese E-Mail senden?",
+  "mcp_send_waiting": "Ein KI-Werkzeug möchte eine E-Mail senden. Bestätige es in Godwit.",
   "notify_new_mail": "Neue E-Mail",
   "notify_new_mails": "{arg1, number, ::group-off} neue Nachrichten",
   "oauth_page_fail_body": "Kehre zu Godwit zurück und versuche es erneut.",
