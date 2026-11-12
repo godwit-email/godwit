@@ -1030,6 +1030,7 @@
   "settings_background_sync_inbox": "Alleen inbox",
   "settings_background_sync_all": "Alle mappen",
   "settings_launch_at_login_help": "Start Godwit op de achtergrond na het inloggen",
+  "settings_login_item_off": "Starten bij inloggen staat uit in de systeeminstellingen; zet het daar weer aan",
   "settings_local_api": "Lokale API",
   "settings_local_api_client_off": "{arg1} losgekoppeld.",
   "settings_local_api_client_on": "{arg1} verbonden. Start het opnieuw om Godwit te gebruiken.",

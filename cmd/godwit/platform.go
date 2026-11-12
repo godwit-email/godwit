@@ -192,7 +192,8 @@ func (p *platform) SaveFile(defaultName string) (string, error) {
 }
 func (p *platform) Notify(n app.Notification) error { return showNotification(p.svc, n) }
 func (*platform) NotificationsSupported() bool      { return mygo.NotificationsSupported() }
-func (*platform) SetOpenAtLogin(on bool) error      { return mygo.App.SetOpenAtLogin(on) }
+func (*platform) SetOpenAtLogin(on bool) error      { return setOpenAtLogin(on) }
+func (*platform) OpenAtLogin() bool                 { return openAtLogin() }
 
 type trayActions struct {
 	open    func()

@@ -1030,6 +1030,7 @@
   "settings_background_sync_inbox": "Yalnızca gelen kutusu",
   "settings_background_sync_all": "Tüm klasörler",
   "settings_launch_at_login_help": "Oturum açıldıktan sonra Godwit’i arka planda başlatır",
+  "settings_login_item_off": "Oturum açılışında başlatma sistem ayarlarında kapalı; oradan yeniden açın",
   "settings_local_api": "Yerel API",
   "settings_local_api_client_off": "{arg1} bağlantısı kesildi.",
   "settings_local_api_client_on": "{arg1} bağlandı. Godwit’i kullanmak için yeniden başlatın.",

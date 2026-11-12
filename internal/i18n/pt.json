@@ -1030,6 +1030,7 @@
   "settings_background_sync_inbox": "Só a caixa de entrada",
   "settings_background_sync_all": "Todas as pastas",
   "settings_launch_at_login_help": "Inicia o Godwit em segundo plano após o login",
+  "settings_login_item_off": "A abertura ao iniciar sessão está desativada nas configurações do sistema; reative-a lá",
   "settings_local_api": "API local",
   "settings_local_api_client_off": "{arg1} desconectado.",
   "settings_local_api_client_on": "{arg1} conectado. Reinicie-o para usar o Godwit.",

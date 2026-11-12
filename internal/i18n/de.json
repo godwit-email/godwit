@@ -1035,6 +1035,7 @@
   "settings_background_sync_inbox": "Nur Posteingang",
   "settings_background_sync_all": "Alle Ordner",
   "settings_launch_at_login_help": "Startet Godwit nach der Anmeldung im Hintergrund",
+  "settings_login_item_off": "Der Start bei der Anmeldung ist in den Systemeinstellungen ausgeschaltet; dort wieder einschalten",
   "settings_local_api": "Lokale API",
   "settings_local_api_client_off": "{arg1} getrennt.",
   "settings_local_api_client_on": "{arg1} verbunden. Starte es neu, um Godwit zu nutzen.",
