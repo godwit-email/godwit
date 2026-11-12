@@ -19,7 +19,7 @@ import (
 func mcpSendHarness(t *testing.T) (*harness, core.Account) {
 	t.Helper()
 	var acc core.Account
-	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync(), coretest.WithConfirmWindow()},
+	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()},
 		func(e *coretest.Env) { acc = e.AddAccount(t, "alice@example.com") })
 	h.plat.supported = true
 	h.until("initial load", func() bool { return h.app.loaded })
@@ -84,7 +84,7 @@ func TestMCPSendConfirmWindow(t *testing.T) {
 // second notification (the backend posted one), and 发送 sends it.
 func TestMCPSendConfirmAfterLaunch(t *testing.T) {
 	var acc core.Account
-	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync(), coretest.WithConfirmWindow()},
+	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync(), coretest.WithMCPSendNotify()},
 		func(e *coretest.Env) { acc = e.AddAccount(t, "alice@example.com") })
 	h.plat.supported = true
 	h.until("initial load", func() bool { return h.app.loaded })
