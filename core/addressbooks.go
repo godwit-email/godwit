@@ -237,6 +237,20 @@ func normalizeAddressBookPreset(in AddressBookInput) (preset, authType, rawURL s
 	return preset, authType, rawURL, nil
 }
 
+// AddressBookEffectiveURL returns the normalized start URL that CheckAddressBook
+// and AddAddressBook dial for in, or "" if in does not resolve to a valid URL.
+func AddressBookEffectiveURL(in AddressBookInput) string {
+	_, _, rawURL, err := normalizeAddressBookPreset(in)
+	if err != nil {
+		return ""
+	}
+	u, err := carddav.NormalizeURL(rawURL)
+	if err != nil {
+		return ""
+	}
+	return u.String()
+}
+
 func defaultAddressBookName(preset string, homeURL *url.URL) string {
 	switch preset {
 	case PresetICloud:

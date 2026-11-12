@@ -724,6 +724,10 @@ func TestAuditAddressBookEgress(t *testing.T) {
 
 	in := core.AddressBookInput{Preset: core.PresetCustom, Name: "Corp", URL: srv.URL(), Username: "alice", Password: "secret"}
 	require.NoError(t, full.Call(ctx, "CheckAddressBook", nil, in))
+	// A non-custom preset accompanied by an explicit URL override must audit the
+	// effective override host that CheckAddressBook actually dials, not the preset default.
+	overrideIn := core.AddressBookInput{Preset: core.PresetICloud, URL: srv.URL(), Username: "alice", Password: "secret"}
+	require.NoError(t, full.Call(ctx, "CheckAddressBook", nil, overrideIn))
 	var ab core.AddressBook
 	require.NoError(t, full.Call(ctx, "AddAddressBook", &ab, in))
 	require.Len(t, ab.Collections, 1)
@@ -736,6 +740,7 @@ func TestAuditAddressBookEgress(t *testing.T) {
 	require.NoError(t, full.Call(ctx, "UpdateAddressBookAuth", nil, ab.ID, "secret", "", core.OAuthClient{}))
 
 	assert.Equal(t, [][]any{
+		{"local_api", "CheckAddressBook", nil, host},
 		{"local_api", "CheckAddressBook", nil, host},
 		{"local_api", "AddAddressBook", nil, host},
 		{"local_api", "SetAddressBookCollectionEnabled", colID, host},

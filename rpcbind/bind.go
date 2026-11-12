@@ -400,27 +400,8 @@ func addressBookEgress(svc *core.Service, method string, params []json.RawMessag
 		if len(params) != 1 || json.Unmarshal(params[0], &in) != nil {
 			return 0, nil, false, nil
 		}
-		raw := strings.TrimSpace(in.URL)
-		preset := strings.ToLower(strings.TrimSpace(in.Preset))
-		if preset != "" && preset != core.PresetCustom {
-			raw = ""
-		}
-		if raw == "" {
-			if preset == "" && in.OAuthFlowID != "" {
-				preset = core.PresetGoogle
-			}
-			for _, p := range svc.ListAddressBookPresets() {
-				if p.ID == preset {
-					raw = p.DefaultURL
-					break
-				}
-			}
-		}
-		if raw != "" {
-			if !strings.Contains(raw, "://") {
-				raw = "https://" + raw
-			}
-			dests = []string{raw}
+		if effective := core.AddressBookEffectiveURL(in); effective != "" {
+			dests = []string{effective}
 		}
 		return 0, dests, true, nil
 	case "UpdateAddressBookAuth":
