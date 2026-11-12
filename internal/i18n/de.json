@@ -29,6 +29,7 @@
   "wit_skill_output_replace_draft": "Entwurf ersetzen",
   "app_another_owner": "Godwit läuft bereits (die App oder godwit --headless) für dieses Datenverzeichnis.",
   "app_backend_lost": "Der Hintergrundprozess von Godwit wurde unerwartet beendet. Öffne Godwit erneut, um ihn neu zu starten.",
+  "app_backend_version": "Im Hintergrund läuft Godwit {arg1} (mit godwit --headless gestartet); dies ist Godwit {arg2}. Beende es und öffne Godwit dann erneut.",
   "app_lock_failed": "Godwit konnte das Datenverzeichnis nicht öffnen.",
   "app_open_failed": "Godwit konnte das Datenverzeichnis nicht öffnen: {arg1}.",
   "app_open_failed_other": "die Datenbank konnte nicht geöffnet werden",

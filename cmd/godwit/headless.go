@@ -214,7 +214,7 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 		st, err := svc.GetSettings(ctx)
 		external = err == nil && st.LocalAPI
 	}
-	srv, err := rpcbind.ListenWith(dataDir, svc, rpcbind.ListenOptions{Version: app.Version, External: external})
+	srv, err := rpcbind.ListenWith(dataDir, svc, rpcbind.ListenOptions{Version: app.Version, External: external, UIStarted: uiStarted})
 	if err != nil {
 		slog.Error("listen", "err", err)
 		closeSvc()

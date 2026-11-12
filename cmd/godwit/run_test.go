@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
+	"github.com/godwit-email/godwit/app"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/godwit-email/godwit/internal/i18n"
@@ -33,6 +34,9 @@ import (
 func TestMain(m *testing.M) {
 	keyring.MockInit()
 	if os.Getenv("GODWIT_TEST_MAIN") == "1" { // TestSigintShutdown's child: the real main
+		if v := os.Getenv("GODWIT_TEST_VERSION"); v != "" { // oldBackend's
+			app.Version = v
+		}
 		main()
 		return
 	}

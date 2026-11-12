@@ -29,6 +29,7 @@
   "wit_skill_output_replace_draft": "Заменить черновик",
   "app_another_owner": "Godwit уже запущен (приложение или godwit --headless) для этого каталога данных.",
   "app_backend_lost": "Фоновый процесс Godwit неожиданно остановился. Откройте Godwit снова, чтобы перезапустить его.",
+  "app_backend_version": "В фоне работает Godwit {arg1} (запущен через godwit --headless), а это Godwit {arg2}. Остановите его и снова откройте Godwit.",
   "app_lock_failed": "Godwit не удалось открыть каталог данных.",
   "app_open_failed": "Godwit не удалось открыть каталог данных: {arg1}.",
   "app_open_failed_other": "не удалось открыть базу данных",

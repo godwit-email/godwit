@@ -255,8 +255,9 @@ func ExposeUI(method string) bool {
 
 // ListenOptions configures ListenWith.
 type ListenOptions struct {
-	Version  string
-	External bool // allow RoleFull and RoleMCP connections and write api-token
+	Version   string
+	External  bool // allow RoleFull and RoleMCP connections and write api-token
+	UIStarted bool // see rpc.ServerOptions
 }
 
 // Listen serves svc's exposed methods on <dataDir>/godwit.sock with external
@@ -285,6 +286,7 @@ func ListenWith(dataDir string, svc *core.Service, opts ListenOptions) (*rpc.Ser
 		Conn:            rpc.ConnOptions{MaxActive: 256},
 		Version:         opts.Version,
 		DisableExternal: !opts.External,
+		UIStarted:       opts.UIStarted,
 		Codec:           NewCodec(),
 		Redact:          svc.Redact,
 		UIDispatcher:    ui,

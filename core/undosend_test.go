@@ -9,6 +9,7 @@ import (
 	"github.com/emersion/go-smtp"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/internal/testmail"
+	"github.com/godwit-email/godwit/core/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -214,6 +215,23 @@ func TestCrashWhileSendingDropsDraft(t *testing.T) {
 	assert.Error(t, err)
 	assert.NoDirExists(t, e.s.draftDir(it.DraftID))
 	assert.ErrorIs(t, e.s.CancelOutbox(bg, it.ID), ErrInvalidState)
+}
+
+// A backend restart (an upgrade replacing it) keeps the outbox: a queued item
+// is sent once after it, and one awaiting verification is not resent.
+func TestOutboxSurvivesRestart(t *testing.T) {
+	e := newSendEnv(t, false)
+	uncertain := e.sendNew(t)
+	_, err := e.s.db.Execute(bg, "UPDATE outbox SET state = 'send_uncertain'")
+	require.NoError(t, err)
+	queued := e.sendNew(t)
+	e.reopen(t)
+	e.sync(t)
+	e.sync(t)
+	got := e.smtp.Messages()
+	require.Len(t, got, 1)
+	assert.Contains(t, string(got[0].Data), queued)
+	assert.Equal(t, "send_uncertain", store.Str(e.rows(t, "SELECT state FROM outbox WHERE message_id_hdr = ?", uncertain)[0][0]))
 }
 
 // A move outside outboxFrom writes nothing, and one from a state the item has
