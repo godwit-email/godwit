@@ -100,7 +100,7 @@ func TestSettingsLinkedAddressBookRefusedPassword(t *testing.T) {
 	})
 }
 
-// 添加账户's 只有通讯录 adds a standalone address book, with its own page.
+// 添加账户's CardDAV 通讯录 adds a standalone address book, with its own page.
 func TestSettingsStandaloneAddressBook(t *testing.T) {
 	h, _ := withAccount(t)
 	srv := h.env.StartCardDAV(t)
@@ -110,7 +110,7 @@ func TestSettingsStandaloneAddressBook(t *testing.T) {
 
 	h.openSettings("general")
 	h.app.openAddAccount()
-	h.click("只有通讯录（CardDAV）")
+	h.click("CardDAV 通讯录")
 	h.see("添加通讯录")
 	h.post(func() { h.app.pages[PageSettings].(*settingsPage).addressBooks.setup = setupManual })
 	h.fill("CardDAV 服务器地址", srv.URL())
@@ -351,7 +351,7 @@ func TestSettingsAddressBooksGoogleOAuthAndSearch(t *testing.T) {
 	})
 }
 
-// The 只有通讯录 dialog asks for a CardDAV server only (iCloud, Fastmail and
+// The CardDAV 通讯录 dialog asks for a CardDAV server only (iCloud, Fastmail and
 // Gmail are chosen in the add-account sheet), and closes once the address
 // book is saved, while its first sync is still going.
 func TestAddAddressBookDialogClosesBeforeFirstSync(t *testing.T) {

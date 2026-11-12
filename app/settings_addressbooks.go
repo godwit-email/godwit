@@ -588,7 +588,7 @@ func (v *addressBooksView) addDialogView(c *ui.Context) {
 	a := v.a
 	t, th := theme.Of(c), c.Theme()
 	pub := auth.GoogleCardDAVOAuth().Public
-	// The kind comes from where the dialog was opened (添加账户: 只有通讯录, or a
+	// The kind comes from where the dialog was opened (添加账户: CardDAV 通讯录, or a
 	// provider with 邮件 unticked): iCloud, Fastmail and Gmail are chosen there.
 	var curPreset core.AddressBookPreset
 	for _, pr := range a.svc.ListAddressBookPresets() {
@@ -695,13 +695,14 @@ func (v *addressBooksView) addDialogView(c *ui.Context) {
 		_, urlOK := v.startURL()
 		incomplete := strings.TrimSpace(v.username) == "" || v.password == "" || !urlOK
 		label := i18n.T("onboarding.connect")
-		if v.busy { // discovery takes a while: show it is under way
-			label = i18n.T("onboarding.check.connecting")
-			kit.Spinner(c).Size(theme.IconMd, theme.IconMd).AlignSelf(ui.Center)
+		if v.busy { // discovery takes a while: the spinner in the button, as the contacts page's refresh
+			kit.ButtonFrame(c, kit.ButtonOpts{Disabled: true}).Label(label).Children(func() {
+				kit.Spinner(c).Size(theme.Icon, theme.Icon)
+				ui.Text(c, label)
+			})
+			return
 		}
-		kit.Button(c, label, kit.ButtonOpts{
-			Disabled: v.busy || incomplete,
-		}).OnClick(v.submitPasswordAdd)
+		kit.Button(c, label, kit.ButtonOpts{Disabled: incomplete}).OnClick(v.submitPasswordAdd)
 	}
 
 	kit.Dialog(c, &v.open, i18n.T("settings.addressbooks.add"),
