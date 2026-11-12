@@ -1,5 +1,9 @@
 {
   "@@locale": "de",
+  "settings_collapse_quotes": "Zitierten Text einklappen",
+  "settings_collapse_quotes_help": "Zitierten Text hinter einer Schaltfläche verbergen, sodass nur der eigene Text des Absenders zu sehen ist",
+  "reader_quote_expand": "Zitierten Text aufklappen",
+  "reader_quote_collapse": "Zitierten Text einklappen",
   "settings_remote_images_keep": "Ungenutzte Bilder behalten",
   "settings_remote_images_keep_help": "Zwischengespeicherte Bilder, die so lange nicht geöffnet wurden, werden gelöscht. Anhänge bleiben unberührt. Eine alte Nachricht lädt sie erneut, wenn der Absender sie noch hat.",
   "settings_remote_images_keep_forever": "Bis der Cache voll ist",

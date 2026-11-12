@@ -58,6 +58,7 @@ const body = (version: number, html: string, over: Partial<ReaderBody> = {}): Re
   cut: false,
   theme,
   locale: "en",
+  collapseQuotes: false,
   ...over,
 });
 
@@ -160,7 +161,7 @@ test("the iframe is sandboxed (scripts allowed for WebKit's listeners; the CSP f
 });
 
 test("height doesn't run away with viewport-sized mail (vh): it converges, bounded calls", async () => {
-  const { frame, doc } = await start(
+  const { frame, doc, win } = await start(
     body(1, '<div style="min-height:100vh">x <img src="data:image/gif;base64,R0" alt="i"></div>'),
   );
   const wrap = doc.getElementById("godwit-body") as HTMLElement;
@@ -171,6 +172,7 @@ test("height doesn't run away with viewport-sized mail (vh): it converges, bound
   const ro = observers.find((o) => o.targets.includes(wrap));
   const settle = () => {
     for (let i = 0; i < 30; i++) {
+      win.dispatchEvent(new win.Event("resize")); // frame.style.height updates fire resize on win
       ro?.cb([], {} as ResizeObserver); // any layout change re-fires the observer
       flush();
     }
@@ -1255,4 +1257,175 @@ test("a height media query that changes its result recomputes at the same width"
   act(() => window.dispatchEvent(new Event("resize")));
   flush();
   expect(renderedContrast(text, win)).toBeGreaterThanOrEqual(4.5);
+});
+
+test("quote fold controls keep CSS states in auto-dark mode, show tooltips and collapse via rail", async () => {
+  const html =
+    '<div style="background:#fff;color:#111"><p>Sounds good.</p>' +
+    "<p>On Tue, Bob wrote:</p>" +
+    '<blockquote id="quoted" style="color:#222"><p>Shall we meet at 3?</p></blockquote></div>';
+  const { doc, win } = await start(
+    body(1, html, { theme: darkTheme, collapseQuotes: true, locale: "en" }),
+  );
+  const fold = doc.querySelector("details.godwit-quote-fold") as HTMLDetailsElement;
+  const summary = fold.querySelector("summary") as HTMLElement;
+  const pill = fold.querySelector(".godwit-quote-pill") as HTMLElement;
+  const rail = fold.querySelector(".godwit-quote-rail") as HTMLElement;
+  const quoted = doc.getElementById("quoted") as HTMLElement;
+
+  // Auto-dark adapts the quoted mail inside <details>, without inline-locking the UI controls.
+  expect(summary.getAttribute("style")).toBeNull();
+  expect(pill.getAttribute("style")).toBeNull();
+  expect(rail.getAttribute("style")).toBeNull();
+  expect(win.getComputedStyle(quoted).color).not.toBe("rgb(34, 34, 34)");
+
+  // Collapsed state: accessible label + hover tooltip clamped inside a tight native WebView.
+  Object.defineProperty(window, "innerHeight", { configurable: true, value: 48 });
+  pill.getBoundingClientRect = () => ({ right: 30, top: 30, height: 18 }) as DOMRect;
+  expect(summary.getAttribute("aria-label")).toBe("Show quoted text");
+  act(() => {
+    pill.dispatchEvent(new win.Event("pointerover", { bubbles: true }));
+  });
+  const collapsedTip = screen.getByRole("tooltip");
+  expect(collapsedTip).toHaveTextContent("Show quoted text");
+  expect(Number.parseFloat(collapsedTip.style.top)).toBeLessThanOrEqual(35); // 48 - 13 clearance
+
+  // Open the fold: tooltip clears, label flips to "Fold quoted text", rail hover shows collapse tip.
+  act(() => {
+    fold.open = true;
+    fold.dispatchEvent(new win.Event("toggle"));
+  });
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  expect(summary.getAttribute("aria-label")).toBe("Fold quoted text");
+
+  act(() => {
+    rail.dispatchEvent(new win.MouseEvent("pointerover", { bubbles: true, clientY: 40 }));
+  });
+  expect(screen.getByRole("tooltip")).toHaveTextContent("Fold quoted text");
+
+  // Clicking the left rail folds the quote back and hides the tooltip.
+  act(() => {
+    rail.dispatchEvent(new win.MouseEvent("click", { bubbles: true, cancelable: true }));
+  });
+  expect(fold.open).toBe(false);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+
+  // Printing expands closed folds and synchronously resizes the iframe, then restores them after.
+  const wrap = doc.getElementById("godwit-body") as HTMLElement;
+  wrap.getBoundingClientRect = () => ({ height: fold.open ? 260 : 80 }) as DOMRect;
+  act(() => {
+    window.dispatchEvent(new Event("beforeprint"));
+  });
+  expect(fold.open).toBe(true);
+  expect(document.querySelector("iframe")?.style.height).toBe("260px");
+  act(() => {
+    window.dispatchEvent(new Event("afterprint"));
+  });
+  expect(fold.open).toBe(false);
+  expect(document.querySelector("iframe")?.style.height).toBe("80px");
+});
+
+test("quote fold controls stay readable on naturally dark HTML surfaces in light mode", async () => {
+  for (const html of [
+    '<div id="surface" style="background:#000;color:#fff"><p>Reply</p><blockquote>Quote</blockquote></div>',
+    '<div id="surface" style="background:#000"><p style="color:#fff">Reply</p><blockquote style="color:#ccc">Quote</blockquote></div>',
+    '<div id="surface" style="background-color:#fff;background-image:url(godwit-img://m9/dark);color:#fff"><p>Reply</p><blockquote>Quote</blockquote></div>',
+    '<table><colgroup><col style="background:#000"></colgroup><tr><td style="color:#fff"><p>Reply</p><blockquote>Quote</blockquote></td></tr></table>',
+  ]) {
+    cleanup();
+    const { doc, win } = await start(body(1, html, { theme, collapseQuotes: true }));
+    const pill = doc.querySelector(".godwit-quote-pill") as HTMLElement;
+    const icon = pill.querySelector("svg") as unknown as HTMLElement;
+    const fg = channels(win.getComputedStyle(pill).color);
+    const op = Number(win.getComputedStyle(icon).opacity || 1);
+    const composited = fg.slice(0, 3).map((v) => v * op); // over #000
+    expect(Math.min(...composited)).toBeGreaterThan(140); // >= 6:1 against #000
+  }
+
+  // Responsive dark-to-light surface flip recomputes fold control contrast on resize.
+  cleanup();
+  const { doc, win } = await start(
+    body(
+      1,
+      '<style id="resp">#godwit-body #surface{background:#000}</style>' +
+        '<div id="surface"><p style="color:#fff">Reply</p><blockquote>Quote</blockquote></div>',
+      { theme, collapseQuotes: true },
+    ),
+  );
+  const summary = doc.querySelector("details.godwit-quote-fold > summary") as HTMLElement;
+  expect(Math.min(...channels(win.getComputedStyle(summary).color).slice(0, 3))).toBeGreaterThan(
+    200,
+  );
+  (doc.getElementById("resp") as HTMLStyleElement).textContent =
+    "#godwit-body #surface{background:#fff}";
+  act(() => window.dispatchEvent(new Event("resize")));
+  flush();
+  expect(summary.style.color).toBe("");
+  expect(Math.max(...channels(win.getComputedStyle(summary).color).slice(0, 3))).toBeLessThan(50);
+});
+
+test("quote fold controls stay visible when they inherit a transparent text colour", async () => {
+  const { doc } = await start(
+    body(
+      1,
+      '<div style="color:transparent"><p style="color:#111">Reply</p><blockquote style="color:#333">Quote</blockquote></div>',
+      { theme, collapseQuotes: true },
+    ),
+  );
+  const summary = doc.querySelector("details.godwit-quote-fold > summary") as HTMLElement;
+  expect(summary.style.color).toBe("rgb(10, 10, 10)");
+});
+
+test("quote fold controls keep light colors on dark plain-text and author-dark HTML replies", async () => {
+  const { doc: plainDoc, win: plainWin } = await start(
+    body(1, "", {
+      plain: "Sounds good!\n\nOn Tue, Bob wrote:\n> Dinner at 8?",
+      theme: darkTheme,
+      collapseQuotes: true,
+    }),
+  );
+  const plainSummary = plainDoc.querySelector("details.godwit-quote-fold > summary") as HTMLElement;
+  expect(plainSummary.style.color).toBe("");
+  expect(
+    Math.min(...channels(plainWin.getComputedStyle(plainSummary).color).slice(0, 3)),
+  ).toBeGreaterThan(200);
+
+  cleanup();
+  const { doc: awareDoc, win: awareWin } = await start(
+    body(
+      1,
+      '<style data-dark=""></style><p>Sounds good!</p><blockquote><p>Dinner?</p></blockquote>',
+      { theme: darkTheme, collapseQuotes: true },
+    ),
+  );
+  const awareSummary = awareDoc.querySelector("details.godwit-quote-fold > summary") as HTMLElement;
+  expect(awareSummary.style.color).toBe("");
+  expect(
+    Math.min(...channels(awareWin.getComputedStyle(awareSummary).color).slice(0, 3)),
+  ).toBeGreaterThan(200);
+});
+
+test("fold summary inside a linked blockquote toggles without triggering openLink", async () => {
+  const { doc, win } = await start(
+    body(
+      1,
+      '<p>Reply</p><a data-href="https://example.com"><blockquote><p id="q">Old</p></blockquote></a>',
+      { collapseQuotes: true },
+    ),
+  );
+  const summary = doc.querySelector("details.godwit-quote-fold > summary") as HTMLElement;
+  const pill = summary.querySelector(".godwit-quote-pill") as HTMLElement;
+  const click = new win.MouseEvent("click", { bubbles: true, cancelable: true });
+  pill.dispatchEvent(click);
+  expect(click.defaultPrevented).toBe(false);
+  expect(api.openLink).not.toHaveBeenCalled();
+
+  const enter = new win.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+  summary.dispatchEvent(enter);
+  expect(enter.defaultPrevented).toBe(false);
+  expect(api.openLink).not.toHaveBeenCalled();
+
+  // Clicking the quoted mail content itself still opens the surrounding link.
+  (doc.getElementById("q") as HTMLElement).click();
+  expect(api.openLink).toHaveBeenCalledExactlyOnceWith("https://example.com");
 });

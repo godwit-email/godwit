@@ -1,5 +1,9 @@
 {
   "@@locale": "ja",
+  "settings_collapse_quotes": "引用文を折りたたむ",
+  "settings_collapse_quotes_help": "返信が引用している部分をボタンの後ろに隠し、送信者が書いた部分だけを表示します",
+  "reader_quote_expand": "引用文を展開",
+  "reader_quote_collapse": "引用文を折りたたむ",
   "settings_remote_images_keep": "未使用の画像を保持",
   "settings_remote_images_keep_help": "この期間開かれなかったキャッシュ済みの画像は削除されます。添付ファイルは削除されません。古いメッセージは、送信者側にまだあれば再読み込みされます。",
   "settings_remote_images_keep_forever": "キャッシュがいっぱいになるまで",
