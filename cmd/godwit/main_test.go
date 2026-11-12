@@ -6,6 +6,7 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 	"image/png"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/godwit-email/godwit/app"
@@ -97,32 +98,160 @@ func TestCloseMinimizes(t *testing.T) {
 	}
 }
 
-// Closing the main window while Godwit keeps running in the background exits
-// the interface, but not while a compose window is open; with 后台收信 at
-// 关窗后停止 it quits, stopping the backend. Without closeExitsUI (#738) it hides as before.
+// Closing the main window while Godwit keeps running in the background hides
+// it; once it stayed hidden long enough (expired) the interface exits, but not
+// while a compose window is open; with 后台收信 at 关窗后停止 it quits,
+// stopping the backend.
 func TestMainCloseAction(t *testing.T) {
 	for _, tc := range []struct {
-		keep, exits bool
-		compose     int
-		goos        string
-		hasTray     bool
-		want        closeAction
+		keep, expired bool
+		compose       int
+		goos          string
+		hasTray       bool
+		want          closeAction
 	}{
-		{false, true, 0, "darwin", true, closeQuit},
-		{false, true, 2, "windows", true, closeQuit}, // the quit closes the compose windows, each saving
+		{false, false, 0, "darwin", true, closeQuit},
+		{false, false, 2, "windows", true, closeQuit}, // the quit closes the compose windows, each saving
+		{true, false, 0, "darwin", true, closeHide},
+		{true, false, 0, "windows", false, closeMinimize}, // its taskbar entry is the way back meanwhile
 		{true, true, 0, "darwin", true, closeExit},
 		{true, true, 0, "windows", false, closeExit}, // relaunching it is the way back, as with the tray
 		{true, true, 1, "darwin", true, closeHide},   // decided again once the last one closes
-		{true, false, 0, "darwin", true, closeHide},
-		{true, false, 0, "windows", false, closeMinimize},
-		{false, false, 0, "darwin", true, closeQuit},
 	} {
-		if got := mainCloseAction(tc.keep, tc.exits, tc.compose, tc.goos, tc.hasTray); got != tc.want {
-			t.Errorf("mainCloseAction(%v, %v, %d, %q, %v) = %d, want %d", tc.keep, tc.exits, tc.compose, tc.goos, tc.hasTray, got, tc.want)
+		if got := mainCloseAction(tc.keep, tc.expired, tc.compose, tc.goos, tc.hasTray); got != tc.want {
+			t.Errorf("mainCloseAction(%v, %v, %d, %q, %v) = %d, want %d", tc.keep, tc.expired, tc.compose, tc.goos, tc.hasTray, got, tc.want)
 		}
 	}
-	if !closeExitsUI {
-		t.Error("closing the window hides the interface; #733 exits it")
+}
+
+// fakeTimer is mainClose's timer: fire runs what is pending.
+type fakeTimer struct {
+	d       time.Duration
+	f       func()
+	started int
+}
+
+func (ft *fakeTimer) after(d time.Duration, f func()) func() bool {
+	ft.d, ft.f = d, f
+	ft.started++
+	return func() bool { stopped := ft.f != nil; ft.f = nil; return stopped }
+}
+
+func (ft *fakeTimer) fire() {
+	if f := ft.f; f != nil {
+		ft.f = nil
+		f()
+	}
+}
+
+// mainCloseHarness is the GUI around a mainClose: the main window, its
+// compose windows and the actions closing it took.
+type mainCloseHarness struct {
+	keep    bool
+	compose int
+	visible bool
+	did     []closeAction
+	timer   fakeTimer
+	m       *mainClose
+}
+
+func newMainCloseHarness(keep bool) *mainCloseHarness {
+	h := &mainCloseHarness{keep: keep, visible: true}
+	h.m = &mainClose{
+		action: func(expired bool) closeAction {
+			return mainCloseAction(h.keep, expired, h.compose, "darwin", true)
+		},
+		do: func(act closeAction) {
+			h.did = append(h.did, act)
+			if act == closeHide {
+				h.visible = false
+			}
+		},
+		hidden: func() bool { return !h.visible },
+		after:  h.timer.after,
+	}
+	return h
+}
+
+func (h *mainCloseHarness) last() closeAction { return h.did[len(h.did)-1] }
+
+// Closing the main window under 一直继续 hides it, the interface staying for
+// hiddenExitAfter; then it exits, the backend staying to notify (#738).
+func TestMainCloseHidesThenExits(t *testing.T) {
+	h := newMainCloseHarness(true)
+	h.m.close()
+	if h.last() != closeHide || h.timer.f == nil || h.timer.d != hiddenExitAfter {
+		t.Fatalf("close: did %v, timer %v; want a hide and a %v timer", h.did, h.timer.d, hiddenExitAfter)
+	}
+	if hiddenExitAfter != 5*time.Minute {
+		t.Errorf("hiddenExitAfter = %v; the maintainer chose 5 minutes", hiddenExitAfter)
+	}
+	h.timer.fire()
+	if h.last() != closeExit { // closeExit leaves the backend running (gui's leaveBackend)
+		t.Errorf("timer fired: did %v, want the interface's exit", h.did)
+	}
+}
+
+// Showing the window again before the timer fires cancels it: the same
+// interface stays, and a later close starts a fresh wait.
+func TestMainCloseReopenCancels(t *testing.T) {
+	h := newMainCloseHarness(true)
+	h.m.close()
+	h.visible = true
+	h.m.shown()
+	if h.timer.f != nil {
+		t.Fatal("shown left the timer running")
+	}
+	h.m.close()
+	if h.timer.started != 2 || h.last() != closeHide {
+		t.Fatalf("second close: %d timers, did %v; want a fresh wait", h.timer.started, h.did)
+	}
+	h.timer.fire()
+	if h.last() != closeExit {
+		t.Errorf("did %v, want the exit after the second wait", h.did)
+	}
+}
+
+// A show the window's events missed still keeps the interface: the timer
+// exits only a window still hidden.
+func TestMainCloseVisibleWindowStays(t *testing.T) {
+	h := newMainCloseHarness(true)
+	h.m.close()
+	h.visible = true // shown without a focus event
+	h.timer.fire()
+	if h.last() != closeHide {
+		t.Errorf("did %v; a visible window must not exit", h.did)
+	}
+	h.visible = false
+	h.m.close() // its next close waits afresh
+	if h.timer.started != 2 {
+		t.Errorf("%d timers, want a fresh wait", h.timer.started)
+	}
+}
+
+// With a compose window open when the timer fires, the interface exits once
+// the last one closes (gui calls close again then).
+func TestMainCloseComposeDelaysExit(t *testing.T) {
+	h := newMainCloseHarness(true)
+	h.m.close()
+	h.compose = 1
+	h.timer.fire()
+	if h.last() == closeExit {
+		t.Fatal("exited with a compose window open")
+	}
+	h.compose = 0
+	h.m.close()
+	if h.last() != closeExit {
+		t.Errorf("did %v, want the exit once the compose window closed", h.did)
+	}
+}
+
+// With 后台收信 at 关窗后停止 closing quits at once, starting no timer.
+func TestMainCloseQuitsWithoutKeep(t *testing.T) {
+	h := newMainCloseHarness(false)
+	h.m.close()
+	if h.last() != closeQuit || h.timer.started != 0 {
+		t.Errorf("did %v with %d timers, want the quit and none", h.did, h.timer.started)
 	}
 }
 
