@@ -673,7 +673,9 @@ func (p *settingsPage) exportAccounts() {
 	})
 }
 
-const accountImportMax = 16 << 20
+// accountImportMax bounds an account export file the interface reads: it
+// crosses the Local API as base64 (4/3 larger) in a message of at most 16 MiB.
+const accountImportMax = 8 << 20
 
 func (p *settingsPage) importAccounts() {
 	if p.importing {

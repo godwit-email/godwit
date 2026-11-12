@@ -2017,6 +2017,29 @@ func TestSettingsAccountExport(t *testing.T) {
 	}
 }
 
+// A file too big to cross the Local API as base64 is refused before it is
+// sent: a request over the message limit would drop the connection, which
+// the interface takes for the backend's loss.
+func TestSettingsAccountImportTooBig(t *testing.T) {
+	h, alice := withAccount(t)
+	big := filepath.Join(t.TempDir(), "big.json")
+	if err := os.WriteFile(big, bytes.Repeat([]byte(" "), accountImportMax+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.plat.mu.Lock()
+	h.plat.files = []string{big}
+	h.plat.mu.Unlock()
+	h.openSettings(accountRoute(alice.ID))
+	h.click(i18n.T("settings.account.import.button"))
+	h.see(i18n.T("error.bad_account_export"))
+	if _, err := h.ui.ListAccounts(context.Background()); err != nil {
+		t.Fatalf("the connection did not survive: %v", err)
+	}
+	if enc := (accountImportMax + 2) / 3 * 4; enc+(1<<20) > 16<<20 {
+		t.Fatalf("accountImportMax %d encodes to %d bytes, over the Local API's 16 MiB message", accountImportMax, enc)
+	}
+}
+
 func TestSettingsAccountImport(t *testing.T) {
 	h, alice := withAccount(t)
 	h.resize(1440, 3000)
