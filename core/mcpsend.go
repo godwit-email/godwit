@@ -84,7 +84,7 @@ func (s *Service) RequestMCPSend(ctx context.Context, draftID, revision int64) (
 	revision = max(revision, 0) // a negative one would mean any
 	switch level := cmp.Or(st.MCPSend, MCPSendConfirm); {
 	case level == MCPSendDirect:
-		if s.opts.ComposeOpen != nil && s.opts.ComposeOpen(draftID) {
+		if s.IsComposeOpen(draftID) {
 			return false, ErrMCPSendComposing
 		}
 		if err := s.send(ctx, draftID, revision, nil); err != nil {

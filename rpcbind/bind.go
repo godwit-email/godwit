@@ -206,6 +206,8 @@ var hidden = map[string]bool{
 	"Redact":        true, // a client could test guesses of the owner's secrets against it
 	"AuditExternal": true, // writes audit rows; only the owner records what clients did
 	"Proxy":         true, // a custom proxy's URL carries its password
+	// Owner-side UI presence queries; RoleUI reports state via SetUIForeground and SetComposeOpen.
+	"UIConnected": true, "UIForeground": true, "IsComposeOpen": true,
 	// A channel and a stop func; RPC clients have SubscribeConversation.
 	"FollowConversation": true,
 	// In-process callback forms; RoleUI has the *Stream counterparts in uiOnly.
@@ -227,8 +229,8 @@ var uiOnly = map[string]bool{
 	"CachedImage": true, "CachedImageDims": true, "ForgetImageFailure": true,
 	// Wire helper for the operating system's installed translation languages.
 	"SystemTranslatorLanguages": true,
-	// Window background state narrowing background rounds; external clients use SyncNow.
-	"SetInboxOnly": true, "InboxOnly": true,
+	// Window foreground, open compose drafts, and background-round narrowing; external clients use SyncNow.
+	"SetUIForeground": true, "SetComposeOpen": true, "SetInboxOnly": true, "InboxOnly": true,
 }
 
 // Expose picks the *core.Service methods callable by the full role: every
@@ -267,8 +269,11 @@ func Listen(dataDir string, svc *core.Service, version string) (*rpc.Server, err
 		UIDispatcher: ui,
 		Audit:        func(role, method string, params []json.RawMessage) error { return audit(svc, role, method, params) },
 		Context: func(ctx context.Context, role string) context.Context {
-			if role == rpc.RoleFull {
+			switch role {
+			case rpc.RoleFull:
 				return core.WithExternalSource(ctx, core.AuditLocalAPI)
+			case rpc.RoleUI:
+				return core.WithUISession(ctx, svc)
 			}
 			return ctx
 		},

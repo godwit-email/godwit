@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -14,6 +15,8 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/rpc"
+	"github.com/godwit-email/godwit/rpcbind"
 )
 
 type fakeNotifySink struct {
@@ -466,5 +469,87 @@ func TestMailNotifierNarrowServiceInterface(t *testing.T) {
 	notes := sink.Notes()
 	if len(notes) != 1 || notes[0].ID != "message:42" || notes[0].Body != "新邮件" {
 		t.Fatalf("notes = %+v, want single zh-Hans notification", notes)
+	}
+}
+
+func TestMailNotifierOverUISocket(t *testing.T) {
+	ctx := t.Context()
+	r := newNotifierRig(t, func(st *core.Settings) { st.NotifyPreview = true })
+	// Re-wire Foreground directly to core.Service.UIForeground, as the backend process does.
+	r.notifier.foreground = r.env.Svc.UIForeground
+
+	sockDir, err := os.MkdirTemp("", "gw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(sockDir) })
+	srv, err := rpcbind.Listen(sockDir, r.env.Svc, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve(ctx)
+	t.Cleanup(func() { srv.Close() })
+
+	dialUI := func() *rpc.Client {
+		t.Helper()
+		c, err := rpc.Dial(sockDir, rpc.RoleUI, "ui-test", rpcbind.NewCodec())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { c.Close() })
+		return c
+	}
+
+	// Zero RoleUI connections: treated as not in foreground, so incoming mail notifies.
+	r.deliver("INBOX", coretest.Msg("bob@example.com", r.acc.Email, "No UI", "body"))
+	if notes := r.waitNotes(1); len(notes) != 1 || notes[0].Subtitle != "No UI" {
+		t.Fatalf("notes without UI = %+v", notes)
+	}
+
+	// ui1 reports foreground: incoming mail produces NO notification.
+	ui1 := dialUI()
+	if err := ui1.Call(ctx, "SetUIForeground", nil, true); err != nil {
+		t.Fatal(err)
+	}
+	r.deliver("INBOX", coretest.Msg("bob@example.com", r.acc.Email, "Suppressed", "body"))
+	if notes := r.waitNotes(1); len(notes) != 1 {
+		t.Fatalf("foreground UI did not suppress notification: %+v", notes)
+	}
+
+	// ui2 connects and reports background: still suppressed while ui1 is foreground.
+	ui2 := dialUI()
+	if err := ui2.Call(ctx, "SetUIForeground", nil, false); err != nil {
+		t.Fatal(err)
+	}
+	r.deliver("INBOX", coretest.Msg("bob@example.com", r.acc.Email, "Still suppressed", "body"))
+	if notes := r.waitNotes(1); len(notes) != 1 {
+		t.Fatalf("union foreground did not suppress notification: %+v", notes)
+	}
+
+	// ui1 disconnects while ui2 stays in background: notifications resume.
+	if err := ui1.Close(); err != nil {
+		t.Fatal(err)
+	}
+	r.waitUntil("ui1 foreground cleared", func() bool { return !r.env.Svc.UIForeground() })
+	r.deliver("INBOX", coretest.Msg("bob@example.com", r.acc.Email, "After ui1 drop", "body"))
+	if notes := r.waitNotes(2); len(notes) != 2 || notes[1].Subtitle != "After ui1 drop" {
+		t.Fatalf("notes after ui1 disconnect = %+v", notes)
+	}
+
+	// ui2 comes to foreground (suppresses), then disconnects leaving zero UI connections (resumes).
+	if err := ui2.Call(ctx, "SetUIForeground", nil, true); err != nil {
+		t.Fatal(err)
+	}
+	r.deliver("INBOX", coretest.Msg("bob@example.com", r.acc.Email, "ui2 foreground", "body"))
+	if notes := r.waitNotes(2); len(notes) != 2 {
+		t.Fatalf("ui2 foreground did not suppress: %+v", notes)
+	}
+	if err := ui2.Close(); err != nil {
+		t.Fatal(err)
+	}
+	r.waitUntil("all UI connections closed", func() bool { return !r.env.Svc.UIConnected() })
+	r.deliver("INBOX", coretest.Msg("bob@example.com", r.acc.Email, "After all UI gone", "body"))
+	if notes := r.waitNotes(3); len(notes) != 3 || notes[2].Subtitle != "After all UI gone" {
+		t.Fatalf("notes after all UI gone = %+v", notes)
 	}
 }

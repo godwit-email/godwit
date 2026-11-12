@@ -442,6 +442,9 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 	}
 	s.setProxy(st, password)
 	s.maskingChanged(st)
+	if (st.BackgroundSync == BackgroundSyncAll) != (stored.BackgroundSync == BackgroundSyncAll) {
+		s.applyUIBackgroundSync(st)
+	}
 	if securityOn(st) && (!securityOn(stored) || st.SecurityAI && !stored.SecurityAI) {
 		s.wakeSecurityScanner()
 	}
