@@ -139,3 +139,14 @@ func (s *Service) ExportAccounts(ctx context.Context) ([]byte, error) {
 	}
 	return append(b, '\n'), nil
 }
+
+// ExportAccountsFile is ExportAccounts written to a new 0600 file in the data
+// directory, its path returned, for the interface: signatures with images,
+// once per account, can outgrow one Local API response. The caller removes it.
+func (s *Service) ExportAccountsFile(ctx context.Context) (string, error) {
+	data, err := s.ExportAccounts(ctx)
+	if err != nil {
+		return "", err
+	}
+	return s.outFile(data, "*.json")
+}

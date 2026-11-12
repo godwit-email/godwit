@@ -415,14 +415,20 @@ func (s *Service) RawMessageFile(ctx context.Context, messageID int64) (string, 
 	if err != nil {
 		return "", err
 	}
+	return s.outFile(raw, "*.eml")
+}
+
+// outFile writes data to a new 0600 file in rawOutDir for the interface to
+// read and remove: what would not fit one Local API response as base64.
+func (s *Service) outFile(data []byte, pattern string) (string, error) {
 	if err := os.MkdirAll(s.rawOutDir(), 0o700); err != nil {
 		return "", err
 	}
-	f, err := os.CreateTemp(s.rawOutDir(), "*.eml")
+	f, err := os.CreateTemp(s.rawOutDir(), pattern)
 	if err != nil {
 		return "", err
 	}
-	if _, err = f.Write(raw); err == nil {
+	if _, err = f.Write(data); err == nil {
 		err = f.Close()
 	} else {
 		f.Close()

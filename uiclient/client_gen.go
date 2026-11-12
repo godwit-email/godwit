@@ -241,8 +241,8 @@ func (cl *Client) EmptyFolder(ctx context.Context, folderID int64) ([]int64, err
 	return call[[]int64](cl, ctx, "EmptyFolder", folderID)
 }
 
-func (cl *Client) ExportAccounts(ctx context.Context) ([]byte, error) {
-	return call[[]byte](cl, ctx, "ExportAccounts")
+func (cl *Client) ExportAccountsFile(ctx context.Context) (string, error) {
+	return call[string](cl, ctx, "ExportAccountsFile")
 }
 
 func (cl *Client) FailQuestion(ctx context.Context, conv int64, question string, quoted []int64, reason string) error {

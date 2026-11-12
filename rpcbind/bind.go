@@ -232,7 +232,7 @@ var uiOnly = map[string]bool{
 	"GetMessageLazyImages": true, "InlineImagesStream": true, "FetchAttachmentsStream": true,
 	"CachedImage": true, "CachedImageDims": true, "ForgetImageFailure": true,
 	// An original as a file: up to MaxMessageBytes would not fit one response as base64.
-	"RawMessageFile": true,
+	"RawMessageFile": true, "ExportAccountsFile": true,
 	// Wire helper for the operating system's installed translation languages.
 	"SystemTranslatorLanguages": true,
 	// The Store package's About check: egress to the Store's catalog, through the user's proxy.

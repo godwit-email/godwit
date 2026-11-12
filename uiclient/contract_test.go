@@ -287,8 +287,11 @@ func TestContractAccountsAndOAuth(t *testing.T) {
 		}
 		out["accounts"] = resVal(list, err)
 
-		rawExport, err := svc.ExportAccounts(ctx)
+		exportPath, err := svc.ExportAccountsFile(ctx)
 		require.NoError(t, err)
+		rawExport, err := os.ReadFile(exportPath)
+		require.NoError(t, err)
+		require.NoError(t, os.Remove(exportPath))
 		var exported core.AccountExport
 		require.NoError(t, json.Unmarshal(rawExport, &exported))
 		out["exportedEmails"] = len(exported.Accounts)

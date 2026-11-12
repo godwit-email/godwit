@@ -875,3 +875,27 @@ func TestRawMessageFileLargeOriginal(t *testing.T) {
 	_, err = cl.ListAccounts(ctx)
 	require.NoError(t, err, "the connection survived")
 }
+
+// An export too big for one Local API response (signatures repeat per account)
+// reaches the interface as a file, and the connection survives.
+func TestExportAccountsFileLarge(t *testing.T) {
+	env := coretest.New(t, coretest.WithoutAutoSync())
+	_, cl, _ := startUIServer(t, env.Svc)
+	ctx := t.Context()
+	acc := env.AddAccount(t, "alice@example.com")
+	sig := strings.Repeat("Best regards from a very long signature. ", (24<<20)/41)
+	_, err := env.Svc.UpdateAccount(ctx, acc.ID, core.AccountPatch{Signature: &sig})
+	require.NoError(t, err)
+
+	path, err := cl.ExportAccountsFile(ctx)
+	require.NoError(t, err)
+	defer os.Remove(path)
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Greater(t, len(data), 24<<20)
+	var exp core.AccountExport
+	require.NoError(t, json.Unmarshal(data, &exp))
+	require.Len(t, exp.Accounts, 1)
+	_, err = cl.ListAccounts(ctx)
+	require.NoError(t, err, "the connection survived")
+}

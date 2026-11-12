@@ -654,7 +654,12 @@ func (p *settingsPage) exportAccounts() {
 		if err != nil || dst == "" {
 			return err
 		}
-		data, err := a.svc.ExportAccounts(ctx)
+		src, err := a.svc.ExportAccountsFile(ctx) // a file: it can outgrow one Local API response
+		if err != nil {
+			return err
+		}
+		defer os.Remove(src)
+		data, err := os.ReadFile(src)
 		if err != nil {
 			return err
 		}
