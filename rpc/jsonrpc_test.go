@@ -296,6 +296,33 @@ func TestClientStreamBackpressure(t *testing.T) {
 	}
 }
 
+// A StreamDropping reader far behind loses the oldest droppable events, the
+// newest kept, and the stream does not overflow.
+func TestClientStreamDropping(t *testing.T) {
+	tg := newTarget()
+	c, _ := client(t, newDispatcher(t, tg))
+	flood, cancel, err := c.StreamDropping(context.Background(), "Flood", func(ev json.RawMessage) bool { return string(ev) != "999" }, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	wait(t, tg.floodDone, "the flood pump to finish")
+	var s string // answered after every flood event: the client has read them all
+	if err := c.Call(context.Background(), "Echo", &s, "a", 1); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for ev := range flood {
+		got = append(got, string(ev))
+	}
+	if len(got) == 0 || len(got) > rpc.StreamBuffer || got[len(got)-1] != "999" {
+		t.Errorf("flood delivered %d events ending %v, want at most StreamBuffer ending 999", len(got), got[max(0, len(got)-3):])
+	}
+	if err := c.StreamErr(flood); err != nil {
+		t.Errorf("StreamErr = %v, want nil", err)
+	}
+}
+
 func TestTargetErrorsAlwaysEncoded(t *testing.T) {
 	c, _ := client(t, newDispatcher(t, newTarget()))
 	err := c.Call(context.Background(), "Leak", nil)

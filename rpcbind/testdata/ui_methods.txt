@@ -20,4 +20,5 @@ SetInboxOnly
 SetTimeZone
 SetUIForeground
 StopUIBackend
+StoreLatestVersion
 SystemTranslatorLanguages

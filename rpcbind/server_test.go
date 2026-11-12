@@ -54,7 +54,7 @@ func auditRows(t *testing.T, dataDir string) [][]any {
 	db, err := store.Open(context.Background(), filepath.Join(dataDir, "godwit.db"))
 	require.NoError(t, err)
 	defer db.Close()
-	r, err := db.Query(context.Background(), "SELECT source, tool, target_id, COALESCE(extension, '') || COALESCE(destination, '') || COALESCE(reason, '') FROM audit_log WHERE source IN ('local_api', 'local_mcp') ORDER BY id")
+	r, err := db.Query(context.Background(), "SELECT source, tool, target_id, COALESCE(extension, '') || COALESCE(destination, '') || COALESCE(reason, '') FROM audit_log WHERE source IN ('local_api', 'local_mcp', 'ui') ORDER BY id")
 	require.NoError(t, err)
 	return r.Values
 }
@@ -377,9 +377,10 @@ func TestUISurfaceOverSocket(t *testing.T) {
 	}
 }
 
-// RoleUI is Godwit's own interface, not an external program: its calls do not
-// attach AuditLocalAPI or write local_api / local_mcp external audit rows.
-func TestUIRoleNotAuditedAsExternal(t *testing.T) {
+// A same-user program can present ui-token (ADR 0002), so RoleUI's sends, rule
+// forwards, grants and MCPSend widening are audited as full's are, under the
+// ui source; its other calls, drafts included, are not.
+func TestUIRoleAudited(t *testing.T) {
 	e := coretest.New(t, coretest.WithoutAutoSync())
 	ctx := t.Context()
 	acc := e.AddAccount(t, "alice@example.com")
@@ -429,7 +430,14 @@ func TestUIRoleNotAuditedAsExternal(t *testing.T) {
 	require.NoError(t, ui.Call(ctx, "SetMCPServerEnabled", nil, srv.ID, true))
 	require.NoError(t, ui.Call(ctx, "SetMCPToolTrusted", nil, srv.ID, "lookup", true))
 
-	assert.Empty(t, auditRows(t, e.DataDir))
+	assert.Equal(t, [][]any{
+		{"ui", "Send", d.ID, ""},
+		{"ui", "SetSettings", nil, ""},
+		{"ui", "SaveRule", nil, "example.org"},
+		{"ui", "GrantPermission", nil, "card-demo"},
+		{"ui", "GrantMCPServer", srv.ID, ""},
+		{"ui", "SetMCPToolTrusted", srv.ID, "lookup"},
+	}, auditRows(t, e.DataDir))
 }
 
 // logs captures slog output until the test ends.

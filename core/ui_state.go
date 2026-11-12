@@ -70,7 +70,7 @@ var ErrNoUI = errors.New("this needs the user's approval in Godwit, and no Godwi
 // needUI is ErrNoUI for a call over the Local API (WithExternalSource) while
 // no window can take the approvals it waits on: they would wait unseen.
 func (s *Service) needUI(ctx context.Context) error {
-	if _, ext := ctx.Value(externalSourceKey{}).(string); ext && !s.opts.ConfirmWindow && !s.UIConnected() {
+	if _, ext := ctx.Value(externalSourceKey{}).(string); ext && !s.UIConnected() {
 		return ErrNoUI
 	}
 	return nil

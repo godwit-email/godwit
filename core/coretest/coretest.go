@@ -108,6 +108,7 @@ type config struct {
 	registry         *core.RegistrySource
 	sys              core.SystemTranslator
 	confirm          bool
+	notifyMCP        bool
 	unsub            *http.Client
 	model            mask.Recognizer
 	recognitionModel []string
@@ -128,9 +129,14 @@ func WithRegistry(src *core.RegistrySource) Option { return func(c *config) { c.
 // WithSystemTranslator gives the Service the system's translation.
 func WithSystemTranslator(t core.SystemTranslator) Option { return func(c *config) { c.sys = t } }
 
-// WithConfirmWindow is the GUI's Service: a window can confirm godwit mcp's
-// sends (core.Options.ConfirmWindow). Without it 每次确认 refuses them, as headless.
+// WithConfirmWindow is the GUI's Service: a ui client is connected for the
+// whole test (core.WithUISession), so a window can confirm godwit mcp's sends.
+// Without it 每次确认 refuses them, as headless with no notification.
 func WithConfirmWindow() Option { return func(c *config) { c.confirm = true } }
+
+// WithMCPSendNotify is the backend's Service: with no ui client connected, a
+// 每次确认 request posts a notification (core.Options.NotifyMCPSend) and waits.
+func WithMCPSendNotify() Option { return func(c *config) { c.notifyMCP = true } }
 
 // WithUnsubscribeClient sends one-click unsubscribes with c, as one reaching an httptest server.
 func WithUnsubscribeClient(c *http.Client) Option { return func(cfg *config) { cfg.unsub = c } }
@@ -180,13 +186,20 @@ func New(t testing.TB, opts ...Option) *Env {
 			}
 			return "", nil, &net.DNSError{Err: "coretest: no Autodiscover started", Name: name, IsNotFound: true}
 		}}
-	svc, err := core.New(context.Background(), core.Options{EWSNet: ewsNet, DataDir: dir, AutoSync: cfg.autoSync, SystemLanguage: "zh-CN", ImageClient: imageClient,
-		Registry: cfg.registry, AppVersion: "1.2.0", SystemTranslator: cfg.sys, ConfirmWindow: cfg.confirm, UnsubscribeClient: cfg.unsub, Recognizer: cfg.model,
+	var notifyMCP func(int64) bool
+	if cfg.notifyMCP {
+		notifyMCP = func(int64) bool { return true }
+	}
+	svc, err := core.New(context.Background(), core.Options{NotifyMCPSend: notifyMCP, EWSNet: ewsNet, DataDir: dir, AutoSync: cfg.autoSync, SystemLanguage: "zh-CN", ImageClient: imageClient,
+		Registry: cfg.registry, AppVersion: "1.2.0", SystemTranslator: cfg.sys, UnsubscribeClient: cfg.unsub, Recognizer: cfg.model,
 		RecognitionModelSources: cfg.recognitionModel, RecognitionModelClient: &http.Client{Transport: imageClient.Transport}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { svc.Close() })
+	if cfg.confirm {
+		core.WithUISession(t.Context(), svc)
+	}
 	e := &Env{Svc: svc, DataDir: dir, servers: map[int64]*mailServers{}, started: map[string]*mailServers{}, clock: clock, imap: cfg.imap, ad: ad}
 	svc.SetClockForTest(e.clock)
 

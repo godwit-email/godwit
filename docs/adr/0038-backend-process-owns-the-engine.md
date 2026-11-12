@@ -10,8 +10,8 @@ status: proposed
 
 ## 接缝
 
-- 界面用本机 API 新增的 **`ui` 角色**：`full` 的全部方法，加上今天在 `hidden` 里、只有界面用得着的几条——窗口收窄开关（`SetInboxOnly`/`InboxOnly`）、阅读器的两步取图（`GetMessageLazyImages`/`InlineImages`/`FetchAttachments`）、头像（`SenderAvatar`/`ModelServiceAvatar`/`PluginReadme`）、带进度回调的三条。`Close`、`Redact`、`AuditExternal`、`Proxy`、`FollowConversation` 继续不上 wire（后者客户端有 `SubscribeConversation`）。事件走 `Subscribe` 这条流——它已经在 wire 上，带背压。
-- **本机 API 从此常开**，因为界面就要用它；「智能 › 接入 AI 应用」开关的含义收窄成「外部客户端（`full`/`mcp`）能不能连」。信任边界不变：同一个系统用户（[0002](0002-single-owner-local-api.md)）。
+- 界面用本机 API 新增的 **`ui` 角色**：`full` 的全部方法，加上今天在 `hidden` 里、只有界面用得着的几条——窗口收窄开关（`SetInboxOnly`/`InboxOnly`）、阅读器的两步取图（`GetMessageLazyImages` 与流式的 `InlineImagesStream`/`FetchAttachmentsStream`）、头像（`SenderAvatar`/`ModelServiceAvatar`/`PluginReadme`）、带进度回调的三条（同样以 `*Stream` 形式）。`InlineImages`、`FetchAttachments` 与带回调的进程内形式，以及 `Close`、`Redact`、`AuditExternal`、`Proxy`、`FollowConversation` 继续不上 wire（后者客户端有 `SubscribeConversation`）。事件走 `Subscribe` 这条流——它已经在 wire 上，带背压。
+- **本机 API 从此常开**，因为界面就要用它；「智能 › 接入 AI 应用」开关的含义收窄成「外部客户端（`full`/`mcp`）能不能连」。信任边界不变：同一个系统用户（[0002](0002-single-owner-local-api.md)）。这个开关只管外部角色；同一用户下的程序也能出示 `ui-token`（同用户信任边界，[0002](0002-single-owner-local-api.md)），所以 `ui` 角色的发信、转发规则、授权与放宽通过 MCP 发送同样记审计（来源 `ui`），只是不按外部来源拦截。
 - **附件与图片不过 wire**：同机，界面直接读数据目录里的文件路径。
 - 界面把「我在前台」报给后端（一条 `ui` 角色方法）；后端据此抑制通知、并把后台轮次收窄到收件箱——今天这个判断在 `app.App.foreground` 里。
 

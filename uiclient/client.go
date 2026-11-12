@@ -52,6 +52,12 @@ func (c *Client) Done() <-chan struct{} { return c.rpc.Done() }
 // Close closes the underlying connection; pending calls and streams end with rpc.ErrClosed.
 func (c *Client) Close() error { return c.rpc.Close() }
 
+// StoreLatestVersion is core.Service's, for the platform's About check (app
+// does not call it, so it is not generated from app.Service).
+func (c *Client) StoreLatestVersion(ctx context.Context) (string, error) {
+	return call[string](c, ctx, "StoreLatestVersion")
+}
+
 // StreamErr reports why a typed stream channel returned by Client closed: nil
 // for a normal end or a caller cancel, rpc.ErrClosed on disconnect,
 // rpc.ErrStreamOverflow if the reader fell behind, or a decoded wire error.
@@ -147,12 +153,19 @@ func stream[T any](c *Client, ctx context.Context, method string, args ...any) (
 	if err := c.syncTimeZone(ctx); err != nil {
 		return nil, nil, err
 	}
-	raw, cancel, err := c.rpc.Stream(ctx, method, args...)
+	_, wit := any(*new(T)).(core.WitEvent)
+	var drop func(json.RawMessage) bool
+	if wit { // a stalled forwarder below drops old text on the rpc side too, never a run's end
+		drop = func(b json.RawMessage) bool {
+			var ev core.WitEvent
+			return json.Unmarshal(b, &ev) == nil && witText(ev.Kind)
+		}
+	}
+	raw, cancel, err := c.rpc.StreamDropping(ctx, method, drop, args...)
 	if err != nil {
 		return nil, nil, err
 	}
 	out, done, exited := make(chan T, rpc.StreamBuffer), make(chan struct{}), make(chan struct{})
-	_, wit := any(*new(T)).(core.WitEvent)
 	if wit {
 		out = make(chan T) // what waits is the queue below, as in core's witStream
 	}
@@ -212,11 +225,11 @@ func stream[T any](c *Client, ctx context.Context, method string, args ...any) (
 // on this side of the wire as in process.
 const witBuffer = 64
 
+// witText: a Wit event of kind k may be dropped, being no run's end.
+func witText(k string) bool { return k != "done" && k != "error" && k != "interrupted" }
+
 func dropText[T any](q []T) []T {
-	text := func(v T) bool {
-		k := any(v).(core.WitEvent).Kind
-		return k != "done" && k != "error" && k != "interrupted"
-	}
+	text := func(v T) bool { return witText(any(v).(core.WitEvent).Kind) }
 	waiting := 0
 	for _, v := range q {
 		if text(v) {

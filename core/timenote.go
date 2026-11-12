@@ -35,6 +35,7 @@ func TimeZone(ctx context.Context) (name string, ok bool) {
 
 // SetTimeZone sets the UI's current IANA time zone for Wit runs when a call's
 // context carries none (as over JSON-RPC); empty or unknown falls back to time.Local.
+// shortcut: one zone for the whole Service, as one interface connects today; keep it per ui session (uiSession) if several ever connect.
 func (s *Service) SetTimeZone(name string) {
 	if name != "" {
 		if loc, err := time.LoadLocation(name); err == nil {

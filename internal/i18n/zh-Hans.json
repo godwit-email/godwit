@@ -2258,7 +2258,6 @@
   "feature_reason_graph_no_all_mail": "Outlook 没有「所有邮件」：归档会把邮件移到归档文件夹。",
   "feature_reason_graph_folders_pending": "暂不支持通过 Microsoft Graph 管理文件夹。",
   "feature_reason_graph_no_push": "桌面端无法接收 Microsoft Graph 的推送通知，Godwit 会改为每分钟轮询一次。",
-  "error_account_exists": "这个邮箱地址已用另一种协议添加过了。",
   "error_bad_account_export": "这个文件不是有效的 Godwit 账户导出文件。",
   "error_unsupported_export_version": "当前版本的 Godwit 不认识这个账户导出文件的格式版本。",
   "settings_import_accounts": "导入账户…",

@@ -2258,7 +2258,6 @@
   "feature_reason_graph_no_all_mail": "O Outlook não tem «Todos os e-mails»: arquivar move a mensagem para a pasta Arquivo.",
   "feature_reason_graph_folders_pending": "O gerenciamento de pastas pelo Microsoft Graph ainda não está disponível.",
   "feature_reason_graph_no_push": "Aplicativos de desktop não recebem webhooks do Microsoft Graph; o Godwit verifica a cada minuto.",
-  "error_account_exists": "Já existe uma conta com este endereço de e-mail em outro protocolo.",
   "error_bad_account_export": "Este arquivo não é uma exportação de contas do Godwit válida.",
   "error_unsupported_export_version": "Este arquivo de exportação usa uma versão de formato que esta cópia do Godwit não reconhece.",
   "settings_import_accounts": "Importar contas…",

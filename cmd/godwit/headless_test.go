@@ -347,6 +347,17 @@ func TestHeadlessGraphicalEngineOptions(t *testing.T) {
 	dir := shortDir(t)
 	c, stderr, stop := startHeadless(t, dir)
 	ctx := context.Background()
+	// Auto-labeling off before any mail arrives: else the labeler, woken by a
+	// sync, may judge the invoice once step 5 sets a model, taking the Wit
+	// run's scripted turn (no approval follows).
+	var st core.Settings
+	if err := c.Call(ctx, "GetSettings", &st); err != nil {
+		t.Fatalf("GetSettings: %v", err)
+	}
+	st.AutoLabel = false
+	if err := c.Call(ctx, "SetSettings", &st, st); err != nil {
+		t.Fatalf("SetSettings: %v", err)
+	}
 
 	// 1. SystemLanguage matches syslang.Detect().
 	var gotLang string
@@ -440,11 +451,9 @@ func TestHeadlessGraphicalEngineOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddModelService: %v", err)
 	}
-	var st core.Settings
 	if err := c.Call(ctx, "GetSettings", &st); err != nil {
 		t.Fatalf("GetSettings: %v", err)
 	}
-	st.AutoLabel = false
 	st.DefaultModel = "local/m1"
 	if err := c.Call(ctx, "SetSettings", nil, st); err != nil {
 		t.Fatalf("SetSettings: %v", err)
@@ -471,7 +480,7 @@ func TestHeadlessGraphicalEngineOptions(t *testing.T) {
 	cancelStream()
 	var approvals []core.Approval
 	if err := c.Call(ctx, "ListApprovals", &approvals, conv.ID); err != nil || len(approvals) != 1 {
-		t.Fatalf("ListApprovals = %+v, %v; events = %v", approvals, err, rawEvents)
+		t.Fatalf("ListApprovals = %+v, %v; events = %v; model requests = %d", approvals, err, rawEvents, llm.Requests())
 	}
 	if err := c.Call(ctx, "ResolveApproval", nil, approvals[0].ID, true); err != nil {
 		t.Fatalf("ResolveApproval: %v", err)
@@ -976,7 +985,9 @@ func TestHeadlessTrayActions(t *testing.T) {
 }
 
 // Under 一直继续 the tray offers 退出并停止收信 and its plain Quit asks the
-// interface to quit, the backend staying; the setting takes effect at once.
+// interface to quit, the backend staying; with no interface connected, plain
+// Quit has nothing else to quit and stops the backend as 退出并停止收信 does.
+// The setting takes effect at once.
 func TestHeadlessTrayQuitUnderAlways(t *testing.T) {
 	sink := &recordingSink{supported: true}
 	withHeadlessDesktop(t, func() *headlessDesktop {
@@ -1043,14 +1054,14 @@ func TestHeadlessTrayQuitUnderAlways(t *testing.T) {
 	waitCond(t, "退出并停止收信 hidden", func() bool { return !sink.QuitStop() })
 	setReceive(core.BackgroundReceiveAlways)
 	waitCond(t, "退出并停止收信 shown again", sink.QuitStop)
-	sink.Actions().quitStop()
+	sink.Actions().quit() // the interface closed above
 	select {
 	case code := <-done:
 		if code != 0 {
 			t.Fatalf("exit code %d; stderr %q", code, stderr.String())
 		}
 	case <-time.After(15 * time.Second):
-		t.Fatal("退出并停止收信 left the backend running")
+		t.Fatal("Quit with no interface connected left the backend running")
 	}
 }
 
@@ -1180,5 +1191,24 @@ func TestHeadlessTraySignInCodesAndBanner(t *testing.T) {
 
 	if code := stop(); code != 0 {
 		t.Fatalf("exit code %d; stderr %q", code, stderr.String())
+	}
+}
+
+// On macOS the backend starts an interface inside a .app through LaunchServices,
+// so its window comes to the front; elsewhere, and outside a bundle, it runs exe.
+func TestUIArgv(t *testing.T) {
+	args := []string{"--data-dir", "/d", "--open", "window"}
+	for _, c := range []struct {
+		goos, exe string
+		want      []string
+	}{
+		{"darwin", "/Applications/Godwit.app/Contents/MacOS/Godwit",
+			[]string{"/usr/bin/open", "-n", "-a", "/Applications/Godwit.app", "--args", "--data-dir", "/d", "--open", "window"}},
+		{"darwin", "/usr/local/bin/godwit", []string{"/usr/local/bin/godwit", "--data-dir", "/d", "--open", "window"}},
+		{"linux", "/opt/Godwit.app/Contents/MacOS/Godwit", []string{"/opt/Godwit.app/Contents/MacOS/Godwit", "--data-dir", "/d", "--open", "window"}},
+	} {
+		if got := uiArgv(c.goos, c.exe, args...); !slices.Equal(got, c.want) {
+			t.Errorf("uiArgv(%q, %q) = %q, want %q", c.goos, c.exe, got, c.want)
+		}
 	}
 }

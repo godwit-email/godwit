@@ -2258,7 +2258,6 @@
   "feature_reason_graph_no_all_mail": "Outlook heeft geen 'Alle e-mail': archiveren verplaatst berichten naar de map Archief.",
   "feature_reason_graph_folders_pending": "Mappen beheren via Microsoft Graph is nog niet beschikbaar.",
   "feature_reason_graph_no_push": "Desktop-apps kunnen geen Microsoft Graph-webhooks ontvangen; Godwit controleert daarom elke minuut.",
-  "error_account_exists": "Er bestaat al een account met dit e-mailadres op een ander protocol.",
   "error_bad_account_export": "Dit bestand is geen geldige Godwit-accountexport.",
   "error_unsupported_export_version": "Dit accountexportbestand gebruikt een formaatversie die deze versie van Godwit niet herkent.",
   "settings_import_accounts": "Accounts importeren…",

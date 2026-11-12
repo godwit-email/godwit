@@ -2258,7 +2258,6 @@
   "feature_reason_graph_no_all_mail": "Outlook no tiene «Todos»: archivar mueve el correo a la carpeta Archivo.",
   "feature_reason_graph_folders_pending": "La gestión de carpetas mediante Microsoft Graph aún no está disponible.",
   "feature_reason_graph_no_push": "Las aplicaciones de escritorio no pueden recibir webhooks de Microsoft Graph; Godwit comprueba cada minuto.",
-  "error_account_exists": "Ya existe una cuenta con esta dirección de correo en otro protocolo.",
   "error_bad_account_export": "Este archivo no es una exportación de cuentas de Godwit válida.",
   "error_unsupported_export_version": "Este archivo de exportación usa una versión de formato que esta versión de Godwit no reconoce.",
   "settings_import_accounts": "Importar cuentas…",

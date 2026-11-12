@@ -2258,7 +2258,6 @@
   "feature_reason_graph_no_all_mail": "Outlook には「すべてのメール」がないため、アーカイブするとアーカイブフォルダーへ移動します。",
   "feature_reason_graph_folders_pending": "Microsoft Graph 経由のフォルダー管理にはまだ対応していません。",
   "feature_reason_graph_no_push": "デスクトップアプリは Microsoft Graph の Webhook を受信できないため、1 分ごとに確認します。",
-  "error_account_exists": "このメールアドレスのアカウントは別のプロトコルで既に存在します。",
   "error_bad_account_export": "このファイルは有効な Godwit アカウント書き出しファイルではありません。",
   "error_unsupported_export_version": "このアカウント書き出しファイルの形式バージョンには対応していません。",
   "settings_import_accounts": "アカウントを読み込む…",

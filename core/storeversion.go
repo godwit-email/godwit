@@ -1,4 +1,4 @@
-package main
+package core
 
 import (
 	"context"
@@ -7,30 +7,28 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
-	"github.com/godwit-email/godwit/app"
 	"github.com/godwit-email/godwit/core/plugins"
+	"github.com/godwit-email/godwit/internal/imagefetch"
 )
 
-// storeProduct is Godwit on the Microsoft Store, apps.microsoft.com/detail/9NS3Q2CGWD12.
-const storeProduct = "9NS3Q2CGWD12"
+// StoreProduct is Godwit on the Microsoft Store, apps.microsoft.com/detail/9NS3Q2CGWD12.
+const StoreProduct = "9NS3Q2CGWD12"
 
-// storeLatest asks the Store's catalog for a published version newer than
-// this one: "" when up to date. proxy is the Service's (Proxy).
+// StoreLatestVersion is the newest version of Godwit published on the
+// Microsoft Store, as 1.21.0, asked of the Store's catalog
+// (displaycatalog.mp.microsoft.com) through Proxy, for the About page of the
+// Store's package.
 // shortcut: displaycatalog is undocumented; if it changes this errors and About only offers the Store's page.
-func storeLatest(ctx context.Context, proxy func(*url.URL) *url.URL) (string, error) {
+func (s *Service) StoreLatestVersion(ctx context.Context) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		"https://displaycatalog.mp.microsoft.com/v7.0/products/"+storeProduct+"?market=US&languages=en-US", nil)
+		"https://displaycatalog.mp.microsoft.com/v7.0/products/"+StoreProduct+"?market=US&languages=en-US", nil)
 	if err != nil {
 		return "", err
 	}
-	client := &http.Client{Timeout: 15 * time.Second, Transport: &http.Transport{
-		Proxy: func(r *http.Request) (*url.URL, error) { return proxy(r.URL), nil },
-	}}
-	res, err := client.Do(req)
+	res, err := (&http.Client{Transport: imagefetch.NewTransport(false), Timeout: 15 * time.Second}).Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -38,11 +36,7 @@ func storeLatest(ctx context.Context, proxy func(*url.URL) *url.URL) (string, er
 	if res.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("store catalog: %s", res.Status)
 	}
-	v, err := storeNewest(io.LimitReader(res.Body, 4<<20))
-	if err != nil || plugins.CompareVersions(v, app.Version) <= 0 {
-		return "", err
-	}
-	return v, nil
+	return storeNewest(io.LimitReader(res.Body, 4<<20))
 }
 
 // storeNewest is the newest package version in a catalog product, as

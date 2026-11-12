@@ -300,7 +300,7 @@ var sentinels = map[string]error{
 	"needs_answer":    core.ErrNeedsAnswer,
 	"no_ui":           core.ErrNoUI,
 	"skill_not_found": core.ErrSkillNotFound, "closed": core.ErrClosed, "canceled": context.Canceled,
-	"account_exists": core.ErrAccountExists, "bad_account_export": core.ErrBadAccountExport, "unsupported_export_version": core.ErrUnsupportedExportVersion,
+	"bad_account_export": core.ErrBadAccountExport, "unsupported_export_version": core.ErrUnsupportedExportVersion,
 	"deadline": context.DeadlineExceeded, "oauth_not_configured": auth.ErrOAuthNotConfigured,
 	"auth_failed": backend.ErrAuthFailed, "flow_expired": auth.ErrFlowExpired, "invalid_grant": auth.ErrInvalidGrant, "access_denied": auth.ErrAccessDenied,
 }

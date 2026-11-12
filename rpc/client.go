@@ -55,13 +55,15 @@ func (c *Client) Hello() Hello { return c.hello }
 type pending struct {
 	ch        chan message // closed if the connection drops
 	stream    bool
-	abandoned bool // caller gave up on a stream call; cancel the stream on arrival
+	drop      func(json.RawMessage) bool // StreamDropping's
+	abandoned bool                       // caller gave up on a stream call; cancel the stream on arrival
 	s         *clientStream
 }
 
 type clientStream struct {
-	id uint64
-	ch chan json.RawMessage
+	id   uint64
+	ch   chan json.RawMessage
+	drop func(json.RawMessage) bool // events that may go when ch is full; nil: none
 }
 
 // NewClient starts reading conn.
@@ -89,7 +91,7 @@ func (c *Client) Close() error { return c.conn.Close() }
 // a pointer to a slice receives multiple results). Cancelling ctx sends
 // $/cancel and returns ctx.Err().
 func (c *Client) Call(ctx context.Context, method string, result any, args ...any) error {
-	m, _, err := c.request(ctx, method, args, false)
+	m, _, err := c.request(ctx, method, args, false, nil)
 	if err != nil || result == nil {
 		return err
 	}
@@ -100,7 +102,14 @@ func (c *Client) Call(ctx context.Context, method string, result any, args ...an
 // caller cancels, ctx ends, or the caller falls StreamBuffer events behind;
 // StreamErr then says why. cancel is idempotent and releases the stream.
 func (c *Client) Stream(ctx context.Context, method string, args ...any) (events <-chan json.RawMessage, cancel func(), err error) {
-	_, s, err := c.request(ctx, method, args, true)
+	return c.StreamDropping(ctx, method, nil, args...)
+}
+
+// StreamDropping is Stream whose reader, once StreamBuffer behind, loses the
+// oldest unread event instead while drop says it may go; the stream overflows
+// only when the oldest may not.
+func (c *Client) StreamDropping(ctx context.Context, method string, drop func(json.RawMessage) bool, args ...any) (events <-chan json.RawMessage, cancel func(), err error) {
+	_, s, err := c.request(ctx, method, args, true, drop)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -120,7 +129,7 @@ func (c *Client) StreamErr(events <-chan json.RawMessage) error {
 	return err
 }
 
-func (c *Client) request(ctx context.Context, method string, args []any, stream bool) (message, *clientStream, error) {
+func (c *Client) request(ctx context.Context, method string, args []any, stream bool, drop func(json.RawMessage) bool) (message, *clientStream, error) {
 	if err := ctx.Err(); err != nil {
 		return message{}, nil, err // nothing sent
 	}
@@ -138,7 +147,7 @@ func (c *Client) request(ctx context.Context, method string, args []any, stream 
 	}
 	c.nextID++
 	id := c.nextID
-	p := &pending{ch: make(chan message, 1), stream: stream}
+	p := &pending{ch: make(chan message, 1), stream: stream, drop: drop}
 	c.pending[id] = p
 	c.mu.Unlock()
 	b, _ := json.Marshal(message{JSONRPC: "2.0", ID: json.RawMessage(strconv.FormatUint(id, 10)), Method: method, Params: params})
@@ -305,7 +314,7 @@ func (c *Client) handleResponse(id uint64, m message) {
 		if json.Unmarshal(m.Result, &r) == nil && r.Stream > 0 {
 			sid = r.Stream
 			if !p.abandoned {
-				p.s = &clientStream{id: sid, ch: make(chan json.RawMessage, StreamBuffer)}
+				p.s = &clientStream{id: sid, ch: make(chan json.RawMessage, StreamBuffer), drop: p.drop}
 				c.streams[sid] = p.s
 			}
 		}
@@ -323,6 +332,33 @@ func (c *Client) handleResponse(id uint64, m message) {
 	p.ch <- m
 }
 
+// pushLocked queues ev on s, making room by dropping the oldest unread event
+// if s.drop lets it go: taken off the head, the rest keep their order. The
+// reader may take that head first, which leaves room all the same.
+func (c *Client) pushLocked(s *clientStream, ev json.RawMessage) bool {
+	select {
+	case s.ch <- ev:
+		return true
+	default:
+	}
+	if s.drop == nil {
+		return false
+	}
+	select {
+	case old := <-s.ch:
+		if !s.drop(old) {
+			return false // an event that may not go is lost all the same: the stream ends with ErrStreamOverflow
+		}
+	default:
+	}
+	select {
+	case s.ch <- ev:
+		return true
+	default:
+		return false
+	}
+}
+
 func (c *Client) handleNotification(m message) {
 	var params []json.RawMessage
 	var sid uint64
@@ -338,13 +374,9 @@ func (c *Client) handleNotification(m message) {
 	overflow := false
 	switch m.Method {
 	case "$/stream":
-		if len(params) == 2 {
-			select {
-			case s.ch <- params[1]:
-			default:
-				c.endLocked(s, ErrStreamOverflow)
-				overflow = true
-			}
+		if len(params) == 2 && !c.pushLocked(s, params[1]) {
+			c.endLocked(s, ErrStreamOverflow)
+			overflow = true
 		}
 	case "$/stream.end":
 		var err error

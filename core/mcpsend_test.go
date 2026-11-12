@@ -17,7 +17,9 @@ import (
 func mcpSendEnv(t *testing.T, level string, window bool) (*syncEnv, Draft) {
 	t.Helper()
 	e := newSyncEnv(t)
-	e.s.opts.ConfirmWindow = window
+	if window {
+		WithUISession(t.Context(), e.s)
+	}
 	st, err := e.s.GetSettings(bg)
 	require.NoError(t, err)
 	st.MCPSend = level

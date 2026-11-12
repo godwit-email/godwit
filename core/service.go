@@ -87,11 +87,6 @@ type Options struct {
 	// ModelsDev is models.dev's catalog (ai.ModelsDevURL), where models'
 	// display names and context windows come from; "" fetches none (the apps set it).
 	ModelsDev string
-	// ConfirmWindow: a window can confirm godwit mcp's sends (每次确认) even
-	// with no ui client connected (tests set it). Without one, with no ui
-	// client connected and no notification (NotifyMCPSend), 每次确认 refuses
-	// them, as 不允许.
-	ConfirmWindow bool
 	// NotifyMCPSend posts a notification, with no mail content, pointing to
 	// send request id that waits for the user (每次确认) while no ui client is
 	// connected to show it; false: it cannot post one, and 每次确认 refuses the

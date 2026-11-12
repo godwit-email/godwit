@@ -24,16 +24,18 @@ import (
 	"github.com/godwit-email/godwit/app"
 	"github.com/godwit-email/godwit/assets"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/internal/i18n"
-	"github.com/godwit-email/godwit/internal/sysproxy"
 	"github.com/godwit-email/godwit/internal/theme"
 	"github.com/godwit-email/godwit/rpc"
 	"github.com/godwit-email/godwit/webui"
 )
 
-// avatarService reads a message's sender avatar for notifications and sign-in banners.
-type avatarService interface {
+// backendService is what the platform asks the backend: a message's sender
+// avatar for notifications and sign-in banners, and the Store's latest version.
+type backendService interface {
 	SenderAvatar(ctx context.Context, messageID int64, allowRemote bool) (core.Avatar, error)
+	StoreLatestVersion(ctx context.Context) (string, error)
 }
 
 // platform is app.Platform on mygo. win and tray are set once they exist;
@@ -56,7 +58,7 @@ type platform struct {
 	trayQuitStop   bool // 退出并停止收信 shows; UI thread
 
 	dataDir      string
-	svc          avatarService
+	svc          backendService
 	saveMu       sync.Mutex
 	saveDir      string                 // last directory chosen in SaveFile or OpenDirectory
 	downloadsDir func() (string, error) // mygo.App.Path(PathDownloads); tests swap it
@@ -419,13 +421,17 @@ func (p *platform) CheckForUpdates() {
 		return
 	}
 	// The Store updates the MSIX: its page shows and installs a newer version.
-	if err := p.OpenURL("ms-windows-store://pdp/?ProductId=" + storeProduct); err != nil {
+	if err := p.OpenURL("ms-windows-store://pdp/?ProductId=" + core.StoreProduct); err != nil {
 		log.Printf("open the Store: %v", err)
 	}
 }
 func (p *platform) LatestVersion(ctx context.Context) (string, error) {
 	if packaged() {
-		return storeLatest(ctx, sysproxy.For) // shortcut: the system's proxy, not a custom one set in Godwit (the backend's, off the wire); ask the backend if users need it
+		v, err := p.svc.StoreLatestVersion(ctx) // the backend's, so it goes through the proxy set in Godwit
+		if err != nil || plugins.CompareVersions(v, app.Version) <= 0 {
+			return "", err
+		}
+		return v, nil
 	}
 	u, err := mygo.Updater.Check(ctx)
 	if err != nil || u == nil {

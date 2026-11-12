@@ -64,9 +64,8 @@ type mcpSend struct {
 func (r *mcpSend) expired() bool { return time.Since(r.created) >= mcpSendTTL }
 
 // RequestMCPSend is godwit mcp's send_draft: what it does follows
-// Settings.MCPSend. 不允许 (or 每次确认 with no way to confirm it: neither
-// ConfirmWindow, a connected ui client nor a notification NotifyMCPSend
-// posts) is ErrMCPSendOff. 每次确认 records a request bound to the draft's
+// Settings.MCPSend. 不允许 (or 每次确认 with no way to confirm it: neither a
+// connected ui client nor a notification NotifyMCPSend posts) is ErrMCPSendOff. 每次确认 records a request bound to the draft's
 // revision, one per draft (a newer revision's replaces the older), at most
 // maxMCPSends (ErrMCPSendBusy), for the user to confirm (PendingMCPSends,
 // ResolveMCPSend), notifies it while no ui client is connected, and
@@ -97,7 +96,7 @@ func (s *Service) RequestMCPSend(ctx context.Context, draftID, revision int64) (
 			slog.Default().Warn("could not audit an MCP send", "draft", draftID, "err", err)
 		}
 		return true, nil
-	case level == MCPSendOff || !s.opts.ConfirmWindow && !s.UIConnected() && s.opts.NotifyMCPSend == nil:
+	case level == MCPSendOff || !s.UIConnected() && s.opts.NotifyMCPSend == nil:
 		return false, ErrMCPSendOff
 	}
 	s.editMu.Lock()
@@ -160,7 +159,7 @@ func (s *Service) RequestMCPSend(ctx context.Context, draftID, revision int64) (
 	id := s.sendReqID
 	s.sendReqs[id] = &mcpSend{draftID: draftID, revision: revision, created: time.Now(), from: acc.Email, firstTime: first}
 	s.sendReqMu.Unlock()
-	if !s.opts.ConfirmWindow && !s.UIConnected() && (s.opts.NotifyMCPSend == nil || !s.opts.NotifyMCPSend(id)) {
+	if !s.UIConnected() && (s.opts.NotifyMCPSend == nil || !s.opts.NotifyMCPSend(id)) {
 		s.sendReqMu.Lock()
 		delete(s.sendReqs, id) // never offered to the user: the older ones stay
 		s.sendReqMu.Unlock()
