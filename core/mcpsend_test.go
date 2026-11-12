@@ -193,6 +193,14 @@ func TestMCPSendDirectComposing(t *testing.T) {
 	require.ErrorIs(t, err, ErrMCPSendComposing)
 	assert.False(t, sent)
 	assert.Zero(t, e.outboxLen(t))
+
+	// Reported UI compose state and Options.ComposeOpen form a union.
+	e.s.opts.ComposeOpen = func(id int64) bool { return false }
+	require.NoError(t, e.s.SetComposeOpen(bg, []int64{d.ID}))
+	sent, err = e.s.RequestMCPSend(bg, d.ID, d.Revision)
+	require.ErrorIs(t, err, ErrMCPSendComposing)
+	assert.False(t, sent)
+	assert.Zero(t, e.outboxLen(t))
 }
 
 // A direct send whose audit fails is still sent: the mail is queued.

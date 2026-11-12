@@ -522,6 +522,46 @@ func TestUIInboxOnlyAndSystemTranslator(t *testing.T) {
 	})
 }
 
+func TestUIStateReport(t *testing.T) {
+	runUIContract(t, nil, func(t *testing.T, api contract.UIAPI, env *coretest.Env) any {
+		ctx := t.Context()
+		acc := env.AddAccount(t, "alice@example.com")
+
+		st, err := api.GetSettings(ctx)
+		require.NoError(t, err)
+		st.MCPSend = core.MCPSendDirect
+		_, err = api.SetSettings(ctx, st)
+		require.NoError(t, err)
+
+		d, err := api.NewDraft(ctx, acc.ID, "new", 0)
+		require.NoError(t, err)
+		d.To, d.Subject, d.HTML = []string{"bob@example.com"}, "hello", "<p>hi</p>"
+		d, err = api.SaveDraft(ctx, d)
+		require.NoError(t, err)
+
+		fgBgErr := errInfo(api.SetUIForeground(ctx, false))
+		afterBg := api.InboxOnly()
+		fgFrontErr := errInfo(api.SetUIForeground(ctx, true))
+		afterFront := api.InboxOnly()
+
+		openErr := errInfo(api.SetComposeOpen(ctx, []int64{d.ID}))
+		blocked := res(api.RequestMCPSend(ctx, d.ID, d.Revision))
+		clearErr := errInfo(api.SetComposeOpen(ctx, nil))
+		allowed := res(api.RequestMCPSend(ctx, d.ID, d.Revision))
+
+		return map[string]any{
+			"fgBgErr":    fgBgErr,
+			"afterBg":    afterBg,
+			"fgFrontErr": fgFrontErr,
+			"afterFront": afterFront,
+			"openErr":    openErr,
+			"blocked":    blocked,
+			"clearErr":   clearErr,
+			"allowed":    allowed,
+		}
+	})
+}
+
 func TestUIReaderAndAttachments(t *testing.T) {
 	runUIContract(t, nil, func(t *testing.T, api contract.UIAPI, env *coretest.Env) any {
 		ctx := t.Context()

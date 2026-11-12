@@ -14,5 +14,7 @@ ModelServiceAvatar
 PluginReadme
 PrepareModelStream
 SenderAvatar
+SetComposeOpen
 SetInboxOnly
+SetUIForeground
 SystemTranslatorLanguages

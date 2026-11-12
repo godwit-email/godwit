@@ -381,6 +381,8 @@ func TestUIRoleNotAuditedAsExternal(t *testing.T) {
 	acc := e.AddAccount(t, "alice@example.com")
 	ui := dial(t, listen(t, e.Svc), rpc.RoleUI)
 
+	require.NoError(t, ui.Call(ctx, "SetUIForeground", nil, true))
+	require.NoError(t, ui.Call(ctx, "SetComposeOpen", nil, []int64{1}))
 	require.NoError(t, ui.Call(ctx, "SetInboxOnly", nil, true))
 	var inboxOnly bool
 	require.NoError(t, ui.Call(ctx, "InboxOnly", &inboxOnly))
