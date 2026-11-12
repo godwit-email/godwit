@@ -5,8 +5,8 @@ import { ReaderPage as api, events, type ReaderBody, type ReaderGlass, type Them
 import { useT } from "@/shared/i18n";
 import { forwardShortcuts } from "@/shared/shortcuts";
 import { applyTheme, type Theme as PageTheme } from "@/shared/theme";
-import { adaptDarkMode } from "./dark";
-import { buildSrcdoc, frameScheme } from "./frame";
+import { adaptDarkMode, brightness, type Color, over, parse } from "./dark";
+import { buildSrcdoc, frameScheme, isDark } from "./frame";
 
 const ignore = () => {};
 let nextDocument = 0;
@@ -154,6 +154,8 @@ function useSystemDark(): boolean {
  * The wheel is not its own: the web view scrolls the native reader around it (ScrollToContainer),
  * as over any native element, so a notch glides and a touchpad's moves follow.
  */
+type QuoteTip = { x: number; y: number; arrowOffset: number; open: boolean };
+
 export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
   const systemDark = useSystemDark();
   // Every update gets a fresh document marker, so a retry also reloads identical HTML and images.
@@ -162,9 +164,18 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
     return { srcdoc: `${buildSrcdoc(body, theme, systemDark)}<!--${marker}-->`, marker };
   }, [body, theme, systemDark]);
   const frame = useRef<HTMLIFrameElement>(null);
+  const [tip, setTip] = useState<QuoteTip | null>(null);
   const t = useT(body.locale);
+  const labels = useMemo(
+    () => ({ expand: t("reader.quote.expand"), collapse: t("reader.quote.collapse") }),
+    [t],
+  );
 
-  const wire = useCallback((f: HTMLIFrameElement) => attach(f, theme), [theme]);
+  const dark = isDark(theme, systemDark);
+  const wire = useCallback(
+    (f: HTMLIFrameElement) => attach(f, theme, dark, labels, setTip),
+    [theme, dark, labels],
+  );
   useEffect(() => {
     const f = frame.current;
     if (!f) return;
@@ -200,24 +211,46 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
   }, [wire, marker]);
 
   return (
-    <iframe
-      ref={frame}
-      title={t("reader.body")}
-      sandbox="allow-same-origin allow-scripts"
-      scrolling="no"
-      srcDoc={srcdoc}
-      style={{
-        border: 0,
-        width: "100%",
-        display: "block",
-        colorScheme: frameScheme(body, theme, systemDark),
-      }}
-    />
+    <>
+      <iframe
+        ref={frame}
+        title={t("reader.body")}
+        sandbox="allow-same-origin allow-scripts"
+        scrolling="no"
+        srcDoc={srcdoc}
+        style={{
+          border: 0,
+          width: "100%",
+          display: "block",
+          colorScheme: frameScheme(body, theme, systemDark),
+        }}
+      />
+      {tip && (
+        <div
+          role="tooltip"
+          data-quote-tip=""
+          className="pointer-events-none fixed z-10 inline-flex -translate-y-1/2 items-center rounded-md bg-primary px-2 py-[3px] text-[11px] leading-[15px] font-medium whitespace-nowrap text-primary-foreground shadow-[0_1px_4px_rgb(0_0_0/0.18)]"
+          style={{ left: tip.x, top: tip.y }}
+        >
+          <span
+            className="absolute top-1/2 -left-[3px] size-1.5 -translate-y-1/2 rotate-45 rounded-[1px] bg-primary"
+            style={tip.arrowOffset ? { marginTop: tip.arrowOffset } : undefined}
+          />
+          <span className="relative">{tip.open ? labels.collapse : labels.expand}</span>
+        </div>
+      )}
+    </>
   );
 }
 
 /** Wires a loaded body document; returns the unwiring. */
-function attach(frame: HTMLIFrameElement, theme: Theme): () => void {
+function attach(
+  frame: HTMLIFrameElement,
+  theme: Theme,
+  darkCanvas: boolean,
+  labels: { expand: string; collapse: string },
+  setTip: (tip: QuoteTip | null) => void,
+): () => void {
   const doc = frame.contentDocument;
   const win = frame.contentWindow;
   const wrap = doc?.getElementById("godwit-body");
@@ -234,6 +267,60 @@ function attach(frame: HTMLIFrameElement, theme: Theme): () => void {
     offs.push(() => t.removeEventListener(type, f as EventListener, o));
   };
 
+  // Quoted-text fold controls: sync accessible labels and contrast on custom-background mail
+  // surfaces (including responsive resize updates).
+  // The colour each control was last given, so an unchanged surface writes (and recalcs) nothing.
+  const tones = new WeakMap<HTMLElement, string>();
+  const syncFoldControls = () => {
+    for (const fold of doc.querySelectorAll<HTMLDetailsElement>("details.godwit-quote-fold")) {
+      const summary = fold.querySelector<HTMLElement>("summary");
+      const rail = fold.querySelector<HTMLElement>(".godwit-quote-rail");
+      summary?.setAttribute("aria-label", fold.open ? labels.collapse : labels.expand);
+      const chain: HTMLElement[] = [];
+      for (let p = fold.parentElement; p; p = p.parentElement) chain.unshift(p);
+      let bg: Color = darkCanvas ? [10, 10, 10, 1] : [255, 255, 255, 1];
+      // A backdrop not modelled here (an image, a table column's paint): leave the mail's colour.
+      let unknownBackdrop = false;
+      const painted = (cs: CSSStyleDeclaration) =>
+        (parse(cs.backgroundColor)?.[3] ?? 0) > 0 ||
+        (!!cs.backgroundImage && cs.backgroundImage !== "none");
+      for (const el of chain) {
+        // A cell's columns paint under it, as dark.ts protects them.
+        if (
+          (el.tagName === "TD" || el.tagName === "TH") &&
+          [...(el.closest("table")?.querySelectorAll("col, colgroup") ?? [])].some((c) =>
+            painted(win.getComputedStyle(c)),
+          )
+        )
+          unknownBackdrop = true;
+        const cs = win.getComputedStyle(el);
+        const c = parse(cs.backgroundColor);
+        if (c && c[3] > 0) {
+          if (c[3] >= 1) unknownBackdrop = false; // an opaque colour covers what is under it
+          bg = over(c, bg);
+        }
+        if (cs.backgroundImage && cs.backgroundImage !== "none") unknownBackdrop = true;
+      }
+      // The fold carries the controls' inherited colour; only summary and rail get overrides.
+      const fg = unknownBackdrop ? null : parse(win.getComputedStyle(fold).color);
+      let tone = "";
+      if (fg) {
+        const bgL = brightness(bg);
+        const fgL = brightness(over(fg, bg)); // a translucent colour shows as much of the surface
+        tone = bgL < 110 && fgL < 140 ? "#fafafa" : bgL > 145 && fgL > 160 ? "#0a0a0a" : "";
+        // Whatever the surface, a colour too close to it (a transparent one) gets a readable one.
+        if (!tone && Math.abs(bgL - fgL) < 60) tone = bgL < 128 ? "#fafafa" : "#0a0a0a";
+      }
+      for (const el of [summary, rail]) {
+        if (el && tones.get(el) !== tone) {
+          tones.set(el, tone);
+          el.style.color = tone;
+        }
+      }
+    }
+  };
+  syncFoldControls();
+
   // Height: the wrapper's own (not scrollHeight, which never shrinks below the viewport), applied
   // to the iframe so nothing is clipped. One call per frame, when it changed, clamped to Go's limit.
   // Mail sized by the viewport (vh) grows with the iframe: after the page resizes the iframe by Δ, a
@@ -244,6 +331,7 @@ function attach(frame: HTMLIFrameElement, theme: Theme): () => void {
   let changed = true; // the content changed since then
   let queued = false;
   const measure = () => {
+    syncFoldControls();
     const cs = win.getComputedStyle(doc.body);
     const ws = win.getComputedStyle(wrap);
     const extra = [
@@ -278,12 +366,120 @@ function attach(frame: HTMLIFrameElement, theme: Theme): () => void {
   const ro = new ResizeObserver(schedule);
   ro.observe(wrap);
   offs.push(() => ro.disconnect());
-  on(window, "resize", contentChanged);
+  let lastWidth = frame.getBoundingClientRect().width || 0;
+  on(window, "resize", () => {
+    lastWidth = frame.getBoundingClientRect().width || 0;
+    contentChanged();
+  });
+  // Updating frame.style.height fires resize on win; keep changed=false on height-only resizes so
+  // the vh echo guard holds, while still scheduling measure() to refresh fold-control contrast.
+  on(win, "resize", () => {
+    const w = frame.getBoundingClientRect().width || 0;
+    if (w !== lastWidth) {
+      lastWidth = w;
+      contentChanged();
+    } else {
+      schedule();
+    }
+  });
   for (const img of doc.images) {
     on(img, "load", contentChanged);
     on(img, "error", contentChanged);
   }
   schedule();
+  // Keep the 21 px tooltip inside the tight-fitted native WebView viewport at both edges.
+  const placeTip = (x: number, anchorY: number, open: boolean) => {
+    const vh = window.innerHeight;
+    const y = vh >= 28 ? Math.max(12, Math.min(vh - 13, anchorY)) : anchorY;
+    const arrowOffset = Math.max(-5, Math.min(5, Math.round(anchorY - y)));
+    setTip({ x: Math.round(x), y: Math.round(y), arrowOffset, open });
+  };
+  const showPillTip = (pill: Element) => {
+    const f = frame.getBoundingClientRect();
+    const r = pill.getBoundingClientRect();
+    placeTip(f.left + r.right + 7, f.top + r.top + r.height / 2, !!pill.closest("details")?.open);
+  };
+  const showRailTip = (rail: Element, clientY: number) => {
+    const f = frame.getBoundingClientRect();
+    const r = rail.getBoundingClientRect();
+    const cy =
+      r.height > 24 ? Math.max(r.top + 11, Math.min(r.bottom - 11, clientY)) : r.top + r.height / 2;
+    placeTip(f.left + r.right + 4, f.top + cy, true);
+  };
+  on(
+    doc,
+    "toggle",
+    () => {
+      syncFoldControls();
+      setTip(null);
+      contentChanged();
+    },
+    { capture: true },
+  );
+  on<PointerEvent>(doc, "pointerover", (e) => {
+    const el = e.target as Element | null;
+    const pill = el?.closest?.(".godwit-quote-pill");
+    if (pill) return showPillTip(pill);
+    const rail = el?.closest?.(".godwit-quote-rail");
+    if (rail) showRailTip(rail, e.clientY);
+  });
+  on<PointerEvent>(doc, "pointermove", (e) => {
+    const rail = (e.target as Element | null)?.closest?.(".godwit-quote-rail");
+    if (rail) showRailTip(rail, e.clientY);
+  });
+  on<PointerEvent>(doc, "pointerout", (e) => {
+    const from = (e.target as Element | null)?.closest?.(".godwit-quote-pill, .godwit-quote-rail");
+    if (!from) return;
+    const to = e.relatedTarget as Node | null;
+    if (!to || !from.contains(to)) setTip(null);
+  });
+  on(doc.documentElement, "pointerleave", () => setTip(null));
+  on(doc, "pointerdown", () => setTip(null));
+  on<FocusEvent>(doc, "focusin", (e) => {
+    const summary = (e.target as Element | null)?.closest?.("details.godwit-quote-fold > summary");
+    const pill = summary?.querySelector(".godwit-quote-pill");
+    if (pill) showPillTip(pill);
+  });
+  on(doc, "focusout", () => setTip(null));
+
+  // Printing: expand closed quote folds and resize the iframe synchronously so printed/PDF output
+  // includes the full message, then restore collapsed state afterwards.
+  let printFolds: HTMLDetailsElement[] | null = null;
+  const enterPrint = () => {
+    if (printFolds) return;
+    setTip(null);
+    printFolds = [];
+    for (const fold of doc.querySelectorAll<HTMLDetailsElement>("details.godwit-quote-fold")) {
+      if (!fold.open) {
+        printFolds.push(fold);
+        fold.open = true;
+      }
+    }
+    if (printFolds.length > 0) {
+      changed = true;
+      measure();
+    }
+  };
+  const exitPrint = () => {
+    if (!printFolds) return;
+    const closed = printFolds;
+    printFolds = null;
+    for (const fold of closed) fold.open = false;
+    if (closed.length > 0) {
+      changed = true;
+      measure();
+    }
+  };
+  for (const w of [window, win]) {
+    on(w, "beforeprint", enterPrint);
+    on(w, "afterprint", exitPrint);
+    if (typeof w.matchMedia === "function") {
+      const mql = w.matchMedia("print");
+      if (typeof mql?.addEventListener === "function") {
+        on<MediaQueryListEvent>(mql, "change", (e) => (e.matches ? enterPrint() : exitPrint()));
+      }
+    }
+  }
 
   // Links: data-href only (Go's sanitizer); nothing else navigates.
   const linkOf = (t: EventTarget | null) =>
@@ -294,12 +490,21 @@ function attach(frame: HTMLIFrameElement, theme: Theme): () => void {
   }
   const open = (href: string) => void api.openLink(href).catch(ignore);
   on<MouseEvent>(doc, "click", (e) => {
+    const rail = (e.target as Element | null)?.closest?.(".godwit-quote-rail");
+    if (rail) {
+      const fold = rail.closest("details");
+      if (fold) fold.open = false;
+      setTip(null);
+      return;
+    }
+    if ((e.target as Element | null)?.closest?.("[data-godwit-ui]")) return;
     const href = linkOf(e.target);
     if (href !== null) open(href);
     if (href !== null || (e.target as Element | null)?.closest?.("a,area")) e.preventDefault();
   });
   on<KeyboardEvent>(doc, "keydown", (e) => {
     if (e.key !== "Enter" || e.isComposing) return;
+    if ((e.target as Element | null)?.closest?.("[data-godwit-ui]")) return;
     const href = linkOf(e.target);
     if (href === null) return;
     e.preventDefault();
@@ -318,6 +523,7 @@ function attach(frame: HTMLIFrameElement, theme: Theme): () => void {
 
   return () => {
     live = false;
+    setTip(null);
     for (const off of offs) off();
   };
 }

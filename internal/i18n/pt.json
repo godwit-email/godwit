@@ -1,5 +1,9 @@
 {
   "@@locale": "pt",
+  "settings_collapse_quotes": "Recolher o texto citado",
+  "settings_collapse_quotes_help": "Ocultar o que uma resposta cita atrás de um botão, para mostrar só o que o remetente escreveu",
+  "reader_quote_expand": "Expandir o texto citado",
+  "reader_quote_collapse": "Recolher o texto citado",
   "settings_remote_images_keep": "Manter imagens não usadas",
   "settings_remote_images_keep_help": "As imagens em cache não abertas durante este tempo são apagadas. Os anexos nunca são tocados. Uma mensagem antiga volta a carregá-las se o remetente ainda as tiver.",
   "settings_remote_images_keep_forever": "Até a cache ficar cheia",

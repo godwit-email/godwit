@@ -1,5 +1,9 @@
 {
   "@@locale": "ko",
+  "settings_collapse_quotes": "인용문 접기",
+  "settings_collapse_quotes_help": "답장이 인용한 부분을 버튼 뒤로 숨겨 보낸 사람이 쓴 내용만 보여 줍니다",
+  "reader_quote_expand": "인용문 펼치기",
+  "reader_quote_collapse": "인용문 접기",
   "settings_remote_images_keep": "사용하지 않은 이미지 보관",
   "settings_remote_images_keep_help": "이 기간 동안 열지 않은 캐시 이미지는 삭제됩니다. 첨부 파일은 삭제되지 않습니다. 오래된 메일은 보낸 사람 쪽에 아직 있으면 이미지를 다시 불러옵니다.",
   "settings_remote_images_keep_forever": "캐시가 가득 찰 때까지",

@@ -1,5 +1,9 @@
 {
   "@@locale": "tr",
+  "settings_collapse_quotes": "Alıntılanan metni katla",
+  "settings_collapse_quotes_help": "Bir yanıtın alıntıladığı kısmı bir düğmenin arkasına gizle, yalnızca gönderenin yazdığı görünsün",
+  "reader_quote_expand": "Alıntılanan metni aç",
+  "reader_quote_collapse": "Alıntılanan metni katla",
   "settings_remote_images_keep": "Kullanılmayan görselleri sakla",
   "settings_remote_images_keep_help": "Bu süre boyunca açılmayan önbellekteki görseller silinir. Ekler asla silinmez. Eski bir ileti, gönderende hâlâ varsa onları yeniden yükler.",
   "settings_remote_images_keep_forever": "Önbellek dolana kadar",

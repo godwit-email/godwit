@@ -1,5 +1,9 @@
 {
   "@@locale": "fr",
+  "settings_collapse_quotes": "Replier le texte cité",
+  "settings_collapse_quotes_help": "Masquer ce qu’une réponse cite derrière un bouton, pour ne voir que ce que l’expéditeur a écrit",
+  "reader_quote_expand": "Afficher le texte cité",
+  "reader_quote_collapse": "Replier le texte cité",
   "settings_remote_images_keep": "Garder les images inutilisées",
   "settings_remote_images_keep_help": "Les images en cache non ouvertes depuis ce délai sont supprimées. Les pièces jointes ne sont jamais touchées. Un ancien message les recharge si son expéditeur les a encore.",
   "settings_remote_images_keep_forever": "Jusqu’à ce que le cache soit plein",

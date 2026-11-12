@@ -438,6 +438,9 @@ func (p *platform) SettingsChanged(st core.Settings) {
 	if err := webui.ThemeChanged.Broadcast(webui.ThemeOf(st)); err != nil {
 		log.Printf("theme to the pages: %v", err)
 	}
+	if p.reader != nil {
+		p.reader.SettingsChanged(st)
+	}
 	if p.wit != nil {
 		p.wit.SettingsChanged(st)
 	}

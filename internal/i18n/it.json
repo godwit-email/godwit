@@ -1,5 +1,9 @@
 {
   "@@locale": "it",
+  "settings_collapse_quotes": "Comprimi il testo citato",
+  "settings_collapse_quotes_help": "Nascondi ciò che una risposta cita dietro un pulsante, così si vede solo ciò che ha scritto il mittente",
+  "reader_quote_expand": "Espandi il testo citato",
+  "reader_quote_collapse": "Comprimi il testo citato",
   "settings_remote_images_keep": "Conserva le immagini inutilizzate",
   "settings_remote_images_keep_help": "Le immagini nella cache non aperte da questo tempo vengono eliminate. Gli allegati non vengono mai toccati. Un vecchio messaggio le carica di nuovo se il mittente le ha ancora.",
   "settings_remote_images_keep_forever": "Finché la cache non è piena",

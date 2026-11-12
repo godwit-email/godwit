@@ -201,6 +201,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
   reader: {
     states: [
       "basic",
+      "quoted",
       "neutral",
       "colored",
       "natural-dark",
@@ -220,6 +221,12 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         version: 1,
         html:
           {
+            quoted:
+              "<p>周四下午 3 点没问题，更新后的议程已经发到群里了。</p>" +
+              "<p>另外补充协议法务刚看完，今天下班前可以签字归档。</p>" +
+              "<p>于 2026年11月12日 09:15，周明 写道：</p>" +
+              "<blockquote><p>嗨，我们把 Q4 合作伙伴评审改到周四下午 3 点可以吗？</p>" +
+              "<p>顺便确认一下法务那边对补充协议还有没有其他修改意见，辛苦了。</p></blockquote>",
             neutral: fx.readerNeutral,
             colored: fx.readerColored,
             "natural-dark": fx.readerNaturalDark,
@@ -239,6 +246,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         cut: false,
         theme: fx.theme(mode),
         locale: "zh-Hans",
+        collapseQuotes: state === "quoted",
       };
       installFake({
         "ReaderPage.Load": async () => body,
@@ -246,6 +254,8 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "ReaderPage.Navigate": nothing,
         "ReaderPage.OpenLink": nothing,
         "ReaderPage.Search": nothing,
+        "ReaderPage.Save": nothing,
+        "ReaderPage.Print": nothing,
       });
     },
   },

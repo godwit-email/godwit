@@ -30,27 +30,521 @@ function linkLength(u: string): number {
   return end;
 }
 
+// A single-line reply lead ("On … wrote:", "于 … 写道：") placed right above a quote by mail clients.
+// Uses explicit start/whitespace/comma boundaries instead of \b so Cyrillic and accented Latin match.
+const ATTR_RE =
+  /(?:^|[\s,，])(?:wrote\s*:|a écrit\s*:|escribió\s*:|escreveu\s*:|ha scritto\s*:|(?:пишет|написал[аи]?)\s*:|yazdı\s*:|đã viết\s*:|(?:schrieb|schreef)(?=\s).*:)|(?:写道|寫道|書きました)\s*[:：]|(?:^|\s)작성\s*:/i;
+
+function isAttribution(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed.includes("\n")) return false;
+  const s = trimmed.replace(/\s+/g, " ");
+  return s.length <= 240 && /[:：]$/.test(s) && ATTR_RE.test(s);
+}
+
+// A quote folded behind a pill and hairline rule: <details> needs no script in the CSP-locked frame;
+// the parent wires the left collapse rail and the hover tooltip.
+const DOTS_SVG =
+  '<svg class="godwit-quote-dots" width="16" height="10" viewBox="0 0 16 10" fill="currentColor" aria-hidden="true">' +
+  '<circle cx="3" cy="5" r="1.45"/><circle cx="8" cy="5" r="1.45"/><circle cx="13" cy="5" r="1.45"/></svg>';
+const UP_SVG =
+  '<svg class="godwit-quote-up" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" ' +
+  'stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M3 7.5L6 4.5L9 7.5"/></svg>';
+const FOLD_SUMMARY =
+  `<summary data-godwit-ui><span class="godwit-quote-pill">${DOTS_SVG}${UP_SVG}</span>` +
+  '<span class="godwit-quote-line" aria-hidden="true"></span></summary>';
+const FOLD_RAIL =
+  '<span class="godwit-quote-rail" data-godwit-ui aria-hidden="true">' +
+  '<span class="godwit-quote-rail-line"></span></span>';
+const FOLD_OPEN = `<details class="godwit-quote-fold">${FOLD_SUMMARY}<div class="godwit-quote-body">${FOLD_RAIL}`;
+const FOLD_CLOSE = "</div></details>";
+
 /**
  * Plain text as HTML: escaped, its web addresses links (data-href, as Go makes an HTML mail's)
  * and its quoted lines ("> …") marked, which the style mutes.
  */
-export function plainHTML(text: string): string {
-  return text
-    .split("\n")
-    .map((line) => {
-      let html = "";
-      let at = 0;
-      for (const m of line.matchAll(URL_RE)) {
-        const link = m[0].slice(0, linkLength(m[0]));
-        if (!/^https?:\/\/./.test(link)) continue; // nothing but the scheme
-        const url = escapeText(link);
-        html += `${escapeText(line.slice(at, m.index))}<span data-href="${url}">${url}</span>`;
-        at = m.index + link.length;
+export function plainHTML(text: string, fold = false): string {
+  const lines = text.split("\n");
+  const quoted = (line: string) => /^\s*>/.test(line);
+  // With fold: the quoted lines at the end (and a preceding "On … wrote:" lead) fold behind a
+  // button, when the message has words of its own above them.
+  let from = lines.length;
+  if (fold) {
+    while (from > 0 && (quoted(lines[from - 1]) || lines[from - 1].trim() === "")) from--;
+    while (from < lines.length && !quoted(lines[from])) from++;
+    if (from < lines.length) {
+      let lead = from - 1;
+      while (lead >= 0 && lines[lead].trim() === "") lead--;
+      if (lead >= 0 && isAttribution(lines[lead])) from = lead;
+    }
+    if (
+      from === lines.length ||
+      !lines.slice(0, from).some((l) => l.trim() !== "" && !quoted(l) && !isAttribution(l))
+    )
+      from = lines.length;
+  }
+  const renderLine = (line: string) => {
+    let html = "";
+    let at = 0;
+    for (const m of line.matchAll(URL_RE)) {
+      const link = m[0].slice(0, linkLength(m[0]));
+      if (!/^https?:\/\/./.test(link)) continue; // nothing but the scheme
+      const url = escapeText(link);
+      html += `${escapeText(line.slice(at, m.index))}<span data-href="${url}">${url}</span>`;
+      at = m.index + link.length;
+    }
+    html += escapeText(line.slice(at));
+    return quoted(line) ? `<span class="godwit-quote">${html}</span>` : html;
+  };
+  if (from === lines.length) return lines.map(renderLine).join("\n");
+  let bodyEnd = from;
+  while (bodyEnd > 0 && lines[bodyEnd - 1].trim() === "") bodyEnd--;
+  let quoteEnd = lines.length;
+  while (quoteEnd > from && lines[quoteEnd - 1].trim() === "") quoteEnd--;
+  return (
+    lines.slice(0, bodyEnd).map(renderLine).join("\n") +
+    FOLD_OPEN +
+    lines.slice(from, quoteEnd).map(renderLine).join("\n") +
+    FOLD_CLOSE
+  );
+}
+
+// An element's inline declarations, the last of each property winning, parsed once per element.
+const declared = new WeakMap<Element, Map<string, string>>();
+function styleValue(el: Element, prop: string): string | null {
+  let decls = declared.get(el);
+  if (!decls) {
+    decls = new Map();
+    for (const decl of (el.getAttribute("style") ?? "").split(";")) {
+      const colon = decl.indexOf(":");
+      if (colon < 0) continue;
+      const value = decl
+        .slice(colon + 1)
+        .replace(/!\s*important/i, "")
+        .trim()
+        .toLowerCase();
+      decls.set(decl.slice(0, colon).trim().toLowerCase(), value);
+    }
+    declared.set(el, decls);
+  }
+  return decls.get(prop) ?? null;
+}
+
+const isZeroLength = (v: string | null | undefined) =>
+  v != null && /^0(?:\.0+)?(?:[a-z%]+)?$/.test(v);
+
+// Whether vertical padding re-opens a zero-height clip box (top/bottom of the shorthand, or longhands).
+function hasVerticalPadding(el: Element): boolean {
+  const pad = styleValue(el, "padding")?.split(/\s+/);
+  const top = pad?.[0];
+  const bottom = pad?.[2] ?? pad?.[0];
+  return [top, bottom, styleValue(el, "padding-top"), styleValue(el, "padding-bottom")].some(
+    (v) => v != null && !isZeroLength(v),
+  );
+}
+
+// Irreversible subtree hiding: no descendant override can make anything inside visible.
+function isHiddenSubtree(el: Element): boolean {
+  if (el.tagName === "STYLE" || el.tagName === "SCRIPT") return true;
+  const disp = styleValue(el, "display");
+  if (disp === "none" || (el.hasAttribute("hidden") && !disp)) return true;
+  const op = styleValue(el, "opacity");
+  if (op !== null && Number(op) === 0) return true;
+  // Zero-height overflow:hidden preheaders clip descendants only when neither min-height nor
+  // vertical padding re-opens the clip box.
+  // A plain inline box ignores height and does not clip: only block or inline-block boxes do.
+  const clips = disp !== null ? disp !== "inline" && disp !== "contents" : isBlockBox(el);
+  const minH = styleValue(el, "min-height");
+  const ov = styleValue(el, "overflow-y") ?? styleValue(el, "overflow");
+  return (
+    clips &&
+    (isZeroLength(styleValue(el, "max-height")) || isZeroLength(styleValue(el, "height"))) &&
+    (minH === null || isZeroLength(minH)) &&
+    !hasVerticalPadding(el) &&
+    ov !== null &&
+    ov.split(/\s+/).includes("hidden")
+  );
+}
+
+function isInsideHidden(el: Element): boolean {
+  for (let p: Element | null = el; p; p = p.parentElement) {
+    if (isHiddenSubtree(p)) return true;
+  }
+  return false;
+}
+
+// Whitelist of HTML phrasing tags that participate in inline flow by default; everything else
+// (DIV, P, CENTER, TABLE, DETAILS, headings, lists, etc.) creates a block boundary unless styled
+// with an inline display value.
+const INLINE_TAGS = new Set([
+  "A",
+  "ABBR",
+  "ACRONYM",
+  "B",
+  "BDI",
+  "BDO",
+  "BIG",
+  "CITE",
+  "CODE",
+  "DATA",
+  "DEL",
+  "DFN",
+  "EM",
+  "FONT",
+  "I",
+  "INS",
+  "KBD",
+  "MARK",
+  "Q",
+  "RP",
+  "RT",
+  "RUBY",
+  "S",
+  "SAMP",
+  "SMALL",
+  "SPAN",
+  "STRIKE",
+  "STRONG",
+  "SUB",
+  "SUP",
+  "TIME",
+  "TT",
+  "U",
+  "VAR",
+  "WBR",
+]);
+
+// Replaced elements that show something without text: they make a block more than an attribution.
+const MEDIA_TAGS = new Set([
+  "IMG",
+  "SVG",
+  "VIDEO",
+  "IFRAME",
+  "CANVAS",
+  "PICTURE",
+  "OBJECT",
+  "EMBED",
+]);
+
+const NON_BLOCK_REPLACED = new Set([...MEDIA_TAGS, "BR", "STYLE", "SCRIPT", "AREA", "MAP"]);
+
+const INLINE_DISPLAYS = new Set([
+  "inline",
+  "inline-block",
+  "inline-flex",
+  "inline-grid",
+  "inline-table",
+  "contents",
+  "none",
+]);
+
+function isBlockBox(el: Element): boolean {
+  const disp = styleValue(el, "display");
+  if (disp !== null) {
+    const first = disp.split(/\s+/)[0];
+    return !INLINE_DISPLAYS.has(disp) && first !== "inline";
+  }
+  return !INLINE_TAGS.has(el.tagName) && !NON_BLOCK_REPLACED.has(el.tagName);
+}
+
+const PRE_WS_VALUES = new Set(["pre", "pre-wrap", "pre-line", "break-spaces"]);
+
+type TextState = { pre: boolean; visHidden: boolean; zeroFont: boolean };
+
+function stepTextState(el: Element, s: TextState): TextState {
+  const ws = styleValue(el, "white-space");
+  const pre = el.tagName === "PRE" ? true : ws === null ? s.pre : PRE_WS_VALUES.has(ws);
+  const vis = styleValue(el, "visibility");
+  const visHidden =
+    vis === "hidden" || vis === "collapse" ? true : vis === "visible" ? false : s.visHidden;
+  const fs = styleValue(el, "font-size");
+  // HTML <font size="..."> clamps valid numeric values to 1..7 (x-small..xxx-large), never 0 px.
+  const hasNumericFontSizeAttr =
+    el.tagName === "FONT" && /^[+-]?\d+/.test((el.getAttribute("size") ?? "").trim());
+  const zeroFont =
+    fs !== null
+      ? /^0(?:\.0+)?(?:[a-z%]+)?$/.test(fs)
+        ? true
+        : /^(?:inherit|unset|larger|smaller|[\d.]+(?:%|em|ex|ch|lh))$/.test(fs)
+          ? s.zeroFont
+          : false
+      : hasNumericFontSizeAttr
+        ? false
+        : s.zeroFont;
+  return { pre, visHidden, zeroFont };
+}
+
+function ancestorTextState(node: Node | null): TextState {
+  const chain: Element[] = [];
+  for (let p = node instanceof Element ? node : node?.parentElement; p; p = p.parentElement) {
+    chain.unshift(p);
+  }
+  let state: TextState = { pre: false, visHidden: false, zeroFont: false };
+  for (const el of chain) state = stepTextState(el, state);
+  return state;
+}
+
+// Visible text of root with <br>, block boundaries, and CSS-preformatted newlines preserved as "\n"
+// (while skipping hidden subtrees, inheritable visibility/zero-font text, and normal source wraps).
+function renderedText(root: Node, keep: (n: Node) => boolean = () => true): string {
+  let out = "";
+  const walk = (n: Node, s: TextState) => {
+    if (n.nodeType === Node.TEXT_NODE) {
+      if (s.visHidden || s.zeroFont || !keep(n)) return;
+      const raw = n.textContent ?? "";
+      out += s.pre ? raw.replace(/\r\n?/g, "\n") : raw.replace(/[\r\n]+/g, " ");
+      return;
+    }
+    if (n.nodeType !== Node.ELEMENT_NODE) return;
+    const el = n as Element;
+    if (isHiddenSubtree(el)) return;
+    const tag = el.tagName;
+    const next = stepTextState(el, s);
+    if (tag === "BR") {
+      if (!next.visHidden && keep(n)) out += "\n";
+      return;
+    }
+    const isBlock = n !== root && isBlockBox(el);
+    const beforeLen = out.length;
+    if (isBlock && out && !out.endsWith("\n")) out += "\n";
+    for (let c = n.firstChild; c; c = c.nextSibling) walk(c, next);
+    if (out.length === beforeLen + 1 && isBlock && out.endsWith("\n")) {
+      out = out.slice(0, beforeLen);
+    } else if (isBlock && out && !out.endsWith("\n")) {
+      out += "\n";
+    }
+  };
+  walk(root, ancestorTextState(root.parentElement));
+  return out.trim();
+}
+
+function isInlineAttrPart(n: ChildNode): boolean {
+  if (n.nodeType === Node.COMMENT_NODE || n.nodeType === Node.TEXT_NODE) return true;
+  if (n.nodeType !== Node.ELEMENT_NODE) return false;
+  const el = n as Element;
+  if (el.tagName === "STYLE" || el.tagName === "SCRIPT") return false;
+  return ![el, ...el.querySelectorAll("*")].some(
+    (c) => c.tagName === "BR" || isBlockBox(c) || MEDIA_TAGS.has(c.tagName) || hasVisualPaint(c),
+  );
+}
+
+const QUOTE = "blockquote, div.gmail_quote, div.yahoo_quoted, div.protonmail_quote";
+
+function hasVisualPaint(el: Element): boolean {
+  return (
+    el.hasAttribute("data-bg") ||
+    el.hasAttribute("bgcolor") ||
+    el.hasAttribute("background") ||
+    /(?:^|[;\s])(?:background|border)(?:-[a-z-]+)?\s*:/i.test(el.getAttribute("style") ?? "")
+  );
+}
+
+function isBlankSpacer(n: ChildNode): boolean {
+  if (n.nodeType === Node.TEXT_NODE) return (n.textContent ?? "").trim() === "";
+  if (n.nodeType !== Node.ELEMENT_NODE) return false;
+  const el = n as Element;
+  if (el.tagName === "BR") return true;
+  if ((el.tagName !== "DIV" && el.tagName !== "P") || (el.textContent ?? "").trim() !== "")
+    return false;
+  return ![el, ...el.querySelectorAll("*")].some(
+    (c) => (c !== el && c.tagName !== "BR") || hasVisualPaint(c),
+  );
+}
+
+// A selector list split at its top-level commas: not those in quotes, [attributes] or :is(…).
+function splitSelectorList(list: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let quote = "";
+  let from = 0;
+  for (let i = 0; i < list.length; i++) {
+    const c = list[i];
+    if (quote) {
+      if (c === "\\") i++;
+      else if (c === quote) quote = "";
+    } else if (c === '"' || c === "'") quote = c;
+    else if (c === "\\") i++;
+    else if (c === "(" || c === "[") depth++;
+    else if (c === ")" || c === "]") depth--;
+    else if (c === "," && depth === 0) {
+      out.push(list.slice(from, i));
+      from = i + 1;
+    }
+  }
+  out.push(list.slice(from));
+  return out;
+}
+
+function isEffectivelyInvisible(el: Element): boolean {
+  if (isHiddenSubtree(el)) return true;
+  if (renderedText(el) !== "") return false;
+  return ![el, ...el.querySelectorAll("*")].some(
+    (c) =>
+      MEDIA_TAGS.has(c.tagName) || c.tagName === "HR" || c.tagName === "TABLE" || hasVisualPaint(c),
+  );
+}
+
+/**
+ * An HTML body with the quote at its end folded behind a button: the last outermost quote block
+ * (plus a single-line "On … wrote:" lead right before a bare blockquote), when the message has
+ * words of its own before it and none after. An inline reply and a quote-only mail stay open.
+ */
+export function foldQuotes(html: string): string {
+  const doc = new DOMParser().parseFromString(`<!doctype html><body>${html}`, "text/html");
+  // A visible quote's ancestors are visible too, so the outermost ones are those in no other quote.
+  const last = [...doc.body.querySelectorAll(QUOTE)]
+    .filter((q) => !isInsideHidden(q) && !q.parentElement?.closest(QUOTE))
+    .at(-1);
+  if (!last) return html;
+  const after = renderedText(
+    doc.body,
+    (n) =>
+      !last.contains(n) && !!(last.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING),
+  );
+  if (after !== "") return html;
+
+  // Only inline styles are read here: with a stylesheet in the mail, a class or id can change how
+  // a candidate lays out (a display:block span), so such candidates stay outside the fold.
+  const hasSheet = [...doc.querySelectorAll("style")].some((s) => s.textContent?.includes("{"));
+  const sheetStyled = (n: ChildNode) =>
+    hasSheet &&
+    n.nodeType === Node.ELEMENT_NODE &&
+    [n as Element, ...(n as Element).querySelectorAll("*")].some(
+      (c) => c.hasAttribute("class") || c.hasAttribute("id"),
+    );
+  const inlineLead = (n: ChildNode) => isInlineAttrPart(n) && !sheetStyled(n);
+  // Wrapping the quote in <details> changes its parent and siblings: a rule that relies on them
+  // (a > child, + or ~ sibling, structural pseudo-class, :has) would stop matching, so leave it.
+  const selectors = [...doc.querySelectorAll("style")]
+    .flatMap((s) => [...(s.textContent ?? "").matchAll(/([^{}]+)\{/g)].map((m) => m[1]))
+    .filter((sel) => !sel.trim().startsWith("@"));
+  if (
+    selectors.some((sel) =>
+      /[>+~]|(?<!:):(?:nth-|first-child|last-child|first-of-type|last-of-type|only-|has\()/i.test(
+        sel,
+      ),
+    )
+  )
+    return html;
+
+  let first: ChildNode = last;
+  if (last.tagName === "BLOCKQUOTE") {
+    let cur = last.previousSibling;
+    while (
+      cur &&
+      (isBlankSpacer(cur) ||
+        (cur.nodeType === Node.ELEMENT_NODE && isEffectivelyInvisible(cur as Element)))
+    ) {
+      cur = cur.previousSibling;
+    }
+    if (
+      cur?.nodeType === Node.ELEMENT_NODE &&
+      isBlockBox(cur as Element) &&
+      ![...(cur as Element).querySelectorAll("*")].some(
+        (c) => isBlockBox(c) || MEDIA_TAGS.has(c.tagName),
+      ) &&
+      !hasVisualPaint(cur as Element) &&
+      !sheetStyled(cur) &&
+      isAttribution(renderedText(cur))
+    ) {
+      first = cur;
+    } else if (cur && inlineLead(cur)) {
+      let start: ChildNode = cur;
+      while (start.previousSibling && inlineLead(start.previousSibling)) {
+        start = start.previousSibling;
       }
-      html += escapeText(line.slice(at));
-      return /^\s*>/.test(line) ? `<span class="godwit-quote">${html}</span>` : html;
-    })
-    .join("\n");
+      // Rendered as one run under its parent, so a newline between siblings is not trimmed away.
+      const run: ChildNode[] = [];
+      for (let n: ChildNode | null = start; n; n = n === cur ? null : n.nextSibling) run.push(n);
+      const parent = cur.parentElement as Element;
+      const inlineText = renderedText(parent, (n) => run.some((r) => r === n || r.contains(n)));
+      if (isAttribution(inlineText)) first = start;
+    }
+  }
+
+  const before = renderedText(
+    doc.body,
+    (n) =>
+      !first.contains(n) &&
+      n !== first &&
+      !n.parentElement?.closest(QUOTE) &&
+      !!(first.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_PRECEDING),
+  );
+  if (
+    before === "" ||
+    before.split("\n").every((line) => line.trim() === "" || isAttribution(line))
+  )
+    return html;
+
+  while (first.previousSibling && isBlankSpacer(first.previousSibling)) {
+    first.previousSibling.remove();
+  }
+
+  // Mark the outer quote wrapper (and any single-child inner quote that only follows an
+  // attribution, as in Godwit's or Gmail's wrapper+blockquote pairs) so only the left rail shows.
+  let rootQuote: Element = last;
+  while (true) {
+    rootQuote.setAttribute("data-quote-root", "");
+    const directQuotes = [...rootQuote.querySelectorAll(QUOTE)].filter((q) => {
+      if (isInsideHidden(q)) return false;
+      let p = q.parentElement;
+      while (p && p !== rootQuote) {
+        if (p.matches(QUOTE)) return false;
+        p = p.parentElement;
+      }
+      return p === rootQuote;
+    });
+    if (directQuotes.length !== 1) break;
+    const inner = directQuotes[0];
+    const leadText = renderedText(
+      rootQuote,
+      (n) =>
+        !inner.contains(n) &&
+        !!(inner.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_PRECEDING),
+    );
+    const tailText = renderedText(
+      rootQuote,
+      (n) =>
+        !inner.contains(n) &&
+        !!(inner.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING),
+    );
+    if (tailText !== "" || (leadText !== "" && !isAttribution(leadText))) break;
+    rootQuote = inner;
+  }
+
+  const tpl = doc.createElement("div");
+  tpl.innerHTML = `${FOLD_OPEN}${FOLD_CLOSE}`;
+  const fold = tpl.firstElementChild as HTMLElement;
+  const quoteBody = fold.querySelector(".godwit-quote-body") as HTMLElement;
+  first.before(fold);
+  let node: ChildNode | null = first;
+  while (node) {
+    const next: ChildNode | null = node === last ? null : node.nextSibling;
+    quoteBody.append(node);
+    node = next;
+  }
+  // The mail's stylesheet (scoped under #godwit-body by core/mail) must not reach the controls we
+  // added, such as `.mail span{display:none}` hiding the pill: then the quote stays as it came.
+  const added = [
+    fold,
+    quoteBody,
+    ...fold.querySelectorAll("summary, summary *, .godwit-quote-rail, .godwit-quote-rail *"),
+  ];
+  const reaches = (sel: string) => {
+    const local = sel
+      .trim()
+      .replace(/^#godwit-body(?:\.godwit-(?:dark|light))?(?=\s|$)/, "")
+      .trim();
+    if (!local) return false;
+    try {
+      return added.some((el) => el.matches(local));
+    } catch {
+      return false; // not a selector the browser applies either
+    }
+  };
+  if (selectors.some((list) => splitSelectorList(list).some(reaches))) return html;
+  return doc.body.innerHTML;
 }
 
 // A theme value goes into a <style> only if it can't leave its declaration.
@@ -124,10 +618,11 @@ const plainCSS = (t: Theme, scheme: string) => {
  */
 export function buildSrcdoc(b: ReaderBody, t: Theme, systemDark = false): string {
   const html = b.html !== "";
+  const scheme = frameScheme(b, t, systemDark);
   const css =
     frameCSS +
     base(size(t.bodyFontSize), html ? "normal" : "1.5") +
-    (html ? htmlCSS(t, frameScheme(b, t, systemDark)) : plainCSS(t, frameScheme(b, t)));
+    (html ? htmlCSS(t, scheme) : plainCSS(t, scheme));
   const dark = isDark(t, systemDark);
   const auto = html && dark && !hasDarkStyles(b);
   const cls =
@@ -143,6 +638,6 @@ export function buildSrcdoc(b: ReaderBody, t: Theme, systemDark = false): string
     `<meta http-equiv="Content-Security-Policy" content="${FRAME_CSP}">` +
     '<meta charset="utf-8">' +
     `<style>${css}</style></head>` +
-    `<body><div id="godwit-body" class="${cls}"${auto ? " data-auto-dark" : ""}>${html ? b.html : plainHTML(b.plain)}</div></body></html>`
+    `<body><div id="godwit-body" class="${cls}"${auto ? " data-auto-dark" : ""}>${html ? (b.collapseQuotes ? foldQuotes(b.html) : b.html) : plainHTML(b.plain, b.collapseQuotes)}</div></body></html>`
   );
 }

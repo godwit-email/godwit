@@ -151,7 +151,7 @@ func TestSettingsProxyMode(t *testing.T) {
 	}
 	h, _ := withAccount(t)
 	p := h.openSettings("general")
-	h.resize(1280, 1600) // the group sits at the page's end; ClickAt needs it in the window
+	h.resize(1280, 2000) // the group sits at the page's end; ClickAt needs it in the window
 	h.see("网络代理")
 	h.see("使用系统网络设置中的代理")
 	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:7890")
@@ -250,7 +250,9 @@ func TestSettingsProxyMode(t *testing.T) {
 			t.Logf("settings user %q set %v; proxy user %q; draft pass %q sent %q", h.app.settings.ProxyUser, h.app.settings.ProxyPasswordSet, proxyUser(), p.proxy.pass, p.proxy.sent)
 		}
 	})
-	h.until("credentials saved", func() bool { return proxyUser() == "alice:pr0xy-pass" && h.app.settings.ProxyPasswordSet })
+	h.until("credentials saved", func() bool {
+		return proxyUser() == "alice:pr0xy-pass" && h.app.settings.ProxyPasswordSet && h.app.settings.ProxyPassword == ""
+	})
 	if h.app.settings.ProxyUser != "alice" || h.app.settings.ProxyPassword != "" {
 		t.Errorf("settings %q %q, want alice and no password", h.app.settings.ProxyUser, h.app.settings.ProxyPassword)
 	}
