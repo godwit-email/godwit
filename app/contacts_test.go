@@ -345,16 +345,25 @@ func TestContactsMultiAddressAndActions(t *testing.T) {
 	// +1 lists both, the preferred marked; a row's actions show on hover.
 	h.click("另外 1 个地址")
 	h.see("首选")
-	h.hover("bob@work.com")
-	h.click("复制邮箱地址 bob@work.com")
+	h.click("bob@work.com")
+	if err := h.tt.ChooseMenuItem("复制邮箱地址"); err != nil {
+		t.Fatalf("%v; menu %q", err, h.tt.Menu())
+	}
+	h.drain()
 	if got := h.tt.Clipboard(); got != "bob@work.com" {
 		t.Fatalf("clipboard %q", got)
 	}
 	h.see("已复制邮箱地址")
 
 	// Per-address block blocks only that address; top whole-card button still offers 屏蔽发件人.
-	h.hover("bob@work.com")
-	h.click("屏蔽发件人 bob@work.com")
+	if !h.app.contacts().addrsOpen {
+		h.click("另外 1 个地址")
+	}
+	h.click("bob@work.com")
+	if err := h.tt.ChooseMenuItem("屏蔽发件人"); err != nil {
+		t.Fatalf("%v; menu %q", err, h.tt.Menu())
+	}
+	h.drain()
 	h.until("secondary blocked only", func() bool {
 		return slices.Contains(h.app.blocked, "bob@work.com") && !slices.Contains(h.app.blocked, "bob@home.com")
 	})

@@ -538,15 +538,13 @@ func (p *contactsPage) addressLine(c *ui.Context, addrs []core.ContactAddress) {
 			return
 		}
 		more := len(addrs) - 1
-		chip := kit.Button(c, "+"+strconv.Itoa(more), kit.ButtonOpts{Variant: kit.Secondary, Size: kit.SizeSm}).
-			Height(th.Space(5.5)).PaddingX(th.Space(2)).Radius(t.Radius.Full).Label(i18n.Tf("contacts.addresses.more", more))
-		if chip.Clicked() {
-			p.addrsOpen, p.addrQuery = !p.addrsOpen, ""
-		}
+		// the mail search's filter chip: the app's one chip that opens a list
+		chip := filterChip(c, "+"+strconv.Itoa(more), false, &p.addrsOpen, func() { p.addrQuery = "" }).
+			Label(i18n.Tf("contacts.addresses.more", more))
 		kit.Popover(c, chip, &p.addrsOpen, func() {
 			if len(addrs) > 8 {
 				kit.Input(c, &p.addrQuery, kit.InputOpts{Placeholder: i18n.Tf("contacts.addresses.search", len(addrs))}).
-					AutoFocus().Label(i18n.T("contacts.addresses.search_label"))
+					FillWidth().AutoFocus().Label(i18n.T("contacts.addresses.search_label"))
 			}
 			q := strings.ToLower(strings.TrimSpace(p.addrQuery))
 			var groups [2][]core.ContactAddress // the others, then the blocked
@@ -579,38 +577,20 @@ func (p *contactsPage) addressLine(c *ui.Context, addrs []core.ContactAddress) {
 	})
 }
 
-// addressRow is an address in the +N list; its actions show on hover.
+// addressRow is an address in the +N list, a row as the filter chips' menus
+// have; a click opens its menu, as the head's address does.
 func (p *contactsPage) addressRow(c *ui.Context, ea core.ContactAddress, blocked bool) {
-	a := p.a
 	t, th := theme.Of(c), c.Theme()
 	addr := ea.Address
-	row := ui.Row(c).FillWidth().Gap(th.Space(2)).AlignItems(ui.Center).Height(th.Space(8)).Padding(0, th.Space(1), 0, th.Space(2)).Radius(t.Radius.Md)
-	hover := row.Hovered()
-	if hover {
-		row.Background(t.HoverTint)
-	}
-	row.Children(func() {
-		text := kit.Text(c, addr, t.Text.Base).SingleLine().Grow(1).Shrink(1).MinWidth(0)
+	kit.Pressable(c, kit.PressableOpts{}).Label(addr).FillWidth().Padding(th.Space(1.5), th.Space(2)).Gap(th.Space(2)).Radius(t.Radius.Md).
+		Menu(func(m *ui.Menu) { p.addressMenu(c, m, addr, blocked) }).Children(func() {
+		text := kit.Text(c, addr, t.Text.Sm).SingleLine().Grow(1).Shrink(1).MinWidth(0)
 		if blocked {
 			text.TextColor(t.Muted)
 		}
 		if ea.Pref {
-			kit.Text(c, i18n.T("contacts.preferred"), t.Text.Xs).TextColor(t.Muted)
+			kit.Text(c, i18n.T("contacts.preferred"), t.Text.Xs).TextColor(t.Muted).Shrink(0)
 		}
-		if !hover {
-			return
-		}
-		btn := kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}
-		kit.IconButton(c, "square-pen", i18n.T("palette.action.compose")+" "+addr, btn).OnClick(func() { p.addrsOpen = false; a.composeTo(addr) })
-		if kit.IconButton(c, "copy", i18n.T("contacts.copy_address")+" "+addr, btn).Clicked() {
-			c.WriteClipboard(addr)
-			a.toast(i18n.T("contacts.address_copied"))
-		}
-		blk := i18n.T("reader.block_sender") + " " + addr
-		if blocked {
-			blk = i18n.T("reader.unblock_sender") + " " + addr
-		}
-		kit.IconButton(c, "spam", blk, btn).OnClick(func() { p.blockAddrs([]string{addr}, !blocked) })
 	})
 }
 
