@@ -2300,5 +2300,10 @@
   "settings_addressbooks_setup_auto_help": "Godwit vindt de server via het domein van je gebruikersnaam, een e-mailadres.",
   "settings_addressbooks_path": "Serverpad",
   "settings_addressbooks_port_auto": "Automatisch",
-  "settings_addressbooks_ssl": "Maakt altijd verbinding via HTTPS (SSL)."
+  "settings_addressbooks_ssl": "Maakt altijd verbinding via HTTPS (SSL).",
+  "contacts_addresses": "Adressen",
+  "contacts_addresses_more": "Nog {arg1, number, ::group-off} adressen",
+  "contacts_addresses_search": "Zoek in {arg1, number, ::group-off} adressen",
+  "contacts_addresses_search_label": "Adressen zoeken",
+  "contacts_address_menu": "Acties voor {arg1}"
 }

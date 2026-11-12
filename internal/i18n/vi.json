@@ -2300,5 +2300,10 @@
   "settings_addressbooks_setup_auto_help": "Godwit tìm máy chủ theo tên miền của tên người dùng (địa chỉ email).",
   "settings_addressbooks_path": "Đường dẫn máy chủ",
   "settings_addressbooks_port_auto": "Tự động",
-  "settings_addressbooks_ssl": "Luôn kết nối qua HTTPS (SSL)."
+  "settings_addressbooks_ssl": "Luôn kết nối qua HTTPS (SSL).",
+  "contacts_addresses": "Địa chỉ",
+  "contacts_addresses_more": "Thêm {arg1, number, ::group-off} địa chỉ",
+  "contacts_addresses_search": "Tìm trong {arg1, number, ::group-off} địa chỉ",
+  "contacts_addresses_search_label": "Tìm địa chỉ",
+  "contacts_address_menu": "Thao tác cho {arg1}"
 }

@@ -2300,5 +2300,10 @@
   "settings_addressbooks_setup_auto_help": "사용자 이름에 이메일 주소를 입력하면 그 도메인으로 서버를 자동으로 찾습니다.",
   "settings_addressbooks_path": "서버 경로",
   "settings_addressbooks_port_auto": "자동",
-  "settings_addressbooks_ssl": "항상 HTTPS(SSL)로 암호화해 연결합니다."
+  "settings_addressbooks_ssl": "항상 HTTPS(SSL)로 암호화해 연결합니다.",
+  "contacts_addresses": "주소",
+  "contacts_addresses_more": "주소 {arg1, number, ::group-off}개 더 보기",
+  "contacts_addresses_search": "주소 {arg1, number, ::group-off}개 검색",
+  "contacts_addresses_search_label": "주소 검색",
+  "contacts_address_menu": "{arg1} 작업"
 }

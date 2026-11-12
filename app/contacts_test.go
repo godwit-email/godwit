@@ -284,9 +284,12 @@ func TestContactsMultiAddressAndActions(t *testing.T) {
 	})
 	h.see("Bob Chen")
 	h.see("Acme Corp · CTO")
-	h.see("首选")
+	// The head shows the preferred address and +1, the other one hidden till it opens.
 	h.see("bob@home.com")
-	h.see("bob@work.com")
+	h.see("+1")
+	if h.tt.HasText("bob@work.com") {
+		t.Fatal("the second address shows before +1 opens")
+	}
 	h.see("Secondary Mail")
 
 	// Top 全部归档 covers mail received from secondary addresses too.
@@ -329,11 +332,20 @@ func TestContactsMultiAddressAndActions(t *testing.T) {
 		t.Fatalf("draft 0 To %q", d.To)
 	}
 
-	// Per-address compose and copy actions.
-	h.click("写邮件 bob@home.com")
+	// The preferred address's own menu writes to it.
+	h.click("bob@home.com 的操作")
+	if err := h.tt.ChooseMenuItem("写邮件"); err != nil {
+		t.Fatalf("%v; menu %q", err, h.tt.Menu())
+	}
+	h.drain()
 	if d := h.draft(h.composeOpened(1)); !slices.Equal(d.To, []string{"bob@home.com"}) {
 		t.Fatalf("draft 1 To %q", d.To)
 	}
+
+	// +1 lists both, the preferred marked; a row's actions show on hover.
+	h.click("另外 1 个地址")
+	h.see("首选")
+	h.hover("bob@work.com")
 	h.click("复制邮箱地址 bob@work.com")
 	if got := h.tt.Clipboard(); got != "bob@work.com" {
 		t.Fatalf("clipboard %q", got)
@@ -341,10 +353,14 @@ func TestContactsMultiAddressAndActions(t *testing.T) {
 	h.see("已复制邮箱地址")
 
 	// Per-address block blocks only that address; top whole-card button still offers 屏蔽发件人.
+	h.hover("bob@work.com")
 	h.click("屏蔽发件人 bob@work.com")
 	h.until("secondary blocked only", func() bool {
 		return slices.Contains(h.app.blocked, "bob@work.com") && !slices.Contains(h.app.blocked, "bob@home.com")
 	})
+	h.see("已屏蔽 · 1") // the list's own group of blocked addresses
+	h.tt.Key(0, ui.KeyEscape)
+	h.until("the list closed", func() bool { return !h.app.contacts().addrsOpen })
 	h.click("已屏蔽")
 	h.see("已屏蔽 · 1")
 

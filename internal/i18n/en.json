@@ -4063,5 +4063,10 @@
   "settings_addressbooks_setup_auto_help": "Godwit finds the server from the domain of your username, an email address.",
   "settings_addressbooks_path": "Server path",
   "settings_addressbooks_port_auto": "Automatic",
-  "settings_addressbooks_ssl": "Always connects over HTTPS (SSL)."
+  "settings_addressbooks_ssl": "Always connects over HTTPS (SSL).",
+  "contacts_addresses": "Addresses",
+  "contacts_addresses_more": "{arg1, plural, one {{arg1, number, ::group-off} more address} other {{arg1, number, ::group-off} more addresses}}",
+  "contacts_addresses_search": "Search {arg1, number, ::group-off} addresses",
+  "contacts_addresses_search_label": "Search addresses",
+  "contacts_address_menu": "Actions for {arg1}"
 }

@@ -192,6 +192,8 @@ const (
 	PortWidth             = 90 // port fields
 	SelectMinWidth        = 120
 	FilterMenuMin         = 200 // a search filter chip's menu
+	ContactAddrsWidth     = 360 // a contact's +N address list
+	ContactAddrsHeight    = 360 // its height before it scrolls
 	LabelMenuWidth        = 240 // the palette's menu
 	CiteCardWidth         = 320 // the mail a summary's cite shows on hover, as Wit's
 	CiteChip              = 16  // a summary's cite: its height, and least width

@@ -2300,5 +2300,10 @@
   "settings_addressbooks_setup_auto_help": "用户名填邮箱地址，Godwit 会按它的域名自动查找服务器。",
   "settings_addressbooks_path": "服务器路径",
   "settings_addressbooks_port_auto": "自动",
-  "settings_addressbooks_ssl": "始终通过 HTTPS（SSL）加密连接。"
+  "settings_addressbooks_ssl": "始终通过 HTTPS（SSL）加密连接。",
+  "contacts_addresses": "地址",
+  "contacts_addresses_more": "另外 {arg1, number, ::group-off} 个地址",
+  "contacts_addresses_search": "搜索 {arg1, number, ::group-off} 个地址",
+  "contacts_addresses_search_label": "搜索地址",
+  "contacts_address_menu": "{arg1} 的操作"
 }

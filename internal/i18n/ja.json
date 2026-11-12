@@ -2300,5 +2300,10 @@
   "settings_addressbooks_setup_auto_help": "ユーザ名にメールアドレスを入力すると、そのドメインからサーバーを自動で探します。",
   "settings_addressbooks_path": "サーバーパス",
   "settings_addressbooks_port_auto": "自動",
-  "settings_addressbooks_ssl": "常に HTTPS（SSL）で暗号化して接続します。"
+  "settings_addressbooks_ssl": "常に HTTPS（SSL）で暗号化して接続します。",
+  "contacts_addresses": "アドレス",
+  "contacts_addresses_more": "ほか {arg1, number, ::group-off} 件のアドレス",
+  "contacts_addresses_search": "{arg1, number, ::group-off} 件のアドレスを検索",
+  "contacts_addresses_search_label": "アドレスを検索",
+  "contacts_address_menu": "{arg1} の操作"
 }

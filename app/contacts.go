@@ -43,6 +43,9 @@ type contactsPage struct {
 	unsubID  int64
 	unsubDlg bool
 
+	addrsOpen bool   // the +N list of the contact's other addresses
+	addrQuery string // its search
+
 	avatars    map[string]*contactAvatar // by primary address and newest message, as settingsSavedVer was
 	avatarsVer uint64
 }
@@ -446,9 +449,7 @@ func (p *contactsPage) detailView(c *ui.Context) {
 					if ct.Subtitle != "" {
 						kit.Text(c, ct.Subtitle, t.Text.Base).TextColor(t.Muted).TextAlign(ui.Center)
 					}
-					if len(addrs) <= 1 {
-						kit.Text(c, ct.Address, t.Text.Base).TextColor(t.Muted).TextAlign(ui.Center)
-					}
+					p.addressLine(c, addrs)
 					if ct.ListMessage != 0 || blocked {
 						ui.Row(c).Wrap().Gap(th.Space(1.5)).Padding(th.Space(1.5), 0, 0, 0).Children(func() {
 							if ct.ListMessage != 0 {
@@ -486,38 +487,6 @@ func (p *contactsPage) detailView(c *ui.Context) {
 					}
 					kit.RoundAction(c, "spam", short, long, false, blocked).OnClick(func() { p.blockAll(addrs, !blocked) })
 				})
-				if len(addrs) >= 2 {
-					ui.Column(c).FillWidth().Gap(th.Space(1)).Children(func() {
-						for _, ea := range addrs {
-							addr := ea.Address
-							eaBlocked := slices.Contains(a.blocked, addr)
-							c := c.Key(addr)
-							ui.Row(c).FillWidth().Gap(th.Space(2)).AlignItems(ui.Center).Padding(th.Space(1.5), th.Space(3)).
-								Radius(t.Radius.Lg).Border(theme.Hairline, t.Border).Children(func() {
-								kit.Text(c, addr, t.Text.Base).SingleLine().Shrink(1)
-								if ea.Pref {
-									kit.Badge(c, i18n.T("contacts.preferred"))
-								}
-								if eaBlocked {
-									kit.Badge(c, i18n.T("reader.blocked_badge"))
-								}
-								ui.Spacer(c)
-								kit.IconButton(c, "square-pen", i18n.T("palette.action.compose")+" "+addr, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-									OnClick(func() { a.composeTo(addr) })
-								if kit.IconButton(c, "copy", i18n.T("contacts.copy_address")+" "+addr, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).Clicked() {
-									c.WriteClipboard(addr)
-									a.toast(i18n.T("contacts.address_copied"))
-								}
-								blkLabel := i18n.T("reader.block_sender") + " " + addr
-								if eaBlocked {
-									blkLabel = i18n.T("reader.unblock_sender") + " " + addr
-								}
-								kit.IconButton(c, "spam", blkLabel, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-									OnClick(func() { p.blockAddrs([]string{addr}, !eaBlocked) })
-							})
-						}
-					})
-				}
 			})
 			// the counts in a row between hairlines, each centered
 			ui.Column(c).FillWidth().Children(func() {
@@ -549,6 +518,119 @@ func (p *contactsPage) detailView(c *ui.Context) {
 	}).Grow(1)
 	if _, last := p.mailList.Visible(); ready && last >= len(mail)-5 {
 		p.loadMore()
+	}
+}
+
+// addressLine is the contact's first address, a menu of what to do with it,
+// and with more, +N: the list of them all, the blocked last, searchable when
+// long. One address or thirty, the head keeps one line.
+func (p *contactsPage) addressLine(c *ui.Context, addrs []core.ContactAddress) {
+	if len(addrs) == 0 {
+		return
+	}
+	a := p.a
+	t, th := theme.Of(c), c.Theme()
+	ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
+		first := addrs[0].Address
+		kit.Button(c, first, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).FontWeight(400).TextColor(t.Muted).
+			Label(i18n.Tf("contacts.address_menu", first)).Menu(func(m *ui.Menu) { p.addressMenu(c, m, first, slices.Contains(a.blocked, first)) })
+		if len(addrs) < 2 {
+			return
+		}
+		more := len(addrs) - 1
+		chip := kit.Button(c, "+"+strconv.Itoa(more), kit.ButtonOpts{Variant: kit.Secondary, Size: kit.SizeSm}).
+			Height(th.Space(5.5)).PaddingX(th.Space(2)).Radius(t.Radius.Full).Label(i18n.Tf("contacts.addresses.more", more))
+		if chip.Clicked() {
+			p.addrsOpen, p.addrQuery = !p.addrsOpen, ""
+		}
+		kit.Popover(c, chip, &p.addrsOpen, func() {
+			if len(addrs) > 8 {
+				kit.Input(c, &p.addrQuery, kit.InputOpts{Placeholder: i18n.Tf("contacts.addresses.search", len(addrs))}).
+					AutoFocus().Label(i18n.T("contacts.addresses.search_label"))
+			}
+			q := strings.ToLower(strings.TrimSpace(p.addrQuery))
+			var groups [2][]core.ContactAddress // the others, then the blocked
+			for _, ea := range addrs {
+				if q != "" && !strings.Contains(strings.ToLower(ea.Address), q) {
+					continue
+				}
+				i := 0
+				if slices.Contains(a.blocked, ea.Address) {
+					i = 1
+				}
+				groups[i] = append(groups[i], ea)
+			}
+			ui.Scroll(c).Width(theme.ContactAddrsWidth).MaxHeight(theme.ContactAddrsHeight).Children(func() {
+				for gi, g := range groups {
+					if len(g) == 0 {
+						continue
+					}
+					title := i18n.T("contacts.addresses")
+					if gi == 1 {
+						title = i18n.T("reader.blocked_badge")
+					}
+					kit.MenuLabel(c.Key(gi), title+" · "+strconv.Itoa(len(g)))
+					for _, ea := range g {
+						p.addressRow(c.Key(ea.Address), ea, gi == 1)
+					}
+				}
+			})
+		})
+	})
+}
+
+// addressRow is an address in the +N list; its actions show on hover.
+func (p *contactsPage) addressRow(c *ui.Context, ea core.ContactAddress, blocked bool) {
+	a := p.a
+	t, th := theme.Of(c), c.Theme()
+	addr := ea.Address
+	row := ui.Row(c).FillWidth().Gap(th.Space(2)).AlignItems(ui.Center).Height(th.Space(8)).Padding(0, th.Space(1), 0, th.Space(2)).Radius(t.Radius.Md)
+	hover := row.Hovered()
+	if hover {
+		row.Background(t.HoverTint)
+	}
+	row.Children(func() {
+		text := kit.Text(c, addr, t.Text.Base).SingleLine().Grow(1).Shrink(1).MinWidth(0)
+		if blocked {
+			text.TextColor(t.Muted)
+		}
+		if ea.Pref {
+			kit.Text(c, i18n.T("contacts.preferred"), t.Text.Xs).TextColor(t.Muted)
+		}
+		if !hover {
+			return
+		}
+		btn := kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}
+		kit.IconButton(c, "square-pen", i18n.T("palette.action.compose")+" "+addr, btn).OnClick(func() { p.addrsOpen = false; a.composeTo(addr) })
+		if kit.IconButton(c, "copy", i18n.T("contacts.copy_address")+" "+addr, btn).Clicked() {
+			c.WriteClipboard(addr)
+			a.toast(i18n.T("contacts.address_copied"))
+		}
+		blk := i18n.T("reader.block_sender") + " " + addr
+		if blocked {
+			blk = i18n.T("reader.unblock_sender") + " " + addr
+		}
+		kit.IconButton(c, "spam", blk, btn).OnClick(func() { p.blockAddrs([]string{addr}, !blocked) })
+	})
+}
+
+// addressMenu is what can be done with one address: write, copy, block.
+func (p *contactsPage) addressMenu(c *ui.Context, m *ui.Menu, addr string, blocked bool) {
+	a := p.a
+	if m.Item(i18n.T("palette.action.compose")).Chosen() {
+		a.composeTo(addr)
+	}
+	if m.Item(i18n.T("contacts.copy_address")).Chosen() {
+		c.WriteClipboard(addr)
+		a.toast(i18n.T("contacts.address_copied"))
+	}
+	m.Separator()
+	blk := i18n.T("reader.block_sender")
+	if blocked {
+		blk = i18n.T("reader.unblock_sender")
+	}
+	if m.Item(blk).Chosen() {
+		p.blockAddrs([]string{addr}, !blocked)
 	}
 }
 

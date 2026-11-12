@@ -2300,5 +2300,10 @@
   "settings_addressbooks_setup_auto_help": "Godwit найдёт сервер по домену имени пользователя — адреса электронной почты.",
   "settings_addressbooks_path": "Путь на сервере",
   "settings_addressbooks_port_auto": "Автоматически",
-  "settings_addressbooks_ssl": "Всегда подключается по HTTPS (SSL)."
+  "settings_addressbooks_ssl": "Всегда подключается по HTTPS (SSL).",
+  "contacts_addresses": "Адреса",
+  "contacts_addresses_more": "Ещё адресов: {arg1, number, ::group-off}",
+  "contacts_addresses_search": "Поиск среди адресов: {arg1, number, ::group-off}",
+  "contacts_addresses_search_label": "Поиск адресов",
+  "contacts_address_menu": "Действия для {arg1}"
 }

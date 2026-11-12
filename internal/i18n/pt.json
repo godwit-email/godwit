@@ -2300,5 +2300,10 @@
   "settings_addressbooks_setup_auto_help": "O Godwit encontra o servidor pelo domínio do seu nome de usuário, um endereço de e-mail.",
   "settings_addressbooks_path": "Caminho do servidor",
   "settings_addressbooks_port_auto": "Automático",
-  "settings_addressbooks_ssl": "Sempre conecta por HTTPS (SSL)."
+  "settings_addressbooks_ssl": "Sempre conecta por HTTPS (SSL).",
+  "contacts_addresses": "Endereços",
+  "contacts_addresses_more": "Mais {arg1, number, ::group-off} endereços",
+  "contacts_addresses_search": "Pesquisar {arg1, number, ::group-off} endereços",
+  "contacts_addresses_search_label": "Pesquisar endereços",
+  "contacts_address_menu": "Ações para {arg1}"
 }
