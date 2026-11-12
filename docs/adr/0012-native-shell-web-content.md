@@ -4,6 +4,8 @@
 
 网页只是视图，**Go 端是内容的权威**：保存、版本、冲突、审批、对话存储都留在 Go。前端栈是 React 19 + Vite 多入口 + shadcn/ui（Base UI 版本）+ Plate；shadcn 组件由脚本调用 shadcn CLI 生成，**生成的文件不手改**，外观只靠主题变量，行为差异在自己的目录里包一层，升级时只需重新生成。
 
+「Go 端是内容的权威」已由 [0038](0038-backend-process-owns-the-engine.md) 修订：权威是后端进程。保存、版本冲突、提案的接受与拒绝、审批和对话存储都由后端裁决；界面进程的 Go 端只把网页的调用经 `ui` 角色转发给后端，再把结果和 Wit 的流式事件转回网页，不自己判定。读不过来的网页丢掉的仍是最早的文字事件，不丢一次运行的结束。
+
 ## Consequences
 
 - 网页里的 Wit 用 `useChat` + 自定义 `WitTransport`，agent 循环留在 Go，不写 AI SDK provider。

@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/godwit-email/godwit/core"
@@ -151,6 +152,10 @@ func stream[T any](c *Client, ctx context.Context, method string, args ...any) (
 		return nil, nil, err
 	}
 	out, done, exited := make(chan T, rpc.StreamBuffer), make(chan struct{}), make(chan struct{})
+	_, wit := any(*new(T)).(core.WitEvent)
+	if wit {
+		out = make(chan T) // what waits is the queue below, as in core's witStream
+	}
 	var key <-chan T = out
 	var recOnce sync.Once
 	record := func() {
@@ -163,14 +168,33 @@ func stream[T any](c *Client, ctx context.Context, method string, args ...any) (
 	go func() {
 		defer close(exited)
 		defer close(out)
-		for b := range raw {
-			var v T
-			if err := json.Unmarshal(b, &v); err != nil {
-				c.recordStreamErr(key, method, fmt.Errorf("event %s: %w", b, err))
-				continue
+		var q []T
+		for in := raw; in != nil || len(q) > 0; {
+			var send chan<- T
+			var next T
+			if len(q) > 0 {
+				send, next = out, q[0]
+			}
+			recv := in
+			if !wit && len(q) > 0 {
+				recv = nil // a reader that falls behind overflows the rpc stream
 			}
 			select {
-			case out <- v:
+			case b, ok := <-recv:
+				if !ok {
+					in = nil
+					continue
+				}
+				var v T
+				if err := json.Unmarshal(b, &v); err != nil {
+					c.recordStreamErr(key, method, fmt.Errorf("event %s: %w", b, err))
+					continue
+				}
+				if q = append(q, v); wit {
+					q = dropText(q)
+				}
+			case send <- next:
+				q = q[1:]
 			case <-done:
 				return
 			}
@@ -181,6 +205,29 @@ func stream[T any](c *Client, ctx context.Context, method string, args ...any) (
 	// Record StreamErr before cancel() forgets it, and wait for the forwarder to exit.
 	var stopOnce sync.Once
 	return out, func() { stopOnce.Do(func() { close(done); record(); cancel(); <-exited }) }, nil
+}
+
+// witBuffer is core's: a Wit stream's reader that falls behind loses the
+// oldest text-like events once more than witBuffer wait, never a run's end,
+// on this side of the wire as in process.
+const witBuffer = 64
+
+func dropText[T any](q []T) []T {
+	text := func(v T) bool {
+		k := any(v).(core.WitEvent).Kind
+		return k != "done" && k != "error" && k != "interrupted"
+	}
+	waiting := 0
+	for _, v := range q {
+		if text(v) {
+			waiting++
+		}
+	}
+	if waiting > witBuffer {
+		i := slices.IndexFunc(q, text)
+		q = slices.Delete(q, i, i+1)
+	}
+	return q
 }
 
 func streamErr[T any](c *Client, ctx context.Context, method string, args ...any) (<-chan T, error) {

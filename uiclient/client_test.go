@@ -14,6 +14,7 @@ import (
 	"go/token"
 	"image"
 	"image/png"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -394,6 +395,43 @@ func TestStreamErrorSurvivesCancel(t *testing.T) {
 	err := cl.StreamErr(ch)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "socket lost")
+}
+
+// A Wit stream's reader far behind loses the oldest text, as in process,
+// but still gets the run's end: the stream never overflows.
+func TestWitStreamDropsTextKeepsEnd(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() { _ = clientConn.Close(); _ = serverConn.Close() })
+	sent := make(chan struct{})
+	go func() {
+		r := bufio.NewReader(serverConn)
+		line, _ := r.ReadBytes('\n')
+		var m struct{ ID json.RawMessage }
+		_ = json.Unmarshal(line, &m)
+		send := func(v any) { b, _ := json.Marshal(v); _, _ = serverConn.Write(append(b, '\n')) }
+		send(map[string]any{"jsonrpc": "2.0", "id": m.ID, "result": map[string]any{"stream": 7}})
+		for i := range 3 * rpc.StreamBuffer {
+			send(map[string]any{"jsonrpc": "2.0", "method": "$/stream", "params": []any{7, core.WitEvent{RunID: 1, Kind: "text", Text: strconv.Itoa(i)}}})
+		}
+		send(map[string]any{"jsonrpc": "2.0", "method": "$/stream", "params": []any{7, core.WitEvent{RunID: 1, Kind: "done", Ends: true}}})
+		send(map[string]any{"jsonrpc": "2.0", "method": "$/stream.end", "params": []any{7}})
+		close(sent)
+		_, _ = io.Copy(io.Discard, r)
+	}()
+
+	cl := uiclient.New(rpc.NewClient(clientConn))
+	ch, err := cl.AskWith(t.Context(), 1, "hi", nil)
+	require.NoError(t, err)
+	<-sent
+	var got []core.WitEvent
+	for ev := range ch {
+		got = append(got, ev)
+	}
+	require.NotEmpty(t, got)
+	assert.Less(t, len(got), 3*rpc.StreamBuffer, "none was dropped")
+	assert.Equal(t, "done", got[len(got)-1].Kind)
+	assert.Equal(t, strconv.Itoa(3*rpc.StreamBuffer-1), got[len(got)-2].Text, "the newest text is kept")
+	assert.NoError(t, cl.StreamErr(ch))
 }
 
 type countingConn struct {

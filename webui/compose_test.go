@@ -38,7 +38,7 @@ func newFixture(t *testing.T, opts ...coretest.Option) *fixture {
 	t.Helper()
 	f := &fixture{e: coretest.New(t, opts...), win: 1, c: NewCompose()}
 	f.acc = f.e.AddAccount(t, "alice@example.com")
-	f.c.SetService(f.e.Svc)
+	f.c.SetService(uiService(t, f.e))
 	f.page = NewComposePage(f.c, PageDeps{
 		WinOf: func(ctx context.Context) (int, bool) {
 			w, ok := ctx.Value(winKey{}).(int)

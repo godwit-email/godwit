@@ -83,7 +83,7 @@ func newWitPageFixture(t *testing.T, setup ...func(*coretest.Env)) *witPageFixtu
 			f.record(func() { f.rules, f.ruleAsks = append(f.rules, r), append(f.ruleAsks, ask) })
 		},
 	})
-	f.w.SetService(f.e.Svc)
+	f.w.SetService(uiService(t, f.e))
 	f.p = NewWitPage(f.w)
 	return f
 }
@@ -230,7 +230,7 @@ func TestWitPageRoleRefused(t *testing.T) {
 	reader := new(int)
 	pages.Register(reader, "reader")
 	ow := NewWit(pages, f.w.d)
-	ow.SetService(f.e.Svc)
+	ow.SetService(uiService(t, f.e))
 	other := NewWitPage(ow)
 	_, err := other.Load(pageCtx(reader))
 	assert.ErrorIs(t, err, ErrWrongPage)
@@ -511,7 +511,7 @@ func TestWitPageFollowRaces(t *testing.T) {
 		}
 	}
 	var second int64
-	f.w.SetService(&hookService{Service: f.e.Svc, beforeGet: func() {
+	f.w.SetService(&hookService{Service: uiService(t, f.e), beforeGet: func() {
 		f.llm.Release()
 		for ev := range ch {
 			if ev.Ends {
@@ -548,7 +548,7 @@ func TestWitPageFollowInterruptedDuringRead(t *testing.T) {
 		coretest.Turn{Text: []string{"Done."}},
 	)
 	var approvalID int64
-	f.w.SetService(&hookService{Service: f.e.Svc, beforeGet: func() {
+	f.w.SetService(&hookService{Service: uiService(t, f.e), beforeGet: func() {
 		ch, err := f.e.Svc.Ask(t.Context(), conv, "draft it")
 		require.NoError(t, err)
 		for ev := range ch {
@@ -579,7 +579,7 @@ func TestWitPageFollowRunWithinRead(t *testing.T) {
 	conv := f.newAsk(t)
 	f.llm.Script(coretest.Turn{Text: []string{"quick"}}, coretest.Turn{Text: []string{"next"}})
 	var first int64
-	f.w.SetService(&hookService{Service: f.e.Svc, beforeGet: func() {
+	f.w.SetService(&hookService{Service: uiService(t, f.e), beforeGet: func() {
 		ch, err := f.e.Svc.Ask(t.Context(), conv, "hi")
 		require.NoError(t, err)
 		for ev := range ch {
@@ -619,7 +619,7 @@ func TestWitPageFollowBuffersDuringSlowRead(t *testing.T) {
 	}
 	f.llm.Script(coretest.Turn{Text: chunks, Hang: true})
 	var run int64
-	f.w.SetService(&hookService{Service: f.e.Svc, beforeGet: func() {
+	f.w.SetService(&hookService{Service: uiService(t, f.e), beforeGet: func() {
 		ch, err := f.e.Svc.Ask(t.Context(), conv, "many chunks")
 		require.NoError(t, err)
 		seen := 0
