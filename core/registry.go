@@ -425,36 +425,45 @@ type PluginInstallProgress struct {
 	Done, Total int64
 }
 
-// InstallPluginFromRegistryWithProgress is InstallPluginFromRegistry with an optional
-// callback invoked synchronously on the calling goroutine, never after return.
-func (s *Service) InstallPluginFromRegistryWithProgress(ctx context.Context, name string, progress func(PluginInstallProgress)) (PluginInfo, error) {
-	ctx, end, err := s.begin(ctx, 0)
-	if err != nil {
-		return PluginInfo{}, err
-	}
-	defer end()
-	defer s.sweepAssets(ctx) // an upgrade may leave the old release's model files unused; after the locks below are released
+// PluginInstallEvent is one update of InstallPluginFromRegistryStream: a
+// progress step, the installed PluginInfo on completion (Plugin != nil), or a
+// mid-stream failure (Err != nil).
+type PluginInstallEvent struct {
+	Progress PluginInstallProgress
+	Plugin   *PluginInfo `json:",omitempty"`
+	Err      error       `json:"-"`
+}
+
+// StreamError returns the mid-stream failure, if any.
+func (e PluginInstallEvent) StreamError() error { return e.Err }
+
+func (s *Service) pickRegistryInstall(name string) (*RegistrySource, plugins.RegistryRelease, plugins.Artifact, error) {
 	src := s.opts.Registry
 	if src == nil {
-		return PluginInfo{}, ErrRegistryOff
+		return nil, plugins.RegistryRelease{}, plugins.Artifact{}, ErrRegistryOff
 	}
 	s.registryMu.Lock()
 	reg, err := s.cachedRegistry(src)
 	s.registryMu.Unlock()
 	if errors.Is(err, fs.ErrNotExist) {
-		return PluginInfo{}, errors.New("the plugin registry has not been read yet")
+		return nil, plugins.RegistryRelease{}, plugins.Artifact{}, errors.New("the plugin registry has not been read yet")
 	}
 	if err != nil {
-		return PluginInfo{}, err
+		return nil, plugins.RegistryRelease{}, plugins.Artifact{}, err
 	}
 	i := slices.IndexFunc(reg.Plugins, func(p plugins.RegistryPlugin) bool { return p.Name == name })
 	if i < 0 {
-		return PluginInfo{}, fmt.Errorf("plugin %s is not in the plugin registry", name)
+		return nil, plugins.RegistryRelease{}, plugins.Artifact{}, fmt.Errorf("plugin %s is not in the plugin registry", name)
 	}
 	rel, art, why := reg.Plugins[i].Pick(plugins.PlatformKey(), s.opts.AppVersion)
 	if why != "" {
-		return PluginInfo{}, fmt.Errorf("plugin %s cannot be installed here (%s)", name, why)
+		return nil, plugins.RegistryRelease{}, plugins.Artifact{}, fmt.Errorf("plugin %s cannot be installed here (%s)", name, why)
 	}
+	return src, rel, art, nil
+}
+
+func (s *Service) runRegistryInstall(ctx context.Context, name string, src *RegistrySource, rel plugins.RegistryRelease, art plugins.Artifact, progress func(PluginInstallProgress)) (PluginInfo, error) {
+	defer s.sweepAssets(ctx) // an upgrade may leave the old release's model files unused; after the locks below are released
 	if err := os.MkdirAll(s.pluginsDir(), 0o700); err != nil {
 		return PluginInfo{}, err
 	}
@@ -487,6 +496,50 @@ func (s *Service) InstallPluginFromRegistryWithProgress(ctx context.Context, nam
 		progress(PluginInstallProgress{Stage: "install"})
 	}
 	return s.installPlugin(ctx, dir, "listed", plugins.AssetsDigest(rel.AssetsFor(plugins.PlatformKey())))
+}
+
+// InstallPluginFromRegistryWithProgress is InstallPluginFromRegistry with an optional
+// callback invoked synchronously on the calling goroutine, never after return.
+func (s *Service) InstallPluginFromRegistryWithProgress(ctx context.Context, name string, progress func(PluginInstallProgress)) (PluginInfo, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return PluginInfo{}, err
+	}
+	defer end()
+	src, rel, art, err := s.pickRegistryInstall(name)
+	if err != nil {
+		return PluginInfo{}, err
+	}
+	return s.runRegistryInstall(ctx, name, src, rel, art, progress)
+}
+
+// InstallPluginFromRegistryStream installs plugin name from the cached registry,
+// streaming download, verify and install progress and ending with the installed
+// PluginInfo.
+func (s *Service) InstallPluginFromRegistryStream(ctx context.Context, name string) (<-chan PluginInstallEvent, error) {
+	rctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	src, rel, art, err := s.pickRegistryInstall(name)
+	if err != nil {
+		end()
+		return nil, err
+	}
+	ch := make(chan PluginInstallEvent, 16)
+	go func() {
+		defer close(ch)
+		defer end()
+		info, err := s.runRegistryInstall(rctx, name, src, rel, art, func(p PluginInstallProgress) {
+			sendStream(rctx, ch, PluginInstallEvent{Progress: p})
+		})
+		if err != nil {
+			sendStreamFinal(rctx, ch, PluginInstallEvent{Err: err})
+			return
+		}
+		sendStreamFinal(rctx, ch, PluginInstallEvent{Plugin: &info})
+	}()
+	return ch, nil
 }
 
 // listsRelease reports whether reg still has plugin name's release rel as

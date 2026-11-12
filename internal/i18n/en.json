@@ -1207,6 +1207,11 @@
   "settings_account_detail_keychain_unavailable": "The keychain is unavailable",
   "settings_account_detail_token_revoked": "The sign-in was revoked",
   "settings_account_edit_servers": "Edit",
+  "settings_account_export": "Export accounts",
+  "settings_account_export_button": "Export…",
+  "settings_account_export_done": "Accounts exported",
+  "settings_account_export_help": "Includes servers, sender names, signatures and sync ranges, without passwords, tokens or mail",
+  "settings_account_export_row": "Export account settings to a file",
   "settings_account_folders": "{arg1, number, ::group-off} folders",
   "@settings_account_folders": {
     "placeholders": {

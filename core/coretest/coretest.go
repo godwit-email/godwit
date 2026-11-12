@@ -553,8 +553,8 @@ type msgConfig struct {
 }
 
 type attachment struct {
-	name, ctype string
-	data        []byte
+	name, ctype, cid string
+	data             []byte
 }
 
 type MsgOption func(*msgConfig)
@@ -569,7 +569,10 @@ func Date(d time.Time) MsgOption { return func(c *msgConfig) { c.date = d } }
 // Header adds a header line, as "List-Id: <news.example>".
 func Header(line string) MsgOption { return func(c *msgConfig) { c.header = append(c.header, line) } }
 func Attachment(name, ctype string, data []byte) MsgOption {
-	return func(c *msgConfig) { c.atts = append(c.atts, attachment{name, ctype, data}) }
+	return func(c *msgConfig) { c.atts = append(c.atts, attachment{name: name, ctype: ctype, data: data}) }
+}
+func Inline(cid, ctype string, data []byte) MsgOption {
+	return func(c *msgConfig) { c.atts = append(c.atts, attachment{ctype: ctype, cid: cid, data: data}) }
 }
 
 // leaf is a base64 body part: base64 never contains the "--coretest-" boundaries.
@@ -612,6 +615,10 @@ func Msg(from, to, subject, body string, opts ...MsgOption) []byte {
 	if len(c.atts) > 0 {
 		parts := []string{part}
 		for _, a := range c.atts {
+			if a.cid != "" {
+				parts = append(parts, leaf(fmt.Sprintf("Content-Type: %s\r\nContent-ID: <%s>\r\nContent-Disposition: inline\r\n", a.ctype, a.cid), a.data))
+				continue
+			}
 			parts = append(parts, leaf(fmt.Sprintf("Content-Type: %s\r\nContent-Disposition: attachment; filename=%q\r\n", a.ctype, a.name), a.data))
 		}
 		part = multipart("mixed", "coretest-mixed", parts...)

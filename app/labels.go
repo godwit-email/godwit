@@ -68,7 +68,7 @@ func (a *App) rowChips(c *ui.Context, ls []core.AppliedLabel) {
 }
 
 // withLabels fills the items' labels: a thread's from any of its messages.
-func withLabels(ctx context.Context, svc *core.Service, items []mailItem) error {
+func withLabels(ctx context.Context, svc Service, items []mailItem) error {
 	var threads, msgs []int64
 	for _, it := range items {
 		if it.Thread {

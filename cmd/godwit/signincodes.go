@@ -392,7 +392,7 @@ func (p *platform) showSnapGuide(b *signInBanner, on bool, pos mygo.Point, area 
 
 // signInAvatar is the sender's image as the reader shows it. Without the
 // user's per-message permission, the message's remote-image policy decides.
-func signInAvatar(ctx context.Context, svc *core.Service, id int64) ui.ImageSource {
+func signInAvatar(ctx context.Context, svc avatarService, id int64) ui.ImageSource {
 	av, err := svc.SenderAvatar(ctx, id, false)
 	if err != nil || len(av.Data) == 0 {
 		if err != nil && ctx.Err() == nil {

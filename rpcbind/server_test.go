@@ -183,6 +183,7 @@ func TestMCPRoleAllowlist(t *testing.T) {
 		{"PendingMCPSends", nil},
 		{"InstallPlugin", []any{coretest.PluginFixture(t, "card-demo")}},
 		{"AddAccount", []any{core.AccountInput{Email: "eve@example.com", Username: "u", Password: "p", Receiving: core.Server{Host: "127.0.0.1", Port: 1}, Sending: core.Server{Host: "127.0.0.1", Port: 1}}}},
+		{"ExportAccounts", nil},
 		{"RemoveModelService", []any{services[0].ID}},
 		{"SetPluginConfig", []any{"config-demo", map[string]any{"plan": "pro"}}},
 		{"GetMessage", []any{msg.ID, true}},
@@ -333,6 +334,96 @@ func TestFullSurfaceOverSocket(t *testing.T) {
 		}
 		assert.Equal(t, want, we.Code, m.Name)
 	}
+}
+
+func TestUISurfaceOverSocket(t *testing.T) {
+	dir := listen(t, newService(t))
+	ui := dial(t, dir, rpc.RoleUI)
+	full := dial(t, dir, rpc.RoleFull)
+	mcp := dial(t, dir, rpc.RoleMCP)
+
+	allowed := map[string]bool{}
+	for _, m := range fullSurface(t) {
+		allowed[m] = true
+	}
+	uiOnly := uiSurface(t)
+	for _, m := range uiOnly {
+		allowed[m] = true
+	}
+
+	tooMany := make([]any, 16)
+	for m := range reflect.TypeFor[*core.Service]().Methods() {
+		var we *rpc.WireError
+		require.ErrorAs(t, ui.Call(t.Context(), m.Name, nil, tooMany...), &we, m.Name)
+		want := rpc.CodeMethodNotFound
+		if allowed[m.Name] {
+			want = rpc.CodeInvalidParams
+		}
+		assert.Equal(t, want, we.Code, m.Name)
+	}
+
+	for _, name := range uiOnly {
+		var fwe *rpc.WireError
+		require.ErrorAs(t, full.Call(t.Context(), name, nil, tooMany...), &fwe, name)
+		assert.Equal(t, rpc.CodeMethodNotFound, fwe.Code, "full on %s", name)
+
+		var mwe *rpc.WireError
+		require.ErrorAs(t, mcp.Call(t.Context(), name, nil), &mwe, name)
+		assert.Equal(t, rpc.CodeForbidden, mwe.Code, "mcp on %s", name)
+	}
+}
+
+// RoleUI is Godwit's own interface, not an external program: its calls do not
+// attach AuditLocalAPI or write local_api / local_mcp external audit rows.
+func TestUIRoleNotAuditedAsExternal(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	ctx := t.Context()
+	acc := e.AddAccount(t, "alice@example.com")
+	ui := dial(t, listen(t, e.Svc), rpc.RoleUI)
+
+	require.NoError(t, ui.Call(ctx, "SetInboxOnly", nil, true))
+	var inboxOnly bool
+	require.NoError(t, ui.Call(ctx, "InboxOnly", &inboxOnly))
+	assert.True(t, inboxOnly)
+
+	var d core.Draft
+	require.NoError(t, ui.Call(ctx, "NewDraft", &d, acc.ID, "new", 0))
+	d.To, d.Subject, d.HTML = []string{"dave@example.com"}, "hi", "<p>hi</p>"
+	require.NoError(t, ui.Call(ctx, "SaveDraft", &d, d))
+	require.NoError(t, ui.Call(ctx, "Send", nil, d.ID))
+
+	var st core.Settings
+	require.NoError(t, ui.Call(ctx, "GetSettings", &st))
+	st.MCPSend = core.MCPSendOff
+	require.NoError(t, ui.Call(ctx, "SetSettings", &st, st))
+	st.MCPSend = core.MCPSendDirect
+	require.NoError(t, ui.Call(ctx, "SetSettings", &st, st))
+
+	fwd := core.Rule{
+		Enabled: true,
+		Doc: core.RuleDoc{
+			Version:    core.RuleVersion,
+			Name:       "R",
+			Trigger:    core.TriggerReceive,
+			Match:      core.MatchAll,
+			Conditions: []core.RuleCondition{{Field: core.FieldFrom, Op: core.OpContains, Value: "billing@"}},
+			Actions:    []core.RuleAction{{Kind: core.ActionForward, To: "carol@example.org"}},
+		},
+		Confirmed: []string{"carol@example.org"},
+	}
+	var fwdID int64
+	require.NoError(t, ui.Call(ctx, "SaveRule", &fwdID, fwd))
+	require.NoError(t, ui.Call(ctx, "InstallPlugin", nil, coretest.PluginFixture(t, "card-demo")))
+	require.NoError(t, ui.Call(ctx, "GrantPermission", nil, "card-demo"))
+
+	cmd, args, env := coretest.MCPCommand(t)
+	var srv core.MCPServer
+	require.NoError(t, ui.Call(ctx, "AddMCPServer", &srv, core.MCPServerInput{Name: "fake", Transport: "stdio", Command: cmd, Args: args, Env: env}))
+	require.NoError(t, ui.Call(ctx, "GrantMCPServer", nil, srv.ID))
+	require.NoError(t, ui.Call(ctx, "SetMCPServerEnabled", nil, srv.ID, true))
+	require.NoError(t, ui.Call(ctx, "SetMCPToolTrusted", nil, srv.ID, "lookup", true))
+
+	assert.Empty(t, auditRows(t, e.DataDir))
 }
 
 // logs captures slog output until the test ends.
