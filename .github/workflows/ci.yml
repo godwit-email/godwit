@@ -172,6 +172,12 @@ jobs:
             for pid in "${pids[@]}"; do wait "$pid" || rc=1; done
             ((rc == 0)) || exit 1
           done
+      - name: test webui over the UI socket
+        shell: bash
+        env:
+          CGO_ENABLED: "0"
+          GODWIT_UI_TRANSPORT: socket
+        run: go test -count=1 ./webui
       - name: test mail list and reader over the UI socket
         shell: bash
         env:

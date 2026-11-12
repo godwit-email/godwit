@@ -310,7 +310,7 @@ func TestComposeFollowInterruptedDuringRead(t *testing.T) {
 	require.NoError(t, err)
 	llm.Script(proposeTurn("c1", "<p>Hi</p>"))
 	var approvalID int64
-	f.c.SetService(&hookService{Service: f.e.Svc, onSubscribed: func() {
+	f.c.SetService(&hookService{Service: uiService(t, f.e), onSubscribed: func() {
 		ch, err := f.e.Svc.AssistWith(t.Context(), d.ID, "改一下", nil)
 		require.NoError(t, err)
 		for ev := range ch {

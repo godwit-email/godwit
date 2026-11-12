@@ -83,7 +83,7 @@ func newReaderFixture(t *testing.T) *readerFixture {
 	st.RemoteImages = "ask" // the tests of the policy say otherwise
 	_, err = f.e.Svc.SetSettings(t.Context(), st)
 	require.NoError(t, err)
-	f.r.SetService(f.e.Svc)
+	f.r.SetService(uiService(t, f.e))
 	f.p = NewReaderPage(f.r)
 	return f
 }

@@ -41,7 +41,7 @@ func newSigFixture(t *testing.T) *sigFixture {
 	require.NoError(t, err)
 	f.pages = NewPages(func(ctx context.Context) any { return ctx.Value(pageKey{}) })
 	f.s = NewSignature(f.pages, func(context.Context) (string, error) { return f.pick, nil })
-	f.s.SetService(f.e.Svc)
+	f.s.SetService(uiService(t, f.e))
 	f.p = NewSignaturePage(f.s)
 	f.page = new(int)
 	f.pages.Register(f.page, "signature")
