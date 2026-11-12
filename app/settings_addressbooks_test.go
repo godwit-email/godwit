@@ -112,6 +112,7 @@ func TestSettingsStandaloneAddressBook(t *testing.T) {
 	h.app.openAddAccount()
 	h.click("只有通讯录（CardDAV）")
 	h.see("添加通讯录")
+	h.post(func() { h.app.pages[PageSettings].(*settingsPage).addressBooks.setup = setupManual })
 	h.fill("CardDAV 服务器地址", srv.URL())
 	h.fill("用户名", "alice")
 	h.fill("密码", "secret")
@@ -364,6 +365,11 @@ func TestAddAddressBookDialogClosesBeforeFirstSync(t *testing.T) {
 
 	h.openSettings("general")
 	h.app.openAddressBook(core.PresetCustom, "", "")
+	h.see("账户类型") // 自动 first, as macOS Contacts: no server field
+	if _, ok := h.tt.Find("CardDAV 服务器地址"); ok {
+		t.Fatal("自动 asks for a server")
+	}
+	h.post(func() { h.app.pages[PageSettings].(*settingsPage).addressBooks.setup = setupManual })
 	h.see("CardDAV 服务器地址")
 	for _, tile := range []string{"iCloud", "Fastmail", "Google CardDAV"} {
 		if _, ok := h.tt.Find(tile); ok {
@@ -384,4 +390,28 @@ func TestAddAddressBookDialogClosesBeforeFirstSync(t *testing.T) {
 		cs, err := h.env.Svc.Contacts(context.Background())
 		return err == nil && len(cs) > 0
 	})
+}
+
+// The dialog's 账户类型 builds where discovery starts: 自动 from the
+// username's domain, 高级 from server, port and path.
+func TestAddAddressBookStartURL(t *testing.T) {
+	for _, tc := range []struct {
+		setup                    int
+		user, server, path, port string
+		want                     string
+		ok                       bool
+	}{
+		{setupAuto, "cn@metowolf.com", "", "", "", "metowolf.com", true},
+		{setupAuto, "cn", "", "", "", "", false},
+		{setupManual, "cn", "dav.example.com", "", "", "dav.example.com", true},
+		{setupManual, "cn", " ", "", "", "", false},
+		{setupAdvanced, "cn", "dav.example.com", "principals/users/cn/", "8443", "https://dav.example.com:8443/principals/users/cn/", true},
+		{setupAdvanced, "cn", "https://dav.example.com/x", "", "", "https://dav.example.com/x", true},
+		{setupAdvanced, "cn", "dav.example.com", "", "99999", "", false},
+	} {
+		v := &addressBooksView{preset: core.PresetCustom, setup: tc.setup, username: tc.user, serverURL: tc.server, serverPath: tc.path, serverPort: tc.port}
+		if got, ok := v.startURL(); got != tc.want || ok != tc.ok {
+			t.Errorf("%+v: %q %v, want %q %v", tc, got, ok, tc.want, tc.ok)
+		}
+	}
 }

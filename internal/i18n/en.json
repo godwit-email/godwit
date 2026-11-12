@@ -4055,5 +4055,13 @@
   "onboarding_sync_mail_sub": "Receive and send mail",
   "onboarding_sync_contacts_sub": "Read-only sync of names, companies, titles, email addresses and photos from {arg1} contacts",
   "onboarding_contacts_only": "Contacts only (CardDAV)",
-  "onboarding_contacts_only_sub": "Nextcloud, Radicale and others"
+  "onboarding_contacts_only_sub": "Nextcloud, Radicale and others",
+  "settings_addressbooks_setup": "Account type",
+  "settings_addressbooks_setup_auto": "Automatic",
+  "settings_addressbooks_setup_manual": "Manual",
+  "settings_addressbooks_setup_advanced": "Advanced",
+  "settings_addressbooks_setup_auto_help": "Godwit finds the server from the domain of your username, an email address.",
+  "settings_addressbooks_path": "Server path",
+  "settings_addressbooks_port_auto": "Automatic",
+  "settings_addressbooks_ssl": "Always connects over HTTPS (SSL)."
 }

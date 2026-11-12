@@ -2292,5 +2292,13 @@
   "onboarding_sync_mail_sub": "메일 받기 및 보내기",
   "onboarding_sync_contacts_sub": "{arg1} 연락처의 이름, 회사·직함, 이메일, 사진을 읽기 전용으로 동기화",
   "onboarding_contacts_only": "연락처만 (CardDAV)",
-  "onboarding_contacts_only_sub": "Nextcloud, Radicale 등"
+  "onboarding_contacts_only_sub": "Nextcloud, Radicale 등",
+  "settings_addressbooks_setup": "계정 유형",
+  "settings_addressbooks_setup_auto": "자동",
+  "settings_addressbooks_setup_manual": "수동",
+  "settings_addressbooks_setup_advanced": "고급",
+  "settings_addressbooks_setup_auto_help": "사용자 이름에 이메일 주소를 입력하면 그 도메인으로 서버를 자동으로 찾습니다.",
+  "settings_addressbooks_path": "서버 경로",
+  "settings_addressbooks_port_auto": "자동",
+  "settings_addressbooks_ssl": "항상 HTTPS(SSL)로 암호화해 연결합니다."
 }

@@ -2292,5 +2292,13 @@
   "onboarding_sync_mail_sub": "Получение и отправка почты",
   "onboarding_sync_contacts_sub": "Только чтение: имена, компании, должности, адреса и фото из контактов {arg1}",
   "onboarding_contacts_only": "Только контакты (CardDAV)",
-  "onboarding_contacts_only_sub": "Nextcloud, Radicale и др."
+  "onboarding_contacts_only_sub": "Nextcloud, Radicale и др.",
+  "settings_addressbooks_setup": "Тип учётной записи",
+  "settings_addressbooks_setup_auto": "Автоматически",
+  "settings_addressbooks_setup_manual": "Вручную",
+  "settings_addressbooks_setup_advanced": "Расширенно",
+  "settings_addressbooks_setup_auto_help": "Godwit найдёт сервер по домену имени пользователя — адреса электронной почты.",
+  "settings_addressbooks_path": "Путь на сервере",
+  "settings_addressbooks_port_auto": "Автоматически",
+  "settings_addressbooks_ssl": "Всегда подключается по HTTPS (SSL)."
 }

@@ -2292,5 +2292,13 @@
   "onboarding_sync_mail_sub": "收信和发信",
   "onboarding_sync_contacts_sub": "只读同步 {arg1} 通讯录里的姓名、公司职位、邮箱和头像",
   "onboarding_contacts_only": "只有通讯录（CardDAV）",
-  "onboarding_contacts_only_sub": "Nextcloud、Radicale 等"
+  "onboarding_contacts_only_sub": "Nextcloud、Radicale 等",
+  "settings_addressbooks_setup": "账户类型",
+  "settings_addressbooks_setup_auto": "自动",
+  "settings_addressbooks_setup_manual": "手动",
+  "settings_addressbooks_setup_advanced": "高级",
+  "settings_addressbooks_setup_auto_help": "用户名填邮箱地址，Godwit 会按它的域名自动查找服务器。",
+  "settings_addressbooks_path": "服务器路径",
+  "settings_addressbooks_port_auto": "自动",
+  "settings_addressbooks_ssl": "始终通过 HTTPS（SSL）加密连接。"
 }

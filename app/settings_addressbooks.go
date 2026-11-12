@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"net"
 	"net/url"
 	"slices"
 	"strconv"
@@ -40,6 +41,9 @@ type addressBooksView struct {
 	preset     string
 	name       string
 	serverURL  string
+	setup      int    // setupAuto, setupManual or setupAdvanced: the custom dialog's 账户类型
+	serverPath string // 高级's
+	serverPort string // 高级's; "" the scheme's
 	username   string
 	password   string
 	showSecret bool
@@ -144,6 +148,7 @@ func (v *addressBooksView) openAdd(preset, username, password string) {
 	v.dialog, v.open = "add", true
 	v.preset = preset
 	v.name, v.serverURL, v.username, v.password = "", "", username, password
+	v.setup, v.serverPath, v.serverPort = setupAuto, "", ""
 	v.client = clientForm{manual: true, public: pub != nil}
 }
 
@@ -621,10 +626,19 @@ func (v *addressBooksView) addDialogView(c *ui.Context) {
 					}
 				})
 			}
-			if v.preset == core.PresetCustom {
-				ui.Field(c, i18n.T("settings.addressbooks.server"), func() {
-					kit.Input(c, &v.serverURL, kit.InputOpts{Placeholder: "dav.example.com", Mono: true})
-				}).Description(i18n.T("settings.addressbooks.server.help"))
+			custom := v.preset == core.PresetCustom
+			if custom { // 账户类型, as macOS Contacts' CardDAV account: 自动, 手动, 高级
+				setups := []kit.Option[int]{
+					{Value: setupAuto, Label: i18n.T("settings.addressbooks.setup.auto")},
+					{Value: setupManual, Label: i18n.T("settings.addressbooks.setup.manual")},
+					{Value: setupAdvanced, Label: i18n.T("settings.addressbooks.setup.advanced")},
+				}
+				f := ui.Field(c, i18n.T("settings.addressbooks.setup"), func() {
+					kit.Select(c, &v.setup, setups).Label(i18n.T("settings.addressbooks.setup"))
+				})
+				if v.setup == setupAuto {
+					f.Description(i18n.T("settings.addressbooks.setup.auto.help"))
+				}
 			}
 			userPlaceholder := "alice@example.com"
 			switch v.preset {
@@ -639,6 +653,25 @@ func (v *addressBooksView) addDialogView(c *ui.Context) {
 			secLabel := presetSecretName(v.preset)
 			ui.Field(c, secLabel, func() { secretInput(c, &v.password, &v.showSecret) })
 			secretWhitespaceHint(c, &v.password)
+			if custom && v.setup != setupAuto {
+				f := ui.Field(c, i18n.T("settings.addressbooks.server"), func() {
+					kit.Input(c, &v.serverURL, kit.InputOpts{Placeholder: "dav.example.com", Mono: true})
+				})
+				if v.setup == setupManual {
+					f.Description(i18n.T("settings.addressbooks.server.help"))
+				}
+			}
+			if custom && v.setup == setupAdvanced {
+				ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Start).Children(func() {
+					ui.Field(c, i18n.T("settings.addressbooks.path"), func() {
+						kit.Input(c, &v.serverPath, kit.InputOpts{Placeholder: "/principals/users/alice/", Mono: true})
+					}).Grow(1)
+					ui.Field(c, i18n.T("onboarding.port"), func() {
+						kit.Input(c, &v.serverPort, kit.InputOpts{Placeholder: i18n.T("settings.addressbooks.port.auto")})
+					}).Width(theme.PortWidth)
+				})
+				kit.Text(c, i18n.T("settings.addressbooks.ssl"), t.Text.Sm).TextColor(t.Muted)
+			}
 			ui.Field(c, i18n.T("settings.addressbooks.name.optional"), func() {
 				kit.Input(c, &v.name, kit.InputOpts{Placeholder: presetPlaceholderName(v.preset)})
 			})
@@ -659,8 +692,8 @@ func (v *addressBooksView) addDialogView(c *ui.Context) {
 			}).OnClick(func() { v.submitGoogleAdd(client) })
 			return
 		}
-		incomplete := strings.TrimSpace(v.username) == "" || v.password == "" ||
-			(v.preset == core.PresetCustom && strings.TrimSpace(v.serverURL) == "")
+		_, urlOK := v.startURL()
+		incomplete := strings.TrimSpace(v.username) == "" || v.password == "" || !urlOK
 		kit.Button(c, i18n.T("onboarding.connect"), kit.ButtonOpts{
 			Disabled: v.busy || incomplete,
 		}).OnClick(v.submitPasswordAdd)
@@ -669,6 +702,51 @@ func (v *addressBooksView) addDialogView(c *ui.Context) {
 	kit.Dialog(c, &v.open, i18n.T("settings.addressbooks.add"),
 		kit.DialogOpts{Size: kit.DialogMd, Top: true, Desc: i18n.T("settings.addressbooks.dialog.sub"), Close: i18n.T("common.close")},
 		body, footer)
+}
+
+// The custom dialog's 账户类型, as macOS Contacts: 自动 finds the server from
+// the username's domain, 手动 takes a server, 高级 a server, path and port.
+// There is no SSL switch: CardDAV off this computer is always HTTPS.
+const (
+	setupAuto = iota
+	setupManual
+	setupAdvanced
+)
+
+// startURL is where discovery starts for the dialog's fields ("" for a preset,
+// which has its own), and whether they name one.
+func (v *addressBooksView) startURL() (string, bool) {
+	if v.preset != core.PresetCustom {
+		return "", true
+	}
+	server := strings.TrimSpace(v.serverURL)
+	switch v.setup {
+	case setupAuto:
+		_, domain, ok := strings.Cut(strings.TrimSpace(v.username), "@")
+		if !ok || domain == "" || strings.ContainsAny(domain, "/:@ ") {
+			return "", false
+		}
+		return domain, true
+	case setupAdvanced:
+		if server == "" {
+			return "", false
+		}
+		u, err := url.Parse(server)
+		if err != nil || u.Host == "" {
+			u = &url.URL{Scheme: "https", Host: server}
+		}
+		if port := strings.TrimSpace(v.serverPort); port != "" {
+			if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+				return "", false
+			}
+			u.Host = net.JoinHostPort(u.Hostname(), port)
+		}
+		if p := strings.TrimSpace(v.serverPath); p != "" {
+			u.Path = "/" + strings.TrimPrefix(p, "/")
+		}
+		return u.String(), true
+	}
+	return server, server != ""
 }
 
 // added closes the add dialog onto the new address book's page.
@@ -691,10 +769,7 @@ func (v *addressBooksView) submitPasswordAdd() {
 	a := v.a
 	v.busy, v.dlgErr = true, nil
 	gen, add := v.dlgGen, v.add
-	rawURL := ""
-	if v.preset == core.PresetCustom {
-		rawURL = strings.TrimSpace(v.serverURL)
-	}
+	rawURL, _ := v.startURL()
 	in := core.AddressBookInput{
 		Preset:    v.preset,
 		Name:      strings.TrimSpace(v.name),

@@ -2292,5 +2292,13 @@
   "onboarding_sync_mail_sub": "E-mail ontvangen en verzenden",
   "onboarding_sync_contacts_sub": "Synchroniseert namen, bedrijven, functies, e-mailadressen en foto’s uit {arg1}-contacten, alleen-lezen",
   "onboarding_contacts_only": "Alleen contacten (CardDAV)",
-  "onboarding_contacts_only_sub": "Nextcloud, Radicale enz."
+  "onboarding_contacts_only_sub": "Nextcloud, Radicale enz.",
+  "settings_addressbooks_setup": "Accounttype",
+  "settings_addressbooks_setup_auto": "Automatisch",
+  "settings_addressbooks_setup_manual": "Handmatig",
+  "settings_addressbooks_setup_advanced": "Geavanceerd",
+  "settings_addressbooks_setup_auto_help": "Godwit vindt de server via het domein van je gebruikersnaam, een e-mailadres.",
+  "settings_addressbooks_path": "Serverpad",
+  "settings_addressbooks_port_auto": "Automatisch",
+  "settings_addressbooks_ssl": "Maakt altijd verbinding via HTTPS (SSL)."
 }

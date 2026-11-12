@@ -2292,5 +2292,13 @@
   "onboarding_sync_mail_sub": "E-posta al ve gönder",
   "onboarding_sync_contacts_sub": "{arg1} kişilerindeki adları, şirket ve unvanları, e-postaları ve fotoğrafları salt okunur eşitler",
   "onboarding_contacts_only": "Yalnızca kişiler (CardDAV)",
-  "onboarding_contacts_only_sub": "Nextcloud, Radicale vb."
+  "onboarding_contacts_only_sub": "Nextcloud, Radicale vb.",
+  "settings_addressbooks_setup": "Hesap türü",
+  "settings_addressbooks_setup_auto": "Otomatik",
+  "settings_addressbooks_setup_manual": "Elle",
+  "settings_addressbooks_setup_advanced": "Gelişmiş",
+  "settings_addressbooks_setup_auto_help": "Godwit sunucuyu kullanıcı adınızın (e-posta adresi) alan adından bulur.",
+  "settings_addressbooks_path": "Sunucu yolu",
+  "settings_addressbooks_port_auto": "Otomatik",
+  "settings_addressbooks_ssl": "Her zaman HTTPS (SSL) ile bağlanır."
 }

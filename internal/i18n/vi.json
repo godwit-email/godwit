@@ -2292,5 +2292,13 @@
   "onboarding_sync_mail_sub": "Nhận và gửi thư",
   "onboarding_sync_contacts_sub": "Đồng bộ chỉ đọc tên, công ty, chức danh, email và ảnh từ danh bạ {arg1}",
   "onboarding_contacts_only": "Chỉ danh bạ (CardDAV)",
-  "onboarding_contacts_only_sub": "Nextcloud, Radicale, v.v."
+  "onboarding_contacts_only_sub": "Nextcloud, Radicale, v.v.",
+  "settings_addressbooks_setup": "Loại tài khoản",
+  "settings_addressbooks_setup_auto": "Tự động",
+  "settings_addressbooks_setup_manual": "Thủ công",
+  "settings_addressbooks_setup_advanced": "Nâng cao",
+  "settings_addressbooks_setup_auto_help": "Godwit tìm máy chủ theo tên miền của tên người dùng (địa chỉ email).",
+  "settings_addressbooks_path": "Đường dẫn máy chủ",
+  "settings_addressbooks_port_auto": "Tự động",
+  "settings_addressbooks_ssl": "Luôn kết nối qua HTTPS (SSL)."
 }

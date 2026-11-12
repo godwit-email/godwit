@@ -2292,5 +2292,13 @@
   "onboarding_sync_mail_sub": "Recevoir et envoyer des e-mails",
   "onboarding_sync_contacts_sub": "Synchronise en lecture seule les noms, entreprises, fonctions, adresses et photos des contacts {arg1}",
   "onboarding_contacts_only": "Contacts uniquement (CardDAV)",
-  "onboarding_contacts_only_sub": "Nextcloud, Radicale, etc."
+  "onboarding_contacts_only_sub": "Nextcloud, Radicale, etc.",
+  "settings_addressbooks_setup": "Type de compte",
+  "settings_addressbooks_setup_auto": "Automatique",
+  "settings_addressbooks_setup_manual": "Manuel",
+  "settings_addressbooks_setup_advanced": "Avancé",
+  "settings_addressbooks_setup_auto_help": "Godwit trouve le serveur à partir du domaine de votre nom d’utilisateur, une adresse e-mail.",
+  "settings_addressbooks_path": "Chemin du serveur",
+  "settings_addressbooks_port_auto": "Automatique",
+  "settings_addressbooks_ssl": "Se connecte toujours en HTTPS (SSL)."
 }
