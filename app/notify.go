@@ -102,7 +102,7 @@ func (a *App) notify(acc int64, got *arrivals) {
 }
 
 // inboxArrivals are the arrived messages that are in an inbox-role folder.
-func inboxArrivals(ctx context.Context, svc *core.Service, acc int64, got *arrivals) ([]core.MessageSummary, error) {
+func inboxArrivals(ctx context.Context, svc Service, acc int64, got *arrivals) ([]core.MessageSummary, error) {
 	fs, err := svc.ListFolders(ctx, acc)
 	if err != nil {
 		return nil, err
