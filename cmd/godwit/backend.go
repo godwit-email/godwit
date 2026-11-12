@@ -81,7 +81,7 @@ func connectBackend(dataDir string, wait time.Duration) (*uiclient.Client, error
 				c.Close()
 				return nil, versionError(strings.TrimPrefix(h.Server, "godwit/"))
 			}
-			stopBackend(c) // ours, started next, waits for its exit (exitAnotherOwner)
+			replaceBackend(c) // ours, started next, waits for its exit (exitAnotherOwner)
 		}
 		if time.Now().After(deadline) {
 			return nil, last
@@ -152,10 +152,16 @@ func watchBackend(c *uiclient.Client, quitting *atomic.Bool, lost func()) {
 // stopBackend asks c's backend to stop as the interface quits, and waits a
 // little for it to go so a relaunch finds it gone. A backend the user started,
 // or one whose 后台收信 is 一直继续, refuses and keeps running.
-func stopBackend(c *uiclient.Client) {
+func stopBackend(c *uiclient.Client) { endBackend(c, "StopUIBackend") }
+
+// replaceBackend is stopBackend for an interface of another version: the
+// backend stops even under 一直继续 (ReplaceUIBackend).
+func replaceBackend(c *uiclient.Client) { endBackend(c, "ReplaceUIBackend") }
+
+func endBackend(c *uiclient.Client, method string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := c.RPC().Call(ctx, "StopUIBackend", nil); err == nil {
+	if err := c.RPC().Call(ctx, method, nil); err == nil {
 		select {
 		case <-c.Done():
 		case <-ctx.Done():

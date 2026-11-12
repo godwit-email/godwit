@@ -592,6 +592,18 @@ func (s *Service) StopUIBackend(ctx context.Context) error {
 	return nil
 }
 
+// ReplaceUIBackend shuts down a backend the interface started so that an
+// interface of another version can start its own: like StopUIBackend, but
+// even when 后台收信 is BackgroundReceiveAlways, since the new backend goes on
+// receiving. A backend the user started (--headless) still refuses.
+func (s *Service) ReplaceUIBackend(ctx context.Context) error {
+	if s.opts.StopUIBackend == nil {
+		return errors.New("the user started this backend; it keeps running")
+	}
+	s.opts.StopUIBackend()
+	return nil
+}
+
 // lockAccount takes the account's sync lock, or gives up when ctx ends. It closes
 // a connection kept for the next file, so the holder's is the account's only one.
 func (s *Service) lockAccount(ctx context.Context, id int64) (unlock func(), err error) {

@@ -14,6 +14,7 @@ ModelServiceAvatar
 PluginReadme
 PrepareModelStream
 RecentLog
+ReplaceUIBackend
 SenderAvatar
 SetComposeOpen
 SetInboxOnly

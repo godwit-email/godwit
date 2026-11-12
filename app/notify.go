@@ -119,6 +119,11 @@ func (a *App) Open(what string) {
 	case OpenWindow:
 		a.plat.ShowWindow()
 	case OpenCompose:
+		if !a.loaded { // no account to write from yet: after the first load, as a click waits
+			a.plat.ShowWindow()
+			a.noteFirst = what
+			return
+		}
 		a.Compose()
 	default:
 		a.NotificationClicked(what)

@@ -303,6 +303,9 @@ func TestStopUIBackendKeepsReceivingAlways(t *testing.T) {
 	require.NoError(t, err)
 	assert.Error(t, s.StopUIBackend(t.Context()))
 	assert.Zero(t, stopped)
+	assert.NoError(t, s.ReplaceUIBackend(t.Context()), "an interface of another version replaces it")
+	assert.Equal(t, 1, stopped)
+	stopped = 0
 	st.BackgroundReceive = BackgroundReceiveUntilQuit
 	_, err = s.SetSettings(t.Context(), st)
 	require.NoError(t, err)

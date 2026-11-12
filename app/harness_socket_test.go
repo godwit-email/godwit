@@ -119,3 +119,13 @@ func TestSocketUIQuitsFromBackendTray(t *testing.T) {
 	h.env.Svc.Publish(events.Event{Type: events.QuitRequested})
 	h.until("the App to quit", func() bool { return h.quits.Load() == 1 })
 }
+
+// An interface the tray starts with --open compose opens the compose window
+// once its accounts have loaded, not drop it for having none yet.
+func TestAppOpenComposeBeforeLoad(t *testing.T) {
+	h, _ := withAccount(t)
+	h.dropUI()
+	h.connectUI() // nothing loaded yet: its loads run as the test drives the UI thread
+	h.app.Open(OpenCompose)
+	h.composeOpened(0)
+}

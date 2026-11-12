@@ -246,6 +246,14 @@ func TestUIReplacesOutdatedBackend(t *testing.T) {
 	if err := oc.RPC().Call(t.Context(), "Send", nil, d.ID); err != nil { // queued for its undo window
 		t.Fatal(err)
 	}
+	var st core.Settings // 一直继续 refuses a quit, not a newer interface
+	if err := oc.RPC().Call(t.Context(), "GetSettings", &st); err != nil {
+		t.Fatal(err)
+	}
+	st.BackgroundReceive = core.BackgroundReceiveAlways
+	if err := oc.RPC().Call(t.Context(), "SetSettings", &st, st); err != nil {
+		t.Fatal(err)
+	}
 
 	c := connect(t, dir)
 	select {
@@ -266,7 +274,7 @@ func TestUIReplacesOutdatedBackend(t *testing.T) {
 	if err != nil || len(out) != 1 || out[0].Subject != "queued" || out[0].State != "queued" {
 		t.Fatalf("outbox %+v, %v", out, err)
 	}
-	stopBackend(c)
+	replaceBackend(c) // still 一直继续: a plain stop would be refused
 	exited(t, dir)
 }
 

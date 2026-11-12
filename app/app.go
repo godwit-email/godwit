@@ -248,7 +248,7 @@ type App struct {
 	logf                                 func(format string, args ...any)
 	noteRoute                            func(ctx context.Context, id string) (Route, bool, error) // where a notification leads; tests wrap it
 	noteGen                              uint64                                                    // bumped per notification click; only the newest navigates
-	noteFirst                            string                                                    // a click that came before the first load
+	noteFirst                            string                                                    // a click, or OpenCompose, that came before the first load
 	noteSeen                             map[string]bool                                           // the clicks taken: one given to both processes counts once
 	inboxUnread                          int                                                       // the inboxes' unread total
 	trayUnread                           int                                                       // what the tray shows
@@ -537,7 +537,7 @@ func (a *App) load() {
 		}
 		if id := a.noteFirst; first && id != "" {
 			a.noteFirst = ""
-			a.NotificationClicked(id)
+			a.Open(id)
 		}
 	})
 }
