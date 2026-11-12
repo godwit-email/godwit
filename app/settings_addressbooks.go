@@ -345,7 +345,7 @@ func (v *addressBooksView) link(acc core.Account) {
 // linkAddressBook adds mail account id's address book: Google's after a
 // sign-in in the browser for its contacts, the others with the account's password.
 func (a *App) linkAddressBook(ctx context.Context, id int64, preset, email string) error {
-	in := core.AddressBookInput{Account: id, Preset: preset}
+	in := core.AddressBookInput{Account: id, Preset: preset, SyncLater: true}
 	if preset == core.PresetGoogle {
 		oauth, plat, pub := a.oauth, a.plat, auth.GoogleCardDAVOAuth().Public
 		var authURL string
@@ -582,50 +582,17 @@ func (v *addressBooksView) dialogView(c *ui.Context) {
 func (v *addressBooksView) addDialogView(c *ui.Context) {
 	a := v.a
 	t, th := theme.Of(c), c.Theme()
-	presets := a.svc.ListAddressBookPresets()
 	pub := auth.GoogleCardDAVOAuth().Public
+	// The kind comes from where the dialog was opened (添加账户: 只有通讯录, or a
+	// provider with 邮件 unticked): iCloud, Fastmail and Gmail are chosen there.
 	var curPreset core.AddressBookPreset
-	for _, pr := range presets {
+	for _, pr := range a.svc.ListAddressBookPresets() {
 		if pr.ID == v.preset {
 			curPreset = pr
 		}
 	}
 
-	choosePreset := func(id string) {
-		if v.preset == id {
-			return
-		}
-		if v.flowID != "" {
-			fid, oauth := v.flowID, a.oauth
-			v.flowID, v.authURL, v.oauthWait = "", "", false
-			a.do(func(context.Context) error { oauth.Cancel(fid); return nil }, nil)
-		}
-		v.preset = id
-		v.serverURL = ""
-		v.dlgErr = nil
-		v.showSecret = false
-	}
-
 	body := func() {
-		for i := 0; i < len(presets); i += 2 {
-			ui.Row(c.Key(i)).Gap(th.Space(2)).AlignItems(ui.Stretch).Children(func() {
-				for _, pr := range presets[i:min(i+2, len(presets))] {
-					label := presetTitle(pr)
-					on := v.preset == pr.ID
-					tile := kit.Pressable(c.Key(pr.ID), kit.PressableOpts{
-						Selected: on, Bordered: true, OnClick: func() { choosePreset(pr.ID) },
-					}).Label(label).Checked(on).Grow(1).Basis(0).Height(th.Space(11)).PaddingX(th.Space(3)).Gap(th.Space(2.5)).AlignItems(ui.Center)
-					if on {
-						tile.Border(theme.Stroke, t.Foreground)
-					}
-					tile.Children(func() {
-						presetMark(c, pr.ID, theme.MarkSm)
-						kit.Text(c, label, t.Text.Base).FontWeight(500).SingleLine().Shrink(1)
-					})
-				}
-			})
-		}
-
 		if v.preset == core.PresetGoogle {
 			ui.Field(c, i18n.T("settings.addressbooks.name.optional"), func() {
 				kit.Input(c, &v.name, kit.InputOpts{Placeholder: "Google"})
@@ -729,11 +696,12 @@ func (v *addressBooksView) submitPasswordAdd() {
 		rawURL = strings.TrimSpace(v.serverURL)
 	}
 	in := core.AddressBookInput{
-		Preset:   v.preset,
-		Name:     strings.TrimSpace(v.name),
-		URL:      rawURL,
-		Username: strings.TrimSpace(v.username),
-		Password: v.password,
+		Preset:    v.preset,
+		Name:      strings.TrimSpace(v.name),
+		URL:       rawURL,
+		Username:  strings.TrimSpace(v.username),
+		Password:  v.password,
+		SyncLater: true, // the dialog closes once saved; a server with many cards syncs after
 	}
 	var ab core.AddressBook
 	a.writes.Chain("addressbooks", func(ctx context.Context) (err error) {
@@ -791,6 +759,7 @@ func (v *addressBooksView) submitGoogleAdd(client core.OAuthClient) {
 			Username:    email,
 			OAuthFlowID: flow,
 			Client:      client,
+			SyncLater:   true,
 		}
 		var ab core.AddressBook
 		a.writes.Chain("addressbooks", func(ctx context.Context) (err error) {
@@ -828,17 +797,6 @@ func presetMark(c *ui.Context, preset string, size float32) {
 	ui.Box(c).Size(size, size).Shrink(0).Radius(r).Background(t.Hover).Border(theme.Hairline, t.Border).Center().Children(func() {
 		ui.Icon(c, icons.Get("contacts")).Size(iconSz, iconSz).TextColor(t.Foreground)
 	})
-}
-
-func presetTitle(pr core.AddressBookPreset) string {
-	switch pr.ID {
-	case core.PresetGoogle:
-		return i18n.T("settings.addressbooks.preset.google")
-	case core.PresetCustom:
-		return i18n.T("settings.addressbooks.preset.custom")
-	default:
-		return pr.Name
-	}
 }
 
 func presetPlaceholderName(preset string) string {

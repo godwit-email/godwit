@@ -68,10 +68,14 @@ type AddressBookPreset struct {
 // AddressBookInput adds an address book. With Account set it is that mail
 // account's (Preset must be LinkedAddressBookPreset's): a password preset signs
 // in with the account's username and keychain password, Google with OAuthFlowID.
+// SyncLater returns once the address book is saved and runs its first sync in
+// the background (AddressBooksChanged when done), for a window that should not
+// wait on a server with many cards.
 type AddressBookInput struct {
 	Preset, Name, URL, Username, Password, OAuthFlowID string
 	Client                                             OAuthClient
 	Account                                            int64
+	SyncLater                                          bool
 }
 
 type AddressBookCollection struct {
@@ -519,7 +523,19 @@ func (s *Service) AddAddressBook(ctx context.Context, in AddressBookInput) (Addr
 	}
 	s.abWriteMu.Unlock()
 
-	if !refused {
+	switch {
+	case refused:
+	case in.SyncLater:
+		go func() {
+			ctx, end, err := s.begin(context.Background(), 0)
+			if err != nil {
+				return
+			}
+			defer end()
+			_ = s.syncOneAddressBook(ctx, abID)
+			s.notifyAddressBooksChanged(ctx)
+		}()
+	default:
 		_ = s.syncOneAddressBook(ctx, abID)
 	}
 	if s.opts.AutoSync {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"sync"
 	"testing"
 
 	"github.com/godwit-email/godwit/core"
@@ -349,29 +350,38 @@ func TestSettingsAddressBooksGoogleOAuthAndSearch(t *testing.T) {
 	})
 }
 
-func TestSettingsAddressBooksPresetSwitchClearsCustomURL(t *testing.T) {
+// The 只有通讯录 dialog asks for a CardDAV server only (iCloud, Fastmail and
+// Gmail are chosen in the add-account sheet), and closes once the address
+// book is saved, while its first sync is still going.
+func TestAddAddressBookDialogClosesBeforeFirstSync(t *testing.T) {
 	h, _ := withAccount(t)
-	srvCustom := h.env.StartCardDAV(t)
-	srvCustom.SetBasicAuth("other", "otherpass")
-	srvICloud := h.env.StartCardDAV(t)
-	srvICloud.SetBasicAuth("alice@icloud.com", "icloud-app-pass")
-	srvICloud.PutCard("contacts", "c1", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Ivy\r\nEMAIL:ivy@example.com\r\nEND:VCARD\r\n")
-	core.SetAddressBookPresetURLForTest(t, core.PresetICloud, srvICloud.URL())
+	srv := h.env.StartCardDAV(t)
+	srv.PutCard("contacts", "bob", bobCard)
+	release := make(chan struct{})
+	var once sync.Once
+	t.Cleanup(func() { once.Do(func() { close(release) }) })
+	srv.SetMultigetHook(func(string) int { <-release; return 200 })
 
 	h.openSettings("general")
 	h.app.openAddressBook(core.PresetCustom, "", "")
-	h.fill("CardDAV 服务器地址", srvCustom.URL())
-
-	// Switch to iCloud without closing the dialog: custom URL must not be sent.
-	h.click("iCloud")
-	h.fill("用户名", "alice@icloud.com")
-	h.fill("应用专用密码", "icloud-app-pass")
-	h.click("连接")
-	h.until("iCloud address book saved", func() bool {
-		books := h.addressBooks()
-		return len(books) == 1 && books[0].Preset == core.PresetICloud
-	})
-	if len(srvCustom.Requests()) != 0 {
-		t.Fatalf("expected zero requests to stale custom URL, got %+v", srvCustom.Requests())
+	h.see("CardDAV 服务器地址")
+	for _, tile := range []string{"iCloud", "Fastmail", "Google CardDAV"} {
+		if _, ok := h.tt.Find(tile); ok {
+			t.Fatalf("the dialog offers %s", tile)
+		}
 	}
+	h.fill("CardDAV 服务器地址", srv.URL())
+	h.fill("用户名", "alice")
+	h.fill("密码", "secret")
+	h.click("连接")
+	v := h.app.pages[PageSettings].(*settingsPage).addressBooks
+	h.until("closed onto the saved address book, its cards still on the way", func() bool {
+		books := h.addressBooks()
+		return v.dialog == "" && len(books) == 1 && h.app.route.Settings == addressBookRoute(books[0].ID)
+	})
+	once.Do(func() { close(release) })
+	h.until("the first sync done", func() bool {
+		cs, err := h.env.Svc.Contacts(context.Background())
+		return err == nil && len(cs) > 0
+	})
 }
