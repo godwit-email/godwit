@@ -528,6 +528,15 @@ func (a *App) load() {
 	})
 }
 
+// MailReady reports whether the initial load has settled on onboarding or a
+// loaded mail list. UI thread.
+func (a *App) MailReady() bool {
+	if !a.loaded {
+		return false
+	}
+	return a.route.Page == PageOnboarding || (a.route.Page == PageMail && !a.mail.loading)
+}
+
 // Close cancels all work in flight, whose done callbacks never run, closes
 // the reader's body pages and removes the temporary copies of opened
 // attachments. UI thread.
