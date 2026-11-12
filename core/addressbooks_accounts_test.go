@@ -145,6 +145,15 @@ func TestAddressBookPriorityFollowsAccountList(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []int64{plain.ID, acc.ID}, []int64{accs[0].ID, accs[1].ID})
 
+	// ReorderAccounts keeps the accounts in their slots of the shared order: the
+	// standalone address book interleaved before them stays first.
+	require.NoError(t, s.ReorderAccounts(bg, []int64{plain.ID, acc.ID}))
+	assert.Equal(t, []int64{sa.ID, la.ID}, order())
+	assert.Equal(t, "Bob Nextcloud", name())
+	require.NoError(t, s.ReorderAccounts(bg, []int64{acc.ID, plain.ID}))
+	assert.Equal(t, []int64{sa.ID, la.ID}, order(), "swapping two accounts does not jump over the standalone book")
+	require.NoError(t, s.ReorderAccounts(bg, []int64{plain.ID, acc.ID}))
+
 	// The list must name every account and standalone address book once.
 	require.Error(t, s.ReorderAccountEntries(bg, []AccountEntry{{Account: plain.ID}, {Account: acc.ID}}))
 	require.Error(t, s.ReorderAccountEntries(bg, []AccountEntry{{AddressBook: la.ID}, {AddressBook: sa.ID}, {Account: plain.ID}, {Account: acc.ID}}))

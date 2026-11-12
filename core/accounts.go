@@ -628,22 +628,24 @@ func (s *Service) ReorderAccounts(ctx context.Context, ids []int64) error {
 		return err
 	}
 	defer end()
-	rows, err := s.db.Query(ctx, "SELECT id FROM accounts ORDER BY id")
+	rows, err := s.db.Query(ctx, "SELECT id, position FROM accounts ORDER BY id")
 	if err != nil {
 		return err
 	}
 	have := make([]int64, len(rows.Values))
+	slots := make([]int64, len(rows.Values)) // the accounts' places in the order shared with standalone address books
 	for i, r := range rows.Values {
-		have[i] = store.Int(r[0])
+		have[i], slots[i] = store.Int(r[0]), store.Int(r[1])
 	}
 	want := slices.Clone(ids)
 	slices.Sort(want)
 	if !slices.Equal(have, want) {
 		return errors.New("the new order must name every account once")
 	}
+	slices.Sort(slots)
 	stmts := make([]sqlite.Statement, len(ids))
 	for i, id := range ids {
-		stmts[i] = sqlite.Statement{SQL: "UPDATE accounts SET position = ? WHERE id = ?", Args: []any{i, id}}
+		stmts[i] = sqlite.Statement{SQL: "UPDATE accounts SET position = ? WHERE id = ?", Args: []any{slots[i], id}}
 	}
 	_, err = s.db.Transaction(ctx, stmts)
 	return err
