@@ -87,6 +87,9 @@ func gui(ctx context.Context, dataDir string) int {
 	if singleInstance(dataDir) && !mygo.App.RequestSingleInstanceLock() {
 		return 0 // the first Godwit shows its window
 	}
+	bench := newBenchProbe(os.Getenv("GODWIT_BENCH_LOG"))
+	bench.initApp(dataDir)
+	defer bench.close()
 	defer context.AfterFunc(ctx, mygo.App.Quit)() // SIGINT / SIGTERM quit as the menu does
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -288,6 +291,7 @@ func gui(ctx context.Context, dataDir string) int {
 		i18n.SetLanguage(mygo.App.Locale())
 
 		opts := windowOptions(runtime.GOOS)
+		bench.configureWindow(&opts)
 		plat = &platform{
 			dataDir:   dataDir,
 			svc:       svc,
@@ -304,7 +308,7 @@ func gui(ctx context.Context, dataDir string) int {
 			Vibrancy: opts.Vibrancy != mygo.VibrancyNone, Dev: mygo.IsDev()})
 		plat.onAPIStop = a.LocalAPIStopped
 		windows.OnChange = func() { a.OnUI(a.ComposeWindowsChanged) } // no window is open yet
-		opts.Content = ui.View(a.View)
+		opts.Content = bench.view(a)
 		win = mygo.NewWindow(opts)
 		plat.win = win
 		// The Wit page is registered before it loads (loadAfterSetup):
@@ -328,7 +332,7 @@ func gui(ctx context.Context, dataDir string) int {
 		win.OnBlur(func() { a.SetForeground(false) })
 		mygo.App.OnSecondInstance(func([]string, string) { plat.ShowWindow() })
 		mygo.App.OnActivate(func(visible bool) {
-			if !visible {
+			if !visible && bench == nil {
 				plat.ShowWindow()
 			}
 		})
@@ -437,6 +441,7 @@ func gui(ctx context.Context, dataDir string) int {
 		mygo.App.OnBeforeQuit(quitHook(windows, nq.onQuit, nq.reset))
 		a.Start(ctx)
 		a.SetForeground(win.IsFocused())
+		bench.bindWindow(win, a)
 		for _, id := range clicked { // the App takes them once it has loaded; the last one wins
 			a.NotificationClicked(id)
 		}
