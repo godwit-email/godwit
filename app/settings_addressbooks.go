@@ -350,7 +350,8 @@ func (a *App) linkAddressBook(ctx context.Context, id int64, preset, email strin
 		oauth, plat, pub := a.oauth, a.plat, auth.GoogleCardDAVOAuth().Public
 		var authURL string
 		var err error
-		in.OAuthFlowID, authURL, err = oauth.Begin(ctx, core.ProviderGoogleCardDAV, email, in.Client)
+		// The mail account's own OAuth client first (a Workspace admin may allow only it); none falls back to the public one.
+		in.OAuthFlowID, authURL, err = oauth.Begin(ctx, core.ProviderGoogleCardDAV, email, core.OAuthClient{Account: id})
 		if errors.Is(err, auth.ErrOAuthNotConfigured) && pub != nil {
 			in.Client = core.OAuthClient{ID: pub.ID, Secret: pub.Secret}
 			in.OAuthFlowID, authURL, err = oauth.Begin(ctx, core.ProviderGoogleCardDAV, email, in.Client)

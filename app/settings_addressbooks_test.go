@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 
@@ -139,6 +140,24 @@ func TestSettingsStandaloneAddressBook(t *testing.T) {
 	h.until("removed, back to an account", func() bool {
 		return len(h.addressBooks()) == 0 && h.app.route.Settings != addressBookRoute(id)
 	})
+}
+
+// Linking a Gmail account's contacts signs in with that account's own OAuth
+// client (core resolves it from Account), not straight away the public one.
+func TestLinkGmailAddressBookUsesAccountClient(t *testing.T) {
+	h, _ := withAccount(t)
+	fo := &fakeOAuth{flows: map[string]chan flowResult{}}
+	h.app.oauth = fo
+	done := make(chan error, 1)
+	go func() { done <- h.app.linkAddressBook(context.Background(), 7, core.PresetGoogle, "me@gmail.com") }()
+	h.until("the sign-in began", func() bool { return len(fo.began()) == 1 })
+	if c := fo.began()[0]; c.Account != 7 || c.ID != "" {
+		t.Fatalf("began with %+v, want the account's client (Account 7)", c)
+	}
+	fo.fail("f1", context.Canceled)
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("err %v", err)
+	}
 }
 
 // A sole collection left turned off (the server dropped the other) keeps its
