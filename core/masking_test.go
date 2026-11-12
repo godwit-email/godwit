@@ -339,3 +339,113 @@ func TestTheMaskingLogTellsRequestsApart(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, log)
 }
+
+func TestAddressBookCardNamesMaskInWitAndPreviewAndRetract(t *testing.T) {
+	e := newApprovalEnv(t)
+	ctx := t.Context()
+
+	dav := newCardDAVServerForAvatarTest(t)
+	dav.PutCollection("work", "Work")
+	dav.PutCollection("friends", "Friends")
+	dav.PutCard("work", "zhang", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:张伟\r\nEMAIL:zhang@example.com\r\nEND:VCARD")
+	dav.PutCard("work", "short", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:王\r\nEMAIL:wang@example.com\r\nEND:VCARD")
+	dav.PutCard("work", "atname", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:ops@team\r\nEMAIL:ops@example.com\r\nEND:VCARD")
+	dav.PutCard("friends", "elena", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Elena Rostova\r\nEMAIL:elena@example.com\r\nEND:VCARD")
+
+	ab, err := e.s.AddAddressBook(ctx, AddressBookInput{
+		Preset:   PresetCustom,
+		URL:      dav.URL(),
+		Username: "alice",
+		Password: "secret",
+	})
+	require.NoError(t, err)
+
+	var workColID, friendsColID int64
+	for _, col := range ab.Collections {
+		switch col.Name {
+		case "Work":
+			workColID = col.ID
+		case "Friends":
+			friendsColID = col.ID
+		}
+	}
+	require.NotZero(t, workColID)
+	require.NotZero(t, friendsColID)
+
+	// Initialize Service masker while Names category is still off (default).
+	_, err = e.s.masker()
+	require.NoError(t, err)
+
+	// PreviewMasking respects Names toggle.
+	st, err := e.s.GetSettings(ctx)
+	require.NoError(t, err)
+	prevOff, err := e.s.PreviewMasking(ctx, st, "约张伟、Elena Rostova 和王谈事")
+	require.NoError(t, err)
+	assert.Contains(t, prevOff, "张伟")
+	assert.Contains(t, prevOff, "Elena Rostova")
+
+	st.MaskCategories.Names.On = true
+	prevOn, err := e.s.PreviewMasking(ctx, st, "约张伟、Elena Rostova 和王谈事 (ops@team)")
+	require.NoError(t, err)
+	assert.NotContains(t, prevOn, "张伟")
+	assert.NotContains(t, prevOn, "Elena Rostova")
+	assert.Contains(t, prevOn, "王", "short CJK name (< 2 chars) must not be masked")
+	assert.Contains(t, prevOn, "ops@team", "card FN containing '@' must not be masked as a name")
+
+	// Save Names.On = true and send a Wit prompt; cloud LLM sees placeholders, user sees restored text.
+	_, err = e.s.SetSettings(ctx, st)
+	require.NoError(t, err)
+
+	m, err := e.s.masker()
+	require.NoError(t, err)
+	zhangToken, err := m.Text("张伟")
+	require.NoError(t, err)
+	require.Contains(t, zhangToken, "{{NAME_")
+
+	conv := e.newConv(t, "ask", 0)
+	e.srv.Script(testllm.Turn{Text: []string{"好的，已记录与" + zhangToken + "的会议。"}})
+	e.start(t, conv, "请约张伟、Elena Rostova 和王明天开会")
+
+	reqBody1 := string(e.srv.Requests()[0].Body)
+	assert.NotContains(t, reqBody1, "张伟")
+	assert.NotContains(t, reqBody1, "Elena Rostova")
+	assert.Contains(t, reqBody1, "王")
+
+	gotConv, err := e.s.GetConversation(ctx, conv.ID)
+	require.NoError(t, err)
+	require.Len(t, gotConv.Turns, 1)
+	assert.Equal(t, "好的，已记录与张伟的会议。", gotConv.Turns[0].Text)
+
+	// Disabling "Friends" collection immediately stops masking Elena Rostova while keeping 张伟 masked.
+	require.NoError(t, e.s.SetAddressBookCollectionEnabled(ctx, friendsColID, false))
+	prevAfterDisable, err := e.s.PreviewMasking(ctx, st, "约张伟和 Elena Rostova")
+	require.NoError(t, err)
+	assert.NotContains(t, prevAfterDisable, "张伟")
+	assert.Contains(t, prevAfterDisable, "Elena Rostova")
+
+	// Syncing a new card immediately adds its name to masking.
+	dav.PutCard("work", "marcus", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Marcus Vance\r\nEMAIL:marcus@example.com\r\nEND:VCARD")
+	require.NoError(t, e.s.SyncAddressBook(ctx, ab.ID))
+
+	conv2 := e.newConv(t, "ask", 0)
+	e.srv.Script(testllm.Turn{Text: []string{"ok"}})
+	e.start(t, conv2, "找张伟、Elena Rostova 和 Marcus Vance")
+	reqBody2 := string(e.srv.Requests()[1].Body)
+	assert.NotContains(t, reqBody2, "张伟")
+	assert.Contains(t, reqBody2, "Elena Rostova")
+	assert.NotContains(t, reqBody2, "Marcus Vance")
+
+	// Removing the address book retracts all its card names immediately on future requests.
+	require.NoError(t, e.s.RemoveAddressBook(ctx, ab.ID))
+	prevAfterRemove, err := e.s.PreviewMasking(ctx, st, "找张伟和 Marcus Vance")
+	require.NoError(t, err)
+	assert.Contains(t, prevAfterRemove, "张伟")
+	assert.Contains(t, prevAfterRemove, "Marcus Vance")
+
+	conv3 := e.newConv(t, "ask", 0)
+	e.srv.Script(testllm.Turn{Text: []string{"ok"}})
+	e.start(t, conv3, "再问张伟和 Marcus Vance")
+	reqBody3 := string(e.srv.Requests()[2].Body)
+	assert.Contains(t, reqBody3, "张伟", "deleted address book's name must not be masked on new conversations")
+	assert.Contains(t, reqBody3, "Marcus Vance")
+}

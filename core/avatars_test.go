@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"image"
 	"image/png"
@@ -12,10 +13,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/godwit-email/godwit/backend/conn"
+	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/godwit-email/godwit/internal/imagecache"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -539,4 +543,323 @@ func TestSenderAvatarDatabaseError(t *testing.T) {
 	_, err = f.s.SenderAvatar(t.Context(), 123, true)
 	require.ErrorContains(t, err, "no such table")
 	assert.Empty(t, f.hits())
+}
+
+func encodeB64(b []byte) string {
+	return base64.StdEncoding.EncodeToString(b)
+}
+
+func newCardDAVServerForAvatarTest(t *testing.T) *testmail.CardDAV {
+	t.Helper()
+	prevRoots := conn.TLSRoots
+	conn.TLSRoots = testmail.CardDAVRoots()
+	t.Cleanup(func() { conn.TLSRoots = prevRoots })
+	return testmail.StartCardDAV(t)
+}
+
+func vcardWithPhoto(fn string, emails []string, photoB64 string, photoURL string) string {
+	lines := []string{"BEGIN:VCARD", "VERSION:3.0", "FN:" + fn}
+	for i, em := range emails {
+		if i == 0 {
+			lines = append(lines, "EMAIL;TYPE=PREF:"+em)
+		} else {
+			lines = append(lines, "EMAIL:"+em)
+		}
+	}
+	if photoB64 != "" {
+		lines = append(lines, "PHOTO;ENCODING=b;TYPE=PNG:"+photoB64)
+	}
+	if photoURL != "" {
+		lines = append(lines, "PHOTO;VALUE=URI:"+photoURL)
+	}
+	lines = append(lines, "END:VCARD")
+	return strings.Join(lines, "\r\n")
+}
+
+func TestSenderAvatarCardDAVPriorityZeroNetAndOwnMail(t *testing.T) {
+	keyring.MockInit()
+	dir := t.TempDir()
+
+	var netHits int
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		netHits++
+		w.Write(avatarPNG(t))
+	}))
+	t.Cleanup(srv.Close)
+
+	s := newCardDAVService(t, dir, false)
+	t.Cleanup(func() { require.NoError(t, s.Close()) })
+
+	var dnsHits int
+	s.opts.LookupTXT = func(_ context.Context, _ string) ([]string, error) {
+		dnsHits++
+		return []string{"v=BIMI1; l=" + srv.URL + "/bimi.svg"}, nil
+	}
+
+	_, err := s.db.Execute(t.Context(), "INSERT INTO accounts(id, email) VALUES (1, 'me@example.com')")
+	require.NoError(t, err)
+	_, err = s.db.Execute(t.Context(), "INSERT INTO folders(id, account_id, name, role) VALUES (1, 1, 'INBOX', 'inbox'), (2, 1, 'Sent', 'sent')")
+	require.NoError(t, err)
+
+	st, err := s.GetSettings(t.Context())
+	require.NoError(t, err)
+	st.RemoteImages = "ask"
+	_, err = s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+
+	dav1 := newCardDAVServerForAvatarTest(t)
+	dav2 := newCardDAVServerForAvatarTest(t)
+
+	photoAlice1 := makePNGBytes(t, 20, 20)
+	photoAlice2 := makePNGBytes(t, 28, 28)
+	photoBob := makePNGBytes(t, 24, 24)
+	photoMe := makePNGBytes(t, 18, 18)
+	photoCoworker := makePNGBytes(t, 22, 22)
+
+	extBobURL := dav2.ServePhoto("bob.png", "image/png", photoBob)
+
+	// Book 1 (higher priority initially): Alice has inline photoAlice1; Bob has two emails but no photo;
+	// shared team card has me@example.com + coworker@example.com without photo.
+	dav1.PutCollection("main", "Main")
+	dav1.PutCard("main", "alice", vcardWithPhoto("Alice", []string{"alice@example.com"}, encodeB64(photoAlice1), ""))
+	dav1.PutCard("main", "bob-work", vcardWithPhoto("Bob", []string{"bob@work.example", "bob@home.example"}, "", ""))
+	dav1.PutCard("main", "team", vcardWithPhoto("Team", []string{"me@example.com", "coworker@example.com"}, "", ""))
+
+	// Book 2 (lower priority initially): Alice has photoAlice2; Bob has external photoBob on bob@home.example;
+	// coworker has personal card with photoCoworker.
+	dav2.PutCollection("other", "Other")
+	dav2.PutCard("other", "alice2", vcardWithPhoto("Alice Two", []string{"alice@example.com"}, encodeB64(photoAlice2), ""))
+	dav2.PutCard("other", "bob-home", vcardWithPhoto("Bob Home", []string{"bob@home.example"}, "", extBobURL))
+	dav2.PutCard("other", "coworker", vcardWithPhoto("Coworker", []string{"coworker@example.com"}, encodeB64(photoCoworker), ""))
+
+	ab1, err := s.AddAddressBook(t.Context(), AddressBookInput{Preset: PresetCustom, URL: dav1.URL(), Username: "alice", Password: "secret"})
+	require.NoError(t, err)
+	ab2, err := s.AddAddressBook(t.Context(), AddressBookInput{Preset: PresetCustom, URL: dav2.URL(), Username: "alice", Password: "secret"})
+	require.NoError(t, err)
+	assert.Equal(t, 1, dav2.PhotoHits("bob.png"), "external PHOTO downloaded once at sync time")
+
+	// Block CardDAV servers completely during mail reading to prove zero network access.
+	dav1.FailRequests(http.StatusInternalServerError)
+	dav2.FailRequests(http.StatusInternalServerError)
+	reqsBefore := len(dav1.Requests()) + len(dav2.Requests())
+
+	// 1. Alice's mail under RemoteImages="ask" gets Book 1's photo with zero network/DNS hits.
+	aliceMsg := addMessage(t, s, "hi", "Alice <alice@example.com>", "hello", "", 10)
+	got, err := s.SenderAvatar(t.Context(), aliceMsg, false)
+	require.NoError(t, err)
+	assert.Equal(t, "carddav", got.Source)
+	assert.Equal(t, "png", got.Format)
+	assert.Equal(t, 20, got.Width)
+	assert.Equal(t, photoAlice1, got.Data)
+	assert.Zero(t, netHits)
+	assert.Zero(t, dnsHits)
+
+	// 2. Bob's mail from bob@work.example resolves via connected component to Book 2's photoBob.
+	bobMsg := addMessage(t, s, "work", "bob@work.example", "hello", "", 11)
+	got, err = s.SenderAvatar(t.Context(), bobMsg, false)
+	require.NoError(t, err)
+	assert.Equal(t, "carddav", got.Source)
+	assert.Equal(t, 24, got.Width)
+	assert.Equal(t, photoBob, got.Data)
+
+	// 3. Reordering Book 2 ahead of Book 1 switches Alice's photo to photoAlice2.
+	require.NoError(t, s.ReorderAddressBooks(t.Context(), []int64{ab2.ID, ab1.ID}))
+	got, err = s.SenderAvatar(t.Context(), aliceMsg, false)
+	require.NoError(t, err)
+	assert.Equal(t, "carddav", got.Source)
+	assert.Equal(t, 28, got.Width)
+	assert.Equal(t, photoAlice2, got.Data)
+
+	// 4. Own sent mail: coworker's photo does NOT leak via shared team card,
+	//    but adding a personal card for me@example.com shows photoMe on sent mail.
+	res, err := s.db.Execute(t.Context(), `INSERT INTO messages(account_id, subject, from_addr, date, body_text, body_html, snippet, has_attachments)
+		VALUES (1, 'sent', 'Me <me@example.com>', 12, 'hi', '', 'snip', 0)`)
+	require.NoError(t, err)
+	sentMsg := res.LastInsertID
+	showIn(t, s, sentMsg, 2)
+
+	got, err = s.SenderAvatar(t.Context(), sentMsg, false)
+	require.NoError(t, err)
+	assert.Empty(t, got.Data, "shared card with own+external email must not leak external contact's photo onto own mail")
+
+	assert.Equal(t, reqsBefore, len(dav1.Requests())+len(dav2.Requests()), "zero CardDAV requests during SenderAvatar reads")
+	assert.Equal(t, 1, dav2.PhotoHits("bob.png"), "zero external photo fetches during SenderAvatar reads")
+
+	dav1.FailRequests(0)
+	dav1.PutCard("main", "me", vcardWithPhoto("Me", []string{"me@example.com"}, encodeB64(photoMe), ""))
+	require.NoError(t, s.SyncAddressBook(t.Context(), ab1.ID))
+
+	got, err = s.SenderAvatar(t.Context(), sentMsg, false)
+	require.NoError(t, err)
+	assert.Equal(t, "carddav", got.Source)
+	assert.Equal(t, 18, got.Width)
+	assert.Equal(t, photoMe, got.Data)
+
+	// 5. Disabling Book 2's collection drops photoAlice2 and falls back to Book 1's photoAlice1.
+	require.NoError(t, s.SetAddressBookCollectionEnabled(t.Context(), ab2.Collections[0].ID, false))
+	got, err = s.SenderAvatar(t.Context(), aliceMsg, false)
+	require.NoError(t, err)
+	assert.Equal(t, photoAlice1, got.Data)
+}
+
+func TestSenderAvatarCardDAVAntiSpoofingGates(t *testing.T) {
+	keyring.MockInit()
+	dir := t.TempDir()
+	s := newCardDAVService(t, dir, false)
+	t.Cleanup(func() { require.NoError(t, s.Close()) })
+
+	_, err := s.db.Execute(t.Context(), "INSERT INTO accounts(id, email) VALUES (1, 'me@example.com')")
+	require.NoError(t, err)
+	_, err = s.db.Execute(t.Context(), `INSERT INTO folders(id, account_id, name, role, role_override) VALUES
+		(1, 1, 'INBOX', 'inbox', ''),
+		(2, 1, 'Spam', 'junk', ''),
+		(3, 1, 'Suspect', '', 'junk'),
+		(4, 1, 'Projects', '', '')`)
+	require.NoError(t, err)
+
+	dav := newCardDAVServerForAvatarTest(t)
+	cardPhoto := makePNGBytes(t, 24, 24)
+	dav.PutCollection("contacts", "Contacts")
+	dav.PutCard("contacts", "alice", vcardWithPhoto("Alice", []string{"alice@example.com"}, encodeB64(cardPhoto), ""))
+	_, err = s.AddAddressBook(t.Context(), AddressBookInput{Preset: PresetCustom, URL: dav.URL(), Username: "alice", Password: "secret"})
+	require.NoError(t, err)
+
+	// Baseline: ordinary inbox message shows CardDAV PHOTO.
+	okMsg := addMessage(t, s, "lunch", "Alice <alice@example.com>", "see you", "", 1)
+	got, err := s.SenderAvatar(t.Context(), okMsg, false)
+	require.NoError(t, err)
+	assert.Equal(t, "carddav", got.Source)
+
+	// 1. Message in junk folder (role='junk'): hides CardDAV PHOTO even when RemoteImages="auto".
+	res, err := s.db.Execute(t.Context(), `INSERT INTO messages(account_id, subject, from_addr, date, body_text, body_html, snippet, has_attachments)
+		VALUES (1, 'junk1', 'Alice <alice@example.com>', 2, 'hi', '', 'snip', 0)`)
+	require.NoError(t, err)
+	junkMsg := res.LastInsertID
+	showIn(t, s, junkMsg, 2)
+
+	got, err = s.SenderAvatar(t.Context(), junkMsg, false)
+	require.NoError(t, err)
+	assert.Empty(t, got.Data, "junk folder must hide CardDAV PHOTO")
+	got, err = s.SenderAvatar(t.Context(), junkMsg, true)
+	require.NoError(t, err)
+	assert.NotEqual(t, "carddav", got.Source, "junk folder must never return CardDAV PHOTO even with allowRemote")
+
+	// 2. Folder with role_override='junk': also hides CardDAV PHOTO.
+	res, err = s.db.Execute(t.Context(), `INSERT INTO messages(account_id, subject, from_addr, date, body_text, body_html, snippet, has_attachments)
+		VALUES (1, 'junk2', 'Alice <alice@example.com>', 3, 'hi', '', 'snip', 0)`)
+	require.NoError(t, err)
+	overrideJunkMsg := res.LastInsertID
+	showIn(t, s, overrideJunkMsg, 3)
+
+	got, err = s.SenderAvatar(t.Context(), overrideJunkMsg, false)
+	require.NoError(t, err)
+	assert.Empty(t, got.Data, "role_override='junk' must hide CardDAV PHOTO")
+
+	// 3. Multi-location message shown in both a custom label folder and a junk folder: hides CardDAV PHOTO.
+	res, err = s.db.Execute(t.Context(), `INSERT INTO messages(account_id, subject, from_addr, date, body_text, body_html, snippet, has_attachments)
+		VALUES (1, 'multi-junk', 'Alice <alice@example.com>', 4, 'hi', '', 'snip', 0)`)
+	require.NoError(t, err)
+	multiJunkMsg := res.LastInsertID
+	showIn(t, s, multiJunkMsg, 4)
+	showIn(t, s, multiJunkMsg, 2)
+
+	got, err = s.SenderAvatar(t.Context(), multiJunkMsg, false)
+	require.NoError(t, err)
+	assert.Empty(t, got.Data, "message shown in both custom folder and junk folder must hide CardDAV PHOTO")
+
+	// 4. Deterministic SecurityFraud before AI scan (dmarc=fail on spoofed From): hides CardDAV PHOTO even with allowRemote=true.
+	res, err = s.db.Execute(t.Context(), `INSERT INTO messages(account_id, subject, from_addr, date, body_text, body_html, snippet, has_attachments, auth_results)
+		VALUES (1, 'wire transfer', 'Alice <alice@example.com>', 5, 'urgent', '', 'snip', 0, 'mx.example.org; dmarc=fail header.from=example.com')`)
+	require.NoError(t, err)
+	dmarcFailMsg := res.LastInsertID
+	showIn(t, s, dmarcFailMsg, 1)
+
+	got, err = s.SenderAvatar(t.Context(), dmarcFailMsg, false)
+	require.NoError(t, err)
+	assert.Empty(t, got.Data, "unscanned DMARC fail fraud must hide CardDAV PHOTO")
+	got, err = s.SenderAvatar(t.Context(), dmarcFailMsg, true)
+	require.NoError(t, err)
+	assert.Empty(t, got.Data, "SecurityFraud must fall back to initial tile even when allowRemote=true")
+
+	// 5. Stored AI/manual fraud verdict (security_status='warning', security_reason='ai_fraud'): hides CardDAV PHOTO.
+	res, err = s.db.Execute(t.Context(), `INSERT INTO messages(account_id, subject, from_addr, date, body_text, body_html, snippet, has_attachments, security_status, security_reason, security_scanned_at)
+		VALUES (1, 'phish', 'Alice <alice@example.com>', 6, 'click here', '', 'snip', 0, 'warning', 'ai_fraud', 100)`)
+	require.NoError(t, err)
+	aiFraudMsg := res.LastInsertID
+	showIn(t, s, aiFraudMsg, 1)
+
+	got, err = s.SenderAvatar(t.Context(), aiFraudMsg, true)
+	require.NoError(t, err)
+	assert.Empty(t, got.Data, "stored AI SecurityFraud verdict must hide CardDAV PHOTO")
+
+	// 6. Manual safe override (security_status='neutral', security_reason='manual_safe'): restores CardDAV PHOTO.
+	_, err = s.db.Execute(t.Context(), `UPDATE messages SET security_status = 'neutral', security_reason = 'manual_safe' WHERE id = ?`, dmarcFailMsg)
+	require.NoError(t, err)
+	got, err = s.SenderAvatar(t.Context(), dmarcFailMsg, false)
+	require.NoError(t, err)
+	assert.Equal(t, "carddav", got.Source)
+	assert.Equal(t, cardPhoto, got.Data)
+}
+
+func TestContactAvatarZeroMailConnectedComponentAndFallback(t *testing.T) {
+	good := avatarPNG(t)
+	f := newAvatarFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Host == "acme.example.com" {
+			w.Write(good)
+		} else {
+			http.NotFound(w, r)
+		}
+	})
+	_, err := f.s.db.Execute(t.Context(), `INSERT INTO folders(id, account_id, name, role) VALUES
+		(2, 1, 'Sent', 'sent'),
+		(3, 1, 'Spam', 'junk'),
+		(4, 1, 'Trash', 'trash')`)
+	require.NoError(t, err)
+
+	dav := newCardDAVServerForAvatarTest(t)
+	cardPhoto := makePNGBytes(t, 26, 26)
+	ownPhoto := makePNGBytes(t, 16, 16)
+	dav.PutCollection("contacts", "Contacts")
+	// Zero-mail contact with PHOTO across two cards sharing an email.
+	dav.PutCard("contacts", "zoe-work", vcardWithPhoto("Zoe", []string{"zoe@work.example", "zoe@personal.example"}, "", ""))
+	dav.PutCard("contacts", "zoe-home", vcardWithPhoto("Zoe", []string{"zoe@personal.example"}, encodeB64(cardPhoto), ""))
+	// Card without PHOTO sharing two addresses; one address has a received message with remote favicon.
+	dav.PutCard("contacts", "dan", vcardWithPhoto("Dan", []string{"dan@nomail.example", "dan@acme.example.com"}, "", ""))
+	// Own account card with PHOTO: ContactAvatar excludes own accounts.
+	dav.PutCard("contacts", "me", vcardWithPhoto("Me", []string{"me@example.com"}, encodeB64(ownPhoto), ""))
+
+	_, err = f.s.AddAddressBook(t.Context(), AddressBookInput{Preset: PresetCustom, URL: dav.URL(), Username: "alice", Password: "secret"})
+	require.NoError(t, err)
+
+	// 1. Zero-mail CardDAV contact returns PHOTO across connected component, even under RemoteImages="ask".
+	f.policy(t, "ask", false, false)
+	got, err := f.s.ContactAvatar(t.Context(), "Zoe <zoe@work.example>")
+	require.NoError(t, err)
+	assert.Equal(t, "carddav", got.Source)
+	assert.Equal(t, cardPhoto, got.Data)
+	assert.Empty(t, f.hits())
+
+	// 2. Own account returns empty Avatar from ContactAvatar.
+	got, err = f.s.ContactAvatar(t.Context(), "me@example.com")
+	require.NoError(t, err)
+	assert.Empty(t, got.Data)
+
+	// 3. Card without PHOTO and only junk/trash mail does NOT use junk/trash mail for fallback.
+	f.policy(t, "auto", false, false)
+	res, err := f.s.db.Execute(t.Context(), `INSERT INTO messages(account_id, subject, from_addr, date, body_text, body_html, snippet, has_attachments)
+		VALUES (1, 'spam', 'Dan <dan@acme.example.com>', 10, 'hi', '', 'snip', 0)`)
+	require.NoError(t, err)
+	showIn(t, f.s, res.LastInsertID, 3) // junk
+	got, err = f.s.ContactAvatar(t.Context(), "dan@nomail.example")
+	require.NoError(t, err)
+	assert.Empty(t, got.Data)
+	assert.Empty(t, f.hits())
+
+	// 4. Once an inbox message arrives on dan@acme.example.com, ContactAvatar("dan@nomail.example")
+	//    falls back across the connected component to SenderAvatar of that latest received message.
+	addMessage(t, f.s, "hello", "Dan <dan@acme.example.com>", "hi", "", 20)
+	got, err = f.s.ContactAvatar(t.Context(), "dan@nomail.example")
+	require.NoError(t, err)
+	assert.Equal(t, "favicon", got.Source)
+	assert.Equal(t, good, got.Data)
 }
