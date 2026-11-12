@@ -109,3 +109,51 @@ func TestRestoresANameInToolArguments(t *testing.T) {
 	_, err = m.RestoreArgs(json.RawMessage(`{"to":["NAME_aaaaaaaaaaaa"]}`))
 	require.Error(t, err)
 }
+
+func TestSetKnownNamesMasksAndRetractsWithoutAffectingHeaderNames(t *testing.T) {
+	m := namesMasker()
+	m.SetKnownNames([]string{
+		"  张伟  ",
+		"王",                // too short CJK (< 2)
+		"Bob",              // too short non-CJK (< 4)
+		"user@example.com", // contains @
+		"Robert Johnson",   // longer than header's "Robert"
+		" Elena Rostova ",  // valid non-CJK
+	})
+
+	// Off when SetNames is false.
+	out, err := m.Text("请给张伟和 Elena Rostova 发会议邀请。")
+	require.NoError(t, err)
+	assert.Equal(t, "请给张伟和 Elena Rostova 发会议邀请。", out)
+
+	// Turn names on, plus learn a header name ("陈明") and shorter prefix ("Robert").
+	m.SetNames(true)
+	_, err = m.Text("From: 陈明 <chen@example.com>, Robert <rob@example.com>\n\nHi")
+	require.NoError(t, err)
+
+	// Known card names mask without appearing in headers; short/@ names stay unmasked;
+	// longer external name "Robert Johnson" beats shorter header name "Robert".
+	src := "王先生和 Bob 说请给张伟、Elena Rostova、Robert Johnson 和陈明发邮件到 user@example.com。"
+	masked, err := m.Text(src)
+	require.NoError(t, err)
+	assert.NotContains(t, masked, "张伟")
+	assert.NotContains(t, masked, "Elena Rostova")
+	assert.NotContains(t, masked, "Robert Johnson")
+	assert.NotContains(t, masked, "Johnson", "Robert Johnson must mask as one whole name, not just Robert")
+	assert.NotContains(t, masked, "陈明")
+	assert.Contains(t, masked, "王先生")
+	assert.Contains(t, masked, "Bob")
+	assert.Contains(t, masked, "user@example.com")
+	assert.Equal(t, src, m.Restore(masked))
+
+	// Retracting card names stops masking 张伟 and Elena Rostova on new texts,
+	// while prior placeholders still restore and header-learned 陈明 stays masked!
+	m.SetKnownNames(nil)
+	assert.Equal(t, src, m.Restore(masked), "already-issued placeholders must still restore")
+
+	after, err := m.Text("再问一下张伟、Elena Rostova 和陈明。")
+	require.NoError(t, err)
+	assert.Contains(t, after, "张伟", "removed known card name must not stay stuck in learned names")
+	assert.Contains(t, after, "Elena Rostova", "removed known card name must not stay stuck in learned names")
+	assert.NotContains(t, after, "陈明", "header-learned name must remain masked")
+}
