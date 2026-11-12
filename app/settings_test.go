@@ -578,6 +578,9 @@ func (h *harness) loginCalls() []string {
 }
 
 func TestSettingsLoginItemFollowsBothSettings(t *testing.T) {
+	old := goos
+	goos = "darwin" // Linux registers 一直继续 not at all (TestSettingsLoginItemNotForBackendOnLinux)
+	t.Cleanup(func() { goos = old })
 	h, _ := withAccount(t)
 	h.setLayout(func(st *core.Settings) { st.BackgroundReceive = core.BackgroundReceiveAlways })
 	h.until("registered for 一直继续", func() bool { return slices.Equal(h.loginCalls(), []string{"SetOpenAtLogin true"}) })

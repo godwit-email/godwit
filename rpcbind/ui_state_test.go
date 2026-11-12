@@ -2,12 +2,14 @@ package rpcbind_test
 
 import (
 	"bytes"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/rpc"
 	"github.com/godwit-email/godwit/rpcbind"
 	"github.com/stretchr/testify/assert"
@@ -95,6 +97,27 @@ func TestUIForegroundNarrowsBackgroundSync(t *testing.T) {
 		return len(page.Items)
 	}
 
+	// A full round woken by widening may outlive the switch back, so the
+	// narrowed check first waits for sync events to go quiet (rounds that
+	// began before Subscribe make counting starts and ends unreliable).
+	var last atomic.Int64 // unix nanos of the latest sync event
+	last.Store(time.Now().UnixNano())
+	evs, stopEvs := e.Svc.Subscribe()
+	t.Cleanup(stopEvs)
+	go func() {
+		for ev := range evs {
+			switch ev.Type {
+			case events.SyncStarted, events.SyncFinished, events.SyncFailed:
+				last.Store(time.Now().UnixNano())
+			}
+		}
+	}()
+	idle := func() {
+		t.Helper()
+		require.Eventually(t, func() bool { return time.Since(time.Unix(0, last.Load())) > 300*time.Millisecond },
+			5*time.Second, 10*time.Millisecond, "sync events quiet")
+	}
+
 	dir := listen(t, e.Svc)
 	ui1 := dial(t, dir, rpc.RoleUI)
 
@@ -119,11 +142,16 @@ func TestUIForegroundNarrowsBackgroundSync(t *testing.T) {
 	assert.True(t, e.Svc.InboxOnly())
 
 	// While narrowed, an INBOX arrival syncs INBOX without pulling Archive; coming to foreground catches up Archive.
+	// A first arrival lets any full round left from widening finish.
+	_, err = e.IMAP(acc.ID).User.Append("INBOX", bytes.NewReader(coretest.Msg("bob@example.com", acc.Email, "Inbox 0", "body")), &imap.AppendOptions{})
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { return inboxCount() == 1 }, 5*time.Second, 10*time.Millisecond)
+	idle()
 	_, err = e.IMAP(acc.ID).User.Append("Archive", bytes.NewReader(coretest.Msg("bob@example.com", acc.Email, "Arch 2", "body")), &imap.AppendOptions{})
 	require.NoError(t, err)
 	_, err = e.IMAP(acc.ID).User.Append("INBOX", bytes.NewReader(coretest.Msg("bob@example.com", acc.Email, "Inbox 1", "body")), &imap.AppendOptions{})
 	require.NoError(t, err)
-	require.Eventually(t, func() bool { return inboxCount() == 1 }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return inboxCount() == 2 }, 5*time.Second, 10*time.Millisecond)
 	assert.Equal(t, 1, archiveCount(), "Archive stays at 1 while narrowed")
 
 	require.NoError(t, ui1.Call(ctx, "SetUIForeground", nil, true))

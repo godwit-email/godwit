@@ -101,6 +101,7 @@ func TestGeneratedClientFresh(t *testing.T) {
 
 	onDisk, err := os.ReadFile("client_gen.go")
 	require.NoError(t, err)
+	onDisk = bytes.ReplaceAll(onDisk, []byte("\r\n"), []byte("\n")) // a Windows checkout has CRLF
 	assert.True(t, bytes.Equal(onDisk, got), "uiclient/client_gen.go is stale; run go generate ./uiclient")
 
 	// Drift check: changing either interface produces different generated output.

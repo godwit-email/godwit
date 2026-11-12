@@ -315,8 +315,10 @@ func TestClientStreamDropping(t *testing.T) {
 	for ev := range flood {
 		got = append(got, string(ev))
 	}
-	if len(got) == 0 || len(got) > rpc.StreamBuffer || got[len(got)-1] != "999" {
-		t.Errorf("flood delivered %d events ending %v, want at most StreamBuffer ending 999", len(got), got[max(0, len(got)-3):])
+	// The tail may still be in flight when Echo answers, so the reader can
+	// free a slot first: only "some dropped, the newest kept" is certain.
+	if len(got) == 0 || len(got) >= 1000 || got[len(got)-1] != "999" {
+		t.Errorf("flood delivered %d events ending %v, want fewer than 1000 ending 999", len(got), got[max(0, len(got)-3):])
 	}
 	if err := c.StreamErr(flood); err != nil {
 		t.Errorf("StreamErr = %v, want nil", err)

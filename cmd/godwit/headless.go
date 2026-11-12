@@ -9,7 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	"path/filepath"
+	"path"
 	"runtime"
 	"slices"
 	"strconv"
@@ -382,8 +382,8 @@ var uiCmd = func(dataDir, what string) (*exec.Cmd, error) {
 // uiArgv runs exe with args: on macOS, from inside a .app, through
 // LaunchServices (open -n -a), so the interface's window comes to the front.
 func uiArgv(goos, exe string, args ...string) []string {
-	macOS := filepath.Dir(exe)
-	if bundle := filepath.Dir(filepath.Dir(macOS)); goos == "darwin" && filepath.Base(macOS) == "MacOS" && strings.HasSuffix(bundle, ".app") {
+	macOS := path.Dir(exe) // a darwin path: slash-separated whatever OS the test runs on
+	if bundle := path.Dir(path.Dir(macOS)); goos == "darwin" && path.Base(macOS) == "MacOS" && strings.HasSuffix(bundle, ".app") {
 		return append([]string{"/usr/bin/open", "-n", "-a", bundle, "--args"}, args...)
 	}
 	return append([]string{exe}, args...)
