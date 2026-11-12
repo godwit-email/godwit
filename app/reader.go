@@ -622,7 +622,7 @@ func (p *mailPage) accountOf(folderID int64) int64 {
 }
 
 // folderAccount looks up the account of a folder in the Service.
-func folderAccount(ctx context.Context, svc *core.Service, folderID int64) (int64, error) {
+func folderAccount(ctx context.Context, svc Service, folderID int64) (int64, error) {
 	accs, err := svc.ListAccounts(ctx)
 	if err != nil {
 		return 0, err

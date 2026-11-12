@@ -369,7 +369,7 @@ func (p *mailPage) keepViewFresh() {
 
 // fetchItems reads pages from cursor until it has want items, or to the end
 // with toEnd; at least one page. Items are unique by ID.
-func fetchItems(ctx context.Context, svc *core.Service, v core.View, threads bool, cursor string, want int, toEnd bool) ([]mailItem, string, error) {
+func fetchItems(ctx context.Context, svc Service, v core.View, threads bool, cursor string, want int, toEnd bool) ([]mailItem, string, error) {
 	var out []mailItem
 	seen := map[int64]bool{}
 	for {

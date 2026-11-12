@@ -16,21 +16,27 @@ var messageKey = strings.NewReplacer(".", "_", "-", "_")
 
 func init() { lang.Store("zh-Hans"); locale.Store("zh-Hans") }
 
+// Match returns the catalog language best matching tag (or "en") and accepts
+// MyGo's pseudo locales for layout checks.
+func Match(tag string) string {
+	tag = mygoi18n.Normalize(tag)
+	switch {
+	case mygoi18n.IsPseudo(tag):
+		return tag
+	case mygoi18n.Match([]string{tag}, Catalog.Languages()) != "":
+		return mygoi18n.Match([]string{tag}, Catalog.Languages())
+	case strings.HasPrefix(tag, "zh"):
+		return "zh-Hans"
+	default:
+		return "en"
+	}
+}
+
 // SetLanguage selects the catalog language best matching tag (or "en") and
 // accepts MyGo's pseudo locales for layout checks.
 func SetLanguage(tag string) {
-	tag = mygoi18n.Normalize(tag)
-	locale.Store(tag)
-	switch {
-	case mygoi18n.IsPseudo(tag):
-	case mygoi18n.Match([]string{tag}, Catalog.Languages()) != "":
-		tag = mygoi18n.Match([]string{tag}, Catalog.Languages())
-	case strings.HasPrefix(tag, "zh"):
-		tag = "zh-Hans"
-	default:
-		tag = "en"
-	}
-	lang.Store(tag)
+	locale.Store(mygoi18n.Normalize(tag))
+	lang.Store(Match(tag))
 }
 
 func Language() string { return lang.Load().(string) }

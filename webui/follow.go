@@ -140,6 +140,145 @@ func (f *follow) pump(t Target, ch <-chan core.WitEvent, emit func(Target, WitEv
 	}
 }
 
+// followConversation is conversation id as it is now (GetConversation) and its
+// runs' events from then on (SubscribeConversation), none missed and none
+// twice: a run whose saved history is in what was read sends nothing more, and
+// one waiting on the user sends what comes after its interrupt.
+func followConversation(ctx context.Context, svc Service, id int64) (core.Conversation, <-chan core.WitEvent, func(), error) {
+	raw, rawStop := svc.SubscribeConversation(id)
+	quit := make(chan struct{})
+	var stopOnce sync.Once
+	stop := func() {
+		stopOnce.Do(func() {
+			close(quit)
+			rawStop()
+		})
+	}
+	ready := make(chan core.Conversation, 1)
+	out := make(chan core.WitEvent)
+	go func() {
+		defer close(out)
+		var buf []core.WitEvent
+		rawCh := raw
+		var c core.Conversation
+		for {
+			select {
+			case ev, ok := <-rawCh:
+				if !ok {
+					rawCh = nil
+					continue
+				}
+				buf = append(buf, ev)
+				continue
+			case c = <-ready:
+			case <-quit:
+				return
+			}
+			break
+		}
+	drain:
+		for rawCh != nil {
+			select {
+			case ev, ok := <-rawCh:
+				if !ok {
+					rawCh = nil
+					break drain
+				}
+				buf = append(buf, ev)
+			default:
+				break drain
+			}
+		}
+		read := map[int64]bool{}
+		seenApprovals := map[int64]bool{}
+		for _, t := range c.Turns {
+			for _, r := range t.Runs {
+				read[r] = true
+			}
+			for _, call := range t.Calls {
+				if call.Approval != nil {
+					seenApprovals[call.Approval.ID] = true
+				}
+			}
+			for _, a := range t.Approvals {
+				seenApprovals[a.ID] = true
+			}
+		}
+		last := -1
+		sawActiveStart := false
+		for i, ev := range buf {
+			if ev.RunID == c.ActiveRunID {
+				if ev.Kind == "start" {
+					sawActiveStart = true
+				}
+				if ev.Kind == "interrupted" && (c.Awaiting || len(ev.Approvals) > 0 && seenApprovals[ev.Approvals[0].ID]) {
+					last = i
+				}
+			}
+		}
+		waitInterrupt := c.Awaiting && sawActiveStart && last < 0
+		keep := func(ev core.WitEvent) bool {
+			if ev.RunID != c.ActiveRunID {
+				return !read[ev.RunID] && ev.RunID > c.ActiveRunID
+			}
+			if c.Awaiting {
+				if waitInterrupt {
+					if ev.Kind == "interrupted" {
+						waitInterrupt = false
+					}
+					return false
+				}
+				if ev.Kind == "start" {
+					waitInterrupt = true
+					return false
+				}
+				if ev.Kind == "interrupted" && len(ev.Approvals) > 0 && seenApprovals[ev.Approvals[0].ID] {
+					return false
+				}
+			}
+			return true
+		}
+		for i, ev := range buf {
+			if ev.RunID == c.ActiveRunID && i <= last {
+				continue
+			}
+			if !keep(ev) {
+				continue
+			}
+			select {
+			case out <- ev:
+			case <-quit:
+				return
+			}
+		}
+		for rawCh != nil {
+			select {
+			case ev, ok := <-rawCh:
+				if !ok {
+					return
+				}
+				if !keep(ev) {
+					continue
+				}
+				select {
+				case out <- ev:
+				case <-quit:
+					return
+				}
+			case <-quit:
+				return
+			}
+		}
+	}()
+	c, err := svc.GetConversation(ctx, id)
+	if err != nil {
+		stop()
+		return core.Conversation{}, nil, nil, err
+	}
+	ready <- c
+	return c, out, stop, nil
+}
+
 // history is c for the panel.
 func history(c core.Conversation) WitHistory {
 	h := WitHistory{Conversation: c.ID, Turns: witTurns(c), Model: c.Model, Effort: c.Effort,

@@ -1930,3 +1930,82 @@ func TestImageRetentionRow(t *testing.T) {
 		}
 	}
 }
+
+func TestSettingsAccountExport(t *testing.T) {
+	var arch core.Account
+	h := newHarness(t, func(e *coretest.Env) {
+		acc := e.AddAccount(t, "alice@example.com")
+		sig := "Best,\nAlice"
+		if _, err := e.Svc.UpdateAccount(context.Background(), acc.ID, core.AccountPatch{Signature: &sig, Sync: &core.SyncRange{Months: 3}}); err != nil {
+			t.Fatal(err)
+		}
+		e.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", acc.Email, "Secret Subject", "Secret Body"))
+		var err error
+		if arch, err = e.Svc.AddLocalArchive(context.Background(), "Old Mail"); err != nil {
+			t.Fatal(err)
+		}
+	})
+	h.until("accounts loaded", func() bool { return h.app.loaded && len(h.app.accounts) == 2 })
+	h.resize(1440, 3000)
+
+	var mailAcc core.Account
+	for _, a := range h.app.accounts {
+		if a.Kind != core.KindLocalArchive {
+			mailAcc = a
+		}
+	}
+
+	// Local archive page does not offer account export.
+	h.openSettings(accountRoute(arch.ID))
+	if h.tt.HasText(i18n.T("settings.account.export.button")) {
+		t.Fatal("local archive page showed export button")
+	}
+
+	// Mail account page offers export; cancelling SaveFile writes nothing and shows no toast.
+	h.openSettings(accountRoute(mailAcc.ID))
+	h.see(i18n.T("settings.account.export"))
+	h.click(i18n.T("settings.account.export.button"))
+	h.called("SaveFile godwit-accounts.json")
+	h.drain()
+	h.tt.Frame()
+	if h.tt.HasText(i18n.T("settings.account.export.done")) {
+		t.Fatal("cancelling SaveFile toasted export done")
+	}
+
+	// Choosing a path writes the versioned JSON file without credentials, mail or local archives.
+	dst := filepath.Join(t.TempDir(), "godwit-accounts.json")
+	h.plat.mu.Lock()
+	h.plat.savePath = dst
+	h.plat.calls = nil
+	h.plat.mu.Unlock()
+
+	h.click(i18n.T("settings.account.export.button"))
+	h.called("SaveFile godwit-accounts.json")
+	h.until("export file written", func() bool {
+		b, err := os.ReadFile(dst)
+		return err == nil && len(b) > 0
+	})
+	h.see(i18n.T("settings.account.export.done"))
+
+	raw, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	for _, forbidden := range []string{"secret", "Secret Subject", "Secret Body", "Old Mail", core.KindLocalArchive} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("exported file leaked %q:\n%s", forbidden, text)
+		}
+	}
+	var exported core.AccountExport
+	if err := json.Unmarshal(raw, &exported); err != nil {
+		t.Fatalf("unmarshal export: %v", err)
+	}
+	if exported.Version != core.AccountExportVersion || len(exported.Accounts) != 1 {
+		t.Fatalf("unexpected export: %+v", exported)
+	}
+	got := exported.Accounts[0]
+	if got.Email != "alice@example.com" || got.Sync.Months != 3 || got.Signature == nil || got.Signature.HTML != "Best,\nAlice" {
+		t.Fatalf("unexpected exported account: %+v", got)
+	}
+}

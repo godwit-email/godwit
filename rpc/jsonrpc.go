@@ -70,7 +70,7 @@ type ConnOptions struct {
 	// reveals nothing ("internal error").
 	EncodeError func(error) *WireError
 
-	helloCtx func(ctx context.Context, params []json.RawMessage) (func(string, []json.RawMessage) error, context.Context, any, error)
+	helloCtx func(ctx context.Context, c *conn, params []json.RawMessage) (func(string, []json.RawMessage) error, context.Context, any, error)
 	hooks    testHooks // test seams; zero outside tests
 }
 
@@ -334,7 +334,7 @@ func (c *conn) hello(m message, params []json.RawMessage) bool {
 		err    error
 	)
 	if c.opts.helloCtx != nil {
-		allow, callCtx, result, err = c.opts.helloCtx(c.ctx, params)
+		allow, callCtx, result, err = c.opts.helloCtx(c.ctx, c, params)
 	} else {
 		allow, result, err = c.opts.Hello(params)
 	}
@@ -446,6 +446,15 @@ func (c *conn) run(id uint64, rawID json.RawMessage, meth *method, ctx context.C
 		}
 		if ctx.Err() != nil {
 			continue // cancelled: drain and discard so the target's pump can exit
+		}
+		if ec, ok := v.Interface().(interface{ StreamError() error }); ok {
+			if err := ec.StreamError(); err != nil {
+				if c.endStream(sid) {
+					c.notify("$/stream.end", sid, c.opts.EncodeError(err))
+				}
+				s.stop()
+				continue
+			}
 		}
 		ev, err := json.Marshal(v.Interface())
 		if err == nil {

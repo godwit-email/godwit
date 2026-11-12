@@ -47,6 +47,34 @@ func (s *Service) assetModel(ctx context.Context, ref string) (string, *runningP
 	return name, rp, m, nil
 }
 
+// PrepareModelEvent is one update of PrepareModelStream: a progress or final
+// ModelStatus (Done == true), or a mid-stream failure (Err != nil).
+type PrepareModelEvent struct {
+	Status ModelStatus
+	Done   bool  `json:",omitempty"`
+	Err    error `json:"-"`
+}
+
+// StreamError returns the mid-stream failure, if any.
+func (e PrepareModelEvent) StreamError() error { return e.Err }
+
+func (s *Service) runPrepareModel(ctx context.Context, name string, rp *runningPlugin, m plugins.ProviderModel, progress func(ModelStatus)) (ModelStatus, error) {
+	defer s.bus.Publish(events.Event{Type: events.ModelsChanged})
+	_, release, err := s.modelAssets().Prepare(ctx, name, rp.row.assetsDigest, m.Assets, progress)
+	if err != nil {
+		return ModelStatus{}, err
+	}
+	release() // verified; a judge call verifies again before it loads them
+	s.pluginsMu.RLock()
+	cur := s.running[name]
+	s.pluginsMu.RUnlock()
+	if cur == nil || cur.row.assetsDigest != rp.row.assetsDigest { // upgraded, revoked or removed while it downloaded
+		s.sweepAssets(ctx) // what no installed release names goes
+		return ModelStatus{}, modelErr(codeModelUnavailable, "plugin %s changed while its model downloaded; download it again", name)
+	}
+	return s.modelAssets().Status(ctx, name, rp.row.assetsDigest, m.Assets)
+}
+
 // PrepareModel downloads what plugin model ref is missing of its files and
 // verifies them all, then returns their state; ModelsChanged follows.
 func (s *Service) PrepareModel(ctx context.Context, ref string) (ModelStatus, error) {
@@ -65,20 +93,35 @@ func (s *Service) PrepareModelWithProgress(ctx context.Context, ref string, prog
 	if err != nil {
 		return ModelStatus{}, err
 	}
-	defer s.bus.Publish(events.Event{Type: events.ModelsChanged})
-	_, release, err := s.modelAssets().Prepare(ctx, name, rp.row.assetsDigest, m.Assets, progress)
+	return s.runPrepareModel(ctx, name, rp, m, progress)
+}
+
+// PrepareModelStream downloads and verifies plugin model ref's files, streaming
+// progress updates and ending with a Done event holding the final ModelStatus.
+func (s *Service) PrepareModelStream(ctx context.Context, ref string) (<-chan PrepareModelEvent, error) {
+	rctx, end, err := s.begin(ctx, 0)
 	if err != nil {
-		return ModelStatus{}, err
+		return nil, err
 	}
-	release() // verified; a judge call verifies again before it loads them
-	s.pluginsMu.RLock()
-	cur := s.running[name]
-	s.pluginsMu.RUnlock()
-	if cur == nil || cur.row.assetsDigest != rp.row.assetsDigest { // upgraded, revoked or removed while it downloaded
-		s.sweepAssets(ctx) // what no installed release names goes
-		return ModelStatus{}, modelErr(codeModelUnavailable, "plugin %s changed while its model downloaded; download it again", name)
+	name, rp, m, err := s.assetModel(rctx, ref)
+	if err != nil {
+		end()
+		return nil, err
 	}
-	return s.modelAssets().Status(ctx, name, rp.row.assetsDigest, m.Assets)
+	ch := make(chan PrepareModelEvent, 16)
+	go func() {
+		defer close(ch)
+		defer end()
+		st, err := s.runPrepareModel(rctx, name, rp, m, func(p ModelStatus) {
+			sendStream(rctx, ch, PrepareModelEvent{Status: p})
+		})
+		if err != nil {
+			sendStreamFinal(rctx, ch, PrepareModelEvent{Err: err})
+			return
+		}
+		sendStreamFinal(rctx, ch, PrepareModelEvent{Status: st, Done: true})
+	}()
+	return ch, nil
 }
 
 // RemoveModelFiles deletes plugin model ref's own files, keeping those other
