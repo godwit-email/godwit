@@ -628,7 +628,43 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 		}))
 	}
 	settingsSection(c, i18n.T("settings.account.login"), "", login...)
+	settingsSection(c, i18n.T("settings.account.export"), "",
+		row(i18n.T("settings.account.export.row"), i18n.T("settings.account.export.help"), func() {
+			settingButton(c, i18n.T("settings.account.export.button"), kit.Outline, p.exporting).OnClick(p.exportAccounts)
+		}))
 	remove()
+}
+
+func (p *settingsPage) exportAccounts() {
+	if p.exporting {
+		return
+	}
+	a := p.a
+	plat := a.plat
+	p.exporting = true
+	saved := false
+	a.do(func(ctx context.Context) error {
+		dst, err := plat.SaveFile("godwit-accounts.json")
+		if err != nil || dst == "" {
+			return err
+		}
+		data, err := a.svc.ExportAccounts(ctx)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(dst, data, 0o600); err != nil {
+			return err
+		}
+		saved = true
+		return nil
+	}, func(err error) {
+		p.exporting = false
+		if err != nil {
+			a.toastErr(err)
+		} else if saved {
+			a.toastAs(kit.ToastSuccess, i18n.T("settings.account.export.done"))
+		}
+	})
 }
 
 // receiveOnlyHelp says why a receive-only account does not send and how it can.
