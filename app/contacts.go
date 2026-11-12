@@ -569,19 +569,19 @@ func (p *contactsPage) addressLine(c *ui.Context, addrs []core.ContactAddress) {
 // addressMenu is what can be done with one address: write, copy, block.
 func (p *contactsPage) addressMenu(c *ui.Context, m *ui.Menu, addr string, blocked bool) {
 	a := p.a
-	if m.Item(i18n.T("palette.action.compose")).Chosen() {
+	if m.Item(i18n.T("palette.action.compose")).Icon(menuIcon("square-pen")).Chosen() {
 		a.composeTo(addr)
 	}
-	if m.Item(i18n.T("contacts.copy_address")).Chosen() {
+	if m.Item(i18n.T("contacts.copy_address")).Icon(menuIcon("copy")).Chosen() {
 		c.WriteClipboard(addr)
 		a.toast(i18n.T("contacts.address_copied"))
 	}
 	m.Separator()
-	blk := i18n.T("reader.block_sender")
+	blk, icon := i18n.T("reader.block_sender"), "spam"
 	if blocked {
-		blk = i18n.T("reader.unblock_sender")
+		blk, icon = i18n.T("reader.unblock_sender"), "shield" // as the mail list's menu
 	}
-	if m.Item(blk).Danger().Chosen() {
+	if m.Item(blk).Icon(menuIcon(icon)).Danger().Chosen() {
 		p.blockAddrs([]string{addr}, !blocked)
 	}
 }
