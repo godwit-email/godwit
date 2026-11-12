@@ -540,6 +540,18 @@ func (s *Service) witSearchContacts(ctx context.Context, args json.RawMessage) (
 	if job := runOf(ctx); job != nil && job.scope != nil {
 		job.scope.MarkReadMail()
 	}
+	// A name taken from mail alone is in no header the masker reads: teach it before the result goes out.
+	names := make([]string, 0, len(matches))
+	for _, m := range matches {
+		names = append(names, m.Name)
+	}
+	mk, err := s.masker()
+	if err != nil {
+		return nil, err
+	}
+	if err := mk.LearnNames(names); err != nil {
+		return nil, err
+	}
 	results := make([]map[string]any, 0, len(matches))
 	for i, m := range matches {
 		var lines []string

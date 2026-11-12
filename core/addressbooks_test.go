@@ -888,10 +888,30 @@ func TestConcurrentTokenlessSyncRejectsOutOfOrderStaleSnapshot(t *testing.T) {
 	<-entered
 
 	srv.PutCard("contacts", "c0", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Fresh V2\r\nEMAIL:fresh@example.com\r\nPHOTO;VALUE=URI:"+photoNew+"\r\nEND:VCARD\r\n")
-	require.NoError(t, s.SyncAddressBook(bg, ab.ID))
+	// A second sync of the same address book waits for the first: no home-set
+	// listing of its own is taken (or reconciled) while the first is in flight.
+	homeListings := func() int {
+		n := 0
+		for _, r := range srv.Requests() {
+			if r.Method == "PROPFIND" && strings.HasSuffix(r.Path, "/dav/addressbooks/alice/") {
+				n++
+			}
+		}
+		return n
+	}
+	before := homeListings()
+	sync2Done := make(chan error, 1)
+	go func() { sync2Done <- s.SyncAddressBook(bg, ab.ID) }()
+	select {
+	case err := <-sync2Done:
+		t.Fatalf("the second sync ran beside the first: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	assert.Equal(t, before, homeListings(), "no overlapping home-set listing")
 
 	unblock()
 	require.NoError(t, <-sync1Done)
+	require.NoError(t, <-sync2Done)
 	srv.SetMultigetHook(nil)
 
 	contacts, err := s.Contacts(bg)

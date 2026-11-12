@@ -1058,6 +1058,10 @@ func (s *Service) addressBookCredentials(ctx context.Context, rec addressBookRec
 }
 
 func (s *Service) syncOneAddressBook(ctx context.Context, id int64) error {
+	// An older home-set listing reconciled after a newer one would delete the collections the newer one found.
+	mu, _ := s.abSync.LoadOrStore(id, &sync.Mutex{})
+	mu.(*sync.Mutex).Lock()
+	defer mu.(*sync.Mutex).Unlock()
 	s.abWriteMu.Lock()
 	rec, err := s.addressBookRecord(ctx, id)
 	s.abWriteMu.Unlock()

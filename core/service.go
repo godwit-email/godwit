@@ -240,6 +240,7 @@ type Service struct {
 	sendNow    func() time.Time     // stored checks' clock; nil is time.Now
 
 	abWriteMu        sync.Mutex              // serializes address-book/collection writes vs sync commits
+	abSync           sync.Map                // address book id -> *sync.Mutex: one discovery and reconciliation of it at a time
 	abTokMu          sync.Mutex              // guards abTokens and abRefreshLocks
 	abTokens         map[int64]auth.Grant    // cached OAuth access tokens by address book ID
 	abRefreshLocks   map[int64]chan struct{} // per-address-book OAuth refresh semaphores

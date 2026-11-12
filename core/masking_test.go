@@ -340,6 +340,33 @@ func TestTheMaskingLogTellsRequestsApart(t *testing.T) {
 	assert.Empty(t, log)
 }
 
+// A contact known from mail alone, whose name no header in the conversation
+// carried, goes out of search_contacts masked when names are masked.
+func TestSearchContactsMasksMailOnlyNames(t *testing.T) {
+	e := newSkillEnv(t)
+	ctx := t.Context()
+	addMessage(t, e.s, "Plans", "Margaret Hale <margaret@example.com>", "hello", "", 100)
+	st, err := e.s.GetSettings(ctx)
+	require.NoError(t, err)
+	st.MaskCategories.Names.On = true
+	_, err = e.s.SetSettings(ctx, st)
+	require.NoError(t, err)
+
+	conv := e.askConv(t)
+	e.srv.Script(
+		testllm.Turn{Calls: []testllm.Call{{Name: "search_contacts", Args: `{"query":"margaret"}`}}},
+		testllm.Turn{Text: []string{"ok"}},
+	)
+	evs := e.ask(t, conv.ID, "find her address")
+	require.Equal(t, "done", evs[len(evs)-1].Kind, "%+v", evs[len(evs)-1].Err)
+	reqs := e.srv.Requests()
+	require.Len(t, reqs, 2)
+	body := string(reqs[1].Body)
+	assert.Contains(t, body, `contact:1`, "the tool did return the contact")
+	assert.Contains(t, body, "Name: {{NAME_")
+	assert.NotContains(t, body, "Margaret Hale")
+}
+
 func TestAddressBookCardNamesMaskInWitAndPreviewAndRetract(t *testing.T) {
 	e := newApprovalEnv(t)
 	ctx := t.Context()

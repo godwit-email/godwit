@@ -42,6 +42,22 @@ func (m *Masker) SetKnownNames(names []string) {
 // headerRe is a From, To or Cc line, as mailHeader writes one.
 var headerRe = regexp.MustCompile(`(?im)^(?:from|to|cc)[ \t]*:[ \t]*(.+)$`)
 
+// LearnNames makes names known values, as learnNames does a header's
+// display names: for names read from mail outside a header (a contact).
+func (m *Masker) LearnNames(names []string) error {
+	if !m.namesOn.Load() {
+		return nil
+	}
+	for _, raw := range names {
+		if n := strings.TrimSpace(raw); !shortName(n) && !strings.Contains(n, "@") {
+			if _, err := m.placeholder(nameKind, n, false, true); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // learnNames makes the display names in s's header lines known values.
 func (m *Masker) learnNames(s string) error {
 	if !m.namesOn.Load() {
