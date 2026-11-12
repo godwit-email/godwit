@@ -911,8 +911,10 @@ func TestHeadlessTrayActions(t *testing.T) {
 		t.Fatalf("GetSettings after Hide Tray Icon = %+v, %v", st, err)
 	}
 
-	// Quit cleanly shuts down the backend without cancelling runCtx.
+	// Quit cleanly shuts down the backend without cancelling runCtx; with no
+	// interface connected it waits for none (TestTrayQuitAsksInterfaceFirst).
 	_ = c.Close()
+	_ = uiClient.Close()
 	sink.Actions().quit()
 	select {
 	case code := <-done:

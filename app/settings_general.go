@@ -59,9 +59,6 @@ func (a *App) changeSettings(st core.Settings) {
 
 // settingsEffects tells the platform and the catalog what changed from old to st.
 func (a *App) settingsEffects(old, st core.Settings) {
-	if st.BackgroundSync != old.BackgroundSync {
-		a.applyBackgroundSync(st)
-	}
 	if st.RemoteImages != old.RemoteImages {
 		a.mail.reader.invalidateAvatars(true)
 	}
@@ -113,18 +110,6 @@ func (a *App) syncLocalAPI() {
 			a.localAPIWant = false // a failed request leaves the server off
 			a.localAPIFailed(err)
 		}
-	})
-}
-
-// LocalAPIStopped tells the App that the Local API server that request gen
-// asked for ended by itself with err. Safe from any goroutine.
-func (a *App) LocalAPIStopped(gen uint64, err error) {
-	a.onUI(func() {
-		if gen != a.localAPIGen { // a newer request replaced or stopped that server
-			return
-		}
-		a.localAPIPath = ""
-		a.localAPIFailed(err)
 	})
 }
 

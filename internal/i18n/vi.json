@@ -28,6 +28,7 @@
   "wit_skill_output_replace_body": "Thay thế nội dung",
   "wit_skill_output_replace_draft": "Thay thế bản nháp",
   "app_another_owner": "Godwit đã chạy (ứng dụng hoặc godwit --headless) cho thư mục dữ liệu này.",
+  "app_backend_lost": "Tiến trình nền của Godwit đã dừng đột ngột. Mở lại Godwit để khởi động lại.",
   "app_lock_failed": "Godwit không thể mở thư mục dữ liệu.",
   "app_open_failed": "Godwit không thể mở thư mục dữ liệu: {arg1}.",
   "app_open_failed_other": "không thể mở cơ sở dữ liệu",

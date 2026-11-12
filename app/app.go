@@ -159,10 +159,9 @@ type Deps struct {
 	// Dev: the build is a development one: the rail offers the Kit gallery.
 	Dev bool
 
-	// Remote: Svc is a backend's over the Local API socket. The backend
-	// notifies new mail and narrows background syncs; the App only tells it
-	// whether the window is in front.
-	Remote bool
+	// Quit quits the app as its own Quit does; the backend's tray asks for it
+	// (events.QuitRequested). nil ignores that.
+	Quit func()
 }
 
 // Page is a top-level screen.
@@ -238,13 +237,14 @@ type App struct {
 	localAPIErr  error  // why the Local API last failed; the privacy page shows it
 
 	foreground bool
-	vibrancy   bool // Deps.Vibrancy
-	remote     bool // Deps.Remote: MailNotifier is nil
-	*MailNotifier
+	vibrancy   bool   // Deps.Vibrancy
+	quit       func() // Deps.Quit
+
 	logf                                 func(format string, args ...any)
 	noteRoute                            func(ctx context.Context, id string) (Route, bool, error) // where a notification leads; tests wrap it
 	noteGen                              uint64                                                    // bumped per notification click; only the newest navigates
 	noteFirst                            string                                                    // a click that came before the first load
+	noteSeen                             map[string]bool                                           // the clicks taken: one given to both processes counts once
 	inboxUnread                          int                                                       // the inboxes' unread total
 	trayUnread                           int                                                       // what the tray shows
 	appUnread                            int                                                       // what the app icon shows; -1 before the first update
@@ -346,17 +346,7 @@ func New(d Deps) *App {
 	a.syncing, a.syncErr, a.syncedAtBy = map[int64]bool{}, map[int64]syncFail{}, map[int64]time.Time{}
 	a.undoToasts = map[int64]bool{}
 	a.ctx, a.cancel = context.WithCancel(context.Background())
-	if a.remote = d.Remote; !a.remote {
-		a.MailNotifier = NewMailNotifier(MailNotifierDeps{
-			Svc:        a.svc,
-			Sink:       a.plat,
-			Clock:      a.clock,
-			Foreground: func() bool { return a.foreground },
-			Language:   i18n.Language,
-			Post:       a.onUI,
-			Logf:       a.logf,
-		})
-	}
+	a.quit = d.Quit
 	a.pumpDone = make(chan struct{})
 	return a
 }
@@ -559,9 +549,6 @@ func (a *App) MailReady() bool {
 // attachments. UI thread.
 func (a *App) Close() {
 	a.cancel() // the event pump unsubscribes as it stops
-	if a.MailNotifier != nil {
-		a.MailNotifier.Close()
-	}
 	if a.codesStop != nil {
 		a.codesStop()
 	}
@@ -655,26 +642,14 @@ func (a *App) BeforeClose(proceed func()) {
 	})
 }
 
-// SetForeground records whether the window is in front.
+// SetForeground records whether the window is in front, and tells the
+// backend, which notifies new mail and narrows background syncs by it.
 func (a *App) SetForeground(on bool) {
 	a.foreground = on
 	if on {
 		a.plat.ShowSignInCode(nil)
 	}
-	if a.remote {
-		a.writes.Chain("ui-foreground", func(ctx context.Context) error { return a.svc.SetUIForeground(ctx, on) }, a.toastErr)
-		return
-	}
-	a.applyBackgroundSync(a.settings)
-}
-
-// applyBackgroundSync narrows the Service's syncs to the inbox while the
-// window is behind another one, unless st syncs every folder there.
-func (a *App) applyBackgroundSync(st core.Settings) {
-	if a.remote {
-		return // the backend narrows them from SetUIForeground and the settings
-	}
-	a.svc.SetInboxOnly(st.BackgroundSync != core.BackgroundSyncAll && !a.foreground)
+	a.writes.Chain("ui-foreground", func(ctx context.Context) error { return a.svc.SetUIForeground(ctx, on) }, a.toastErr)
 }
 
 // OnUI posts f to the UI thread unless the App has closed by then, for

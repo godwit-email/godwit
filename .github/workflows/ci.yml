@@ -172,30 +172,6 @@ jobs:
             for pid in "${pids[@]}"; do wait "$pid" || rc=1; done
             ((rc == 0)) || exit 1
           done
-      - name: test webui over the UI socket
-        shell: bash
-        env:
-          CGO_ENABLED: "0"
-          GODWIT_UI_TRANSPORT: socket
-        run: go test -count=1 ./webui
-      - name: test app over the UI socket
-        shell: bash
-        env:
-          CGO_ENABLED: "0"
-          GODWIT_UI_TRANSPORT: socket
-        run: |
-          # "test (no cgo)" runs app in process; its binary runs it again with the App on a backend's socket.
-          bin="$RUNNER_TEMP/app.test.exe"
-          tests=$("$bin" -test.list . | tr -d '\r' | grep '^Test')
-          pids=()
-          for w in 0 1 2 3; do
-            pat=$(printf '%s\n' "$tests" | awk -v n=4 -v i="$w" 'NR % n == i % n' | paste -sd '|' -)
-            (cd app && "$bin" -test.count=1 -test.timeout=20m -test.run="^($pat)\$") &
-            pids+=($!)
-          done
-          rc=0
-          for pid in "${pids[@]}"; do wait "$pid" || rc=1; done
-          ((rc == 0)) || exit 1
 
   # The UI suite (app) and core run their tests one after another in a single
   # process; split core across shards 0 and 5, app across shards 1..4, and run

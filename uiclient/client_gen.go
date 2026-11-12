@@ -741,10 +741,6 @@ func (cl *Client) SetFlags(ctx context.Context, ids []int64, add []string, remov
 	return callErr(cl, ctx, "SetFlags", ids, add, remove)
 }
 
-func (cl *Client) SetInboxOnly(on bool) {
-	callVoid(cl, context.Background(), "SetInboxOnly", on)
-}
-
 func (cl *Client) SetLabel(ctx context.Context, messageIDs []int64, labelID int64, on bool) error {
 	return callErr(cl, ctx, "SetLabel", messageIDs, labelID, on)
 }

@@ -206,6 +206,7 @@ func NewCodec() *rpc.Codec {
 // every role, each for its reason.
 var hidden = map[string]bool{
 	"Close":         true, // the owner's lifetime, not a client's
+	"Publish":       true, // the owner's own events; a client could forge a click or a quit
 	"Redact":        true, // a client could test guesses of the owner's secrets against it
 	"AuditExternal": true, // writes audit rows; only the owner records what clients did
 	"Proxy":         true, // a custom proxy's URL carries its password
@@ -236,6 +237,8 @@ var uiOnly = map[string]bool{
 	"RecentLog": true, "SetTimeZone": true,
 	// Window foreground, open compose drafts, and background-round narrowing; external clients use SyncNow.
 	"SetUIForeground": true, "SetComposeOpen": true, "SetInboxOnly": true, "InboxOnly": true,
+	// Quitting Godwit stops the backend its interface started; a user-started one refuses.
+	"StopUIBackend": true,
 }
 
 // Expose picks the *core.Service methods callable by the full role: every

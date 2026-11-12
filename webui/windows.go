@@ -2,6 +2,8 @@ package webui
 
 import (
 	"log"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -91,6 +93,19 @@ func (ws *Windows) IsOpen(draftID int64) bool {
 	defer ws.mu.Unlock()
 	_, making := ws.opening[draftID]
 	return making || ws.byDraft[draftID] != nil
+}
+
+// OpenDrafts is every draft IsOpen reports, for the backend (SetComposeOpen).
+func (ws *Windows) OpenDrafts() []int64 {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	ids := slices.Collect(maps.Keys(ws.byDraft))
+	for id := range ws.opening {
+		if ws.byDraft[id] == nil {
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }
 
 func (ws *Windows) changed() {

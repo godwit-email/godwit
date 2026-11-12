@@ -57,13 +57,9 @@ func (h *harness) arriveIn(acc core.Account, folder string, subjects ...string) 
 	h.until("the arrivals", func() bool { got := h.newMail(acc.ID); return got != nil && len(got.msgs) == len(subjects) })
 }
 
-// newMail is acc's arrivals waiting in the notifier that gathers them (the
-// App's in process, the backend's over the socket), or nil.
+// newMail is acc's arrivals waiting in the backend's notifier, or nil.
 func (h *harness) newMail(acc int64) *arrivals {
-	n := h.app.MailNotifier
-	if h.sock != "" {
-		n = h.notifier
-	}
+	n := h.notifier
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if got := n.newMail[acc]; got != nil {
@@ -77,11 +73,9 @@ func (h *harness) newMail(acc int64) *arrivals {
 // shown, waiting for want of them.
 func (h *harness) notesAfter(want int) []Notification {
 	h.t.Helper()
-	if h.sock != "" { // the backend has the window's state (SetForeground) before it notifies
-		idle := false
-		h.app.writes.Idle(func() { idle = true })
-		h.until("the App's writes", func() bool { return idle })
-	}
+	idle := false // the backend has the window's state (SetForeground) before it notifies
+	h.app.writes.Idle(func() { idle = true })
+	h.until("the App's writes", func() bool { return idle })
 	h.advance(notifyWait)
 	if want > 0 {
 		h.until("the notification", func() bool { return len(h.plat.Notes()) >= want })

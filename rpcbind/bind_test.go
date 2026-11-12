@@ -282,7 +282,7 @@ func TestUISurfacePinned(t *testing.T) {
 	assert.Equal(t, wantAll, gotAll)
 
 	for _, m := range []string{
-		"Close", "Redact", "AuditExternal", "Proxy", "FollowConversation",
+		"Close", "Publish", "Redact", "AuditExternal", "Proxy", "FollowConversation",
 		"UIConnected", "UIForeground", "IsComposeOpen",
 		"InlineImages", "FetchAttachments",
 		"InstallPluginFromRegistryWithProgress", "PrepareModelWithProgress", "DownloadRecognitionModel",

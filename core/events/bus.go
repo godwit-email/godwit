@@ -22,6 +22,11 @@ const (
 	ModelsChanged     = "models.changed"    // a plugin model's files were downloaded or removed
 	MCPSendsChanged   = "mcp_sends.changed" // godwit mcp's send requests waiting for the user changed
 	ImportProgress    = "import.progress"   // an .eml import into AccountID handled Done of Total files
+	// NotificationClicked: the backend got a click on notification Notification
+	// while a ui client is connected; the interface opens what it shows.
+	NotificationClicked = "notification.clicked"
+	// QuitRequested: Quit was chosen in the backend's tray; the interface quits as its own Quit does.
+	QuitRequested = "quit.requested"
 )
 
 // subscriberBuffer is the per-subscriber queue capacity.
@@ -42,6 +47,8 @@ type Event struct {
 	ConversationID int64
 	// Done and Total are set on import.progress.
 	Done, Total int
+	// Notification is set on notification.clicked: the clicked notification's ID.
+	Notification string
 }
 
 // Bus fans events out to subscribers. Publish never blocks.

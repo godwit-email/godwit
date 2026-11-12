@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"slices"
@@ -19,6 +20,7 @@ import (
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/syslang"
 	"github.com/godwit-email/godwit/ownerlock"
+	"github.com/godwit-email/godwit/rpc"
 	"github.com/godwit-email/godwit/rpcbind"
 )
 
@@ -66,13 +68,15 @@ func linuxHasDisplay(getenv func(string) string) bool {
 // hidden PDF pages work as they do in the GUI.
 func mygoHeadlessDesktop() *headlessDesktop {
 	var plat *platform
+	var svc *core.Service // main thread, as the clicks
 	return &headlessDesktop{
 		translator: systemTranslator,
 		openURL:    mygo.Shell.OpenExternal,
 		printPDF:   printPDF,
 		post:       mygo.RunOnMain,
-		newPlatform: func(dataDir string, svc *core.Service) headlessPlatform {
-			plat = &platform{dataDir: dataDir, svc: svc}
+		newPlatform: func(dataDir string, s *core.Service) headlessPlatform {
+			svc = s
+			plat = &platform{dataDir: dataDir, svc: s}
 			return plat
 		},
 		run: func(ctx context.Context, ready func(stop func())) (bool, error) {
@@ -87,6 +91,12 @@ func mygoHeadlessDesktop() *headlessDesktop {
 				}
 			})
 			defer offLocale()
+			offClick := mygo.App.OnNotificationClick(func(id string) {
+				if svc != nil {
+					notificationClicked(svc, id)
+				}
+			})
+			defer offClick()
 			defer context.AfterFunc(ctx, mygo.App.Quit)()
 			started := false
 			mygo.App.WhenReady(func() {
@@ -105,18 +115,22 @@ func mygoHeadlessDesktop() *headlessDesktop {
 
 // headless owns dataDir and serves the Local API until ctx ends, then closes
 // the server, the notifier, the Service and the lock, in that order. Logs go
-// to stderr through Service.Redact.
-func headless(ctx context.Context, dataDir string, stderr io.Writer) int {
+// to stderr through Service.Redact. uiStarted: the interface started it, so
+// external access follows Settings.LocalAPI and the interface's quit stops it
+// (StopUIBackend); a user's --headless serves external clients always and
+// outlives any interface. A failed start exits with the code the interface
+// tells the user by (exitAnotherOwner, exitLockFailed, exitOpenDenied, else 1).
+func headless(ctx context.Context, dataDir string, stderr io.Writer, uiStarted bool) int {
 	lang := syslang.Detect()
 	release, err := ownerlock.Acquire(dataDir)
 	if errors.Is(err, ownerlock.ErrAnotherOwner) {
 		i18n.SetLanguage(lang)
 		fmt.Fprintln(stderr, i18n.T("app.another_owner"))
-		return 2
+		return exitAnotherOwner
 	}
 	if err != nil {
 		fmt.Fprintln(stderr, "godwit:", err)
-		return 1
+		return exitLockFailed
 	}
 	defer release()
 	reg, err := registrySource()
@@ -128,7 +142,7 @@ func headless(ctx context.Context, dataDir string, stderr io.Writer) int {
 		var shutdown func() int
 		code := 0
 		started, err := d.run(ctx, func(stop func()) {
-			shutdown, code = startHeadlessServer(ctx, dataDir, stderr, lang, reg, d, stop)
+			shutdown, code = startHeadlessServer(ctx, dataDir, stderr, lang, reg, d, stop, uiStarted)
 			if shutdown == nil {
 				stop()
 			}
@@ -149,7 +163,7 @@ func headless(ctx context.Context, dataDir string, stderr io.Writer) int {
 	}
 	waitCtx, stopWait := context.WithCancel(ctx)
 	defer stopWait()
-	shutdown, code := startHeadlessServer(ctx, dataDir, stderr, lang, reg, nil, stopWait)
+	shutdown, code := startHeadlessServer(ctx, dataDir, stderr, lang, reg, nil, stopWait, uiStarted)
 	if shutdown == nil {
 		return code
 	}
@@ -157,7 +171,7 @@ func headless(ctx context.Context, dataDir string, stderr io.Writer) int {
 	return shutdown()
 }
 
-func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, lang string, reg *core.RegistrySource, d *headlessDesktop, onStop func()) (func() int, int) {
+func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, lang string, reg *core.RegistrySource, d *headlessDesktop, onStop func(), uiStarted bool) (func() int, int) {
 	opts := core.Options{
 		DataDir:           dataDir,
 		AutoSync:          true,
@@ -177,9 +191,15 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 		opts.OpenURL = d.openURL
 		opts.PrintPDF = d.printPDF
 	}
+	if uiStarted {
+		opts.StopUIBackend = onStop
+	}
 	svc, err := core.New(ctx, opts)
 	if err != nil {
 		fmt.Fprintln(stderr, "godwit:", err)
+		if errors.Is(err, fs.ErrPermission) {
+			return nil, exitOpenDenied
+		}
 		return nil, 1
 	}
 	old := slog.Default() // the log package follows slog's default
@@ -189,7 +209,12 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 		slog.SetDefault(old)
 	}
 
-	srv, err := rpcbind.Listen(dataDir, svc, app.Version)
+	external := true
+	if uiStarted {
+		st, err := svc.GetSettings(ctx)
+		external = err == nil && st.LocalAPI
+	}
+	srv, err := rpcbind.ListenWith(dataDir, svc, rpcbind.ListenOptions{Version: app.Version, External: external})
 	if err != nil {
 		slog.Error("listen", "err", err)
 		closeSvc()
@@ -215,7 +240,7 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 		if d.newPlatform != nil {
 			if plat := d.newPlatform(dataDir, svc); plat != nil {
 				sink = plat
-				tray = newBackendTray(svc, plat, lang, post, clock, logWarn, onStop)
+				tray = newBackendTray(svc, plat, lang, post, clock, logWarn, func() { quitFromTray(svc, onStop) })
 			}
 		}
 	}
@@ -236,6 +261,9 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 	go func() {
 		defer close(pumpDone)
 		for ev := range ch {
+			if uiStarted && ev.Type == events.SettingsChanged {
+				followLocalAPI(ctx, svc, srv)
+			}
 			notifier.HandleEvent(ev)
 			if tray != nil {
 				tray.HandleEvent(ev)
@@ -275,6 +303,51 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 		}
 		return 0
 	}, 0
+}
+
+// followLocalAPI turns external access on srv on or off as Settings.LocalAPI
+// now says (接入 AI 应用), for a backend the interface started.
+func followLocalAPI(ctx context.Context, svc *core.Service, srv *rpc.Server) {
+	st, err := svc.GetSettings(ctx)
+	if err == nil {
+		err = srv.SetExternal(st.LocalAPI)
+	}
+	if err != nil && ctx.Err() == nil {
+		slog.Warn("local API: following the setting", "err", err)
+	}
+}
+
+// quitWait bounds how long the tray's Quit waits for the interface to quit first.
+const quitWait = 10 * time.Second
+
+// quitFromTray is the tray's Quit: with an interface connected, it asks it to
+// quit first (QuitRequested), so it saves what it holds, then stops once it has
+// gone or quitWait passed; stop is the backend's usual close path.
+func quitFromTray(svc *core.Service, stop func()) {
+	if stop == nil {
+		return
+	}
+	if !svc.UIConnected() {
+		stop()
+		return
+	}
+	svc.Publish(events.Event{Type: events.QuitRequested})
+	go func() {
+		for end := time.Now().Add(quitWait); svc.UIConnected() && time.Now().Before(end); {
+			time.Sleep(50 * time.Millisecond)
+		}
+		stop()
+	}()
+}
+
+// notificationClicked takes a click on one of the backend's notifications:
+// a connected interface opens what it shows (NotificationClicked); it
+// dedupes, as macOS may hand the click to it as well.
+func notificationClicked(svc *core.Service, id string) {
+	if !svc.UIConnected() {
+		return // shortcut: dropped with no interface connected; #733 starts the interface for it
+	}
+	svc.Publish(events.Event{Type: events.NotificationClicked, Notification: id})
 }
 
 type systemClock struct{}
@@ -340,11 +413,7 @@ func (t *backendTray) Start() {
 	t.plat.BindTray(trayActions{
 		syncAll: t.syncAll,
 		hide:    t.hideTrayIcon,
-		quit: func() {
-			if t.onQuit != nil {
-				t.onQuit()
-			}
-		},
+		quit:    t.onQuit,
 	})
 	snap, err := t.readSnapshot(t.ctx, t.clock.Now())
 	if err != nil {

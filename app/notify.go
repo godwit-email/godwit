@@ -14,13 +14,21 @@ import (
 // NotificationClicked shows the window with what a notification was about:
 // its message, or the account's inbox for a gathered one. Only the newest
 // click navigates, and only if the route has not changed meanwhile; a click
-// before the first load waits for it.
+// before the first load waits for it. A click taken already is dropped: the
+// backend and the interface may both be given it.
 func (a *App) NotificationClicked(id string) {
+	if a.noteSeen[id] {
+		return
+	}
 	a.plat.ShowWindow()
 	if !a.loaded {
 		a.noteFirst = id
 		return
 	}
+	if a.noteSeen == nil {
+		a.noteSeen = map[string]bool{}
+	}
+	a.noteSeen[id] = true
 	a.noteGen++
 	gen, look := a.noteGen, a.noteRoute
 	var r Route
@@ -154,6 +162,9 @@ func (a *App) finishBatch() {
 
 // batchPending reports whether the Sync All in flight still waits on the account.
 func (a *App) batchPending(id int64) bool { return a.syncBatch != nil && a.syncBatch.pending[id] }
+
+// TrayIconShown reports whether the tray shows Godwit's icon (ShowTrayIcon).
+func (a *App) TrayIconShown() bool { return a.settings.ShowTrayIcon }
 
 // KeepInBackground reports whether closing the window only hides it: 后台常驻
 // is on, or an enabled rule runs in the background.

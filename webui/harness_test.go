@@ -12,20 +12,13 @@ import (
 	"github.com/godwit-email/godwit/uiclient"
 )
 
-// uiTransport is the env var that picks how the pages reach the Service:
-// "socket" makes them a ui-role client of a backend serving the test's Env
-// over the Local API socket; anything else calls the Service in process.
-const uiTransport = "GODWIT_UI_TRANSPORT"
-
 var uiClients sync.Map // *coretest.Env → Service, so a test's pages share one connection
 
-// uiService is what the pages get for e: e.Svc in process, or in socket mode
-// a client dialed as the ui role. Setup and assertions keep using e.Svc.
+// uiService is what the pages get for e: a client dialed as the ui role of a
+// backend serving e over the Local API socket, as the interface's. Setup and
+// assertions keep using e.Svc.
 func uiService(t testing.TB, e *coretest.Env) Service {
 	t.Helper()
-	if os.Getenv(uiTransport) != "socket" {
-		return e.Svc
-	}
 	if svc, ok := uiClients.Load(e); ok {
 		return svc.(Service)
 	}

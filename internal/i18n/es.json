@@ -28,6 +28,7 @@
   "wit_skill_output_replace_body": "Reemplazar el cuerpo",
   "wit_skill_output_replace_draft": "Reemplazar el borrador",
   "app_another_owner": "Godwit ya se está ejecutando (la aplicación o godwit --headless) para este directorio de datos.",
+  "app_backend_lost": "El proceso en segundo plano de Godwit se detuvo inesperadamente. Abre Godwit de nuevo para reiniciarlo.",
   "app_lock_failed": "Godwit no pudo abrir su directorio de datos.",
   "app_open_failed": "Godwit no pudo abrir su directorio de datos: {arg1}.",
   "app_open_failed_other": "no se pudo abrir la base de datos",

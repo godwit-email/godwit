@@ -41,6 +41,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	args = slices.DeleteFunc(slices.Clone(args), func(a string) bool { return strings.HasPrefix(a, "-psn_") }) // from macOS LaunchServices
 	fs := newFlagSet("godwit", stderr)
 	isHeadless := fs.Bool("headless", false, "")
+	uiStarted := fs.Bool(uiStartedFlag, false, "") // not in usage: the interface marks the backend it starts
 	version := fs.Bool("version", false, "")
 	dataDir := fs.String("data-dir", "", "")
 	if code, ok := parse(fs, args); !ok {
@@ -61,7 +62,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return 1
 	}
 	if *isHeadless {
-		return headless(ctx, dir, stderr)
+		return headless(ctx, dir, stderr, *uiStarted)
 	}
 	return gui(ctx, dir)
 }

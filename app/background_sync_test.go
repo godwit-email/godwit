@@ -10,29 +10,6 @@ import (
 	"github.com/godwit-email/godwit/internal/i18n"
 )
 
-// The window in front is what ends the narrow sync: the setting alone does not.
-func TestSetForegroundNarrowsSync(t *testing.T) {
-	inProcessOnly(t) // shortcut: over the socket the backend narrows from its saved settings (rpcbind TestUIForegroundNarrowsBackgroundSync), not the App's unsaved ones; drop when the in-process App goes
-	h := newHarness(t)
-	h.until("settings loaded", func() bool { return h.app.loaded })
-	h.app.settings.BackgroundSync = core.BackgroundSyncInbox
-
-	h.app.SetForeground(false)
-	if !h.env.Svc.InboxOnly() {
-		t.Fatal("the background did not narrow the sync")
-	}
-	h.app.SetForeground(true)
-	if h.env.Svc.InboxOnly() {
-		t.Fatal("the window in front kept the sync narrow")
-	}
-
-	h.app.settings.BackgroundSync = core.BackgroundSyncAll
-	h.app.SetForeground(false)
-	if h.env.Svc.InboxOnly() {
-		t.Fatal("all folders narrowed the sync")
-	}
-}
-
 // The choice has its row under Startup, and it is saved as any other.
 func TestSettingsBackgroundSyncChoice(t *testing.T) {
 	h, _ := withAccount(t)
@@ -46,28 +23,6 @@ func TestSettingsBackgroundSyncChoice(t *testing.T) {
 		st, err := h.env.Svc.GetSettings(context.Background())
 		return err == nil && st.BackgroundSync == core.BackgroundSyncAll
 	})
-}
-
-// Choosing all folders while the window is behind another app widens the
-// sync at once, without waiting for a focus change.
-func TestBackgroundSyncSettingApplies(t *testing.T) {
-	inProcessOnly(t) // shortcut: over the socket the backend applies BackgroundSync when the settings are saved, not from the App's settingsEffects; drop when the in-process App goes
-	h := newHarness(t)
-	h.until("settings loaded", func() bool { return h.app.loaded })
-	h.app.foreground = false
-	all := h.app.settings
-	all.BackgroundSync = core.BackgroundSyncAll
-	inbox := all
-	inbox.BackgroundSync = core.BackgroundSyncInbox
-
-	h.app.settingsEffects(all, inbox)
-	if !h.env.Svc.InboxOnly() {
-		t.Fatal("inbox only did not narrow the sync")
-	}
-	h.app.settingsEffects(inbox, all)
-	if h.env.Svc.InboxOnly() {
-		t.Fatal("all folders kept the sync narrow")
-	}
 }
 
 func TestBackgroundSyncSettingsReload(t *testing.T) {

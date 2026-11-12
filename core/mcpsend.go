@@ -63,7 +63,8 @@ type mcpSend struct {
 func (r *mcpSend) expired() bool { return time.Since(r.created) >= mcpSendTTL }
 
 // RequestMCPSend is godwit mcp's send_draft: what it does follows
-// Settings.MCPSend. 不允许 (or 每次确认 headless) is ErrMCPSendOff. 每次确认
+// Settings.MCPSend. 不允许 (or 每次确认 with no window to confirm it: neither
+// ConfirmWindow nor a connected ui client) is ErrMCPSendOff. 每次确认
 // records a request bound to the draft's revision, one per draft (a newer
 // revision's replaces the older), at most maxMCPSends (ErrMCPSendBusy), for
 // the user to confirm (PendingMCPSends, ResolveMCPSend), and announces
@@ -94,7 +95,7 @@ func (s *Service) RequestMCPSend(ctx context.Context, draftID, revision int64) (
 			slog.Default().Warn("could not audit an MCP send", "draft", draftID, "err", err)
 		}
 		return true, nil
-	case level == MCPSendOff || !s.opts.ConfirmWindow:
+	case level == MCPSendOff || !s.opts.ConfirmWindow && !s.UIConnected():
 		return false, ErrMCPSendOff
 	}
 	s.editMu.Lock()

@@ -1,20 +1,13 @@
 package app
 
 import (
-	"os"
+	"strconv"
 	"testing"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/core/events"
 )
-
-// inProcessOnly skips t over the ui socket, where the backend, not the App,
-// does what t checks.
-func inProcessOnly(t *testing.T) {
-	if os.Getenv(uiTransport) == "socket" {
-		t.Skip("in process only")
-	}
-}
 
 // backendArrive delivers subject to acc's INBOX and waits until the
 // backend's notifier has taken the arrival.
@@ -26,7 +19,6 @@ func (h *harness) backendArrive(acc core.Account, subject string) {
 }
 
 func TestSocketUINotifiesFromBackend(t *testing.T) {
-	t.Setenv(uiTransport, "socket")
 	h, acc := notifyHarness(t, func(st *core.Settings) { st.NotifyPreview = true })
 
 	h.app.SetForeground(true)
@@ -46,4 +38,36 @@ func TestSocketUINotifiesFromBackend(t *testing.T) {
 
 	h.connectUI()
 	h.see("While closed")
+}
+
+// A click on a backend's notification reaches the App over its events and
+// opens the message; the same click handed to the App as well (macOS may
+// give it to either process) does nothing more.
+func TestSocketUIOpensBackendClick(t *testing.T) {
+	h, acc := notifyHarness(t, func(st *core.Settings) { st.NotifyPreview = true })
+	h.backendArrive(acc, "Clicked in the backend")
+	n := h.notesAfter(1)[0]
+	h.env.Svc.Publish(events.Event{Type: events.NotificationClicked, Notification: n.ID})
+	h.until("the message open", func() bool {
+		return h.app.route.ThreadID != 0 && h.tt.HasText("body of Clicked in the backend")
+	})
+	h.app.NotificationClicked(n.ID)
+	h.env.Svc.Publish(events.Event{Type: events.NotificationClicked, Notification: "account:" + strconv.FormatInt(acc.ID, 10)})
+	h.until("the account's inbox", func() bool { return h.app.route.ThreadID == 0 })
+	shown := 0
+	for _, c := range h.plat.Calls() {
+		if c == "ShowWindow" {
+			shown++
+		}
+	}
+	if shown != 2 {
+		t.Fatalf("ShowWindow %d times, want 2: the repeated click was not dropped", shown)
+	}
+}
+
+// Quit in the backend's tray quits the App as its own Quit does.
+func TestSocketUIQuitsFromBackendTray(t *testing.T) {
+	h := newHarness(t)
+	h.env.Svc.Publish(events.Event{Type: events.QuitRequested})
+	h.until("the App to quit", func() bool { return h.quits.Load() == 1 })
 }
