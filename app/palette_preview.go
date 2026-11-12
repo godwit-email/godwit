@@ -24,7 +24,7 @@ type palCard struct {
 func (p *palette) preview(c *ui.Context, m core.MessageSummary) {
 	t, th := theme.Of(c), c.Theme()
 	pc := p.card(m)
-	name := displayName(m.From)
+	name := cmp.Or(m.FromName, displayName(m.From))
 	ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Center).Children(func() {
 		kit.AvatarImage(c, name, pc.avatar)
 		ui.Column(c).Shrink(1).Children(func() {

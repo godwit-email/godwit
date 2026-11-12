@@ -2,13 +2,16 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 )
 
@@ -163,4 +166,176 @@ func TestContactsAvatarPolicy(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestContactsSidebarRefreshAndZeroMail(t *testing.T) {
+	h, accs := mailHarness(t, []coretest.Option{coretest.WithoutAutoSync()}, "alice@example.com")
+	acc := accs[0]
+	h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "Lunch?", "Noon?"))
+
+	srv := h.env.StartCardDAV(t)
+	photoB64 := base64.StdEncoding.EncodeToString(readerAvatarSVG)
+	srv.PutCard("contacts", "zero", "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Zero Person\r\nEMAIL:zero@example.com\r\nPHOTO:data:image/svg+xml;base64,"+photoB64+"\r\nEND:VCARD\r\n")
+	if _, err := h.env.Svc.AddAddressBook(context.Background(), core.AddressBookInput{
+		Preset: core.PresetCustom, Name: "通讯录一", URL: srv.URL(), Username: "alice", Password: "secret",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	h.click("联系人")
+	h.see("全部联系人")
+	h.see("往来过")
+	h.see("通讯录")
+	h.see("订阅")
+	h.see("已屏蔽")
+	h.see("bob@example.com")
+	h.see("zero@example.com")
+
+	// "往来过" includes received-only Bob (Messages > 0) and excludes zero-mail contacts.
+	h.click("往来过")
+	h.until("only contacts with mail", func() bool {
+		return h.tt.HasText("bob@example.com") && !h.tt.HasText("zero@example.com")
+	})
+
+	// "通讯录" shows enabled address-book contacts and excludes mail-only Bob.
+	h.click("通讯录")
+	h.see("通讯录 · 1")
+	h.click("zero@example.com")
+	h.until("Zero Person chosen and Bob gone from list and detail", func() bool {
+		return h.app.contacts().detailOf == "zero@example.com" && !h.app.contacts().loading && !h.tt.HasText("bob@example.com")
+	})
+	// Zero-mail contact omits row timestamp (never renders 1970/0001), shows "—" in last stat,
+	// disables 全部归档, and loads its CardDAV PHOTO even with Latest == 0.
+	h.see("—")
+	h.see("0 封邮件")
+	for _, s := range h.tt.Texts() {
+		if strings.Contains(s, "1970") || strings.Contains(s, "0001") {
+			t.Fatalf("unexpected zero timestamp %q in %q", s, h.tt.Texts())
+		}
+	}
+	h.until("zero-mail CardDAV avatar loaded", func() bool {
+		h.drain()
+		h.tt.Frame()
+		return !slices.Contains(h.tt.Texts(), "Z")
+	})
+
+	// Manual refresh button pulls newly added remote card, and updates removed avatar.
+	srv.PutCard("contacts", "zero", "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Zero Person\r\nEMAIL:zero@example.com\r\nEND:VCARD\r\n")
+	srv.PutCard("contacts", "carol", "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Carol New\r\nEMAIL:carol@example.com\r\nEND:VCARD\r\n")
+	h.click("同步通讯录")
+	h.see("Carol New")
+	h.until("removed CardDAV avatar invalidated back to initial", func() bool {
+		h.drain()
+		h.tt.Frame()
+		return slices.Contains(h.tt.Texts(), "Z")
+	})
+
+	// ⌘R shortcut also triggers manual refresh.
+	srv.PutCard("contacts", "dan", "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Dan Shortcut\r\nEMAIL:dan@example.com\r\nEND:VCARD\r\n")
+	h.tt.Key(ui.Cmd, ui.KeyR)
+	h.see("Dan Shortcut")
+}
+
+func TestContactsMultiAddressAndActions(t *testing.T) {
+	h, accs := mailHarness(t, []coretest.Option{coretest.WithoutAutoSync()}, "alice@example.com")
+	acc := accs[0]
+
+	srv := h.env.StartCardDAV(t)
+	srv.PutCard("contacts", "bob", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Bob Chen\r\nORG:Acme Corp\r\nTITLE:CTO\r\nEMAIL;TYPE=PREF:bob@home.com\r\nEMAIL:bob@work.com\r\nEND:VCARD\r\n")
+	if _, err := h.env.Svc.AddAddressBook(context.Background(), core.AddressBookInput{
+		Preset: core.PresetCustom, Name: "公司通讯录", URL: srv.URL(), Username: "alice", Password: "secret",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	m := h.deliverOne(acc, coretest.Msg("bob@work.com", acc.Email, "Secondary Mail", "From secondary"))
+	h.deliverOne(acc, coretest.Msg("Other <other@example.com>", acc.Email, "Other Mail", "Hi"))
+
+	// Opening "查看联系人" from a secondary address opens and normalizes to the merged contact.
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.click("bob@work.com")
+	if err := h.tt.ChooseMenuItem("查看联系人"); err != nil {
+		t.Fatalf("%v; menu %q", err, h.tt.Menu())
+	}
+	h.drain()
+	h.until("merged contact opened", func() bool {
+		return h.app.route.Page == PageContacts && h.app.route.Contact == "bob@home.com" && h.app.contacts().detailOf == "bob@home.com"
+	})
+	h.see("Bob Chen")
+	h.see("Acme Corp · CTO")
+	h.see("首选")
+	h.see("bob@home.com")
+	h.see("bob@work.com")
+	h.see("Secondary Mail")
+
+	// Top 全部归档 covers mail received from secondary addresses too.
+	inbox, archive := h.folderOf(acc, "inbox").ID, h.folderOf(acc, "archive").ID
+	folderOf := func(id int64) int64 {
+		got, err := h.env.Svc.GetMessage(context.Background(), id, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got.FolderID
+	}
+	h.click("全部归档 1 封 · 之后可以撤销")
+	h.see("已归档 1 封")
+	h.until("secondary mail archived", func() bool { return folderOf(m.ID) == archive })
+	h.click("撤销")
+	h.until("secondary mail restored to inbox", func() bool { return folderOf(m.ID) == inbox })
+
+	// Filter matches subtitle (ORG / TITLE) and secondary email address.
+	h.fill("按名字或地址筛选", "CTO")
+	h.see("全部联系人 · 1")
+	if h.tt.HasText("other@example.com") {
+		t.Fatal("other@example.com matched CTO filter")
+	}
+	h.fill("按名字或地址筛选", "bob@work.com")
+	h.see("全部联系人 · 1")
+	h.fill("按名字或地址筛选", "")
+	h.see("全部联系人 · 2")
+
+	// Top 写邮件 opens popup menu with PREF address first.
+	h.click("写邮件")
+	menu := h.tt.Menu()
+	if !slices.Equal(menu, []string{"bob@home.com", "bob@work.com"}) {
+		t.Fatalf("compose menu %q", menu)
+	}
+	if err := h.tt.ChooseMenuItem("bob@work.com"); err != nil {
+		t.Fatal(err)
+	}
+	h.drain()
+	if d := h.draft(h.composeOpened(0)); !slices.Equal(d.To, []string{"bob@work.com"}) {
+		t.Fatalf("draft 0 To %q", d.To)
+	}
+
+	// Per-address compose and copy actions.
+	h.click("写邮件 bob@home.com")
+	if d := h.draft(h.composeOpened(1)); !slices.Equal(d.To, []string{"bob@home.com"}) {
+		t.Fatalf("draft 1 To %q", d.To)
+	}
+	h.click("复制邮箱地址 bob@work.com")
+	if got := h.tt.Clipboard(); got != "bob@work.com" {
+		t.Fatalf("clipboard %q", got)
+	}
+	h.see("已复制邮箱地址")
+
+	// Per-address block blocks only that address; top whole-card button still offers 屏蔽发件人.
+	h.click("屏蔽发件人 bob@work.com")
+	h.until("secondary blocked only", func() bool {
+		return slices.Contains(h.app.blocked, "bob@work.com") && !slices.Contains(h.app.blocked, "bob@home.com")
+	})
+	h.click("已屏蔽")
+	h.see("已屏蔽 · 1")
+
+	// Whole-card block blocks every remaining address; whole-card unblock clears all of them.
+	h.click("屏蔽发件人")
+	h.until("all addresses blocked", func() bool {
+		return slices.Contains(h.app.blocked, "bob@home.com") && slices.Contains(h.app.blocked, "bob@work.com")
+	})
+	h.click("取消屏蔽发件人")
+	h.until("all addresses unblocked", func() bool {
+		return !slices.Contains(h.app.blocked, "bob@home.com") && !slices.Contains(h.app.blocked, "bob@work.com")
+	})
+	h.see("已屏蔽 · 0")
 }

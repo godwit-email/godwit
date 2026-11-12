@@ -298,9 +298,13 @@ func (r *reader) load(k [2]int64) {
 		if k[1] != 0 {
 			msgs = slices.DeleteFunc(slices.Clone(msgs), func(m core.MessageSummary) bool { return m.ID != k[1] })
 		}
-		known := map[int64]int64{} // messages shown before keep their state
+		type prevState struct {
+			folder int64
+			sec    gomail.SecurityStatus
+		}
+		known := map[int64]prevState{} // messages shown before keep their state
 		for _, m := range r.msgs {
-			known[m.ID] = m.FolderID
+			known[m.ID] = prevState{folder: m.FolderID, sec: m.Security.Status}
 		}
 		r.loaded, r.subject, r.msgs = true, th.Subject, msgs
 		for id, b := range r.bodies { // gone from the thread: its page goes too
@@ -313,16 +317,22 @@ func (r *reader) load(k [2]int64) {
 		}
 		var unread []core.MessageSummary
 		for i, m := range msgs {
-			if folder, ok := known[m.ID]; ok {
-				if b := r.bodies[m.ID]; b != nil && folder != m.FolderID {
-					b.msg.MessageSummary = m
-					b.trusted = false
-					if !b.avatarAllow {
-						b.stopAvatar()
-						b.avatar, b.avatarDone, b.avatarBlocked = nil, false, true
+			if prev, ok := known[m.ID]; ok {
+				if b := r.bodies[m.ID]; b != nil {
+					b.msg.FromName = m.FromName
+					if prev.folder != m.FolderID {
+						b.msg.MessageSummary = m
+						b.trusted = false
+						if !b.avatarAllow {
+							b.stopAvatar()
+							b.avatar, b.avatarDone, b.avatarBlocked = nil, false, true
+						}
+						b.loading = false
+						r.loadBody(m.ID)
+					} else if prev.sec != m.Security.Status {
+						b.msg.Security = m.Security
+						r.loadAvatar(m.ID, b.avatarAllow)
 					}
-					b.loading = false
-					r.loadBody(m.ID)
 				}
 				continue
 			}
@@ -473,18 +483,32 @@ func (r *reader) loadAvatar(id int64, manual bool) {
 	ctx, stop := context.WithCancel(a.ctx)
 	b.avatarStop = stop
 	var image ui.ImageSource
-	var trusted bool
+	var trusted, carddav bool
 	a.do(func(context.Context) (err error) {
 		trusted, err = a.svc.ImagesAllowed(ctx, id)
-		if err != nil || !manual && !trusted {
+		if err != nil {
 			return err
+		}
+		if !manual && !trusted {
+			books, bErr := a.svc.ListAddressBooks(ctx)
+			if bErr != nil || !slices.ContainsFunc(books, func(ab core.AddressBook) bool {
+				return slices.ContainsFunc(ab.Collections, func(col core.AddressBookCollection) bool {
+					return col.Enabled && col.CardCount > 0
+				})
+			}) {
+				return bErr
+			}
 		}
 		avatar, err := get(ctx, id, manual)
 		if err != nil || len(avatar.Data) == 0 {
 			return err
 		}
+		carddav = avatar.Source == "carddav"
+		if !manual && !trusted && !carddav {
+			return nil
+		}
 		image, err = avatarImage(avatar)
-		if err == nil && !manual {
+		if err == nil && !manual && !carddav {
 			trusted, err = a.svc.ImagesAllowed(ctx, id)
 			if !trusted {
 				image = nil
@@ -499,7 +523,8 @@ func (r *reader) loadAvatar(id int64, manual bool) {
 		if gen != r.gen || r.bodies[id] != b || seq != b.avatarGen || ctx.Err() != nil {
 			return
 		}
-		b.avatarStop, b.avatarDone, b.avatarBlocked = nil, true, !trusted && !manual
+		b.avatarStop, b.avatarDone = nil, true
+		b.avatarBlocked = !trusted && !manual && (err != nil || !carddav || image == nil)
 		if err == nil {
 			b.avatar = image
 		}
@@ -1458,7 +1483,7 @@ func (r *reader) historyToggle(c *ui.Context, n, history int) {
 // time, and the chevron that expands it.
 func (r *reader) folded(c *ui.Context, m core.MessageSummary) {
 	t, th := theme.Of(c), c.Theme()
-	name, _ := sender(m.From)
+	name, _ := senderOf(m)
 	avatar := r.shownAvatar(m) // else its initial
 	// Its hover reaches past the column, so the avatar keeps the open messages' edge yet clears the hover's.
 	r.column(c).Children(func() {
@@ -1494,6 +1519,9 @@ func (r *reader) folded(c *ui.Context, m core.MessageSummary) {
 // read when it was open, else one of the sender's other messages'. Only
 // those: an avatar loads as its message allows (loadAvatar).
 func (r *reader) shownAvatar(m core.MessageSummary) ui.ImageSource {
+	if m.Security.Status == gomail.SecurityFraud {
+		return nil
+	}
 	if b := r.bodies[m.ID]; b != nil && b.avatar != nil {
 		return b.avatar
 	}
@@ -1502,7 +1530,7 @@ func (r *reader) shownAvatar(m core.MessageSummary) ui.ImageSource {
 		return nil
 	}
 	for _, b := range r.bodies {
-		if _, from := sender(b.msg.From); b.avatar != nil && strings.EqualFold(from, addr) {
+		if _, from := sender(b.msg.From); b.avatar != nil && !b.msg.InJunk && strings.EqualFold(from, addr) {
 			return b.avatar
 		}
 	}
@@ -1515,6 +1543,13 @@ func sender(from string) (name, addr string) {
 		return cmp.Or(a.Name, a.Address), a.Address
 	}
 	return from, ""
+}
+
+// senderOf returns m's display name (falling back to m.FromName when From is a
+// bare address) and parsed address without mutating m.From.
+func senderOf(m core.MessageSummary) (name, addr string) {
+	name, addr = sender(m.From)
+	return cmp.Or(m.FromName, name), addr
 }
 
 // recipients is the header's line of who a message went to: the user's
@@ -1646,7 +1681,7 @@ func (r *reader) details(c *ui.Context, anchor ui.Element, m core.MessageSummary
 			return transfer.TextData(strings.Join(out, "\n"))
 		}
 		ui.Column(c).Width(theme.DetailsWidth).Gap(th.Space(2)).Label(i18n.T("reader.details")).Selectable().CopyData(copyWhole).Children(func() {
-			row := func(key int, label string, values []string) {
+			row := func(key int, label, fallbackName string, values []string) {
 				if len(values) == 0 {
 					return
 				}
@@ -1654,18 +1689,18 @@ func (r *reader) details(c *ui.Context, anchor ui.Element, m core.MessageSummary
 					kit.Text(c, label, t.Text.Sm).TextColor(t.Muted).Width(theme.DetailsLabel).Shrink(0).Unselectable()
 					ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
 						for i, v := range values {
-							r.detailsValue(c.Key(i), v, cut)
+							r.detailsValue(c.Key(i), v, fallbackName, cut)
 						}
 					})
 				})
 			}
-			row(0, i18n.T("reader.details.from"), []string{m.From})
-			row(1, i18n.T("reader.details.to"), m.To)
-			row(2, i18n.T("reader.details.cc"), m.Cc)
-			row(3, i18n.T("reader.details.reply_to"), replyTo)
-			row(4, i18n.T("reader.details.date"), []string{i18n.FullDate(date) + " " + i18n.T(fmt.Sprintf("mail.weekday.%d", date.Weekday())) + " " + date.Format("15:04")})
+			row(0, i18n.T("reader.details.from"), m.FromName, []string{m.From})
+			row(1, i18n.T("reader.details.to"), "", m.To)
+			row(2, i18n.T("reader.details.cc"), "", m.Cc)
+			row(3, i18n.T("reader.details.reply_to"), "", replyTo)
+			row(4, i18n.T("reader.details.date"), "", []string{i18n.FullDate(date) + " " + i18n.T(fmt.Sprintf("mail.weekday.%d", date.Weekday())) + " " + date.Format("15:04")})
 			if acc := r.accountOf(m); acc != "" && len(r.p.a.accounts) > 1 {
-				row(5, i18n.T("reader.details.account"), []string{acc})
+				row(5, i18n.T("reader.details.account"), "", []string{acc})
 			}
 		})
 	})
@@ -1674,9 +1709,12 @@ func (r *reader) details(c *ui.Context, anchor ui.Element, m core.MessageSummary
 // detailsValue is a value of details: an address as Name <address>, the
 // address quieter, anything else (the date) as it is. One line, cut to fit
 // (noted in cut), whole on hover.
-func (r *reader) detailsValue(c *ui.Context, raw string, cut map[string]bool) {
+func (r *reader) detailsValue(c *ui.Context, raw, fallbackName string, cut map[string]bool) {
 	t, th := theme.Of(c), c.Theme()
 	name, addr := sender(raw)
+	if fallbackName != "" {
+		name = fallbackName
+	}
 	spans := []ui.Span{{Text: name}}
 	if addr != "" && addr != name {
 		spans = append(spans, ui.Span{Text: " <" + addr + ">", Color: t.Muted})
@@ -1723,7 +1761,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 		sec = m.Security
 	}
 	ui.Column(c).FillWidth().Gap(th.Space(3.5)).Children(func() {
-		name, addr := sender(m.From)
+		name, addr := senderOf(m)
 		head := r.column(c).Gap(th.Space(3.5))
 		var bodyReady bool
 		head.Children(func() {
@@ -2464,6 +2502,9 @@ func (r *reader) applySecurity(msgID int64, reason string) {
 		if err != nil {
 			a.toastErr(err)
 		} else {
+			if b, ok := r.bodies[msgID]; ok && b != nil {
+				r.loadAvatar(msgID, b.avatarAllow)
+			}
 			a.toast(i18n.T("reader.security.updated"))
 		}
 	})
