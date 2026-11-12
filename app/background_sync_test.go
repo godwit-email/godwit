@@ -25,6 +25,26 @@ func TestSettingsBackgroundSyncChoice(t *testing.T) {
 	})
 }
 
+// 后台收信 has its row under Startup; choosing 关窗后停止 is saved and makes
+// closing the window quit at once.
+func TestSettingsBackgroundReceiveChoice(t *testing.T) {
+	h, _ := withAccount(t)
+	p := h.openSettings("general")
+	h.see(i18n.T("settings.background_receive"))
+	h.see(i18n.T("settings.background_receive.until_quit"))
+	if !h.app.KeepInBackground() {
+		t.Fatal("the default stops as the window closes")
+	}
+
+	p.st.BackgroundReceive = core.BackgroundReceiveStopOnClose
+	h.drain()
+	h.tt.Frame()
+	h.until("the choice saved and in effect", func() bool {
+		st, err := h.env.Svc.GetSettings(context.Background())
+		return err == nil && st.BackgroundReceive == core.BackgroundReceiveStopOnClose && !h.app.KeepInBackground()
+	})
+}
+
 func TestBackgroundSyncSettingsReload(t *testing.T) {
 	h := newHarness(t)
 	h.until("settings loaded", func() bool { return h.app.loaded })

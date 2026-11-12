@@ -195,10 +195,11 @@ func (a *App) batchPending(id int64) bool { return a.syncBatch != nil && a.syncB
 // TrayIconShown reports whether the tray shows Godwit's icon (ShowTrayIcon).
 func (a *App) TrayIconShown() bool { return a.settings.ShowTrayIcon }
 
-// KeepInBackground reports whether closing the window only hides it: 后台常驻
-// is on, or an enabled rule runs in the background.
+// KeepInBackground reports whether the backend keeps receiving once the
+// window closes: 后台收信 is past 关窗后停止, or an enabled rule runs in the
+// background.
 func (a *App) KeepInBackground() bool {
-	if a.settings.KeepInBackground {
+	if a.settings.BackgroundReceive != core.BackgroundReceiveStopOnClose {
 		return true
 	}
 	on, _ := a.svc.RulesInBackground(context.Background()) // an error quits, as with no such rule

@@ -53,6 +53,7 @@ type platform struct {
 	codeBanner     *signInBanner
 	updateTray     func()
 	setTrayVisible func(visible bool)
+	trayQuitStop   bool // 退出并停止收信 shows; UI thread
 
 	dataDir      string
 	svc          avatarService
@@ -199,6 +200,8 @@ type trayActions struct {
 	syncAll func()
 	hide    func()
 	quit    func()
+	// quitStop is 退出并停止收信, shown while SetTrayQuitStop is on.
+	quitStop func()
 }
 
 func (p *platform) trayMenuItems(act trayActions, now time.Time) []*mygo.MenuItem {
@@ -217,7 +220,20 @@ func (p *platform) trayMenuItems(act trayActions, now time.Time) []*mygo.MenuIte
 		mygo.Separator(),
 		&mygo.MenuItem{Label: i18n.T("tray.quit"), Click: func(*mygo.MenuItem, *mygo.Window) { act.quit() }},
 	)
+	if p.trayQuitStop && act.quitStop != nil {
+		items = append(items, &mygo.MenuItem{Label: i18n.T("tray.quit_stop"), Click: func(*mygo.MenuItem, *mygo.Window) { act.quitStop() }})
+	}
 	return items
+}
+
+// SetTrayQuitStop shows or hides 退出并停止收信 (BackgroundReceiveAlways).
+func (p *platform) SetTrayQuitStop(on bool) {
+	if p.trayQuitStop != on {
+		p.trayQuitStop = on
+		if p.updateTray != nil {
+			p.updateTray()
+		}
+	}
 }
 
 func (p *platform) BindTray(act trayActions) {

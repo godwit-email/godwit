@@ -134,6 +134,38 @@ func TestUIExitLeavesBackend(t *testing.T) {
 	exited(t, dir)
 }
 
+// Under 一直继续 the interface's quit leaves the backend it started running,
+// and does not wait on it; under 关窗后继续、退出即停止 the quit stops it again.
+func TestUIQuitUnderAlwaysLeavesBackend(t *testing.T) {
+	s := startsBackends(t)
+	dir := shortDir(t)
+	c := connect(t, dir)
+	setReceive := func(c *uiclient.Client, mode string) {
+		t.Helper()
+		st, err := c.GetSettings(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		st.BackgroundReceive = mode
+		if _, err := c.SetSettings(t.Context(), st); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setReceive(c, core.BackgroundReceiveAlways)
+	start := time.Now()
+	stopBackend(c)
+	if d := time.Since(start); d > 2*time.Second {
+		t.Errorf("the quit waited %v on a backend that stays", d)
+	}
+	c = connect(t, dir)
+	if s.count() != 1 {
+		t.Fatalf("%d backends started: the first stopped with the interface", s.count())
+	}
+	setReceive(c, core.BackgroundReceiveUntilQuit)
+	stopBackend(c)
+	exited(t, dir)
+}
+
 // A backend the user started with --headless is connected to as it is, and
 // the interface's quit leaves it running: the two are no longer exclusive.
 func TestUIConnectsToUserHeadless(t *testing.T) {

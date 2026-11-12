@@ -230,7 +230,7 @@ func TestSettings(t *testing.T) {
 			SidebarOrder: "accounts,labels,views", ListRowOrder: core.ListRowSubject, ReaderWidth: core.ReaderWidthWide,
 			SecurityAI: true, RuleAI: true,
 			UILanguage: "en", ReadingLanguage: "de", ReplyLanguage: "reading", NoTranslate: []string{"fr", "es"},
-			LaunchAtLogin: true, KeepInBackground: false, ShowTrayIcon: false, UnreadInMenuBar: true,
+			LaunchAtLogin: true, BackgroundReceive: core.BackgroundReceiveStopOnClose, ShowTrayIcon: false, UnreadInMenuBar: true,
 			NotifyNewMail: false, NotifyPreview: false,
 			QuickReplies: true, Summary: true, ThreadView: false,
 			DefaultModel: "svc/big", SmallModel: "svc/small", JudgeService: "judge", JudgeThreshold: 0.85, Translator: "plugin/dlx", LocalAPI: true, ExperimentalJMAP: true, ExperimentalEWS: true, ExperimentalPOP3: true, ExperimentalGraph: true, ExperimentalGmailAPI: true, SidebarWidth: 320, ListWidth: 400, SignatureDelimiter: true,
