@@ -4039,7 +4039,9 @@
   "settings_account_import_existing": "Already exists, skipped",
   "settings_account_import_help": "Adds exported accounts without credentials; each one asks you to sign in again",
   "settings_account_import_row": "Import account settings from a file",
+  "settings_account_import_protocol": "Exists as {arg1}, skipped",
   "settings_account_import_skipped": "{arg1, number, ::group-off} already existed, skipped",
+  "settings_account_import_skipped_protocol": "{arg1, number, ::group-off} already existed with another protocol, skipped",
   "settings_account_import_title": "Import accounts",
   "settings_account_reauth_imported": "This account was imported without credentials. Authorize it to start syncing."
 }

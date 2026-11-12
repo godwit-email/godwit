@@ -188,7 +188,7 @@ func TestPreviewAndImportAccountsRoundTrip(t *testing.T) {
 	res2, err := dst.ImportAccounts(bg, []byte(upperCaseExport))
 	require.NoError(t, err)
 	assert.Empty(t, res2.Imported)
-	assert.Equal(t, []string{"bob@example.org", "ALICE@Example.com", "ro@example.com"}, res2.Skipped)
+	assert.Equal(t, []AccountImportSkip{{Email: "bob@example.org"}, {Email: "ALICE@Example.com"}, {Email: "ro@example.com"}}, res2.Skipped)
 }
 
 func TestAccountImportPreservesExistingDefaultAndSharesSignature(t *testing.T) {
@@ -381,39 +381,62 @@ func TestAccountImportValidationAndAtomicity(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, sigs)
 
-	// Conflict with an existing DB account on a different receiving protocol returns ErrAccountExists and writes nothing.
-	im := testmail.StartIMAP(t)
-	smtpAddr, _ := testmail.StartSMTP(t)
-	_, err = s.AddAccount(bg, internalInput(t, im.Addr, smtpAddr, "good@example.com", true))
-	require.NoError(t, err)
-	conflictExport := mustJSON(AccountExport{
-		Version: AccountExportVersion,
-		Accounts: []ExportedAccount{
-			{
-				Email:     "other@example.com",
-				Receiving: ExportedServer{Protocol: auth.IMAP, Host: "127.0.0.1", Port: 993, Security: SecurityNone, Auth: AuthPassword},
-				Sending:   ExportedServer{Protocol: auth.SMTP, Host: "127.0.0.1", Port: 587, Security: SecurityNone, Auth: AuthPassword},
-			},
-			{
-				Email:     "GOOD@example.com",
-				Receiving: ExportedServer{Protocol: auth.JMAP, Host: "127.0.0.1", Port: 8080, Security: SecurityNone, Auth: AuthAPIToken},
-				Sending:   ExportedServer{Protocol: auth.JMAP, Host: "127.0.0.1", Port: 8080, Security: SecurityNone, Auth: AuthAPIToken},
-			},
-		},
-	})
-	_, err = s.PreviewAccountImport(bg, conflictExport)
-	assert.ErrorIs(t, err, ErrAccountExists)
-	_, err = s.ImportAccounts(bg, conflictExport)
-	assert.ErrorIs(t, err, ErrAccountExists)
-	accs, err = s.ListAccounts(bg)
-	require.NoError(t, err)
-	assert.Len(t, accs, 1, "other@example.com must not be written when batch conflicts")
-
 	require.NoError(t, s.Close())
 	_, err = s.PreviewAccountImport(bg, []byte(`{"version":1,"accounts":[]}`))
 	assert.ErrorIs(t, err, ErrClosed)
 	_, err = s.ImportAccounts(bg, []byte(`{"version":1,"accounts":[]}`))
 	assert.ErrorIs(t, err, ErrClosed)
+}
+
+func TestAccountImportSkipsAddressOnAnotherProtocol(t *testing.T) {
+	keyring.MockInit()
+	s, err := New(bg, Options{DataDir: t.TempDir(), ImageClient: loopbackImageClient()})
+	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
+
+	im := testmail.StartIMAP(t)
+	smtpAddr, _ := testmail.StartSMTP(t)
+	_, err = s.AddAccount(bg, internalInput(t, im.Addr, smtpAddr, "same@example.com", true))
+	require.NoError(t, err)
+	_, err = s.AddAccount(bg, internalInput(t, im.Addr, smtpAddr, "clash@example.com", false))
+	require.NoError(t, err)
+	before, err := s.ListAccounts(bg)
+	require.NoError(t, err)
+
+	imapSlot := ExportedServer{Protocol: auth.IMAP, Host: "127.0.0.1", Port: 993, Security: SecurityNone, Auth: AuthPassword}
+	smtpSlot := ExportedServer{Protocol: auth.SMTP, Host: "127.0.0.1", Port: 587, Security: SecurityNone, Auth: AuthPassword}
+	jmapSlot := ExportedServer{Protocol: auth.JMAP, Host: "127.0.0.1", Port: 8080, Security: SecurityNone, Auth: AuthAPIToken}
+	export := mustJSON(t, AccountExport{
+		Version: AccountExportVersion,
+		Accounts: []ExportedAccount{
+			{Email: "new@example.com", Receiving: imapSlot, Sending: smtpSlot},
+			{Email: "SAME@example.com", Receiving: imapSlot, Sending: smtpSlot},
+			{Email: "CLASH@example.com", Receiving: jmapSlot, Sending: jmapSlot},
+		},
+	})
+
+	preview, err := s.PreviewAccountImport(bg, export)
+	require.NoError(t, err)
+	require.Len(t, preview.Accounts, 3)
+	assert.False(t, preview.Accounts[0].Existing)
+	assert.True(t, preview.Accounts[1].Existing)
+	assert.Empty(t, preview.Accounts[1].ExistingProtocol)
+	assert.True(t, preview.Accounts[2].Existing)
+	assert.Equal(t, "imap", preview.Accounts[2].ExistingProtocol)
+
+	res, err := s.ImportAccounts(bg, export)
+	require.NoError(t, err)
+	require.Len(t, res.Imported, 1)
+	assert.Equal(t, "new@example.com", res.Imported[0].Email)
+	assert.Equal(t, []AccountImportSkip{
+		{Email: "SAME@example.com"},
+		{Email: "CLASH@example.com", ExistingProtocol: "imap"},
+	}, res.Skipped)
+
+	after, err := s.ListAccounts(bg)
+	require.NoError(t, err)
+	require.Len(t, after, 3)
+	assert.Equal(t, before, after[:2], "the local accounts are untouched")
 }
 
 func TestImportedAccountsParkWithZeroLoginsUntilReauthorized(t *testing.T) {

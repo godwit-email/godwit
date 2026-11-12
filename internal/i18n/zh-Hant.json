@@ -2266,7 +2266,9 @@
   "settings_account_import_existing": "已存在，略過",
   "settings_account_import_help": "匯入已匯出的帳戶設定，不含憑證，匯入後需逐一重新授權",
   "settings_account_import_row": "從檔案匯入帳戶設定",
+  "settings_account_import_protocol": "已以 {arg1} 存在，略過",
   "settings_account_import_skipped": "{arg1, number, ::group-off} 個帳戶已存在，已略過",
+  "settings_account_import_skipped_protocol": "{arg1, number, ::group-off} 個帳戶已以其他協定存在，已略過",
   "settings_account_import_title": "匯入帳戶",
   "settings_account_reauth_imported": "這個帳戶剛從檔案匯入，尚無憑證，重新授權後開始同步。"
 }

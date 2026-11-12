@@ -2149,6 +2149,31 @@ func TestSettingsAccountImport(t *testing.T) {
 		a, ok := h.app.accountByID(bob.ID)
 		return ok && a.Status == "ok"
 	})
+
+	// 4. An address already here on another protocol is shown and skipped; the rest still imports.
+	jmap := core.ExportedServer{Protocol: auth.JMAP, Host: "127.0.0.1", Port: 8080, Security: core.SecurityNone, Auth: core.AuthAPIToken}
+	clashBytes, err := json.Marshal(core.AccountExport{Version: core.AccountExportVersion, Accounts: []core.ExportedAccount{
+		{Email: "bob@example.com", Receiving: jmap, Sending: jmap},
+		{Email: "dave@example.com", Receiving: jmap, Sending: jmap},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clashFile := filepath.Join(t.TempDir(), "clash.json")
+	if err := os.WriteFile(clashFile, clashBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.plat.mu.Lock()
+	h.plat.files = []string{clashFile}
+	h.plat.mu.Unlock()
+	h.click(i18n.T("settings.account.import.button"))
+	h.see(i18n.Tf("settings.account.import.protocol", "IMAP"))
+	h.click(i18n.T("settings.account.import.confirm"))
+	h.until("dave imported", func() bool { return len(h.app.accounts) == 4 })
+	h.see(i18n.Tf("settings.account.import.skipped_protocol", 1))
+	if a, _ := h.app.accountByID(bob.ID); a.Receiving.Protocol != auth.IMAP || a.Status != "ok" {
+		t.Fatalf("local bob changed by the clashing import: %+v", a)
+	}
 }
 
 func TestSettingsImportedOAuthOwnClientRequiresSecret(t *testing.T) {

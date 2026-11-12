@@ -2266,7 +2266,9 @@
   "settings_account_import_existing": "Ya existe, se omite",
   "settings_account_import_help": "Añade cuentas exportadas sin credenciales; cada una pedirá iniciar sesión de nuevo",
   "settings_account_import_row": "Importar configuración de cuentas desde un archivo",
+  "settings_account_import_protocol": "Ya existe como {arg1}, se omite",
   "settings_account_import_skipped": "{arg1, number, ::group-off} ya existían, omitidas",
+  "settings_account_import_skipped_protocol": "{arg1, number, ::group-off} ya existían con otro protocolo, omitidas",
   "settings_account_import_title": "Importar cuentas",
   "settings_account_reauth_imported": "Esta cuenta se importó sin credenciales. Autorízala para empezar a sincronizar."
 }

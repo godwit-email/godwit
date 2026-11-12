@@ -2266,7 +2266,9 @@
   "settings_account_import_existing": "Già presente, ignorato",
   "settings_account_import_help": "Aggiunge gli account esportati senza credenziali; ognuno chiederà di accedere di nuovo",
   "settings_account_import_row": "Importa impostazioni degli account da un file",
+  "settings_account_import_protocol": "Già presente come {arg1}, ignorato",
   "settings_account_import_skipped": "{arg1, number, ::group-off} già presenti, ignorati",
+  "settings_account_import_skipped_protocol": "{arg1, number, ::group-off} già presenti con un altro protocollo, ignorati",
   "settings_account_import_title": "Importa account",
   "settings_account_reauth_imported": "Questo account è stato importato senza credenziali. Autorizzalo per avviare la sincronizzazione."
 }

@@ -1025,6 +1025,24 @@ func TestImportAccounts(t *testing.T) {
 			listed[i] = scrubAccount(listed[i])
 		}
 
+		// An address already here on another protocol is skipped; the rest of the file still imports.
+		imapSlot := core.ExportedServer{Protocol: auth.IMAP, Host: "127.0.0.1", Port: 993, Security: core.SecurityNone, Auth: core.AuthPassword}
+		smtpSlot := core.ExportedServer{Protocol: auth.SMTP, Host: "127.0.0.1", Port: 587, Security: core.SecurityNone, Auth: core.AuthPassword}
+		jmapSlot := core.ExportedServer{Protocol: auth.JMAP, Host: "127.0.0.1", Port: 8080, Security: core.SecurityNone, Auth: core.AuthAPIToken}
+		clash, err := json.Marshal(core.AccountExport{Version: core.AccountExportVersion, Accounts: []core.ExportedAccount{
+			{Email: "carol@example.com", Receiving: imapSlot, Sending: smtpSlot},
+			{Email: "bob@example.com", Receiving: jmapSlot, Sending: jmapSlot},
+		}})
+		require.NoError(t, err)
+		prev3, err := api.PreviewAccountImport(ctx, clash)
+		require.NoError(t, err)
+		require.Len(t, prev3.Accounts, 2)
+		assert.Equal(t, "imap", prev3.Accounts[1].ExistingProtocol)
+		imp3, err := api.ImportAccounts(ctx, clash)
+		require.NoError(t, err)
+		require.Len(t, imp3.Imported, 1)
+		assert.Equal(t, []core.AccountImportSkip{{Email: "bob@example.com", ExistingProtocol: "imap"}}, imp3.Skipped)
+
 		return map[string]any{
 			"badJSON": badJSON,
 			"badVer":  badVer,
@@ -1033,6 +1051,8 @@ func TestImportAccounts(t *testing.T) {
 			"prev2":   scrubPreview(prev2),
 			"imp2":    scrubResult(imp2),
 			"listed":  listed,
+			"prev3":   prev3,
+			"imp3":    scrubResult(imp3),
 		}
 	})
 }
