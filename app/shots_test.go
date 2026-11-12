@@ -656,7 +656,7 @@ func TestShots(t *testing.T) {
 		s.see("添加服务器")
 		shot(s.harness, "SettingsAIMCP")
 		p.aiTab = aiApps
-		s.see("启用本机 API")
+		s.see("允许外部应用和脚本接入")
 		shot(s.harness, "SettingsAIApps")
 		e, _ := s.app.mcpEnv() // Claude connected, Codex, Antigravity and Grok there but not
 		for _, dir := range []string{".codex", ".gemini/antigravity", ".grok"} {

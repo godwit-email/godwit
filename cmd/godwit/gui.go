@@ -293,20 +293,25 @@ func gui(ctx context.Context, dataDir string) int {
 		opts := windowOptions(runtime.GOOS)
 		bench.configureWindow(&opts)
 		plat = &platform{
-			dataDir:   dataDir,
-			svc:       svc,
-			listenAPI: func() (*rpc.Server, error) { return rpcbind.Listen(dataDir, svc, app.Version) },
-			windows:   windows,
-			wit:       wit,
-			roles:     roles,
-			reader:    reader,
-			sig:       sig,
+			dataDir: dataDir,
+			svc:     svc,
+			listenAPI: func(external bool) (*rpc.Server, error) {
+				return rpcbind.ListenWith(dataDir, svc, rpcbind.ListenOptions{Version: app.Version, External: external})
+			},
+			windows: windows,
+			wit:     wit,
+			roles:   roles,
+			reader:  reader,
+			sig:     sig,
 		}
 		var win *mygo.Window
 		a = app.New(app.Deps{Svc: svc, Platform: plat, Settings: st, Post: func(f func()) { win.Update(f) },
 			SystemLanguage: lang, SetLanguage: setLanguage,
 			Vibrancy: opts.Vibrancy != mygo.VibrancyNone, Dev: mygo.IsDev()})
 		plat.onAPIStop = a.LocalAPIStopped
+		if err := plat.startLocalAPI(st.LocalAPI); err != nil {
+			log.Print(svc.Redact("local API: " + err.Error()))
+		}
 		windows.OnChange = func() { a.OnUI(a.ComposeWindowsChanged) } // no window is open yet
 		opts.Content = bench.view(a)
 		win = mygo.NewWindow(opts)
@@ -450,7 +455,7 @@ func gui(ctx context.Context, dataDir string) int {
 	// Before a relaunch starts the next Godwit, which needs dataDir's lock.
 	mygo.App.OnQuit(func() {
 		if plat != nil {
-			plat.SetLocalAPI(0, false) // after BeforeClose, before the Service closes
+			plat.closeLocalAPI() // after BeforeClose, before the Service closes
 		}
 		if svc != nil {
 			svc.Close()
