@@ -193,3 +193,64 @@ grep -E '^(VmRSS|RssAnon|voluntary_ctxt_switches|nonvoluntary_ctxt_switches):' $
 1. **Background memory is dominated by keeping the UI + WebView process tree alive**: hiding the window leaves `1` monolithic `Godwit` process (`190–212 MiB` RSS, `124–139 MiB` `phys_footprint`) plus `6` macOS WebKit/XPC helper processes (`~245 MiB` additional RSS, `~104 MiB` additional `phys_footprint`), totaling **`439–456 MiB` RSS** (`229–242 MiB` `phys_footprint`).
 2. **Reopen vs cold start tradeoff**: pre-split `win.Hide()` reopen takes **`28–31 ms`** because the window, Metal surface, and embedded Wit `WKWebView` remain resident; cached cold start takes **`~380 ms`** at 2,000 messages (`~702 ms` at 15,000 messages), bounding what post-split UI-only cold reopen against an already-warm backend should beat.
 3. **Idle wakeups**: once initial sync settles into IMAP `IDLE`, macOS `IDLEW` is **`0` wakeups / 30s** in steady state (`~90–106` context switches/s in `Godwit`, plus `~50/s` in idle WebKit/XPC helpers that disappear post-split).
+
+---
+
+## Post-Split Measurements (#738, `ticket/738-post-split-numbers`, after #731 + #733)
+
+Same machine, build method, protocol, scales and runs as the pre-split baseline. Closing the window now exits the UI process (`closeExitsUI`) and leaves the `--headless` backend owning `--data-dir`; "reopen" therefore spawns a new UI process that connects to the already-running backend. `procbench` and the `GODWIT_BENCH_LOG` probe needed no change: the backend is matched by its `--data-dir` argument, and reopen falls back to spawning the UI once the old UI's control socket is gone.
+
+### Test Environment
+
+| Item | Value |
+|---|---|
+| Machine | Apple M5 Max, 64 GiB unified memory (`darwin/arm64`) |
+| OS | macOS 27.3 (`26C5035r`, Darwin `27.3.0`) |
+| Build | Packaged `dist/darwin-arm64/Godwit.app` (`mise run build`, `CGO_ENABLED=0`) at `bf2aa5a6` |
+| Protocol | 3 runs per scale; 5s settle after `window_hidden`, then 30s undisturbed background window; display kept awake with `caffeinate -d -i`, session unlocked |
+
+### Summary (Medians across 3 runs)
+
+| Scale | Cold Start -> Mail Ready | Reopen -> Mail Ready | Bg Processes (`own + helpers`) | Bg RSS (`Godwit / Tree`) | Bg `phys_footprint` (`Godwit / Tree`) | Bg `IDLEW` (30s, `Godwit / Tree`) | Bg `CSW` (30s, `Godwit / Tree`) |
+|---|---|---|---|---|---|---|---|
+| **Standard** | **453.7 ms** *(1st uncached: 1391.0 ms)* | **327.8 ms** | `1 + 1` | **123.1 / 132.2 MiB** | **50.0 / 52.3 MiB** | **0 / 0** | **231 / 231** |
+| **Heavy** | **860.2 ms** | **502.9 ms** | `1 + 1` | **148.0 / 157.1 MiB** | **61.0 / 63.3 MiB** | **0 / 0** *(range 0–1)* | **290 / 290** |
+
+The one remaining helper process (~9 MiB RSS, ~2 MiB footprint, no context switches in the window) is attributed to the backend by `procbench`; its kind was not identified.
+
+### Per-Run Raw Measurements
+
+#### Standard scale (`--accounts 2 --folders 10 --inbox-messages 500 --folder-messages 50`)
+
+| Run | Cold Start (ms) | Reopen (ms) | Bg Procs (`own+helpers`) | Bg RSS MiB (`own / tree`) | Bg Footprint MiB (`own / tree`) | Bg Wakeups / 30s (`own / tree`) | Bg Context Switches / 30s (`own / tree`) |
+|---|---|---|---|---|---|---|---|
+| 1 *(uncached AMFI)* | 1391.0 | 683.9 | `1 + 1` | 135.0 / 144.1 | 59.0 / 61.3 | 0 / 0 | 229 / 229 |
+| 2 | 453.7 | 297.2 | `1 + 1` | 123.1 / 132.2 | 50.0 / 52.3 | 0 / 0 | 314 / 314 |
+| 3 | 437.5 | 327.8 | `1 + 1` | 121.8 / 130.8 | 47.0 / 49.3 | 0 / 0 | 231 / 231 |
+| **Median** | **453.7** | **327.8** | **`1 + 1`** | **123.1 / 132.2** | **50.0 / 52.3** | **0 / 0** | **231 / 231** |
+
+#### Heavy scale (`--accounts 5 --folders 20 --inbox-messages 1000 --folder-messages 100`)
+
+| Run | Cold Start (ms) | Reopen (ms) | Bg Procs (`own+helpers`) | Bg RSS MiB (`own / tree`) | Bg Footprint MiB (`own / tree`) | Bg Wakeups / 30s (`own / tree`) | Bg Context Switches / 30s (`own / tree`) |
+|---|---|---|---|---|---|---|---|
+| 1 | 666.1 | 720.5 | `1 + 1` | 149.6 / 158.6 | 51.0 / 53.3 | 0 / 0 | 2,565 / 2,565 |
+| 2 | 879.4 | 467.1 | `1 + 1` | 148.0 / 157.1 | 73.0 / 75.3 | 0 / 0 | 290 / 290 |
+| 3 | 860.2 | 502.9 | `1 + 1` | 142.5 / 151.5 | 61.0 / 63.3 | 1 / 1 | 268 / 268 |
+| **Median** | **860.2** | **502.9** | **`1 + 1`** | **148.0 / 157.1** | **61.0 / 63.3** | **0 / 0** | **290 / 290** |
+
+### Pre-Split vs Post-Split (Medians; difference = post − pre)
+
+| Metric | Standard pre | Standard post | Standard diff | Heavy pre | Heavy post | Heavy diff |
+|---|---|---|---|---|---|---|
+| Cold start -> mail ready | 379.8 ms | 453.7 ms | +73.9 ms (+19.5%) | 701.6 ms | 860.2 ms | +158.6 ms (+22.6%) |
+| Reopen -> mail ready | 28.4 ms | 327.8 ms | +299.4 ms (+1054%) | 30.9 ms | 502.9 ms | +472.0 ms (+1527%) |
+| Bg processes (`own + helpers`) | `1 + 6` | `1 + 1` | −5 helpers | `1 + 6` | `1 + 1` | −5 helpers |
+| Bg RSS, Godwit | 190.1 MiB | 123.1 MiB | −67.0 MiB (−35.2%) | 211.5 MiB | 148.0 MiB | −63.5 MiB (−30.0%) |
+| Bg RSS, tree | 439.2 MiB | 132.2 MiB | −307.0 MiB (−69.9%) | 455.9 MiB | 157.1 MiB | −298.8 MiB (−65.5%) |
+| Bg `phys_footprint`, Godwit | 124.0 MiB | 50.0 MiB | −74.0 MiB (−59.7%) | 139.0 MiB | 61.0 MiB | −78.0 MiB (−56.1%) |
+| Bg `phys_footprint`, tree | 229.2 MiB | 52.3 MiB | −176.9 MiB (−77.2%) | 242.4 MiB | 63.3 MiB | −179.1 MiB (−73.9%) |
+| Bg `IDLEW` / 30s (Godwit / tree) | 0 / 0 | 0 / 0 | 0 | 0 / 0 | 0 / 0 | 0 |
+| Bg `CSW` / 30s, Godwit | 2,694 | 231 | −2,463 (−91.4%) | 3,190 | 290 | −2,900 (−90.9%) |
+| Bg `CSW` / 30s, tree | 4,216 | 231 | −3,985 (−94.5%) | 4,737 | 290 | −4,447 (−93.9%) |
+
+The decision on closing-the-window behaviour (keep "closing the window exits the UI process" or go back to "hide the UI, backend separate") is the maintainer's, recorded in ADR 0038.
