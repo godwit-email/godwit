@@ -1,6 +1,14 @@
 package mail_test
 
 import (
+	"bytes"
+	"encoding/base64"
+	"encoding/binary"
+	"fmt"
+	"hash/crc32"
+	"image"
+	"image/jpeg"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -82,7 +90,16 @@ func TestSanitizeComposeStripsRemote(t *testing.T) {
 }
 
 func TestSanitizeImageSrcForms(t *testing.T) {
-	bad := []string{"/tracking", "tracking.gif", "../x.gif", `\\host/x`, `/\host/x`, `\/host/x`, "data:image/png;base64,AAAA", "ftp://h/x", "https:///x", "https://h/\tx"}
+	const blueSquare = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFklEQVR4nGPQKLpFEmIY1TCqYfhqAAASZ3QQWUKpQAAAAABJRU5ErkJggg=="
+	bad := []string{
+		"/tracking", "tracking.gif", "../x.gif", `\\host/x`, `/\host/x`, `\/host/x`,
+		"data:image/png;base64,AAAA",
+		"data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString([]byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`)),
+		"data:text/html;base64," + blueSquare,
+		"data:;base64," + blueSquare,
+		"godwit-data:0", "godwit-cid:x",
+		"ftp://h/x", "https:///x", "https://h/\tx",
+	}
 	for _, src := range bad {
 		in := `<img src="` + src + `">`
 		for _, load := range []bool{false, true} {
@@ -93,6 +110,58 @@ func TestSanitizeImageSrcForms(t *testing.T) {
 	}
 	safe, _, _ := mail.Sanitize(`<img src="https://h.example/x.gif">`, nil, true)
 	assert.Contains(t, safe, `src="https://h.example/x.gif"`)
+}
+
+func TestSanitizeInlineDataImage(t *testing.T) {
+	const bluePNG = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFklEQVR4nGPQKLpFEmIY1TCqYfhqAAASZ3QQWUKpQAAAAABJRU5ErkJggg=="
+	var jb bytes.Buffer
+	_ = jpeg.Encode(&jb, image.NewRGBA(image.Rect(0, 0, 2, 2)), nil)
+	jpgB64 := base64.StdEncoding.EncodeToString(jb.Bytes())
+	gifBytes := []byte("GIF89a\x01\x00\x01\x00\x00\x00\x00,")
+	gifB64 := base64.StdEncoding.EncodeToString(gifBytes)
+	webpB64 := base64.StdEncoding.EncodeToString([]byte("RIFF\x12\x00\x00\x00WEBPVP8L\x05\x00\x00\x00\x2f\x00\x00\x00\x00\x00"))
+
+	in := `<p>Inline:</p>` +
+		`<img alt="Blue square" width="16" height="16" src="data:image/png;base64,` + bluePNG + `">` +
+		`<img alt="jpg" src="DATA:IMAGE/JPG; charset=utf-8; base64,` + "\r\n " + jpgB64 + `">` +
+		`<img alt="gif" src="data:image/gif,` + url.PathEscape(string(gifBytes)) + `">` +
+		`<img alt="webp" src="data:image/webp;base64,` + webpB64 + `">`
+
+	for _, load := range []bool{false, true} {
+		for _, fn := range []func(string, map[string]mail.Attachment, bool) (string, int, int){mail.Sanitize, mail.SanitizeLazy} {
+			safe, blocked, trackers := fn(in, nil, load)
+			assert.Zero(t, blocked)
+			assert.Zero(t, trackers)
+			assert.Contains(t, safe, `src="data:image/png;base64,`+bluePNG+`"`)
+			assert.Contains(t, safe, `src="data:image/jpeg;base64,`+jpgB64+`"`)
+			assert.Contains(t, safe, `src="data:image/gif;base64,`+gifB64+`"`)
+			assert.Contains(t, safe, `src="data:image/webp;base64,`+webpB64+`"`)
+		}
+	}
+
+	// Compose and draft sanitization still strip even valid data: images.
+	assert.NotContains(t, mail.SanitizeCompose(in), "src=")
+	assert.NotContains(t, mail.SanitizeDraft(in, map[string]bool{"sig@godwit": true}), "src=")
+
+	// Per-image and per-message budgets match the reader's (5 MiB, 40 MP, 50 images).
+	pngHead := func(w, h uint32) []byte {
+		ihdr := binary.BigEndian.AppendUint32(binary.BigEndian.AppendUint32([]byte("IHDR"), w), h)
+		ihdr = append(ihdr, 8, 6, 0, 0, 0)
+		out := append([]byte("\x89PNG\r\n\x1a\n"), binary.BigEndian.AppendUint32(nil, 13)...)
+		return binary.BigEndian.AppendUint32(append(out, ihdr...), crc32.ChecksumIEEE(ihdr))
+	}
+	tooBig := "data:image/png;base64," + base64.StdEncoding.EncodeToString(append(pngHead(10, 10), make([]byte, 6<<20)...))
+	tooManyPx := "data:image/png;base64," + base64.StdEncoding.EncodeToString(pngHead(10000, 5000))
+	var many strings.Builder
+	fmt.Fprintf(&many, `<img src="%s" alt="big"><img src="%s" alt="huge">`, tooBig, tooManyPx)
+	for i := range 51 {
+		fmt.Fprintf(&many, `<img src="data:image/png;base64,%s" alt="n%d">`, bluePNG, i)
+	}
+	safe, _, _ := mail.SanitizeLazy(many.String(), nil, false)
+	assert.Equal(t, 50, strings.Count(safe, `src="data:image/png;base64,`))
+	assert.Contains(t, safe, `<img alt="big"/>`)
+	assert.Contains(t, safe, `<img alt="huge"/>`)
+	assert.Contains(t, safe, `<img alt="n50"/>`)
 }
 
 func TestImageMapAreaLinksNotNavigable(t *testing.T) {

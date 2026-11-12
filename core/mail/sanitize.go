@@ -2,13 +2,13 @@ package mail
 
 import (
 	"encoding/base64"
-	"net/http"
 	"net/url"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/godwit-email/godwit/internal/imagefetch"
 	"github.com/gorilla/css/scanner"
 	"github.com/microcosm-cc/bluemonday"
 	"golang.org/x/net/html"
@@ -21,7 +21,11 @@ const bgAttr = "data-bg"
 
 var remoteURL = regexp.MustCompile(`(?i)^https?://[^\s\\]+$`)
 
-const cidScheme = "godwit-cid:" // bluemonday drops cid:, so it is swapped for this until the final pass
+// bluemonday drops cid: and data:, so they are swapped for these until finish.
+const (
+	cidScheme  = "godwit-cid:"
+	dataScheme = "godwit-data:"
+)
 
 // Safe CSS values: no parentheses except rgb()/rgba(), so url(), expression() and @import cannot occur.
 var cssValue = regexp.MustCompile(`(?i)^([a-z0-9#%.,/\s'"\-+_]|rgba?\([0-9.,\s%]*\))+$`)
@@ -55,7 +59,7 @@ func policy() *bluemonday.Policy {
 	p.AllowAttrs("cellspacing", "cellpadding", "border").Matching(bluemonday.Integer).OnElements("table")
 	p.AllowAttrs(bgAttr).Matching(remoteURL).Globally() // set by prepare from a background url()
 	p.AllowStyles(cssProps...).Matching(cssValue).Globally()
-	p.AllowURLSchemes("http", "https", "mailto", strings.TrimSuffix(cidScheme, ":"))
+	p.AllowURLSchemes("http", "https", "mailto", strings.TrimSuffix(cidScheme, ":"), strings.TrimSuffix(dataScheme, ":"))
 	p.RequireNoFollowOnLinks(false)
 	return p
 }
@@ -175,21 +179,23 @@ func render(parent *html.Node) string {
 }
 
 // prepare counts remote resources and tracking pixels (dropped, never counted
-// as remote) in the original HTML and swaps cid: for the placeholder scheme, returning the body-only markup for bluemonday. For
+// as remote) in the original HTML and swaps cid: and received data: image
+// sources for placeholder schemes, returning the body-only markup for bluemonday. For
 // received mail the links move to data-href here: bluemonday drops an href it
 // cannot parse (a space, a {placeholder}, a bad port), which would leave the
 // link dead. It also detects whether the email has a dark canvas (via meta
 // color-scheme or a dark background on body/containers), separately from
 // author-provided dark CSS.
-func prepare(src string, received bool) (string, int, int, []styleSheet, bool) {
+func prepare(src string, received bool) (string, int, int, []styleSheet, []string, bool) {
 	doc, err := html.Parse(strings.NewReader(src))
 	if err != nil {
-		return "", 0, 0, nil, false
+		return "", 0, 0, nil, nil, false
 	}
 	blocked, trackers := 0, 0
 	var body *html.Node
 	var pixels, styles []*html.Node
 	var sheets []styleSheet
+	var dataURLs []string
 	darkCanvas := false
 	walkNodes(doc, func(n *html.Node) {
 		if n.Type != html.ElementNode {
@@ -261,21 +267,26 @@ func prepare(src string, received bool) (string, int, int, []styleSheet, bool) {
 		}
 		s, _ := attr(n, "src")
 		s = strings.TrimSpace(s)
-		switch {
-		case len(s) >= 4 && strings.EqualFold(s[:4], "cid:"):
+		switch lower := strings.ToLower(s); {
+		case strings.HasPrefix(lower, "cid:"):
 			setAttr(n, "src", cidScheme+url.QueryEscape(cleanID(s[4:])))
+		case received && strings.HasPrefix(lower, "data:"):
+			setAttr(n, "src", dataScheme+strconv.Itoa(len(dataURLs)))
+			dataURLs = append(dataURLs, s)
 		case isRemote(s):
 			blocked++
 			if strings.HasPrefix(s, "//") { // backslash forms stay as-is and are rejected later
 				setAttr(n, "src", "https:"+s)
 			}
+		case strings.HasPrefix(lower, cidScheme), strings.HasPrefix(lower, dataScheme):
+			delAttr(n, "src")
 		}
 	})
 	for _, n := range append(pixels, styles...) {
 		n.Parent.RemoveChild(n)
 	}
 	if body == nil {
-		return "", blocked, trackers, nil, false
+		return "", blocked, trackers, nil, nil, false
 	}
 	if received { // the page's own background sits on <body>, which only its children survive: wrap them
 		w := &html.Node{Type: html.ElementNode, Data: "div", DataAtom: atom.Div}
@@ -305,15 +316,25 @@ func prepare(src string, received bool) (string, int, int, []styleSheet, bool) {
 			body.AppendChild(w)
 		}
 	}
-	return render(body), blocked, trackers, sheets, darkCanvas
+	return render(body), blocked, trackers, sheets, dataURLs, darkCanvas
 }
 
-var allowedImage = map[string]bool{"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true}
+func encodeInlineImage(data []byte, budget *imagefetch.Budget) (string, bool) {
+	if len(data) == 0 || len(data) > imagefetch.MaxImageBytes {
+		return "", false
+	}
+	format, px, err := imagefetch.Config(data)
+	if err != nil || budget.TakeInline(int64(len(data)), px) != nil {
+		return "", false
+	}
+	return "data:image/" + format + ";base64," + base64.StdEncoding.EncodeToString(data), true
+}
 
 // finish applies the display contract on bluemonday's output. In compose,
 // a cid in keep stays a cid: and every other image source goes.
-func finish(safe string, inline map[string]Attachment, keep map[string]bool, loadRemote, compose, lazy bool) string {
+func finish(safe string, inline map[string]Attachment, dataURLs []string, keep map[string]bool, loadRemote, compose, lazy bool) string {
 	root := parseBody(safe)
+	budget := imagefetch.NewBudget()
 	walkNodes(root, func(n *html.Node) {
 		if n.Type != html.ElementNode {
 			return
@@ -329,26 +350,48 @@ func finish(safe string, inline map[string]Attachment, keep map[string]bool, loa
 			case strings.HasPrefix(src, cidScheme):
 				id, _ := url.QueryUnescape(strings.TrimPrefix(src, cidScheme))
 				a, ok := inline[id]
-				ct := http.DetectContentType(a.Data)
 				if compose && keep[id] || lazy && ok {
 					setAttr(n, "src", "cid:"+id)
-				} else if compose || !ok || !allowedImage[ct] {
-					delAttr(n, "src")
+				} else if !compose && !lazy && ok {
+					if u, ok := encodeInlineImage(a.Data, budget); ok {
+						setAttr(n, "src", u)
+					} else {
+						delAttr(n, "src")
+					}
 				} else {
-					setAttr(n, "src", "data:"+ct+";base64,"+base64.StdEncoding.EncodeToString(a.Data))
+					delAttr(n, "src")
 				}
+			case !compose && strings.HasPrefix(src, dataScheme):
+				i, err := strconv.Atoi(strings.TrimPrefix(src, dataScheme))
+				if err == nil && i >= 0 && i < len(dataURLs) {
+					if data, err := imagefetch.DataURL(dataURLs[i]); err == nil {
+						if u, ok := encodeInlineImage(data, budget); ok {
+							setAttr(n, "src", u)
+							break
+						}
+					}
+				}
+				delAttr(n, "src")
 			case !compose && loadRemote && safeRemoteImage(src):
 				// validated absolute http(s): keep
-			default: // relative, backslash forms, data:, other schemes, remote when not allowed
+			default: // relative, backslash forms, invalid data:, other schemes, remote when not allowed
 				delAttr(n, "src")
 			}
 		case atom.A, atom.Area:
 			href, ok := attr(n, "href")
-			if !ok || compose {
+			if !ok {
+				return
+			}
+			l := strings.ToLower(strings.TrimSpace(href))
+			allowed := strings.HasPrefix(l, "http://") || strings.HasPrefix(l, "https://") || strings.HasPrefix(l, "mailto:")
+			if compose {
+				if !allowed {
+					delAttr(n, "href")
+				}
 				return
 			}
 			delAttr(n, "href")
-			if l := strings.ToLower(strings.TrimSpace(href)); strings.HasPrefix(l, "http://") || strings.HasPrefix(l, "https://") || strings.HasPrefix(l, "mailto:") {
+			if allowed {
 				setAttr(n, "data-href", href)
 			}
 		}
@@ -371,11 +414,11 @@ func SanitizeLazy(src string, known map[string]Attachment, loadRemote bool) (saf
 }
 
 func sanitize(src string, inline map[string]Attachment, loadRemote, lazy bool) (safe string, blockedRemote, trackers int) {
-	prepared, blocked, trackers, sheets, darkCanvas := prepare(src, true)
+	prepared, blocked, trackers, sheets, dataURLs, darkCanvas := prepare(src, true)
 	p := policy()
 	p.AllowAttrs("data-href").OnElements("a", "area")
 	p.AllowAttrs("class", "id").Globally() // what the mail's own <style> selects by; prepare cleaned them
-	safe = finish(p.Sanitize(prepared), inline, nil, loadRemote, false, lazy)
+	safe = finish(p.Sanitize(prepared), inline, dataURLs, nil, loadRemote, false, lazy)
 	css, darkCSS := sanitizeCSS(sheets)
 	if darkCSS {
 		// Keep the marker stable through html.Render when the image proxy rewrites the body.
@@ -396,10 +439,10 @@ func SanitizeCompose(src string) string { return SanitizeDraft(src, nil) }
 // Content-ID in cids (the draft account's signature images); any other cid,
 // data: or remote source is dropped.
 func SanitizeDraft(src string, cids map[string]bool) string {
-	prepared, _, _, _, _ := prepare(src, false)
+	prepared, _, _, _, _, _ := prepare(src, false)
 	p := policy()
 	p.AllowAttrs(marker).Matching(markerValue).Globally()
-	return finish(p.Sanitize(prepared), nil, cids, false, true, false)
+	return finish(p.Sanitize(prepared), nil, nil, cids, false, true, false)
 }
 
 // cleanStyle rejoins an element's inline declarations trimmed, dropping empty
