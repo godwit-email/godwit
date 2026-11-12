@@ -516,7 +516,7 @@ func (quietLog) Printf(format string, args ...any) {
 
 // StartIMAP starts a server on 127.0.0.1:0 with INBOX, Sent, Trash and Archive
 // (with Gmail, INBOX and the Gmail folders).
-func StartIMAP(t *testing.T, opts ...Option) *IMAP {
+func StartIMAP(t testing.TB, opts ...Option) *IMAP {
 	t.Helper()
 	s := &IMAP{cfg: config{move: true, uidplus: true, copyuid: true}, conn: map[*tconn]struct{}{}}
 	s.password.Store("secret")
