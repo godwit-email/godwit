@@ -108,17 +108,30 @@ func TestHeadlessServes(t *testing.T) {
 	if err := c.Call(context.Background(), "ListAccounts", &accs); err != nil || len(accs) != 0 {
 		t.Fatalf("ListAccounts = %v, %v", accs, err)
 	}
+	var st core.Settings
+	if err := c.Call(context.Background(), "GetSettings", &st); err != nil || st.LocalAPI {
+		t.Fatalf("GetSettings = %+v, %v; explicit --headless must serve external clients even with Settings.LocalAPI false", st, err)
+	}
+	uiClient, err := rpc.Dial(dir, rpc.RoleUI, "ui-test", rpcbind.NewCodec())
+	if err != nil {
+		t.Fatalf("Dial RoleUI against headless: %v", err)
+	}
+	uiClient.Close()
 	token, err := os.ReadFile(filepath.Join(dir, rpc.TokenName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	uiTok, err := os.ReadFile(filepath.Join(dir, rpc.UITokenName))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if code := stop(); code != 0 {
 		t.Fatalf("exit code %d", code)
 	}
-	if !strings.Contains(stderr.String(), "serving the Local API") || strings.Contains(stderr.String(), string(token)) {
+	if !strings.Contains(stderr.String(), "serving the Local API") || strings.Contains(stderr.String(), string(token)) || strings.Contains(stderr.String(), string(uiTok)) {
 		t.Errorf("stderr log %q", stderr.String())
 	}
-	for _, f := range []string{rpc.SocketName, rpc.TokenName} {
+	for _, f := range []string{rpc.SocketName, rpc.UITokenName, rpc.TokenName} {
 		if _, err := os.Stat(filepath.Join(dir, f)); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("%s left behind: %v", f, err)
 		}
@@ -466,7 +479,7 @@ func TestRelativeDataDir(t *testing.T) {
 	if code := stop(); code != 0 {
 		t.Fatalf("exit code %d", code)
 	}
-	for _, f := range []string{rpc.SocketName, rpc.TokenName} {
+	for _, f := range []string{rpc.SocketName, rpc.UITokenName, rpc.TokenName} {
 		if _, err := os.Stat(filepath.Join(abs, f)); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("%s left behind: %v", f, err)
 		}

@@ -2,8 +2,13 @@ package contract_test
 
 import (
 	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/png"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +18,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,6 +29,7 @@ import (
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/internal/imagecache"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -461,6 +468,396 @@ func TestOAuthNotConfigured(t *testing.T) {
 	defer func() { auth.MicrosoftClientID = old }()
 	runContract(t, func(t *testing.T, api contract.API, env *coretest.Env) any {
 		return res2(api.BeginOAuth(t.Context(), "outlook", "", core.OAuthClient{}))
+	})
+}
+
+type contractSysTranslator struct{ langs []string }
+
+func (c *contractSysTranslator) Translate(_ context.Context, texts []string, _, _ string) ([]string, string, error) {
+	return texts, "en", nil
+}
+func (c *contractSysTranslator) Version() string              { return "1" }
+func (c *contractSysTranslator) InstalledLanguages() []string { return c.langs }
+
+func contractPNG(t *testing.T, w, h int) []byte {
+	t.Helper()
+	var b bytes.Buffer
+	require.NoError(t, png.Encode(&b, image.NewRGBA(image.Rect(0, 0, w, h))))
+	return b.Bytes()
+}
+
+func TestUIInboxOnlyAndSystemTranslator(t *testing.T) {
+	t.Run("no_translator", func(t *testing.T) {
+		runUIContract(t, nil, func(t *testing.T, api contract.UIAPI, _ *coretest.Env) any {
+			before := api.InboxOnly()
+			api.SetInboxOnly(true)
+			during := api.InboxOnly()
+			api.SetInboxOnly(false)
+			after := api.InboxOnly()
+			langs := api.SystemTranslatorLanguages()
+			return map[string]any{
+				"before": before,
+				"during": during,
+				"after":  after,
+				"isNil":  langs == nil,
+				"langs":  langs,
+			}
+		})
+	})
+	t.Run("empty_installed", func(t *testing.T) {
+		runUIContract(t, func(*testing.T) []coretest.Option {
+			return []coretest.Option{coretest.WithSystemTranslator(&contractSysTranslator{})}
+		}, func(t *testing.T, api contract.UIAPI, _ *coretest.Env) any {
+			langs := api.SystemTranslatorLanguages()
+			return map[string]any{"isNil": langs == nil, "langs": langs}
+		})
+	})
+	t.Run("installed_languages", func(t *testing.T) {
+		runUIContract(t, func(*testing.T) []coretest.Option {
+			return []coretest.Option{coretest.WithSystemTranslator(&contractSysTranslator{langs: []string{"de", "en", "zh-Hans"}})}
+		}, func(t *testing.T, api contract.UIAPI, _ *coretest.Env) any {
+			langs := api.SystemTranslatorLanguages()
+			return map[string]any{"isNil": langs == nil, "langs": langs}
+		})
+	})
+}
+
+func TestUIStateReport(t *testing.T) {
+	runUIContract(t, nil, func(t *testing.T, api contract.UIAPI, env *coretest.Env) any {
+		ctx := t.Context()
+		acc := env.AddAccount(t, "alice@example.com")
+
+		st, err := api.GetSettings(ctx)
+		require.NoError(t, err)
+		st.MCPSend = core.MCPSendDirect
+		_, err = api.SetSettings(ctx, st)
+		require.NoError(t, err)
+
+		d, err := api.NewDraft(ctx, acc.ID, "new", 0)
+		require.NoError(t, err)
+		d.To, d.Subject, d.HTML = []string{"bob@example.com"}, "hello", "<p>hi</p>"
+		d, err = api.SaveDraft(ctx, d)
+		require.NoError(t, err)
+
+		fgBgErr := errInfo(api.SetUIForeground(ctx, false))
+		afterBg := api.InboxOnly()
+		fgFrontErr := errInfo(api.SetUIForeground(ctx, true))
+		afterFront := api.InboxOnly()
+
+		openErr := errInfo(api.SetComposeOpen(ctx, []int64{d.ID}))
+		blocked := res(api.RequestMCPSend(ctx, d.ID, d.Revision))
+		clearErr := errInfo(api.SetComposeOpen(ctx, nil))
+		allowed := res(api.RequestMCPSend(ctx, d.ID, d.Revision))
+
+		return map[string]any{
+			"fgBgErr":    fgBgErr,
+			"afterBg":    afterBg,
+			"fgFrontErr": fgFrontErr,
+			"afterFront": afterFront,
+			"openErr":    openErr,
+			"blocked":    blocked,
+			"clearErr":   clearErr,
+			"allowed":    allowed,
+		}
+	})
+}
+
+func TestUIReaderAndAttachments(t *testing.T) {
+	runUIContract(t, nil, func(t *testing.T, api contract.UIAPI, env *coretest.Env) any {
+		ctx := t.Context()
+		acc := env.AddAccount(t, "alice@example.com")
+		pic := contractPNG(t, 4, 4)
+		env.Deliver(t, acc.ID, "INBOX", coretest.Msg("Bob <bob@example.com>", "alice@example.com", "Assets", "See logo.",
+			coretest.MessageID("ui-m1@contract"), coretest.Date(day1),
+			coretest.HTML(`<p>Logo: <img src="cid:logo@contract"></p>`),
+			coretest.Inline("logo@contract", "image/png", pic),
+			coretest.Attachment("first.txt", "text/plain", []byte("one")),
+			coretest.Attachment("second.txt", "text/plain", []byte("two"))))
+
+		msg := firstMessage(t, api)
+		out := map[string]any{}
+		lazy, err := api.GetMessageLazyImages(ctx, msg.ID, false)
+		out["lazy"] = res(lazy, err)
+		out["lazyMissing"] = res(api.GetMessageLazyImages(ctx, 999999, false))
+
+		_, missingErr := api.InlineImagesStream(ctx, 999999)
+		out["inlineMissing"] = errInfo(missingErr)
+
+		imgCh, err := api.InlineImagesStream(ctx, msg.ID)
+		require.NoError(t, err)
+		var inlineOut []any
+		for _, it := range collect(t, imgCh) {
+			if it.StreamError() != nil {
+				inlineOut = append(inlineOut, map[string]any{"err": errInfo(it.StreamError())})
+				continue
+			}
+			b, rerr := os.ReadFile(it.Path)
+			inlineOut = append(inlineOut, map[string]any{
+				"cid":         it.CID,
+				"contentType": it.ContentType,
+				"abs":         filepath.IsAbs(it.Path),
+				"bytesEqual":  bytes.Equal(b, pic),
+				"readErr":     fmt.Sprint(rerr),
+			})
+		}
+		out["inline"] = inlineOut
+
+		txt, err := api.GetMessageText(ctx, msg.ID)
+		require.NoError(t, err)
+		require.Len(t, txt.Attachments, 3)
+
+		attCh, err := api.FetchAttachmentsStream(ctx, []int64{txt.Attachments[1].ID, txt.Attachments[2].ID})
+		require.NoError(t, err)
+		var attOut []any
+		for _, a := range collect(t, attCh) {
+			if a.StreamError() != nil {
+				attOut = append(attOut, map[string]any{"err": errInfo(a.StreamError())})
+				continue
+			}
+			b, rerr := os.ReadFile(a.Path)
+			attOut = append(attOut, map[string]any{
+				"info":    a.Info,
+				"base":    filepath.Base(a.Path),
+				"abs":     filepath.IsAbs(a.Path),
+				"content": string(b),
+				"readErr": fmt.Sprint(rerr),
+			})
+		}
+		out["fetched"] = attOut
+
+		badCh, err := api.FetchAttachmentsStream(ctx, []int64{txt.Attachments[1].ID, 999999})
+		require.NoError(t, err)
+		var partial []any
+		for _, a := range collect(t, badCh) {
+			if a.StreamError() != nil {
+				partial = append(partial, map[string]any{"err": errInfo(a.StreamError())})
+				continue
+			}
+			partial = append(partial, map[string]any{"filename": a.Info.Filename})
+		}
+		out["fetchedPartial"] = partial
+		return out
+	})
+}
+
+func TestUIImageCache(t *testing.T) {
+	runUIContract(t, nil, func(t *testing.T, api contract.UIAPI, _ *coretest.Env) any {
+		ctx := t.Context()
+		pic := contractPNG(t, 8, 5)
+		var fail atomic.Bool
+		fail.Store(true)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if fail.Load() {
+				w.WriteHeader(http.StatusBadGateway)
+				return
+			}
+			w.Write(pic)
+		}))
+		defer srv.Close()
+
+		src := srv.URL + "/banner.png"
+		out := map[string]any{}
+		out["dimsBefore"] = api.CachedImageDims(src)
+		_, err := api.CachedImage(ctx, src)
+		out["firstFail"] = errInfo(err)
+
+		fail.Store(false)
+		_, err = api.CachedImage(ctx, src)
+		out["cachedFail"] = errInfo(err)
+
+		api.ForgetImageFailure([]string{src})
+		got, err := api.CachedImage(ctx, src)
+		require.NoError(t, err)
+		b, rerr := os.ReadFile(got.Path)
+		out["cached"] = map[string]any{
+			"format":     got.Format,
+			"width":      got.Width,
+			"height":     got.Height,
+			"abs":        filepath.IsAbs(got.Path),
+			"bytesEqual": bytes.Equal(b, pic),
+			"readErr":    fmt.Sprint(rerr),
+		}
+		out["dimsAfter"] = api.CachedImageDims(src)
+		return out
+	})
+}
+
+func TestUIAvatarsAndPluginReadme(t *testing.T) {
+	runUIContract(t, func(t *testing.T) []coretest.Option {
+		rs := coretest.NewRegistryServer(t)
+		rel := rs.ScriptRelease("hello", "0.1.0", `{}`, "// ok\n")
+		rs.Serve("/org/hello/HEAD/README.zh-CN.md", []byte("# 你好插件\n"))
+		rs.Serve("/org/hello/HEAD/README.md", []byte("# Hello Plugin\n"))
+		u, err := url.Parse(rs.URL(""))
+		require.NoError(t, err)
+		tr := rs.Src.Client.Transport.(*http.Transport).Clone()
+		tr.TLSClientConfig.ServerName = u.Hostname()
+		tr.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, u.Host)
+		}
+		t.Cleanup(tr.CloseIdleConnections)
+		rs.Src.Client = &http.Client{Transport: tr}
+		rs.Publish(t, coretest.Registry(day1, map[string]any{
+			"name":     "hello",
+			"title":    "Hello",
+			"summary":  "Demo",
+			"homepage": "https://github.com/org/hello",
+			"releases": []any{rel},
+		}))
+		return []coretest.Option{coretest.WithRegistry(rs.Src)}
+	}, func(t *testing.T, api contract.UIAPI, env *coretest.Env) any {
+		ctx := t.Context()
+		acc := env.AddAccount(t, "alice@example.com")
+		env.Deliver(t, acc.ID, "INBOX", coretest.Msg("Bob <bob@example.com>", "alice@example.com", "Hi", "Hello.", coretest.Date(day1)))
+		msg := firstMessage(t, api)
+
+		icon := contractPNG(t, 64, 64)
+		cache := env.Svc.ImageCache()
+		_, err := cache.PutAvatar(ctx, imagecache.AvatarKey("favicon", "example.com"), icon, "favicon", cache.AvatarGeneration())
+		require.NoError(t, err)
+
+		ms, err := env.Svc.AddModelService(ctx, core.ModelServiceInput{
+			Name: "Custom", Kind: "openai", BaseURL: "https://example.com/v1", APIKey: "good-key", Models: []string{"m1"},
+		})
+		require.NoError(t, err)
+
+		require.NoError(t, env.Svc.RefreshPluginRegistry(ctx))
+
+		out := map[string]any{}
+		out["senderBlocked"] = res(api.SenderAvatar(ctx, msg.ID, false))
+		out["senderAllowed"] = res(api.SenderAvatar(ctx, msg.ID, true))
+		out["modelAvatar"] = res(api.ModelServiceAvatar(ctx, ms.ID))
+		out["modelMissing"] = res(api.ModelServiceAvatar(ctx, 999999))
+		out["readmeZh"] = res(api.PluginReadme(ctx, "hello", "zh-CN"))
+		out["readmeFallback"] = res(api.PluginReadme(ctx, "hello", "fr"))
+		out["readmeUnknown"] = res(api.PluginReadme(ctx, "absent", "en"))
+		return out
+	})
+}
+
+func TestUIProgressStreams(t *testing.T) {
+	recFiles := map[string][]byte{}
+	for i, name := range guard.Files {
+		recFiles[name] = bytes.Repeat([]byte{byte('a' + i)}, 256+i)
+	}
+	core.SetRecognitionModelFilesForTest(t, recFiles)
+
+	runUIContract(t, func(t *testing.T) []coretest.Option {
+		rs := coretest.NewRegistryServer(t)
+		scriptRel := rs.ScriptRelease("hello", "0.1.0", `{}`, strings.Repeat("// code\n", 32))
+		badRel := rs.ScriptRelease("badsum", "0.1.0", `{}`, strings.Repeat("// code\n", 32))
+		badRel["artifacts"].(map[string]any)["any"].(map[string]any)["sha256"] = strings.Repeat("0", 64)
+
+		modelBytes := []byte(strings.Repeat("M", 512))
+		modelSum := sha256.Sum256(modelBytes)
+		rs.Serve("/assets/model.gguf", modelBytes)
+		nativeRel := rs.NativeModelsRelease(t, "dlx", "0.1.0", filepath.Join(t.TempDir(), "rec"), []any{
+			map[string]any{"id": "m-q4", "name": "M", "transport": "plugin", "operation": "judge", "assets": map[string]string{"model": "q4"}},
+		})
+		nativeRel["assets"] = []any{
+			map[string]any{
+				"name": "model",
+				"variants": []any{
+					map[string]any{
+						"id": "q4",
+						"files": []any{
+							map[string]any{
+								"name":   "model.gguf",
+								"url":    rs.URL("/assets/model.gguf"),
+								"sha256": hex.EncodeToString(modelSum[:]),
+								"size":   len(modelBytes),
+							},
+						},
+					},
+				},
+			},
+		}
+		rs.Publish(t, coretest.Registry(day1,
+			map[string]any{"name": "hello", "title": "Hello", "summary": "S", "releases": []any{scriptRel}},
+			map[string]any{"name": "badsum", "title": "Bad", "summary": "B", "releases": []any{badRel}},
+			map[string]any{"name": "dlx", "title": "DLX", "summary": "D", "releases": []any{nativeRel}},
+		))
+
+		recSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, ok := recFiles[strings.TrimPrefix(r.URL.Path, "/int8/")]
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(body))
+		}))
+		t.Cleanup(recSrv.Close)
+
+		return []coretest.Option{
+			coretest.WithRegistry(rs.Src),
+			coretest.WithRecognitionModelSources(recSrv.URL + "/"),
+		}
+	}, func(t *testing.T, api contract.UIAPI, env *coretest.Env) any {
+		ctx := t.Context()
+		require.NoError(t, env.Svc.RefreshPluginRegistry(ctx))
+		out := map[string]any{}
+
+		// 1. InstallPluginFromRegistryStream (success + mismatch + unknown)
+		_, unknownInstallErr := api.InstallPluginFromRegistryStream(ctx, "no-such-plugin")
+		out["installUnknown"] = errInfo(unknownInstallErr)
+
+		ich, err := api.InstallPluginFromRegistryStream(ctx, "hello")
+		require.NoError(t, err)
+		var installEvents []any
+		for _, ev := range collect(t, ich) {
+			if ev.StreamError() != nil {
+				installEvents = append(installEvents, map[string]any{"err": errInfo(ev.StreamError())})
+				continue
+			}
+			installEvents = append(installEvents, ev)
+		}
+		out["installHello"] = installEvents
+
+		bch, err := api.InstallPluginFromRegistryStream(ctx, "badsum")
+		require.NoError(t, err)
+		var badEvents []any
+		for _, ev := range collect(t, bch) {
+			if ev.StreamError() != nil {
+				badEvents = append(badEvents, map[string]any{"err": errInfo(ev.StreamError())})
+				continue
+			}
+			badEvents = append(badEvents, ev.Progress.Stage)
+		}
+		out["installBadsum"] = badEvents
+
+		// 2. PrepareModelStream (install native plugin first, then prepare model + unknown model)
+		_, err = env.Svc.InstallPluginFromRegistry(ctx, "dlx")
+		require.NoError(t, err)
+
+		_, badModelErr := api.PrepareModelStream(ctx, "plugin/dlx/missing")
+		out["prepareMissing"] = errInfo(badModelErr)
+
+		pch, err := api.PrepareModelStream(ctx, "plugin/dlx/m-q4")
+		require.NoError(t, err)
+		var prepEvents []any
+		for _, ev := range collect(t, pch) {
+			if ev.StreamError() != nil {
+				prepEvents = append(prepEvents, map[string]any{"err": errInfo(ev.StreamError())})
+				continue
+			}
+			prepEvents = append(prepEvents, ev)
+		}
+		out["prepareModel"] = prepEvents
+
+		// 3. DownloadRecognitionModelStream
+		rch, err := api.DownloadRecognitionModelStream(ctx)
+		require.NoError(t, err)
+		var recEvents []any
+		for _, ev := range collect(t, rch) {
+			if ev.StreamError() != nil {
+				recEvents = append(recEvents, map[string]any{"err": errInfo(ev.StreamError())})
+				continue
+			}
+			recEvents = append(recEvents, ev)
+		}
+		out["downloadRecognition"] = recEvents
+		out["recognitionInstalled"] = env.Svc.RecognitionModelInstalled()
+		return out
 	})
 }
 

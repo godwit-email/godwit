@@ -192,9 +192,10 @@ func (h *harness) typeText(s string) {
 
 // fakeClock fires AfterFunc callbacks only from advance, in due order.
 type fakeClock struct {
-	mu     sync.Mutex
-	now    time.Time
-	timers []*fakeTimer
+	mu      sync.Mutex
+	now     time.Time
+	timers  []*fakeTimer
+	onAfter func(time.Duration)
 }
 
 type fakeTimer struct {
@@ -215,9 +216,13 @@ func (c *fakeClock) Now() time.Time {
 
 func (c *fakeClock) AfterFunc(d time.Duration, f func()) func() bool {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	tm := &fakeTimer{at: c.now.Add(d), f: f}
 	c.timers = append(c.timers, tm)
+	on := c.onAfter
+	c.mu.Unlock()
+	if on != nil {
+		on(d)
+	}
 	return func() bool {
 		c.mu.Lock()
 		defer c.mu.Unlock()
@@ -264,6 +269,7 @@ type fakePlatform struct {
 	savePath     string   // SaveFile
 	supported    bool     // NotificationsSupported
 	notifyErr    error    // Notify
+	onNotify     func(Notification)
 	tempDir      string
 
 	localAPIPath string // SetLocalAPI(true)'s answer
@@ -506,9 +512,13 @@ func (p *fakePlatform) SaveFile(defaultName string) (string, error) {
 func (p *fakePlatform) Notify(n Notification) error {
 	p.record("Notify", n.ID)
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.notes = append(p.notes, n)
-	return p.notifyErr
+	err, on := p.notifyErr, p.onNotify
+	p.mu.Unlock()
+	if on != nil {
+		on(n)
+	}
+	return err
 }
 func (p *fakePlatform) SetSignInCodes(codes []core.SignInCode) { p.codes = slices.Clone(codes) }
 func (p *fakePlatform) SignInCodeBannerSupported() bool        { return !p.noCodeBanner }

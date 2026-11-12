@@ -46,9 +46,9 @@ type Platform interface {
 	// ext (no dot), as a size by size pixel PNG. Blocks: call it off the UI
 	// thread.
 	TypeIcon(ext string, size int) ([]byte, error)
-	// SetLocalAPI starts (on) or stops the Local API server for request
-	// gen, returning its socket's path while on. Off when it fails. Blocks:
-	// call off the UI thread.
+	// SetLocalAPI enables (on) or disables external access to the Local API
+	// for request gen, returning its socket's path while on. Off when it
+	// fails. Blocks: call off the UI thread.
 	SetLocalAPI(gen uint64, on bool) (path string, err error)
 	// DataDir is the data directory; custom: it is not the default one.
 	DataDir() (dir string, custom bool)
@@ -122,7 +122,7 @@ type OAuthFlow interface {
 	Cancel(flowID string)
 }
 
-type serviceOAuth struct{ svc *core.Service }
+type serviceOAuth struct{ svc Service }
 
 func (o serviceOAuth) Begin(ctx context.Context, provider, loginHint string, client core.OAuthClient) (string, string, error) {
 	return o.svc.BeginOAuth(ctx, provider, loginHint, client)
@@ -135,7 +135,7 @@ func (o serviceOAuth) Cancel(flowID string) { o.svc.CancelOAuth(flowID) }
 // Deps are the App's collaborators. Post runs a function on the UI thread
 // (win.Update in production). Clock and OAuth default to the real ones.
 type Deps struct {
-	Svc      *core.Service
+	Svc      Service
 	Settings core.Settings
 	Platform Platform
 	Post     func(func())
@@ -189,7 +189,7 @@ type syncBatch struct {
 
 // App is the interface's state. Every field is read and written on the UI thread.
 type App struct {
-	svc   *core.Service
+	svc   Service
 	plat  Platform
 	post  func(func())
 	clock Clock
@@ -232,9 +232,9 @@ type App struct {
 	localAPIPath string // the Local API's socket while it serves
 	localAPIErr  error  // why the Local API last failed; the privacy page shows it
 
-	foreground                           bool
-	vibrancy                             bool                // Deps.Vibrancy
-	newMail                              map[int64]*arrivals // per account, what arrived for its pending notifications
+	foreground bool
+	vibrancy   bool // Deps.Vibrancy
+	*MailNotifier
 	logf                                 func(format string, args ...any)
 	noteRoute                            func(ctx context.Context, id string) (Route, bool, error) // where a notification leads; tests wrap it
 	noteGen                              uint64                                                    // bumped per notification click; only the newest navigates
@@ -340,6 +340,15 @@ func New(d Deps) *App {
 	a.syncing, a.syncErr, a.syncedAtBy = map[int64]bool{}, map[int64]syncFail{}, map[int64]time.Time{}
 	a.undoToasts = map[int64]bool{}
 	a.ctx, a.cancel = context.WithCancel(context.Background())
+	a.MailNotifier = NewMailNotifier(MailNotifierDeps{
+		Svc:        a.svc,
+		Sink:       a.plat,
+		Clock:      a.clock,
+		Foreground: func() bool { return a.foreground },
+		Language:   i18n.Language,
+		Post:       a.onUI,
+		Logf:       a.logf,
+	})
 	a.pumpDone = make(chan struct{})
 	return a
 }
@@ -528,11 +537,21 @@ func (a *App) load() {
 	})
 }
 
+// MailReady reports whether the initial load has settled on onboarding or a
+// loaded mail list. UI thread.
+func (a *App) MailReady() bool {
+	if !a.loaded {
+		return false
+	}
+	return a.route.Page == PageOnboarding || (a.route.Page == PageMail && !a.mail.loading)
+}
+
 // Close cancels all work in flight, whose done callbacks never run, closes
 // the reader's body pages and removes the temporary copies of opened
 // attachments. UI thread.
 func (a *App) Close() {
 	a.cancel() // the event pump unsubscribes as it stops
+	a.MailNotifier.Close()
 	if a.codesStop != nil {
 		a.codesStop()
 	}

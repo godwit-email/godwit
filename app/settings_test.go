@@ -900,7 +900,7 @@ func TestLocalAPIDefaultOff(t *testing.T) {
 		t.Fatal("the Local API is on by default")
 	}
 	h.aiTab(aiApps)
-	h.see("启用本机 API")
+	h.see("允许外部应用和脚本接入")
 	for _, c := range h.plat.Calls() {
 		if strings.HasPrefix(c, "SetLocalAPI") {
 			t.Fatalf("called %s with the switch off", c)
@@ -914,7 +914,7 @@ func TestLocalAPIDefaultOff(t *testing.T) {
 func TestLocalAPISwitch(t *testing.T) {
 	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, nil)
 	h.aiTab(aiApps)
-	h.click("启用本机 API")
+	h.click("允许外部应用和脚本接入")
 	h.called("SetLocalAPI true")
 	h.see("/tmp/gw/godwit.sock")
 	exe, err := os.Executable()
@@ -939,7 +939,7 @@ func TestLocalAPISwitch(t *testing.T) {
 		st, err := h.env.Svc.GetSettings(context.Background())
 		return err == nil && st.LocalAPI
 	})
-	h.click("启用本机 API")
+	h.click("允许外部应用和脚本接入")
 	h.called("SetLocalAPI false")
 	h.until("the socket hides", func() bool { h.tt.Frame(); return !h.tt.HasText("/tmp/gw/godwit.sock") })
 	h.until("saved off", func() bool {
@@ -959,7 +959,7 @@ func TestLocalAPIStartsOnLoad(t *testing.T) {
 func TestLocalAPIFailureReverts(t *testing.T) {
 	h := localAPIHarness(t, "", errors.New("socket path too long"), nil)
 	h.aiTab(aiApps)
-	h.click("启用本机 API")
+	h.click("允许外部应用和脚本接入")
 	h.called("SetLocalAPI true")
 	h.see("socket path too long")
 	h.until("reverted and saved off", func() bool {
@@ -975,10 +975,12 @@ func TestLocalAPICopyWarnsFullAccess(t *testing.T) {
 	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
 	h := localAPIHarness(t, "", nil, nil)
 	h.aiTab(aiApps)
+	h.see("允许这台电脑上的 AI 工具（godwit mcp）和脚本（godwit call）连接 Godwit")
 	h.see("完整的本机 API 能读取邮件、发送邮件、修改账户和设置")
 	h.see("只能读取邮件和写草稿，能否发信看「通过 MCP 发送」")
 	i18n.SetLanguage("en")
 	h.tt.Frame()
+	h.see("Lets AI tools (godwit mcp) and scripts (godwit call) on this computer connect to Godwit")
 	h.see("The full Local API can read mail, send mail, and change accounts and settings")
 	h.see("can only read mail and write drafts, and Send through MCP decides whether they can send")
 }
@@ -1016,10 +1018,10 @@ func localAPIRace(t *testing.T, last error) (*harness, func() bool) {
 		return "/tmp/gw/godwit.sock", nil
 	}
 	h.aiTab(aiApps)
-	h.click("启用本机 API")
+	h.click("允许外部应用和脚本接入")
 	h.called("SetLocalAPI true")
-	h.click("启用本机 API")
-	h.click("启用本机 API")
+	h.click("允许外部应用和脚本接入")
+	h.click("允许外部应用和脚本接入")
 	close(release)
 	h.until("every request done", func() bool {
 		return h.app.writes.chains["local-api"] == nil && h.app.writes.keys["settings"] == nil
@@ -1096,8 +1098,8 @@ func TestLocalAPIStaleStopIgnored(t *testing.T) {
 	h.until("on", func() bool { return h.app.writes.chains["local-api"] == nil })
 	old := h.app.localAPIGen
 	h.aiTab(aiApps)
-	h.click("启用本机 API")
-	h.click("启用本机 API")
+	h.click("允许外部应用和脚本接入")
+	h.click("允许外部应用和脚本接入")
 	h.until("off and on again", func() bool {
 		return h.app.writes.chains["local-api"] == nil && h.app.writes.keys["settings"] == nil && h.app.localAPIGen == old+2
 	})

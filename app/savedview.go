@@ -98,7 +98,7 @@ func viewItem(r core.ViewRow, group string) mailItem {
 }
 
 // fetchView reads a view's groups, each up to the rows want has for it.
-func fetchView(ctx context.Context, svc *core.Service, id int64, want map[string]int) ([]mailItem, []viewGroupState, error) {
+func fetchView(ctx context.Context, svc Service, id int64, want map[string]int) ([]mailItem, []viewGroupState, error) {
 	cs, err := svc.ViewContents(ctx, id, pageSize)
 	if err != nil {
 		return nil, nil, err

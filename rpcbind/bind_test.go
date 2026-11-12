@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -58,6 +59,16 @@ func TestErrorRoundTrip(t *testing.T) {
 			assert.Equal(t, e.Code, we.Data.Code)
 			assert.NotContains(t, raw, "private text", e.Code)
 		}
+	}
+	for wantKey, err := range map[string]error{
+		"error.plugin_exited":             fmt.Errorf("native: %w: secret stderr", plugins.ErrNativeExited),
+		"error.plugin_timeout":            fmt.Errorf("native: %w (translate after 1m)", plugins.ErrTimeout),
+		"error.plugin_abi":                fmt.Errorf("native: %w: bad envelope", plugins.ErrNativeABI),
+		"settings.models.login.port_busy": fmt.Errorf("oauth: %w: 1455", auth.ErrRedirectPortBusy),
+	} {
+		_, raw, got := wire(t, c, err, nil)
+		assert.Equal(t, wantKey, rpcbind.Key(got), wantKey)
+		assert.NotContains(t, raw, "secret stderr")
 	}
 	assert.Equal(t, "canceled", c.Encode(context.Canceled, nil).Data.Code)
 	assert.Equal(t, "deadline", c.Encode(context.DeadlineExceeded, nil).Data.Code)
@@ -232,11 +243,62 @@ func TestFullSurfacePinned(t *testing.T) {
 	}
 }
 
+// uiSurface is testdata/ui_methods.txt: the methods only ui may call.
+func uiSurface(t *testing.T) []string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("testdata", "ui_methods.txt"))
+	require.NoError(t, err)
+	var out []string
+	for line := range strings.Lines(string(b)) {
+		if line = strings.TrimSpace(line); line != "" && !strings.HasPrefix(line, "#") {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+func TestUISurfacePinned(t *testing.T) {
+	_, err := rpc.NewDispatcher(newService(t), rpcbind.ExposeUI)
+	require.NoError(t, err)
+	full := fullSurface(t)
+	uiOnly := uiSurface(t)
+	assert.NotEmpty(t, full)
+	for _, m := range uiOnly {
+		assert.False(t, slices.Contains(full, m), "%s is in both full and ui_methods.txt", m)
+	}
+	wantAll := slices.Concat(full, uiOnly)
+	slices.Sort(wantAll)
+
+	var gotAll, gotUIOnly []string
+	for m := range reflect.TypeFor[*core.Service]().Methods() {
+		if rpcbind.ExposeUI(m.Name) {
+			gotAll = append(gotAll, m.Name)
+			if !rpcbind.Expose(m.Name) {
+				gotUIOnly = append(gotUIOnly, m.Name)
+			}
+		}
+	}
+	assert.Equal(t, uiOnly, gotUIOnly, "update rpcbind/testdata/ui_methods.txt")
+	assert.Equal(t, wantAll, gotAll)
+
+	for _, m := range []string{
+		"Close", "Redact", "AuditExternal", "Proxy", "FollowConversation",
+		"UIConnected", "UIForeground", "IsComposeOpen",
+		"InlineImages", "FetchAttachments",
+		"InstallPluginFromRegistryWithProgress", "PrepareModelWithProgress", "DownloadRecognitionModel",
+		"SetPluginNetForTest",
+	} {
+		assert.False(t, rpcbind.ExposeUI(m), "%s must stay off the wire", m)
+	}
+}
+
 // Wire codes are API: renaming one must break this test.
 func TestWireCodesPinned(t *testing.T) {
 	c := rpcbind.NewCodec()
 	pinned := map[string]error{
-		"use_assist": core.ErrUseAssist, "stale_approval": core.ErrStaleApproval, "too_large": core.ErrTooLarge, "link_ref": core.ErrLinkRef, "placeholder": core.ErrPlaceholder,
+		"plugin_exited": plugins.ErrNativeExited, "plugin_timeout": plugins.ErrTimeout, "plugin_abi": plugins.ErrNativeABI,
+		"redirect_port_busy": auth.ErrRedirectPortBusy,
+		"use_assist":         core.ErrUseAssist, "stale_approval": core.ErrStaleApproval, "too_large": core.ErrTooLarge, "link_ref": core.ErrLinkRef, "placeholder": core.ErrPlaceholder,
 		"mask_kind": core.ErrMaskKind, "mask_reserved_kind": core.ErrMaskReservedKind, "mask_empty_match": core.ErrMaskEmptyMatch, "mask_too_many_rules": core.ErrMaskTooManyRules, "mask_too_many_allow": core.ErrMaskTooManyAllow,
 		"not_on_server_yet": core.ErrNotOnServerYet, "stale_draft": core.ErrStaleDraft, "run_active": core.ErrRunActive, "security_scan_busy": core.ErrSecurityScanBusy, "security_scan_disabled": core.ErrSecurityScanDisabled, "not_synced": core.ErrNotSynced,
 		"compacting": core.ErrCompacting, "nothing_to_compact": core.ErrNothingToCompact, "draft_gone": core.ErrDraftGone,
