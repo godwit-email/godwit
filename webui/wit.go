@@ -237,12 +237,15 @@ func witInfo(ctx context.Context, svc Service, d core.Draft) (WitInfo, error) {
 	read := svc.ReadingLanguage(ctx)
 
 	// The system's translation offers only what is downloaded: none leaves the menu its hint.
-	if st.Translator == "plugin/"+core.SystemTranslationPlugin && svc.SystemTranslator() != nil {
-		info.Languages = []Language{}
-		for _, code := range svc.SystemTranslator().InstalledLanguages() {
-			info.Languages = append(info.Languages, Language{Tag: code, Name: langName(code, zhTW)})
+	if st.Translator == "plugin/"+core.SystemTranslationPlugin {
+		if langs := svc.SystemTranslatorLanguages(); langs != nil {
+			info.Languages = []Language{}
+			for _, code := range langs {
+				info.Languages = append(info.Languages, Language{Tag: code, Name: langName(code, zhTW)})
+			}
 		}
-	} else {
+	}
+	if info.Languages == nil {
 		info.Languages = []Language{{read, langName(read, zhTW)}}
 		for _, l := range languages {
 			if zhTW && l.Tag == "zh-Hant" {

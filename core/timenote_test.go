@@ -80,3 +80,43 @@ func TestAskTimeNoteZone(t *testing.T) {
 	local := time.Date(2026, 10, 21, 14, 20, 0, 0, time.UTC).In(time.Local).Format(timeNoteLayout)
 	assert.Contains(t, ask("Not/AZone"), timeNotePrefix+local)
 }
+
+func TestSetTimeZoneAndExtract(t *testing.T) {
+	zone, ok := TimeZone(t.Context())
+	assert.False(t, ok)
+	assert.Empty(t, zone)
+
+	for _, in := range []string{"Asia/Tokyo", "Not/AZone", ""} {
+		got, ok := TimeZone(WithTimeZone(t.Context(), in))
+		assert.True(t, ok)
+		assert.Equal(t, in, got)
+	}
+
+	e := newSkillEnv(t)
+	e.s.clock = testclock.New(time.Date(2026, 10, 21, 14, 20, 0, 0, time.UTC))
+	askPlain := func() string {
+		conv := e.askConv(t)
+		e.srv.Script(testllm.Turn{Text: []string{"Hi."}})
+		ch, err := e.s.Ask(t.Context(), conv.ID, "now?")
+		require.NoError(t, err)
+		drainWit(t, ch)
+		reqs := e.srv.Requests()
+		return promptOf(t, reqs[len(reqs)-1])
+	}
+
+	e.s.SetTimeZone("Asia/Tokyo")
+	assert.Contains(t, askPlain(), timeNotePrefix+"2026-10-21 23:20 +09:00 (Wednesday, JST)")
+
+	// Per-call WithTimeZone with invalid zone still falls back to time.Local even while SetTimeZone is set.
+	conv := e.askConv(t)
+	e.srv.Script(testllm.Turn{Text: []string{"Hi."}})
+	ch, err := e.s.Ask(WithTimeZone(t.Context(), "Not/AZone"), conv.ID, "now?")
+	require.NoError(t, err)
+	drainWit(t, ch)
+	local := time.Date(2026, 10, 21, 14, 20, 0, 0, time.UTC).In(time.Local).Format(timeNoteLayout)
+	reqs := e.srv.Requests()
+	assert.Contains(t, promptOf(t, reqs[len(reqs)-1]), timeNotePrefix+local)
+
+	e.s.SetTimeZone("Not/AZone")
+	assert.Contains(t, askPlain(), timeNotePrefix+local)
+}

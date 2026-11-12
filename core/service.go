@@ -112,6 +112,9 @@ type Options struct {
 	// PrintPDF lays out an HTML document as a PDF, for rules that export
 	// one; the GUI sets it. nil fails those actions (RuleFailNoPDF).
 	PrintPDF func(ctx context.Context, html string) ([]byte, error)
+	// RecentLog reads the process's recent log lines for RecentLog(); nil reads
+	// package-level RecentLog.
+	RecentLog func() string
 }
 
 // Service owns the database and event bus of one Godwit data directory.
@@ -137,7 +140,8 @@ type Service struct {
 	workersMu   sync.Mutex
 	workers     map[int64]*worker
 	closed      bool
-	inboxRounds atomic.Bool // background rounds cover the inbox only; the window's state (SetInboxOnly)
+	inboxRounds atomic.Bool                   // background rounds cover the inbox only; the window's state (SetInboxOnly)
+	timeZone    atomic.Pointer[time.Location] // the UI's current IANA time zone (SetTimeZone); nil is time.Local
 
 	uiMu       sync.Mutex              // connected RoleUI sessions and in-process UI state
 	uiSessions map[*uiSession]struct{} // live RoleUI connections (WithUISession)

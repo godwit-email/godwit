@@ -13,8 +13,10 @@ InstallPluginFromRegistryStream
 ModelServiceAvatar
 PluginReadme
 PrepareModelStream
+RecentLog
 SenderAvatar
 SetComposeOpen
 SetInboxOnly
+SetTimeZone
 SetUIForeground
 SystemTranslatorLanguages

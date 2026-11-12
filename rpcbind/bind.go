@@ -232,6 +232,8 @@ var uiOnly = map[string]bool{
 	"CachedImage": true, "CachedImageDims": true, "ForgetImageFailure": true,
 	// Wire helper for the operating system's installed translation languages.
 	"SystemTranslatorLanguages": true,
+	// Redacted recent log lines for bug reports, and the interface's IANA time zone for Wit runs.
+	"RecentLog": true, "SetTimeZone": true,
 	// Window foreground, open compose drafts, and background-round narrowing; external clients use SyncNow.
 	"SetUIForeground": true, "SetComposeOpen": true, "SetInboxOnly": true, "InboxOnly": true,
 }

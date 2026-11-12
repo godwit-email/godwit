@@ -126,13 +126,13 @@ type Service interface {
 	Purges(ctx context.Context, accountID int64) (map[string]core.Purge, error)
 	QuickReplies(ctx context.Context, messageID int64) ([]core.QuickReply, error)
 	Reauthorize(ctx context.Context, id int64, flowID string) error
+	RecentLog() string
 	RecentSignInCodes(ctx context.Context, now time.Time) ([]core.SignInCode, error)
 	RecheckSending(ctx context.Context, id int64) (core.CheckReport, error)
 	RecognitionModelBackend(ctx context.Context) (*core.RecognitionModelBackend, error)
 	RecognitionModelError() error
 	RecognitionModelInstalled() bool
 	RecordCapStatus(ctx context.Context, id, version int64, c string, st core.CapStatus) error
-	Redact(text string) string
 	RefreshMCPTools(ctx context.Context, id int64) error
 	RefreshPluginRegistry(ctx context.Context) error
 	RemoveAccount(ctx context.Context, id int64) error
