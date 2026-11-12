@@ -27,7 +27,7 @@ func experimentalJMAP(e *coretest.Env) {
 func TestOnboardingJMAP(t *testing.T) {
 	h := newHarness(t, experimentalJMAP)
 	o := h.firstRun()
-	h.click("其他 IMAP 邮箱")
+	h.click("其他邮箱")
 	h.fill("邮箱地址", "new@example.com")
 	in := h.env.StartJMAPServers(h.t, "new@example.com")
 	if _, open := h.tt.Find("IMAP 服务器"); !open {
@@ -67,7 +67,7 @@ func TestOnboardingJMAPAPIToken(t *testing.T) {
 	h := newHarness(t, experimentalJMAP)
 	h.firstRun()
 	h.see("Fastmail") // listed, with its JMAP entry's API token preset
-	h.click("其他 IMAP 邮箱")
+	h.click("其他邮箱")
 	h.fill("邮箱地址", "new@example.com")
 	in := h.env.StartJMAPServers(h.t, "new@example.com")
 	if _, open := h.tt.Find("IMAP 服务器"); !open {
@@ -106,7 +106,7 @@ func TestOnboardingJMAPNoSubmission(t *testing.T) {
 	}
 	h.env.JMAP(seed.ID).DisableSubmission()
 
-	h.click("其他 IMAP 邮箱")
+	h.click("其他邮箱")
 	h.fill("邮箱地址", "nosend@example.com")
 	if _, open := h.tt.Find("IMAP 服务器"); !open {
 		h.click("手动设置服务器")
@@ -173,7 +173,7 @@ func TestSettingsJMAPAPITokenAccount(t *testing.T) {
 func TestOnboardingNoJMAPByDefault(t *testing.T) {
 	h := newHarness(t)
 	h.firstRun()
-	h.click("其他 IMAP 邮箱")
+	h.click("其他邮箱")
 	if _, open := h.tt.Find("IMAP 服务器"); !open {
 		h.click("手动设置服务器")
 	}

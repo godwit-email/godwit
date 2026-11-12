@@ -60,13 +60,25 @@ func TestSettingsIndexCoversRows(t *testing.T) {
 			byText[i18n.T(k)] = append(byText[i18n.T(k)], k)
 		}
 	}
+	srv := h.env.StartCardDAV(t)
+	srv.PutCollection("work", "Work")
+	srv.PutCollection("family", "Family")
+	ab, err := h.env.Svc.AddAddressBook(t.Context(), core.AddressBookInput{Preset: core.PresetCustom, URL: srv.URL(), Username: "alice", Password: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.app.load()
+	h.until("the address book loaded", func() bool { return len(h.app.addressBooks) == 1 })
 	h.openSettings("none") // no such page: only the sidebar and the shell show
 	chrome := map[string]bool{}
 	for _, txt := range h.tt.Texts() {
 		chrome[txt] = true
 	}
-	for sec, route := range map[string]string{"account": accountRoute(acc.ID), "general": "general", "models": "models", "extensions": "extensions", "privacy": "privacy", "about": "about", "labs": "labs", "labels": "labels", "rules": "rules", "signatures": "signatures"} {
+	for sec, route := range map[string]string{"account": accountRoute(acc.ID), "general": "general", "models": "models", "extensions": "extensions", "privacy": "privacy", "about": "about", "labs": "labs", "labels": "labels", "rules": "rules", "signatures": "signatures", "addressbook": addressBookRoute(ab.ID)} {
 		p := h.openSettings(route)
+		if sec == "addressbook" { // an account page: searched with the accounts
+			sec = "account"
+		}
 		if sec == "general" { // 自定义's rows show only in that mode
 			p.proxy.mode, p.proxy.addr = core.ProxyCustom, "socks5://127.0.0.1:1080"
 			h.tt.Frame()

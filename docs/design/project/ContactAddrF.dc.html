@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>方案 F · 地址切换器</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FFFFFF}
+button,input{font:inherit}
+button{cursor:pointer}
+</style>
+</helmet>
+<div style="width: 1280px; height: 720px; box-sizing: border-box; display: flex; background: #FFFFFF; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A">
+<sc-for list="{{panels}}" as="p" hint-placeholder-count="2">
+<section aria-label="{{p.label}}" style="{{p.style}}">
+<span style="align-self: flex-start; font-size: 12px; color: #737373">{{p.label}}</span>
+<span style="{{p.avatarStyle}}">{{p.initial}}</span>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 2px">
+<h1 style="margin: 0; font-size: 22px; font-weight: 600">{{p.name}}</h1>
+<span style="color: #737373">{{p.sub}}</span>
+<div style="position: relative; margin-top: 4px">
+<button type="button" aria-expanded="{{p.open}}" style="{{p.switchStyle}}">{{p.current}}<sc-if value="{{p.many}}"><span style="font-size: 12px; color: #737373">{{p.more}}</span><svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg></sc-if></button>
+<sc-if value="{{p.open}}">
+<div role="listbox" aria-label="选择地址" style="position: absolute; top: 34px; left: 50%; transform: translateX(-50%); width: 360px; box-sizing: border-box; padding: 6px; border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; box-shadow: 0 12px 32px rgba(0,0,0,0.14); display: flex; flex-direction: column; gap: 2px; z-index: 2">
+<label style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; margin-bottom: 4px; border: 1px solid #E5E5E5; border-radius: 8px"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#737373" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><input type="text" placeholder="搜索地址" aria-label="搜索地址" style="flex: 1; min-width: 0; border: none; outline: none; background: none; font-size: 14px; color: #0A0A0A"></label>
+<sc-for list="{{p.opts}}" as="o" hint-placeholder-count="7">
+<div role="option" aria-selected="{{o.sel}}" style="{{o.style}}"><span style="width: 14px; flex: none; color: #0A0A0A">{{o.check}}</span><span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{o.addr}}</span><span style="{{o.tagStyle}}">{{o.tag}}</span><span style="font-size: 12px; color: #737373">{{o.count}}</span><sc-if value="{{o.hover}}"><button type="button" aria-label="这个地址的更多操作" style="width: 24px; height: 24px; border: none; border-radius: 6px; background: #E5E5E5; color: #404040; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="19" cy="12" r="1.6"></circle></svg></button></sc-if></div>
+</sc-for>
+<span style="padding: 4px 8px 2px; font-size: 12px; color: #737373">「…」里是写邮件、复制、屏蔽这个地址</span>
+</div>
+</sc-if>
+</div>
+</div>
+<div style="display: flex; gap: 24px">
+<sc-for list="{{actions}}" as="x" hint-placeholder-count="3">
+<button type="button" style="display: flex; flex-direction: column; align-items: center; gap: 6px; border: none; background: none; color: #0A0A0A; font-size: 12px"><span style="width: 36px; height: 36px; border-radius: 50%; background: #F5F5F5; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="{{x.d}}"></path></svg></span>{{x.label}}</button>
+</sc-for>
+</div>
+<div style="align-self: stretch; display: flex; flex-direction: column; gap: 2px">
+<span style="padding: 8px 12px; font-size: 14px; font-weight: 500; color: #737373; border-top: 1px solid #E5E5E5">{{p.mailHead}}</span>
+<sc-for list="{{p.mail}}" as="m" hint-placeholder-count="3">
+<div style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px"><span style="font-weight: 500">{{m.s}}</span><span style="color: #737373; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{m.b}}</span></div>
+</sc-for>
+</div>
+<span style="max-width: 440px; text-align: center; font-size: 12px; color: #737373">{{p.foot}}</span>
+</section>
+</sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":720}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var opt = function (addr, tag, count, sel, hover) {
+      return {
+        addr: addr, tag: tag, count: count, sel: sel ? 'true' : 'false', check: sel ? '✓' : '', hover: hover,
+        style: 'display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 8px; border-radius: 6px; font-size: 14px; color: #0A0A0A; background: ' + (hover ? '#F5F5F5' : 'transparent'),
+        tagStyle: 'flex: none; font-size: 12px; color: ' + (tag === '已屏蔽' ? '#B91C1C' : '#737373')
+      };
+    };
+    var panel = function (o, last) {
+      return Object.assign(o, {
+        style: 'flex: 1; box-sizing: border-box; padding: 28px 48px; display: flex; flex-direction: column; align-items: center; gap: 14px' + (last ? '' : '; border-right: 1px solid #E5E5E5'),
+        avatarStyle: 'width: 60px; height: 60px; border-radius: 50%; background: ' + o.bg + '; color: ' + o.fg + '; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 600',
+        switchStyle: 'height: 28px; padding: 0 10px; border: none; border-radius: 8px; display: flex; align-items: center; gap: 6px; font-size: 14px; color: ' + (o.many ? '#0A0A0A' : '#737373') + '; background: ' + (o.open ? '#F5F5F5' : 'transparent')
+      });
+    };
+    return {
+      actions: [
+        { label: '写邮件', d: 'M12 20h9 M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z' },
+        { label: '全部归档', d: 'M3 4h18v4H3z M5 8v12h14V8 M10 12h4' },
+        { label: '屏蔽', d: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18 M5.6 5.6l12.8 12.8' }
+      ],
+      panels: [
+        panel({ label: '一个地址', initial: '周', bg: '#E0E7FF', fg: '#3730A3', name: '周明', sub: '矩石架构 · 基础设施顾问', current: 'zhouming@matrix.example', many: false, open: false, more: '', opts: [],
+          mailHead: '18 封邮件',
+          mail: [{ s: '周五的架构评审', b: '附件是新版拓扑图，麻烦先看一下第三页…' }, { s: 'Re: 机房迁移排期', b: '我这边下周二之后都可以…' }],
+          foot: '和现在一样：一行灰字，点它出菜单（写邮件、复制、屏蔽）' }, false),
+        panel({ label: '30 个地址 · 下拉已打开', initial: '运', bg: '#DCFCE7', fg: '#166534', name: '运维告警', sub: '星云科技 · 基础设施组', current: '全部地址', many: true, open: true, more: '30 个',
+          opts: [
+            opt('全部地址', '', '1,204 封', true, false),
+            opt('ops@nebula.example', '首选', '412 封', false, false),
+            opt('alerts@nebula.example', '', '388 封', false, false),
+            opt('oncall@nebula.example', '', '201 封', false, true),
+            opt('noreply-monitor@nebula.example', '已屏蔽', '96 封', false, false),
+            opt('grafana@nebula.example', '', '57 封', false, false)
+          ],
+          mailHead: '1,204 封邮件',
+          mail: [{ s: '[P1] 磁盘使用率超过 90%', b: 'db-03 /var 分区已使用 92%…' }],
+          foot: '头部永远只占一行；选一个地址，下面的邮件只剩和它的往来，归档和统计也跟着它' }, true)
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

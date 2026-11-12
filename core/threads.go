@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -115,6 +116,19 @@ func (s *Service) fillThreads(ctx context.Context, items []ThreadSummary, only s
 	if err != nil {
 		return err
 	}
+	var bareKeys []string
+	for _, r := range ms.Values {
+		fromAddr := store.Str(r[1])
+		if explicitHeaderName(fromAddr) == "" {
+			if k := gomail.AddrKey(fromAddr); k != "" && !slices.Contains(bareKeys, k) {
+				bareKeys = append(bareKeys, k)
+			}
+		}
+	}
+	bookNames, err := s.addressBookNames(ctx, bareKeys)
+	if err != nil {
+		return err
+	}
 	seen := map[string]bool{}
 	for _, r := range ms.Values {
 		t := &items[idx[store.Int(r[0])]]
@@ -149,7 +163,10 @@ func (s *Service) fillThreads(ctx context.Context, items []ThreadSummary, only s
 			t.Flagged++
 		}
 		t.HasAttachments = t.HasAttachments || store.Int(r[4]) != 0
-		name := displayName(fromAddr)
+		name := explicitHeaderName(fromAddr)
+		if name == "" {
+			name = cmp.Or(bookNames[gomail.AddrKey(fromAddr)], displayName(fromAddr))
+		}
 		if k := fmt.Sprint(t.ID, "\x00", name); !seen[k] {
 			seen[k] = true
 			t.Participants = append(t.Participants, name)
@@ -189,6 +206,9 @@ func (s *Service) GetThread(ctx context.Context, id int64) (Thread, error) {
 		if !forward {
 			t.ReplyTarget = m.ID
 		}
+	}
+	if err := s.fillFromNames(ctx, t.Messages); err != nil {
+		return Thread{}, err
 	}
 	return t, nil
 }

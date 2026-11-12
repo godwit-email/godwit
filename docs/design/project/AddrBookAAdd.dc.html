@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>方案 A · 添加账户时选邮件和通讯录</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FAFAFA}
+a{color:#171717}a:hover{color:#0A0A0A}
+button,input{font:inherit}
+button{cursor:pointer}
+</style>
+</helmet>
+<div style="position: relative; width: 1440px; height: 900px; box-sizing: border-box; background: #FAFAFA; border: 1px solid rgba(0,0,0,0.12); border-radius: 12px; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A">
+<div aria-hidden="true" style="position: absolute; inset: 44px 8px 8px 264px; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 12px"></div>
+<div aria-hidden="true" style="position: absolute; inset: 0; background: rgba(0,0,0,0.32)"></div>
+<div role="dialog" aria-modal="true" aria-labelledby="dlg-h" style="position: absolute; left: 50%; top: 96px; transform: translateX(-50%); width: 560px; box-sizing: border-box; display: flex; flex-direction: column; background: #FFFFFF; border-radius: 16px; box-shadow: 0 24px 48px rgba(0,0,0,0.18)">
+<div style="padding: 24px 24px 8px; display: flex; flex-direction: column; gap: 4px">
+<h2 id="dlg-h" style="margin: 0; font-size: 20px; font-weight: 600">添加账户</h2>
+<p style="margin: 0; color: #737373">同一个服务商的邮件和通讯录用一次登录。</p>
+</div>
+<div style="padding: 12px 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px">
+<sc-for list="{{providers}}" as="p" hint-placeholder-count="6">
+<button type="button" aria-pressed="{{p.pressed}}" style="{{p.style}}"><span style="{{p.tile}}">{{p.mark}}</span>{{p.name}}</button>
+</sc-for>
+</div>
+<fieldset style="margin: 8px 24px 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 8px">
+<legend style="padding: 0 0 8px; font-weight: 600">要同步的内容</legend>
+<label style="display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 10px; background: #F5F5F5"><input type="checkbox" checked style="margin: 3px 0 0; width: 16px; height: 16px; accent-color: #171717"><span style="display: flex; flex-direction: column; gap: 2px"><span>邮件</span><span style="font-size: 12px; color: #737373">IMAP 收信、SMTP 发信</span></span></label>
+<label style="display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 10px; background: #F5F5F5"><input type="checkbox" checked style="margin: 3px 0 0; width: 16px; height: 16px; accent-color: #171717"><span style="display: flex; flex-direction: column; gap: 2px"><span>通讯录</span><span style="font-size: 12px; color: #737373">只读同步 iCloud 通讯录里的姓名、公司职位、邮箱和头像</span></span></label>
+</fieldset>
+<div style="padding: 16px 24px 0; display: flex; flex-direction: column; gap: 12px">
+<label style="display: flex; flex-direction: column; gap: 6px"><span style="font-weight: 500">Apple ID</span><input type="email" placeholder="you@icloud.com" style="height: 36px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px"></label>
+<label style="display: flex; flex-direction: column; gap: 6px"><span style="font-weight: 500">应用专用密码</span><input type="password" style="height: 36px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px"><a href="#" style="font-size: 12px; color: #525252">如何获取应用专用密码 ↗</a></label>
+</div>
+<div style="margin-top: 20px; padding: 16px 24px; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #F0F0F0">
+<button type="button" style="height: 36px; padding: 0 16px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF">取消</button>
+<button type="button" style="height: 36px; padding: 0 16px; border: 0; border-radius: 8px; background: #171717; color: #FFFFFF">连接</button>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var list = [
+      { name: 'iCloud', mark: 'iC', bg: '#0A84FF', on: true },
+      { name: 'Gmail', mark: 'G', bg: '#EA4335', on: false },
+      { name: 'Outlook', mark: 'O', bg: '#0F6CBD', on: false },
+      { name: 'Fastmail', mark: 'F', bg: '#2F3E8F', on: false },
+      { name: 'QQ 邮箱', mark: 'Q', bg: '#12B7F5', on: false },
+      { name: '只有通讯录（CardDAV）', mark: 'C', bg: '#525252', on: false }
+    ];
+    return {
+      providers: list.map(function (p) {
+        return {
+          name: p.name, mark: p.mark,
+          pressed: p.on ? 'true' : 'false',
+          style: 'height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-radius: 10px; background: #FFFFFF; text-align: left; border: ' + (p.on ? '1.5px solid #171717' : '1px solid #E5E5E5'),
+          tile: 'width: 20px; height: 20px; flex: none; border-radius: 5px; background: ' + p.bg + '; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600'
+        };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

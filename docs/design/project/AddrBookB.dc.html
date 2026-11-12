@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>方案 B · 账户分组里的通讯录汇总页</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FAFAFA}
+a{color:#171717}a:hover{color:#0A0A0A}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; box-sizing: border-box; display: flex; gap: 8px; padding: 44px 8px 8px; background: #FAFAFA; border: 1px solid rgba(0,0,0,0.12); border-radius: 12px; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A">
+<nav aria-label="设置" style="width: 248px; flex: none; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; padding: 0 4px">
+<div style="padding: 4px 6px 10px; font-size: 18px; font-weight: 600">设置</div>
+<div style="padding: 4px 8px 6px; font-size: 12px; color: #737373">账户</div>
+<sc-for list="{{accounts}}" as="a" hint-placeholder-count="2">
+<a href="#" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A"><span style="{{a.tileStyle}}">{{a.mark}}</span><span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{a.name}}</span><span style="width: 6px; height: 6px; flex: none; border-radius: 50%; background: #00A63E"></span></a>
+</sc-for>
+<a href="#" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 8px; text-decoration: none; color: #737373"><span style="width: 20px; text-align: center">+</span>添加账户</a>
+<a href="AddrBookB.dc.html" aria-current="page" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: #EDEDED"><svg width="20" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex: none"><path d="M3 2H19C20.1 2 21 2.9 21 4V20C21 21.1 20.1 22 19 22H3V2ZM5 4V20H19V4H5ZM12 12C10.62 12 9.5 10.88 9.5 9.5C9.5 8.12 10.62 7 12 7C13.38 7 14.5 8.12 14.5 9.5C14.5 10.88 13.38 12 12 12ZM7.5 17C7.5 14.79 9.51 13 12 13C14.49 13 16.5 14.79 16.5 17H7.5Z"></path></svg><span style="flex: 1">通讯录</span><span style="font-size: 12px; color: #737373">3 个来源</span></a>
+<div style="padding: 12px 8px 4px; font-size: 12px; color: #737373">应用</div>
+<sc-for list="{{apps}}" as="i" hint-placeholder-count="7">
+<a href="#" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A"><span aria-hidden="true" style="width: 14px; height: 14px; margin: 0 3px; box-sizing: border-box; border: 1.5px solid #737373; border-radius: 4px"></span>{{i}}</a>
+</sc-for>
+</nav>
+<div style="flex: 1; min-width: 0; display: flex; overflow: auto; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 12px; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05)">
+<main style="flex: 1 1 auto; align-self: flex-start; min-width: 0; max-width: 760px; margin: 0 auto; padding: 32px; display: flex; flex-direction: column; gap: 24px">
+<div style="display: flex; align-items: flex-end; gap: 16px">
+<span style="flex: 1; display: flex; flex-direction: column; gap: 4px">
+<h1 style="margin: 0; font-size: 29px; line-height: 1.25; font-weight: 600">通讯录</h1>
+<span style="color: #737373">只读同步外部名片，用于联系人、写信补全和头像</span>
+</span>
+<button type="button" style="height: 32px; padding: 0 12px; border: 1px solid #E5E5E5; border-radius: 8px; background: #FFFFFF">+ 添加通讯录</button>
+</div>
+<section aria-labelledby="src-h" style="display: flex; flex-direction: column; gap: 10px">
+<h2 id="src-h" style="margin: 0; padding: 0 16px; font-size: 14px; font-weight: 600">来源</h2>
+<ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px">
+<sc-for list="{{sources}}" as="s" hint-placeholder-count="3">
+<li style="border-radius: 12px; background: #F5F5F5; overflow: hidden">
+<div style="display: flex; align-items: center; gap: 12px; padding: 12px 16px">
+<button type="button" aria-label="{{s.drag}}" style="width: 20px; height: 28px; border: 0; background: transparent; color: #A1A1A1; cursor: grab"><svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="3" r="1.5"></circle><circle cx="9" cy="3" r="1.5"></circle><circle cx="3" cy="8" r="1.5"></circle><circle cx="9" cy="8" r="1.5"></circle><circle cx="3" cy="13" r="1.5"></circle><circle cx="9" cy="13" r="1.5"></circle></svg></button>
+<span style="{{s.tile}}">{{s.mark}}</span>
+<span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px"><span style="font-weight: 500">{{s.name}}</span><span style="font-size: 12px; color: #737373">{{s.meta}}</span></span>
+<sc-if value="{{s.linked}}" hint-placeholder-val="{{ false }}"><a href="AddrBookA.dc.html" style="font-size: 12px; color: #525252">邮件账户设置 ›</a></sc-if>
+<button type="button" style="height: 28px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 6px; background: #FFFFFF; font-size: 12px">立即同步</button>
+</div>
+<div style="padding: 0 16px 12px 64px; display: flex; flex-wrap: wrap; gap: 8px">
+<sc-for list="{{s.books}}" as="b" hint-placeholder-count="2">
+<span style="{{b.style}}">{{b.text}}</span>
+</sc-for>
+</div>
+</li>
+</sc-for>
+</ol>
+<span style="padding: 0 16px; font-size: 12px; color: #737373">同一个人在几个来源里都有时，排在上面的优先。拖动左边的把手调整。</span>
+</section>
+<div style="padding: 12px 16px; border-radius: 12px; border: 1px dashed #D4D4D4; color: #525252; font-size: 13px">邮件账户页（如 you@icloud.com）只多一行「这个账户的通讯录 · 已开启 ›」，点进来定位到对应来源；登录信息仍各自保存。</div>
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var tile = function (bg, sz) {
+      return 'width: ' + sz + 'px; height: ' + sz + 'px; flex: none; border-radius: ' + (sz / 4) + 'px; background: ' + bg + '; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: ' + (sz / 2.2) + 'px; font-weight: 600';
+    };
+    var chip = function (on) {
+      return 'font-size: 12px; padding: 4px 8px; border-radius: 6px; background: ' + (on ? '#FFFFFF' : 'transparent') + '; border: 1px solid ' + (on ? '#E5E5E5' : '#D4D4D4') + '; color: ' + (on ? '#0A0A0A' : '#737373');
+    };
+    var src = [
+      { name: 'iCloud · you@icloud.com', meta: '已同步 · 刚刚', mark: 'iC', bg: '#0A84FF', linked: true, books: [['联系人 · 312', true], ['家人 · 24', true], ['旧同事 · 已关闭', false]] },
+      { name: '公司通讯录 · Nextcloud', meta: '已同步 · 5 分钟前', mark: 'N', bg: '#0082C9', linked: false, books: [['全体同事 · 1,204', true], ['供应商 · 76', true]] },
+      { name: 'Google · work@gmail.com', meta: '已同步 · 12 分钟前', mark: 'G', bg: '#EA4335', linked: true, books: [['我的联系人 · 540', true]] }
+    ];
+    return {
+      accounts: [
+        { name: 'you@icloud.com', mark: 'iC', tileStyle: tile('#0A84FF', 20) },
+        { name: 'work@gmail.com', mark: 'G', tileStyle: tile('#EA4335', 20) }
+      ],
+      apps: ['通用', '签名', '规则', '智能', '标签', '扩展', '隐私与安全', '关于'],
+      sources: src.map(function (s, i) {
+        return {
+          name: s.name, meta: s.meta, mark: s.mark, linked: s.linked,
+          drag: '拖动调整「' + s.name + '」的优先级（第 ' + (i + 1) + ' 位）',
+          tile: tile(s.bg, 28),
+          books: s.books.map(function (b) { return { text: b[0], style: chip(b[1]) }; })
+        };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

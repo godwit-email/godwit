@@ -211,6 +211,7 @@ type App struct {
 	labels        []core.Label           // in the user's order, as the last load read them
 	accountLabels map[int64][]core.Label // labels with counts scoped to each account
 	signatures    []core.Signature       // oldest first, as the last load read them
+	addressBooks  []core.AddressBook     // in priority order, as the last load read them
 	trusted       []string               // the senders whose remote images load at once, as the last load read them
 	blocked       []string               // the blocked senders, as the last load read them or a block changed them
 	settings      core.Settings          // what the interface shows: the newest edit while one saves
@@ -406,6 +407,8 @@ func (a *App) load() {
 	var labels []core.Label
 	var accLabels map[int64][]core.Label
 	var sigs []core.Signature
+	var addressBooks []core.AddressBook
+	booksRead := false
 	var trusted, blocked []string
 	listsRead := false
 	inbox := 0
@@ -419,6 +422,9 @@ func (a *App) load() {
 		labels, _ = a.svc.ListLabels(ctx) // chips only: a failure keeps the last ones
 		accLabels, _ = a.svc.AllAccountLabels(ctx)
 		sigs, _ = a.svc.ListSignatures(ctx) // likewise
+		if ab, abErr := a.svc.ListAddressBooks(ctx); abErr == nil {
+			addressBooks, booksRead = ab, true
+		}
 		// The sender lists too: listsRead says whether to take them.
 		trusted, err = a.svc.TrustedImageSenders(ctx)
 		if err == nil {
@@ -485,6 +491,9 @@ func (a *App) load() {
 		}
 		if sigs != nil {
 			a.signatures = sigs
+		}
+		if booksRead {
+			a.addressBooks = addressBooks
 		}
 		if labels != nil {
 			a.labels = labels

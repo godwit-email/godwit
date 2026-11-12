@@ -105,6 +105,7 @@ type onboarding struct {
 	again                bool  // finish starts over for another account
 	addedID              int64 // the account added
 	saveErr              error
+	noMail, noContacts   bool // unticked 邮件 or 通讯录, for a provider whose sign-in reaches both (contactsPreset)
 
 	// add saves the account: the Service's, swapped by tests.
 	add func(context.Context, core.AccountInput) (core.Account, error)
@@ -268,7 +269,7 @@ func (o *onboarding) detect(email string, then func(auth.Provider)) {
 
 // found records p as email's provider. From the 飞书/Lark tile, it also says
 // which of the two the sign-in is, unless the servers were edited; from the
-// 其他 IMAP tile, a non-guess match fills in the servers unless edited.
+// 其他邮箱 tile, a non-guess match fills in the servers unless edited.
 func (o *onboarding) found(p auth.Provider, email string) {
 	o.detected, o.detectedFor = p, email
 	if o.step == stepPassword && feishuOrLark(o.prov) && feishuOrLark(p) && p.ID != o.prov.ID &&
@@ -670,6 +671,11 @@ func (o *onboarding) finish(again bool) {
 	sync := o.sync
 	in.Sync = &sync
 	gen := o.gen
+	link := o.contactsPreset()
+	if !o.sheet || o.noContacts {
+		link = ""
+	}
+	var linkErr error
 	a.do(func(ctx context.Context) error {
 		if id == 0 {
 			acc, err := add(ctx, in)
@@ -677,6 +683,9 @@ func (o *onboarding) finish(again bool) {
 				return err
 			}
 			id = acc.ID
+			if link != "" { // the same sign-in, for its address book; the account stays without it
+				linkErr = a.linkAddressBook(ctx, id, link, in.Email)
+			}
 		}
 		return nil
 	}, func(err error) {
@@ -684,6 +693,12 @@ func (o *onboarding) finish(again bool) {
 		if id != 0 && o.addedID == 0 {
 			o.addedID, o.flowID = id, "" // the account took the sign-in
 			a.load()
+		}
+		if link == core.PresetGoogle {
+			a.plat.ShowWindow() // back from the browser
+		}
+		if linkErr != nil && !errors.Is(linkErr, context.Canceled) {
+			a.toastErr(linkErr)
 		}
 		if gen != o.gen { // the sheet closed meanwhile
 			return
@@ -798,6 +813,10 @@ func mark(c *ui.Context, p auth.Provider, size float32) {
 	}
 	t := theme.Of(c)
 	text := providerMark(p)
+	if text == "@" { // no mark of its own (其他邮箱): a mail icon, as the CardDAV tile's
+		iconMark(c, "mail", size)
+		return
+	}
 	fs := t.Text.Xs
 	if size >= theme.MarkLg {
 		fs = t.Text.Base
@@ -911,6 +930,17 @@ func (o *onboarding) pickView(c *ui.Context) {
 				}
 			})
 		}
+		if o.sheet { // an address book with no mail account: Nextcloud, Radicale and the like
+			name := i18n.T("onboarding.contacts_only")
+			kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { o.a.openAddressBook(core.PresetCustom, "", "") }}).Label(name).
+				Height(th.Space(12)).PaddingX(th.Space(3)).Gap(th.Space(2.5)).Children(func() {
+				presetMark(c, core.PresetCustom, theme.MarkMd)
+				ui.Column(c).Shrink(1).Children(func() {
+					lineText(c, name, t.Text.Body).SingleLine()
+					lineText(c, i18n.T("onboarding.contacts_only.sub"), t.Text.Sm).TextColor(t.Muted).SingleLine()
+				})
+			})
+		}
 	})
 }
 
@@ -993,6 +1023,9 @@ func (o *onboarding) passwordView(c *ui.Context) {
 			}
 		})
 	}
+	if o.syncChoice(c) {
+		return
+	}
 	if ownClientOffered(o.prov) {
 		tab := o.tab
 		kit.TabsFill(c, &o.tab, o.secretName(), i18n.T("onboarding.tab.browser"))
@@ -1024,6 +1057,60 @@ func (o *onboarding) passwordView(c *ui.Context) {
 	secretWhitespaceHint(c, &o.secret)
 	primary(c, i18n.T("onboarding.connect"), o.secret == "" || !validEmail(o.email)).OnClick(o.connect)
 	o.manualView(c)
+}
+
+// contactsPreset is the address book o.prov's sign-in also reaches, "" for none.
+func (o *onboarding) contactsPreset() string {
+	return core.LinkedAddressBookPreset(core.Account{Provider: o.prov.ID})
+}
+
+// syncChoice is the sheet's 邮件 and 通讯录 boxes for a provider whose one
+// sign-in reaches both. With 邮件 unticked there is no mail account to sign
+// in for: it shows only the way on to the address book alone (contactsOnly).
+func (o *onboarding) syncChoice(c *ui.Context) (contactsOnly bool) {
+	preset := o.contactsPreset()
+	if !o.sheet || preset == "" {
+		return false
+	}
+	t, th := theme.Of(c), c.Theme()
+	ui.Field(c, i18n.T("onboarding.sync.what"), func() {
+		ui.Column(c).Gap(th.Space(2)).Children(func() {
+			for _, b := range []struct {
+				off        *bool
+				label, sub string
+			}{{&o.noMail, i18n.T("settings.accounts.kind.mail"), i18n.T("onboarding.sync.mail.sub")},
+				{&o.noContacts, i18n.T("settings.addressbooks"), i18n.Tf("onboarding.sync.contacts.sub", presetPlaceholderName(preset))}} {
+				ui.Column(c).Gap(th.Space(0.5)).Children(func() {
+					on := !*b.off
+					if kit.Checkbox(c, &on, b.label).Changed() {
+						*b.off = !on
+					}
+					kit.Text(c, b.sub, t.Text.Sm).TextColor(t.Muted).PaddingX(theme.Control + th.Space(2))
+				})
+			}
+		})
+	}).FontSize(t.Text.Sm).TextColor(t.Muted)
+	if !o.noMail {
+		return false
+	}
+	primary(c, i18n.T("common.continue"), o.noContacts).OnClick(func() {
+		email := strings.TrimSpace(o.email)
+		if !validEmail(email) {
+			email = ""
+		}
+		o.a.openAddressBook(preset, email, o.secret)
+	})
+	return true
+}
+
+// openAddressBook closes the add-account sheet onto Settings' dialog that
+// adds an address book with no mail account.
+func (a *App) openAddressBook(preset, username, password string) {
+	a.closeAddAccount()
+	if a.route.Page != PageSettings {
+		a.navigate(Route{Page: PageSettings})
+	}
+	a.pages[PageSettings].(*settingsPage).addressBooks.openAdd(preset, username, password)
 }
 
 // ownClientOffered: the provider has no OAuth client of Godwit's but signs in

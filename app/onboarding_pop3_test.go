@@ -27,7 +27,7 @@ func experimentalPOP3(e *coretest.Env) {
 // openServers opens the server form for a new address.
 func (h *harness) openServers(email string) *onboarding {
 	o := h.firstRun()
-	h.click("其他 IMAP 邮箱")
+	h.click("其他邮箱")
 	h.fill("邮箱地址", email)
 	if _, open := h.tt.Find("IMAP 服务器"); !open {
 		h.click("手动设置服务器")
