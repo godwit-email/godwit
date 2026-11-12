@@ -6,8 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -175,6 +177,35 @@ func TestCoretestStartServers(t *testing.T) {
 		Receiving: core.Server{Host: ih, Port: ip, Security: core.SecurityNone}, Sending: core.Server{Host: sh, Port: sp, Security: core.SecurityNone}})
 	require.NoError(t, err)
 	assert.Equal(t, "new@example.com", acc.Email)
+}
+
+func TestCoretestSeededAndWithoutIdle(t *testing.T) {
+	core.SetChatterWithinForTest(t, 0)
+	var tb testing.TB = t
+	e := coretest.New(tb, coretest.WithoutAutoSync(), coretest.WithoutIdle())
+	ch, unsub := e.Svc.Subscribe()
+	t.Cleanup(unsub)
+
+	acc := e.AddAccount(tb, "alice@example.com", coretest.Seeded(coretest.ScaleSmall, coretest.DefaultSeed))
+	assert.Equal(t, backend.LevelUnsupported, acc.Features[backend.FeaturePush].Level)
+
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	fs, err := e.Svc.ListFolders(t.Context(), acc.ID)
+	require.NoError(t, err)
+	assert.Len(t, fs, coretest.ScaleSmall.Folders)
+
+	total := 0
+	for _, f := range fs {
+		page, err := e.Svc.ListMessages(t.Context(), core.View{FolderID: f.ID}, "", 200)
+		require.NoError(t, err)
+		total += len(page.Items)
+	}
+	assert.Equal(t, coretest.ScaleSmall.Messages, total)
+
+	for len(ch) > 0 {
+		ev := <-ch
+		assert.NotEqual(t, events.MessageReceived, ev.Type, "initial sync of seeded mail must not emit MessageReceived")
+	}
 }
 
 // Mail delivered right after AddAccount is new mail, with or without the
