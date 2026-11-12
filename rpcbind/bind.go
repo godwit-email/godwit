@@ -55,6 +55,8 @@ var table = []Error{
 	{Code: "secret_not_found", Err: core.ErrSecretNotFound},
 	{Code: "wrong_account", Err: core.ErrWrongAccount},
 	{Code: "account_not_found", Err: core.ErrAccountNotFound},
+	{Code: "address_book_not_found", Err: core.ErrAddressBookNotFound},
+	{Code: "no_address_books", Err: core.ErrNoAddressBooks},
 	{Code: "local_archive", Err: core.ErrLocalArchive},
 	{Code: "not_local_archive", Err: core.ErrNotLocalArchive},
 	{Code: "receive_only", Err: core.ErrReceiveOnly},

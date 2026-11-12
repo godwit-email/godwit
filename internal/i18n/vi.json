@@ -2240,5 +2240,8 @@
   "feature_reason_graph_folder_not_label": "Trong Outlook, thư mục không phải là nhãn: xóa thư mục sẽ xóa luôn thư bên trong.",
   "feature_reason_graph_no_all_mail": "Outlook không có “Tất cả thư”: lưu trữ sẽ chuyển thư sang thư mục Lưu trữ.",
   "feature_reason_graph_folders_pending": "Chưa hỗ trợ quản lý thư mục qua Microsoft Graph.",
-  "feature_reason_graph_no_push": "Ứng dụng máy tính không nhận được webhook của Microsoft Graph; Godwit sẽ kiểm tra mỗi phút."
+  "feature_reason_graph_no_push": "Ứng dụng máy tính không nhận được webhook của Microsoft Graph; Godwit sẽ kiểm tra mỗi phút.",
+  "wit_tool_search_contacts": "Tìm liên hệ",
+  "error_address_book_not_found": "Không tìm thấy sổ địa chỉ.",
+  "error_no_address_books": "Không tìm thấy sổ địa chỉ CardDAV nào trên máy chủ này."
 }

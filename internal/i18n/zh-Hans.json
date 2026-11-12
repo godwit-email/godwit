@@ -2240,5 +2240,8 @@
   "feature_reason_graph_folder_not_label": "Outlook 的文件夹不是标签：删除文件夹会连同里面的邮件一起删除。",
   "feature_reason_graph_no_all_mail": "Outlook 没有「所有邮件」：归档会把邮件移到归档文件夹。",
   "feature_reason_graph_folders_pending": "暂不支持通过 Microsoft Graph 管理文件夹。",
-  "feature_reason_graph_no_push": "桌面端无法接收 Microsoft Graph 的推送通知，Godwit 会改为每分钟轮询一次。"
+  "feature_reason_graph_no_push": "桌面端无法接收 Microsoft Graph 的推送通知，Godwit 会改为每分钟轮询一次。",
+  "wit_tool_search_contacts": "搜索联系人",
+  "error_address_book_not_found": "找不到这个通讯录。",
+  "error_no_address_books": "这台服务器上没有找到可用的 CardDAV 通讯录。"
 }

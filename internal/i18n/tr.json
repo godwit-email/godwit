@@ -2240,5 +2240,8 @@
   "feature_reason_graph_folder_not_label": "Outlook'ta klasör bir etiket değildir: silindiğinde içindeki e-postalar da silinir.",
   "feature_reason_graph_no_all_mail": "Outlook'ta “Tüm Postalar” yoktur: arşivleme, iletiyi Arşiv klasörüne taşır.",
   "feature_reason_graph_folders_pending": "Microsoft Graph üzerinden klasör yönetimi henüz kullanılamıyor.",
-  "feature_reason_graph_no_push": "Masaüstü uygulamaları Microsoft Graph web kancalarını alamaz; Godwit bunun yerine her dakika kontrol eder."
+  "feature_reason_graph_no_push": "Masaüstü uygulamaları Microsoft Graph web kancalarını alamaz; Godwit bunun yerine her dakika kontrol eder.",
+  "wit_tool_search_contacts": "Kişilerde ara",
+  "error_address_book_not_found": "Adres defteri bulunamadı.",
+  "error_no_address_books": "Bu sunucuda CardDAV adres defteri bulunamadı."
 }

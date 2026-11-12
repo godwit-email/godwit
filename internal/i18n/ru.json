@@ -2240,5 +2240,8 @@
   "feature_reason_graph_folder_not_label": "В Outlook папка — это не ярлык: при её удалении удаляются и письма в ней.",
   "feature_reason_graph_no_all_mail": "В Outlook нет папки «Вся почта»: архивирование перемещает письма в папку «Архив».",
   "feature_reason_graph_folders_pending": "Управление папками через Microsoft Graph пока недоступно.",
-  "feature_reason_graph_no_push": "Настольные приложения не могут принимать вебхуки Microsoft Graph; Godwit проверяет почту каждую минуту."
+  "feature_reason_graph_no_push": "Настольные приложения не могут принимать вебхуки Microsoft Graph; Godwit проверяет почту каждую минуту.",
+  "wit_tool_search_contacts": "Поиск контактов",
+  "error_address_book_not_found": "Адресная книга не найдена.",
+  "error_no_address_books": "На этом сервере не найдено адресных книг CardDAV."
 }

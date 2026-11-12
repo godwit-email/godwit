@@ -5,6 +5,7 @@
 # on the wire at all, add it to hidden in bind.go instead.
 AccountIcon
 AddAccount
+AddAddressBook
 AddAttachment
 AddAttachmentAt
 AddLocalArchive
@@ -35,6 +36,7 @@ CancelOutbox
 CancelPluginLogin
 CancelRun
 CheckAccount
+CheckAddressBook
 CheckModelService
 ClearAttachmentCache
 ClearImageCache
@@ -88,6 +90,8 @@ LabelModelReady
 ListAccountLabels
 ListAccounts
 ListActions
+ListAddressBookPresets
+ListAddressBooks
 ListApprovals
 ListConversations
 ListDrafts
@@ -147,6 +151,7 @@ RecordCapStatus
 RefreshMCPTools
 RefreshPluginRegistry
 RemoveAccount
+RemoveAddressBook
 RemoveAttachment
 RemoveAttachmentAt
 RemoveMCPServer
@@ -154,6 +159,7 @@ RemoveModelFiles
 RemoveModelService
 RenameLocalFolder
 ReorderAccounts
+ReorderAddressBooks
 ReorderLabels
 ReorderRules
 ReorderViews
@@ -188,6 +194,7 @@ Send
 SendAcknowledged
 SendAcknowledgedRevision
 SendRevision
+SetAddressBookCollectionEnabled
 SetConversationModel
 SetDraftAccount
 SetDraftModel
@@ -213,6 +220,7 @@ StopSecurityRescan
 StoredHTML
 Subscribe
 SubscribeConversation
+SyncAddressBook
 SyncNow
 SystemLanguage
 SystemTranslator
@@ -234,6 +242,7 @@ Unsubscribe
 UnsubscribeMethod
 UntrustImageSender
 UpdateAccount
+UpdateAddressBookAuth
 UpdateLabel
 UpdateMCPServer
 UpdateModelService

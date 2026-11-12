@@ -4003,5 +4003,8 @@
   "feature_reason_graph_folder_not_label": "In Outlook a folder isn't a label: deleting it deletes its mail too.",
   "feature_reason_graph_no_all_mail": "Outlook has no All Mail: archiving moves mail to the Archive folder.",
   "feature_reason_graph_folders_pending": "Managing folders over Microsoft Graph isn't available yet.",
-  "feature_reason_graph_no_push": "Desktop apps can't receive Microsoft Graph webhooks; Godwit checks every minute instead."
+  "feature_reason_graph_no_push": "Desktop apps can't receive Microsoft Graph webhooks; Godwit checks every minute instead.",
+  "wit_tool_search_contacts": "Search contacts",
+  "error_address_book_not_found": "Address book not found.",
+  "error_no_address_books": "No CardDAV address books were found on this server."
 }

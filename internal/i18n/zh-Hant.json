@@ -2240,5 +2240,8 @@
   "feature_reason_graph_folder_not_label": "Outlook 的資料夾不是標籤：刪除資料夾會連同裡面的郵件一起刪除。",
   "feature_reason_graph_no_all_mail": "Outlook 沒有「所有郵件」：封存會把郵件移到封存資料夾。",
   "feature_reason_graph_folders_pending": "暫不支援透過 Microsoft Graph 管理資料夾。",
-  "feature_reason_graph_no_push": "桌面端無法接收 Microsoft Graph 的推播通知，Godwit 會改為每分鐘輪詢一次。"
+  "feature_reason_graph_no_push": "桌面端無法接收 Microsoft Graph 的推播通知，Godwit 會改為每分鐘輪詢一次。",
+  "wit_tool_search_contacts": "搜尋聯絡人",
+  "error_address_book_not_found": "找不到這個通訊錄。",
+  "error_no_address_books": "這台伺服器上沒有找到可用的 CardDAV 通訊錄。"
 }

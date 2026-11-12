@@ -2240,5 +2240,8 @@
   "feature_reason_graph_folder_not_label": "En Outlook una carpeta no es una etiqueta: al eliminarla también se borra su correo.",
   "feature_reason_graph_no_all_mail": "Outlook no tiene «Todos»: archivar mueve el correo a la carpeta Archivo.",
   "feature_reason_graph_folders_pending": "La gestión de carpetas mediante Microsoft Graph aún no está disponible.",
-  "feature_reason_graph_no_push": "Las aplicaciones de escritorio no pueden recibir webhooks de Microsoft Graph; Godwit comprueba cada minuto."
+  "feature_reason_graph_no_push": "Las aplicaciones de escritorio no pueden recibir webhooks de Microsoft Graph; Godwit comprueba cada minuto.",
+  "wit_tool_search_contacts": "Buscar contactos",
+  "error_address_book_not_found": "No se encontró la libreta de direcciones.",
+  "error_no_address_books": "No se encontraron libretas de direcciones CardDAV en este servidor."
 }

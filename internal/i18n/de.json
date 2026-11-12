@@ -2240,5 +2240,8 @@
   "feature_reason_graph_folder_not_label": "In Outlook ist ein Ordner kein Label: Beim Löschen werden auch seine E-Mails gelöscht.",
   "feature_reason_graph_no_all_mail": "Outlook hat kein „Alle E-Mails“: Beim Archivieren wird die Nachricht in den Archivordner verschoben.",
   "feature_reason_graph_folders_pending": "Die Ordnerverwaltung über Microsoft Graph ist noch nicht verfügbar.",
-  "feature_reason_graph_no_push": "Desktop-Apps können keine Microsoft-Graph-Webhooks empfangen; Godwit prüft stattdessen jede Minute."
+  "feature_reason_graph_no_push": "Desktop-Apps können keine Microsoft-Graph-Webhooks empfangen; Godwit prüft stattdessen jede Minute.",
+  "wit_tool_search_contacts": "Kontakte durchsuchen",
+  "error_address_book_not_found": "Adressbuch nicht gefunden.",
+  "error_no_address_books": "Auf diesem Server wurden keine CardDAV-Adressbücher gefunden."
 }

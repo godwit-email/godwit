@@ -1,0 +1,1346 @@
+package core
+
+import (
+	"cmp"
+	"context"
+	"crypto/tls"
+	"errors"
+	"fmt"
+	"log/slog"
+	"maps"
+	"net/http"
+	"net/url"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/egoist/mygo/plugins/sqlite"
+	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/conn"
+	"github.com/godwit-email/godwit/core/auth"
+	"github.com/godwit-email/godwit/core/events"
+	gomail "github.com/godwit-email/godwit/core/mail"
+	"github.com/godwit-email/godwit/core/store"
+	"github.com/godwit-email/godwit/internal/carddav"
+	"github.com/godwit-email/godwit/internal/imagefetch"
+	"github.com/zalando/go-keyring"
+)
+
+const (
+	PresetICloud   = "icloud"
+	PresetFastmail = "fastmail"
+	PresetGoogle   = "google"
+	PresetCustom   = "custom"
+
+	ProviderGoogleCardDAV = "google_carddav"
+
+	AddressBookSyncInterval = 30 * time.Minute
+)
+
+var (
+	ErrAddressBookNotFound = errors.New("address book not found")
+	ErrNoAddressBooks      = errors.New("no address books found on this server")
+)
+
+// onAddressBooksChanged is an internal hook invoked before AddressBooksChanged
+// is published on the event bus (used by masking to refresh known card names).
+var onAddressBooksChanged func(*Service, context.Context)
+
+var addressBookPresetURLs = map[string]string{
+	PresetICloud:   "https://contacts.icloud.com",
+	PresetFastmail: "https://carddav.fastmail.com",
+	PresetGoogle:   "https://www.googleapis.com/.well-known/carddav",
+}
+
+// SetAddressBookPresetURLForTest overrides a preset's default URL until t ends.
+func SetAddressBookPresetURLForTest(t interface{ Cleanup(func()) }, preset, rawURL string) {
+	prev := maps.Clone(addressBookPresetURLs)
+	addressBookPresetURLs[preset] = rawURL
+	t.Cleanup(func() { addressBookPresetURLs = prev })
+}
+
+type AddressBookPreset struct {
+	ID, Name, DefaultURL, AuthType, HelpURL string
+}
+
+type AddressBookInput struct {
+	Preset, Name, URL, Username, Password, OAuthFlowID string
+	Client                                             OAuthClient
+}
+
+type AddressBookCollection struct {
+	ID, AddressBookID int64
+	Href, Name        string
+	Enabled           bool
+	CardCount         int
+}
+
+type AddressBook struct {
+	ID                                                          int64
+	Preset, Name, URL, AuthType, Username, Status, StatusDetail string
+	SortOrder                                                   int
+	LastSyncedAt                                                time.Time
+	Collections                                                 []AddressBookCollection
+}
+
+type addressBookRecord struct {
+	AddressBook
+	OAuthClientID string
+}
+
+func (s *Service) addressBookKeyringUser(id int64) string {
+	return s.installID + "/addressbook:" + strconv.FormatInt(id, 10)
+}
+
+func (s *Service) addressBookOAuthClientUser(id int64) string {
+	return s.addressBookKeyringUser(id) + "/oauth-client"
+}
+
+func (s *Service) deleteAddressBookCredentials(id int64) error {
+	var errs []error
+	for _, u := range []string{s.addressBookKeyringUser(id), s.addressBookOAuthClientUser(id)} {
+		if err := keychainDelete(u); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (s *Service) resolveAddressBookClient(ctx context.Context, id int64) (OAuthClient, error) {
+	rec, err := s.addressBookRecord(ctx, id)
+	if err != nil || rec.OAuthClientID == "" {
+		return OAuthClient{}, err
+	}
+	secret, err := keychainGet(s.addressBookOAuthClientUser(id))
+	if err != nil {
+		return OAuthClient{}, fmt.Errorf("read the OAuth client secret from the keychain: %w", err)
+	}
+	return OAuthClient{ID: rec.OAuthClientID, Secret: secret}, nil
+}
+
+func (s *Service) syncAddressBookMaskNames(ctx context.Context) {
+	if onAddressBooksChanged != nil {
+		onAddressBooksChanged(s, ctx)
+	}
+	if s.addressBooksHook != nil {
+		s.addressBooksHook(ctx)
+	}
+}
+
+func (s *Service) notifyAddressBooksChanged(ctx context.Context) {
+	s.syncAddressBookMaskNames(ctx)
+	s.bus.Publish(events.Event{Type: events.AddressBooksChanged})
+}
+
+func mapCardDAVErr(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, carddav.ErrInvalidURL):
+		return ErrBaseURLInvalid
+	case errors.Is(err, carddav.ErrScheme):
+		return ErrBaseURLScheme
+	case errors.Is(err, carddav.ErrAuthFailed):
+		return backend.ErrAuthFailed
+	case errors.Is(err, carddav.ErrNoAddressBooks):
+		return ErrNoAddressBooks
+	default:
+		return err
+	}
+}
+
+func (s *Service) carddavClient() *carddav.Client {
+	return carddav.NewClient(conn.HTTPTransport())
+}
+
+func (s *Service) photoClient() *http.Client {
+	base := s.opts.ImageClient
+	if base == nil {
+		base = imagefetch.NewClient(false)
+	}
+	if conn.TLSRoots == nil {
+		return base
+	}
+	if tr, ok := base.Transport.(*imagefetch.Transport); ok && tr.TLSClientConfig == nil {
+		cloned := tr.Transport.Clone()
+		cloned.TLSClientConfig = &tls.Config{RootCAs: conn.TLSRoots}
+		cp := *base
+		cp.Transport = &imagefetch.Transport{Transport: cloned}
+		return &cp
+	}
+	return base
+}
+
+// ListAddressBookPresets returns the built-in CardDAV presets and custom option.
+func (s *Service) ListAddressBookPresets() []AddressBookPreset {
+	return []AddressBookPreset{
+		{
+			ID:         PresetICloud,
+			Name:       "iCloud",
+			DefaultURL: addressBookPresetURLs[PresetICloud],
+			AuthType:   "password",
+			HelpURL:    "https://support.apple.com/102654",
+		},
+		{
+			ID:         PresetFastmail,
+			Name:       "Fastmail",
+			DefaultURL: addressBookPresetURLs[PresetFastmail],
+			AuthType:   "password",
+			HelpURL:    "https://www.fastmail.help/hc/en-us/articles/360058752854",
+		},
+		{
+			ID:         PresetGoogle,
+			Name:       "Google",
+			DefaultURL: addressBookPresetURLs[PresetGoogle],
+			AuthType:   "oauth",
+			HelpURL:    "https://developers.google.com/people/carddav",
+		},
+		{
+			ID:         PresetCustom,
+			Name:       "CardDAV",
+			DefaultURL: "",
+			AuthType:   "password",
+			HelpURL:    "",
+		},
+	}
+}
+
+func normalizeAddressBookPreset(in AddressBookInput) (preset, authType, rawURL string, err error) {
+	preset = strings.ToLower(strings.TrimSpace(in.Preset))
+	if preset == "" {
+		if in.OAuthFlowID != "" {
+			preset = PresetGoogle
+		} else {
+			preset = PresetCustom
+		}
+	}
+	switch preset {
+	case PresetICloud, PresetFastmail:
+		authType = "password"
+	case PresetGoogle:
+		authType = "oauth"
+	case PresetCustom:
+		if in.OAuthFlowID != "" {
+			authType = "oauth"
+		} else {
+			authType = "password"
+		}
+	default:
+		return "", "", "", fmt.Errorf("unknown address book preset %q", in.Preset)
+	}
+	rawURL = strings.TrimSpace(in.URL)
+	if rawURL == "" {
+		rawURL = addressBookPresetURLs[preset]
+	}
+	return preset, authType, rawURL, nil
+}
+
+func defaultAddressBookName(preset string, homeURL *url.URL) string {
+	switch preset {
+	case PresetICloud:
+		return "iCloud"
+	case PresetFastmail:
+		return "Fastmail"
+	case PresetGoogle:
+		return "Google"
+	default:
+		if homeURL != nil && homeURL.Hostname() != "" {
+			return homeURL.Hostname()
+		}
+		return "CardDAV"
+	}
+}
+
+func (s *Service) addressBookFlowGrant(flowID, wantEmail string) (oauthGrant, error) {
+	s.oauthMu.Lock()
+	g, ok := s.grants[flowID]
+	s.oauthMu.Unlock()
+	if !ok {
+		return oauthGrant{}, ErrUnknownFlow
+	}
+	if g.provider != ProviderGoogleCardDAV {
+		return oauthGrant{}, ErrProviderMismatch
+	}
+	if wantEmail != "" && g.Email != "" && !strings.EqualFold(g.Email, strings.TrimSpace(wantEmail)) {
+		return oauthGrant{}, ErrWrongAccount
+	}
+	return g, nil
+}
+
+// CheckAddressBook discovers the CardDAV addressbook-home-set and verifies
+// credentials without saving anything to the database or keychain.
+func (s *Service) CheckAddressBook(ctx context.Context, in AddressBookInput) ([]AddressBookCollection, string, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return nil, "", err
+	}
+	defer end()
+
+	_, authType, rawURL, err := normalizeAddressBookPreset(in)
+	if err != nil {
+		return nil, "", err
+	}
+	startURL, err := carddav.NormalizeURL(rawURL)
+	if err != nil {
+		return nil, "", mapCardDAVErr(err)
+	}
+
+	var creds carddav.Credentials
+	if authType == "oauth" {
+		g, err := s.addressBookFlowGrant(in.OAuthFlowID, in.Username)
+		if err != nil {
+			return nil, "", err
+		}
+		keychainValues.Add(g.AccessToken)
+		s.secrets.Add(g.AccessToken)
+		creds.BearerToken = g.AccessToken
+	} else {
+		if strings.TrimSpace(in.Username) == "" || in.Password == "" {
+			return nil, "", backend.ErrAuthFailed
+		}
+		s.secrets.Add(in.Password)
+		creds.Username = strings.TrimSpace(in.Username)
+		creds.Password = in.Password
+	}
+
+	homeURL, disc, err := s.carddavClient().Discover(ctx, startURL, creds)
+	if err != nil {
+		return nil, "", mapCardDAVErr(err)
+	}
+	cols := make([]AddressBookCollection, len(disc))
+	for i, d := range disc {
+		cols[i] = AddressBookCollection{
+			Href:      d.Href,
+			Name:      d.Name,
+			Enabled:   true,
+			CardCount: d.CardCount,
+		}
+	}
+	return cols, homeURL, nil
+}
+
+// AddAddressBook discovers, verifies, stores credentials in the keychain, saves
+// the address book and its collections, and performs an initial sync.
+func (s *Service) AddAddressBook(ctx context.Context, in AddressBookInput) (AddressBook, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return AddressBook{}, err
+	}
+	defer end()
+
+	if err := s.KeychainStatus(ctx); err != nil {
+		return AddressBook{}, err
+	}
+
+	preset, authType, rawURL, err := normalizeAddressBookPreset(in)
+	if err != nil {
+		return AddressBook{}, err
+	}
+	startURL, err := carddav.NormalizeURL(rawURL)
+	if err != nil {
+		return AddressBook{}, mapCardDAVErr(err)
+	}
+
+	var (
+		creds    carddav.Credentials
+		grant    oauthGrant
+		username string
+		secret   string
+		client   OAuthClient
+	)
+	if authType == "oauth" {
+		grant, err = s.addressBookFlowGrant(in.OAuthFlowID, in.Username)
+		if err != nil {
+			return AddressBook{}, err
+		}
+		if grant.RefreshToken == "" {
+			return AddressBook{}, errors.New("the provider granted no refresh token")
+		}
+		keychainValues.Add(grant.AccessToken)
+		keychainValues.Add(grant.RefreshToken)
+		s.secrets.Add(grant.AccessToken)
+		s.secrets.Add(grant.RefreshToken)
+		creds.BearerToken = grant.AccessToken
+		username = cmp.Or(strings.TrimSpace(in.Username), grant.Email)
+		secret = grant.RefreshToken
+		client = grant.client
+		if in.Client.ID != "" {
+			client = in.Client
+		}
+	} else {
+		username = strings.TrimSpace(in.Username)
+		secret = in.Password
+		if username == "" || secret == "" {
+			return AddressBook{}, backend.ErrAuthFailed
+		}
+		s.secrets.Add(secret)
+		creds.Username = username
+		creds.Password = secret
+	}
+
+	homeStr, disc, err := s.carddavClient().Discover(ctx, startURL, creds)
+	if err != nil {
+		return AddressBook{}, mapCardDAVErr(err)
+	}
+	homeURL, _ := url.Parse(homeStr)
+
+	if authType == "oauth" {
+		if _, ok := s.takeGrant(in.OAuthFlowID); !ok {
+			return AddressBook{}, ErrUnknownFlow
+		}
+	}
+
+	name := cmp.Or(strings.TrimSpace(in.Name), defaultAddressBookName(preset, homeURL))
+	now := s.clk().Now().Unix()
+
+	s.abWriteMu.Lock()
+	orderRows, err := s.db.Query(ctx, "SELECT COALESCE(MAX(sort_order) + 1, 0) FROM address_books")
+	if err != nil {
+		s.abWriteMu.Unlock()
+		return AddressBook{}, err
+	}
+	nextOrder := int(store.Int(orderRows.Values[0][0]))
+	res, err := s.db.Execute(ctx, `INSERT INTO address_books
+		(preset, name, url, auth_type, username, oauth_client_id, sort_order, status, status_detail, last_synced_at, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, 'ok', '', 0, ?)`,
+		preset, name, homeStr, authType, username, client.ID, nextOrder, now)
+	if err != nil {
+		s.abWriteMu.Unlock()
+		return AddressBook{}, err
+	}
+	abID := res.LastInsertID
+
+	stmts := make([]sqlite.Statement, 0, len(disc))
+	for _, d := range disc {
+		stmts = append(stmts, sqlite.Statement{
+			SQL:  `INSERT INTO address_book_collections (address_book_id, href, name, enabled, sync_token, card_count) VALUES (?, ?, ?, 1, '', ?)`,
+			Args: []any{abID, d.Href, d.Name, d.CardCount},
+		})
+	}
+	if len(stmts) > 0 {
+		if _, err := s.db.Transaction(ctx, stmts); err != nil {
+			_, _ = s.db.Execute(context.WithoutCancel(ctx), "DELETE FROM address_books WHERE id = ?", abID)
+			s.abWriteMu.Unlock()
+			return AddressBook{}, err
+		}
+	}
+	s.abWriteMu.Unlock()
+
+	if err := keychainSet(s.addressBookKeyringUser(abID), secret); err != nil {
+		_, _ = s.db.Execute(context.WithoutCancel(ctx), "DELETE FROM address_books WHERE id = ?", abID)
+		return AddressBook{}, fmt.Errorf("save credentials to keychain: %w", err)
+	}
+	if client.ID != "" && client.Secret != "" {
+		s.secrets.Add(client.Secret)
+		if err := keychainSet(s.addressBookOAuthClientUser(abID), client.Secret); err != nil {
+			_ = s.deleteAddressBookCredentials(abID)
+			_, _ = s.db.Execute(context.WithoutCancel(ctx), "DELETE FROM address_books WHERE id = ?", abID)
+			return AddressBook{}, fmt.Errorf("save OAuth client secret to keychain: %w", err)
+		}
+	}
+	if authType == "oauth" {
+		s.cacheAddressBookToken(abID, grant.Grant)
+	}
+
+	_ = s.syncOneAddressBook(ctx, abID)
+	if s.opts.AutoSync {
+		s.armAddressBookTimer(AddressBookSyncInterval)
+	}
+	s.notifyAddressBooksChanged(ctx)
+	return s.getAddressBook(ctx, abID)
+}
+
+func (s *Service) addressBookRecord(ctx context.Context, id int64) (addressBookRecord, error) {
+	rows, err := s.db.Query(ctx, `SELECT id, preset, name, url, auth_type, username, oauth_client_id, sort_order, status, status_detail, last_synced_at
+		FROM address_books WHERE id = ?`, id)
+	if err != nil {
+		return addressBookRecord{}, err
+	}
+	if len(rows.Values) == 0 {
+		return addressBookRecord{}, ErrAddressBookNotFound
+	}
+	return scanAddressBookRecord(rows.Values[0]), nil
+}
+
+func scanAddressBookRecord(r []any) addressBookRecord {
+	var synced time.Time
+	if ts := store.Int(r[10]); ts > 0 {
+		synced = time.Unix(ts, 0).UTC()
+	}
+	return addressBookRecord{
+		AddressBook: AddressBook{
+			ID:           store.Int(r[0]),
+			Preset:       store.Str(r[1]),
+			Name:         store.Str(r[2]),
+			URL:          store.Str(r[3]),
+			AuthType:     store.Str(r[4]),
+			Username:     store.Str(r[5]),
+			SortOrder:    int(store.Int(r[7])),
+			Status:       store.Str(r[8]),
+			StatusDetail: store.Str(r[9]),
+			LastSyncedAt: synced,
+		},
+		OAuthClientID: store.Str(r[6]),
+	}
+}
+
+func (s *Service) getAddressBook(ctx context.Context, id int64) (AddressBook, error) {
+	rec, err := s.addressBookRecord(ctx, id)
+	if err != nil {
+		return AddressBook{}, err
+	}
+	cols, err := s.listCollectionsForBooks(ctx, []int64{id})
+	if err != nil {
+		return AddressBook{}, err
+	}
+	rec.Collections = cols[id]
+	return rec.AddressBook, nil
+}
+
+func (s *Service) listCollectionsForBooks(ctx context.Context, ids []int64) (map[int64][]AddressBookCollection, error) {
+	out := map[int64][]AddressBookCollection{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := s.db.Query(ctx, `SELECT id, address_book_id, href, name, enabled, card_count
+		FROM address_book_collections ORDER BY id ASC`)
+	if err != nil {
+		return nil, err
+	}
+	want := map[int64]bool{}
+	for _, id := range ids {
+		want[id] = true
+	}
+	for _, r := range rows.Values {
+		abID := store.Int(r[1])
+		if !want[abID] {
+			continue
+		}
+		out[abID] = append(out[abID], AddressBookCollection{
+			ID:            store.Int(r[0]),
+			AddressBookID: abID,
+			Href:          store.Str(r[2]),
+			Name:          store.Str(r[3]),
+			Enabled:       store.Int(r[4]) != 0,
+			CardCount:     int(store.Int(r[5])),
+		})
+	}
+	return out, nil
+}
+
+// ListAddressBooks returns all configured CardDAV address books in priority order.
+func (s *Service) ListAddressBooks(ctx context.Context) ([]AddressBook, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer end()
+
+	rows, err := s.db.Query(ctx, `SELECT id, preset, name, url, auth_type, username, oauth_client_id, sort_order, status, status_detail, last_synced_at
+		FROM address_books ORDER BY sort_order ASC, id ASC`)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows.Values) == 0 {
+		return nil, nil
+	}
+	books := make([]AddressBook, len(rows.Values))
+	ids := make([]int64, len(rows.Values))
+	for i, r := range rows.Values {
+		rec := scanAddressBookRecord(r)
+		books[i] = rec.AddressBook
+		ids[i] = rec.ID
+	}
+	cols, err := s.listCollectionsForBooks(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range books {
+		books[i].Collections = cols[books[i].ID]
+	}
+	return books, nil
+}
+
+// RemoveAddressBook deletes the address book, cascades all cached collections,
+// cards, emails and avatars, removes keychain credentials, and emits AddressBooksChanged.
+func (s *Service) RemoveAddressBook(ctx context.Context, id int64) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+
+	s.abWriteMu.Lock()
+	res, err := s.db.Execute(ctx, "DELETE FROM address_books WHERE id = ?", id)
+	s.abWriteMu.Unlock()
+	if err != nil {
+		return err
+	}
+	if res.Changes == 0 {
+		return ErrAddressBookNotFound
+	}
+
+	s.abTokMu.Lock()
+	delete(s.abTokens, id)
+	delete(s.abRefreshLocks, id)
+	s.abTokMu.Unlock()
+
+	kerr := s.deleteAddressBookCredentials(id)
+	s.notifyAddressBooksChanged(ctx)
+	return kerr
+}
+
+// ReorderAddressBooks updates the priority order of all address books.
+func (s *Service) ReorderAddressBooks(ctx context.Context, ids []int64) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+
+	s.abWriteMu.Lock()
+	rows, err := s.db.Query(ctx, "SELECT id FROM address_books ORDER BY id")
+	if err != nil {
+		s.abWriteMu.Unlock()
+		return err
+	}
+	have := make([]int64, len(rows.Values))
+	for i, r := range rows.Values {
+		have[i] = store.Int(r[0])
+	}
+	want := slices.Clone(ids)
+	slices.Sort(want)
+	if !slices.Equal(have, want) {
+		s.abWriteMu.Unlock()
+		return errors.New("the new order must name every address book once")
+	}
+	stmts := make([]sqlite.Statement, len(ids))
+	for i, id := range ids {
+		stmts[i] = sqlite.Statement{
+			SQL:  "UPDATE address_books SET sort_order = ? WHERE id = ?",
+			Args: []any{i, id},
+		}
+	}
+	_, err = s.db.Transaction(ctx, stmts)
+	s.abWriteMu.Unlock()
+	if err != nil {
+		return err
+	}
+	s.notifyAddressBooksChanged(ctx)
+	return nil
+}
+
+// SetAddressBookCollectionEnabled toggles a sub-collection; disabling immediately
+// deletes its cached cards, emails, and avatars and resets sync_token in the same transaction.
+func (s *Service) SetAddressBookCollectionEnabled(ctx context.Context, collectionID int64, enabled bool) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+
+	s.abWriteMu.Lock()
+	rows, err := s.db.Query(ctx, "SELECT address_book_id FROM address_book_collections WHERE id = ?", collectionID)
+	if err != nil {
+		s.abWriteMu.Unlock()
+		return err
+	}
+	if len(rows.Values) == 0 {
+		s.abWriteMu.Unlock()
+		return ErrAddressBookNotFound
+	}
+	var stmts []sqlite.Statement
+	if enabled {
+		stmts = []sqlite.Statement{{
+			SQL:  "UPDATE address_book_collections SET enabled = 1 WHERE id = ?",
+			Args: []any{collectionID},
+		}}
+	} else {
+		stmts = []sqlite.Statement{
+			{SQL: "DELETE FROM address_book_cards WHERE collection_id = ?", Args: []any{collectionID}},
+			{SQL: "UPDATE address_book_collections SET enabled = 0, sync_token = '', card_count = 0 WHERE id = ?", Args: []any{collectionID}},
+		}
+	}
+	_, err = s.db.Transaction(ctx, stmts)
+	s.abWriteMu.Unlock()
+	if err != nil {
+		return err
+	}
+	if enabled && s.opts.AutoSync {
+		s.wakeAddressBooks()
+	}
+	s.notifyAddressBooksChanged(ctx)
+	return nil
+}
+
+// UpdateAddressBookAuth updates the password or OAuth grant for an existing address book,
+// clears error/reauth status, and syncs immediately.
+func (s *Service) UpdateAddressBookAuth(ctx context.Context, id int64, password, oauthFlowID string, client OAuthClient) (AddressBook, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return AddressBook{}, err
+	}
+	defer end()
+
+	rec, err := s.addressBookRecord(ctx, id)
+	if err != nil {
+		return AddressBook{}, err
+	}
+	homeURL, err := carddav.NormalizeURL(rec.URL)
+	if err != nil {
+		return AddressBook{}, mapCardDAVErr(err)
+	}
+
+	if rec.AuthType == "oauth" {
+		g, err := s.addressBookFlowGrant(oauthFlowID, rec.Username)
+		if err != nil {
+			return AddressBook{}, err
+		}
+		if g.RefreshToken == "" {
+			return AddressBook{}, errors.New("the provider granted no refresh token")
+		}
+		keychainValues.Add(g.AccessToken)
+		keychainValues.Add(g.RefreshToken)
+		s.secrets.Add(g.AccessToken)
+		s.secrets.Add(g.RefreshToken)
+
+		if _, err := s.carddavClient().ListCollections(ctx, homeURL, carddav.Credentials{BearerToken: g.AccessToken}, false); err != nil {
+			return AddressBook{}, mapCardDAVErr(err)
+		}
+
+		sem := s.addressBookRefreshLock(id)
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			return AddressBook{}, ctx.Err()
+		}
+		release := sync.OnceFunc(func() { <-sem })
+		defer release()
+
+		if _, ok := s.takeGrant(oauthFlowID); !ok {
+			return AddressBook{}, ErrUnknownFlow
+		}
+		chosen := g.client
+		if client.ID != "" {
+			chosen = client
+		}
+		if err := keychainSet(s.addressBookKeyringUser(id), g.RefreshToken); err != nil {
+			return AddressBook{}, fmt.Errorf("save credentials to keychain: %w", err)
+		}
+		if chosen.ID != "" && chosen.Secret != "" {
+			s.secrets.Add(chosen.Secret)
+			if err := keychainSet(s.addressBookOAuthClientUser(id), chosen.Secret); err != nil {
+				return AddressBook{}, fmt.Errorf("save OAuth client secret to keychain: %w", err)
+			}
+		} else {
+			_ = keychainDelete(s.addressBookOAuthClientUser(id))
+		}
+		s.cacheAddressBookToken(id, g.Grant)
+		if _, err := s.db.Execute(ctx, "UPDATE address_books SET oauth_client_id = ?, status = 'ok', status_detail = '' WHERE id = ?", chosen.ID, id); err != nil {
+			return AddressBook{}, err
+		}
+		release()
+	} else {
+		if password == "" {
+			return AddressBook{}, backend.ErrAuthFailed
+		}
+		s.secrets.Add(password)
+		if _, err := s.carddavClient().ListCollections(ctx, homeURL, carddav.Credentials{Username: rec.Username, Password: password}, false); err != nil {
+			return AddressBook{}, mapCardDAVErr(err)
+		}
+		if err := keychainSet(s.addressBookKeyringUser(id), password); err != nil {
+			return AddressBook{}, fmt.Errorf("save credentials to keychain: %w", err)
+		}
+		if _, err := s.db.Execute(ctx, "UPDATE address_books SET status = 'ok', status_detail = '' WHERE id = ?", id); err != nil {
+			return AddressBook{}, err
+		}
+	}
+
+	_ = s.syncOneAddressBook(ctx, id)
+	if s.opts.AutoSync {
+		s.armAddressBookTimer(AddressBookSyncInterval)
+	}
+	s.notifyAddressBooksChanged(ctx)
+	return s.getAddressBook(ctx, id)
+}
+
+// SyncAddressBook immediately syncs one address book (id > 0) or all address books
+// that have at least one enabled collection (id == 0).
+func (s *Service) SyncAddressBook(ctx context.Context, id int64) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+
+	if id > 0 {
+		err := s.syncOneAddressBook(ctx, id)
+		s.notifyAddressBooksChanged(ctx)
+		return err
+	}
+
+	rows, err := s.db.Query(ctx, `SELECT DISTINCT ab.id, ab.sort_order FROM address_books ab
+		JOIN address_book_collections c ON c.address_book_id = ab.id AND c.enabled = 1
+		ORDER BY ab.sort_order ASC, ab.id ASC`)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, r := range rows.Values {
+		if err := s.syncOneAddressBook(ctx, store.Int(r[0])); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if len(rows.Values) > 0 {
+		s.notifyAddressBooksChanged(ctx)
+	}
+	return errors.Join(errs...)
+}
+
+func (s *Service) cacheAddressBookToken(id int64, g auth.Grant) {
+	keychainValues.Add(g.AccessToken)
+	s.secrets.Add(g.AccessToken)
+	if !g.Expiry.IsZero() {
+		if ttl := time.Until(g.Expiry); ttl > 0 {
+			g.Expiry = s.clk().Now().Add(ttl)
+		}
+	}
+	s.abTokMu.Lock()
+	if s.abTokens == nil {
+		s.abTokens = map[int64]auth.Grant{}
+	}
+	s.abTokens[id] = g
+	s.abTokMu.Unlock()
+}
+
+func (s *Service) addressBookRefreshLock(id int64) chan struct{} {
+	s.abTokMu.Lock()
+	defer s.abTokMu.Unlock()
+	if s.abRefreshLocks == nil {
+		s.abRefreshLocks = map[int64]chan struct{}{}
+	}
+	ch := s.abRefreshLocks[id]
+	if ch == nil {
+		ch = make(chan struct{}, 1)
+		s.abRefreshLocks[id] = ch
+	}
+	return ch
+}
+
+func (s *Service) setAddressBookStatus(ctx context.Context, id int64, status, detail string) {
+	_, _ = s.db.Execute(context.WithoutCancel(ctx),
+		"UPDATE address_books SET status = ?, status_detail = ? WHERE id = ?",
+		status, detail, id)
+}
+
+func (s *Service) addressBookCredentials(ctx context.Context, rec addressBookRecord, rejectedToken string) (carddav.Credentials, error) {
+	if rec.AuthType != "oauth" {
+		pw, err := keychainGet(s.addressBookKeyringUser(rec.ID))
+		switch {
+		case errors.Is(err, keyring.ErrNotFound):
+			s.setAddressBookStatus(ctx, rec.ID, "reauth_required", "credentials_missing")
+			return carddav.Credentials{}, fmt.Errorf("%w: %w", backend.ErrAuthFailed, err)
+		case err != nil:
+			s.setAddressBookStatus(ctx, rec.ID, "error", "keychain_unavailable")
+			return carddav.Credentials{}, err
+		}
+		s.secrets.Add(pw)
+		return carddav.Credentials{Username: rec.Username, Password: pw}, nil
+	}
+
+	s.abTokMu.Lock()
+	cached := s.abTokens[rec.ID]
+	s.abTokMu.Unlock()
+	if cached.AccessToken != "" && cached.AccessToken != rejectedToken && s.clk().Now().Add(time.Minute).Before(cached.Expiry) {
+		return carddav.Credentials{BearerToken: cached.AccessToken}, nil
+	}
+
+	sem := s.addressBookRefreshLock(rec.ID)
+	select {
+	case sem <- struct{}{}:
+		defer func() { <-sem }()
+	case <-ctx.Done():
+		return carddav.Credentials{}, ctx.Err()
+	}
+
+	s.abTokMu.Lock()
+	cached = s.abTokens[rec.ID]
+	s.abTokMu.Unlock()
+	if cached.AccessToken != "" && cached.AccessToken != rejectedToken && s.clk().Now().Add(time.Minute).Before(cached.Expiry) {
+		return carddav.Credentials{BearerToken: cached.AccessToken}, nil
+	}
+
+	rt, err := keychainGet(s.addressBookKeyringUser(rec.ID))
+	switch {
+	case errors.Is(err, keyring.ErrNotFound):
+		s.setAddressBookStatus(ctx, rec.ID, "reauth_required", "credentials_missing")
+		return carddav.Credentials{}, fmt.Errorf("%w: %w", backend.ErrAuthFailed, err)
+	case err != nil:
+		s.setAddressBookStatus(ctx, rec.ID, "error", "keychain_unavailable")
+		return carddav.Credentials{}, err
+	}
+	s.secrets.Add(rt)
+
+	cfg, err := oauthConfig(ProviderGoogleCardDAV)
+	if err != nil {
+		return carddav.Credentials{}, err
+	}
+	if rec.OAuthClientID != "" {
+		secret, err := keychainGet(s.addressBookOAuthClientUser(rec.ID))
+		switch {
+		case errors.Is(err, keyring.ErrNotFound):
+			s.setAddressBookStatus(ctx, rec.ID, "reauth_required", "credentials_missing")
+			return carddav.Credentials{}, fmt.Errorf("%w: %w", backend.ErrAuthFailed, err)
+		case err != nil:
+			s.setAddressBookStatus(ctx, rec.ID, "error", "keychain_unavailable")
+			return carddav.Credentials{}, err
+		}
+		s.secrets.Add(secret)
+		cfg.ClientID, cfg.ClientSecret = rec.OAuthClientID, secret
+	}
+
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), refreshTimeout)
+	hc := &http.Client{Transport: conn.HTTPTransport(), Timeout: refreshTimeout}
+	g, err := auth.Refresh(rctx, cfg, hc, rt)
+	cancel()
+	switch {
+	case errors.Is(err, auth.ErrInvalidGrant):
+		s.setAddressBookStatus(ctx, rec.ID, "reauth_required", "token_revoked")
+		return carddav.Credentials{}, fmt.Errorf("%w: %w", backend.ErrAuthFailed, err)
+	case errors.Is(err, auth.ErrInvalidClient):
+		s.setAddressBookStatus(ctx, rec.ID, "reauth_required", "client_rejected")
+		return carddav.Credentials{}, fmt.Errorf("%w: %w", backend.ErrAuthFailed, err)
+	case err != nil:
+		s.setAddressBookStatus(ctx, rec.ID, "error", "network_error")
+		return carddav.Credentials{}, err
+	}
+	if g.RefreshToken != "" {
+		s.secrets.Add(g.RefreshToken)
+		if err := keychainSet(s.addressBookKeyringUser(rec.ID), g.RefreshToken); err != nil {
+			s.setAddressBookStatus(ctx, rec.ID, "error", "keychain_unavailable")
+			return carddav.Credentials{}, err
+		}
+	}
+	s.cacheAddressBookToken(rec.ID, g)
+	return carddav.Credentials{BearerToken: g.AccessToken}, nil
+}
+
+func (s *Service) syncOneAddressBook(ctx context.Context, id int64) error {
+	rec, err := s.addressBookRecord(ctx, id)
+	if err != nil {
+		return err
+	}
+	homeURL, err := carddav.NormalizeURL(rec.URL)
+	if err != nil {
+		s.setAddressBookStatus(ctx, id, "error", "invalid_url")
+		return mapCardDAVErr(err)
+	}
+
+	creds, err := s.addressBookCredentials(ctx, rec, "")
+	if err != nil {
+		return err
+	}
+
+	err = s.syncAddressBookWithCreds(ctx, rec, homeURL, creds)
+	if errors.Is(err, carddav.ErrAuthFailed) && rec.AuthType == "oauth" && creds.BearerToken != "" {
+		creds, err = s.addressBookCredentials(ctx, rec, creds.BearerToken)
+		if err != nil {
+			return err
+		}
+		err = s.syncAddressBookWithCreds(ctx, rec, homeURL, creds)
+	}
+	if err != nil {
+		if errors.Is(err, carddav.ErrAuthFailed) {
+			s.setAddressBookStatus(ctx, id, "reauth_required", "auth_rejected")
+			return backend.ErrAuthFailed
+		}
+		if ctx.Err() == nil {
+			s.setAddressBookStatus(ctx, id, "error", "sync_failed")
+		}
+		return mapCardDAVErr(err)
+	}
+
+	now := s.clk().Now().Unix()
+	_, _ = s.db.Execute(ctx, "UPDATE address_books SET status = 'ok', status_detail = '', last_synced_at = ? WHERE id = ?", now, id)
+	return nil
+}
+
+type localCollectionState struct {
+	id        int64
+	href      string
+	name      string
+	enabled   bool
+	syncToken string
+}
+
+func (s *Service) syncAddressBookWithCreds(ctx context.Context, rec addressBookRecord, homeURL *url.URL, creds carddav.Credentials) error {
+	client := s.carddavClient()
+	remoteCols, err := client.ListCollections(ctx, homeURL, creds, false)
+	if err != nil {
+		return err
+	}
+
+	s.abWriteMu.Lock()
+	// Ensure the address book still exists before reconciling collection rows.
+	chk, err := s.db.Query(ctx, "SELECT id FROM address_books WHERE id = ?", rec.ID)
+	if err != nil || len(chk.Values) == 0 {
+		s.abWriteMu.Unlock()
+		return err
+	}
+	existingRows, err := s.db.Query(ctx, `SELECT id, href, name, enabled, sync_token FROM address_book_collections WHERE address_book_id = ?`, rec.ID)
+	if err != nil {
+		s.abWriteMu.Unlock()
+		return err
+	}
+	byHref := map[string]localCollectionState{}
+	for _, r := range existingRows.Values {
+		st := localCollectionState{
+			id:        store.Int(r[0]),
+			href:      store.Str(r[1]),
+			name:      store.Str(r[2]),
+			enabled:   store.Int(r[3]) != 0,
+			syncToken: store.Str(r[4]),
+		}
+		byHref[st.href] = st
+	}
+
+	remoteSeen := map[string]bool{}
+	var reconcileStmts []sqlite.Statement
+	for _, rc := range remoteCols {
+		remoteSeen[rc.Href] = true
+		if cur, ok := byHref[rc.Href]; ok {
+			if rc.Name != "" && rc.Name != cur.name {
+				reconcileStmts = append(reconcileStmts, sqlite.Statement{
+					SQL:  "UPDATE address_book_collections SET name = ? WHERE id = ?",
+					Args: []any{rc.Name, cur.id},
+				})
+			}
+		} else {
+			reconcileStmts = append(reconcileStmts, sqlite.Statement{
+				SQL:  "INSERT INTO address_book_collections (address_book_id, href, name, enabled, sync_token, card_count) VALUES (?, ?, ?, 1, '', 0)",
+				Args: []any{rec.ID, rc.Href, rc.Name},
+			})
+		}
+	}
+	for href, cur := range byHref {
+		if !remoteSeen[href] {
+			reconcileStmts = append(reconcileStmts, sqlite.Statement{
+				SQL:  "DELETE FROM address_book_collections WHERE id = ?",
+				Args: []any{cur.id},
+			})
+		}
+	}
+	if len(reconcileStmts) > 0 {
+		if _, err := s.db.Transaction(ctx, reconcileStmts); err != nil {
+			s.abWriteMu.Unlock()
+			return err
+		}
+	}
+
+	colRows, err := s.db.Query(ctx, `SELECT id, href, name, enabled, sync_token FROM address_book_collections WHERE address_book_id = ? AND enabled = 1 ORDER BY id ASC`, rec.ID)
+	s.abWriteMu.Unlock()
+	if err != nil {
+		return err
+	}
+
+	for _, r := range colRows.Values {
+		col := localCollectionState{
+			id:        store.Int(r[0]),
+			href:      store.Str(r[1]),
+			name:      store.Str(r[2]),
+			enabled:   store.Int(r[3]) != 0,
+			syncToken: store.Str(r[4]),
+		}
+		if err := s.syncOneCollection(ctx, client, homeURL, col, creds); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type preparedCard struct {
+	href        string
+	etag        string
+	fn          string
+	org         string
+	title       string
+	photo       []byte
+	photoFormat string
+	photoWidth  int
+	photoHeight int
+	emails      []carddav.CardEmail
+}
+
+func (s *Service) syncOneCollection(ctx context.Context, client *carddav.Client, homeURL *url.URL, col localCollectionState, creds carddav.Credentials) error {
+	etagRows, err := s.db.Query(ctx, "SELECT href, etag FROM address_book_cards WHERE collection_id = ?", col.id)
+	if err != nil {
+		return err
+	}
+	localETags := make(map[string]string, len(etagRows.Values))
+	for _, r := range etagRows.Values {
+		localETags[store.Str(r[0])] = store.Str(r[1])
+	}
+
+	var (
+		toFetch       []string
+		deleted       []string
+		nextSyncToken string
+		usedDelta     bool
+	)
+	if col.syncToken != "" {
+		delta, err := client.SyncCollection(ctx, homeURL, col.href, col.syncToken, creds)
+		switch {
+		case err == nil:
+			usedDelta = true
+			nextSyncToken = delta.NextSyncToken
+			deleted = delta.Deleted
+			for href, etag := range delta.Upserted {
+				local, exists := localETags[href]
+				if !exists || etag == "" || local == "" || etag != local {
+					toFetch = append(toFetch, href)
+				}
+			}
+		case errors.Is(err, carddav.ErrSyncTokenInvalid):
+			// Fall back to full PROPFIND reconciliation below.
+		default:
+			return err
+		}
+	}
+
+	if !usedDelta {
+		remoteETags, tok, displayName, err := client.ListCollectionETags(ctx, homeURL, col.href, creds)
+		if err != nil {
+			return err
+		}
+		nextSyncToken = tok
+		if displayName != "" && displayName != col.name {
+			_, _ = s.db.Execute(ctx, "UPDATE address_book_collections SET name = ? WHERE id = ?", displayName, col.id)
+		}
+		for href := range localETags {
+			if _, ok := remoteETags[href]; !ok {
+				deleted = append(deleted, href)
+			}
+		}
+		for href, etag := range remoteETags {
+			local, exists := localETags[href]
+			if !exists || etag == "" || local == "" || etag != local {
+				toFetch = append(toFetch, href)
+			}
+		}
+	}
+	slices.Sort(toFetch)
+	slices.Sort(deleted)
+
+	fetched, err := client.FetchCards(ctx, homeURL, col.href, toFetch, creds)
+	if err != nil {
+		return err
+	}
+
+	photoHTTP := s.photoClient()
+	prepared := make([]preparedCard, 0, len(fetched))
+	for _, fc := range fetched {
+		pc := carddav.ParseVCard(fc.RawVCard)
+		item := preparedCard{
+			href:   fc.Href,
+			etag:   fc.ETag,
+			fn:     pc.FN,
+			org:    pc.Org,
+			title:  pc.Title,
+			emails: make([]carddav.CardEmail, 0, len(pc.Emails)),
+		}
+		for i, em := range pc.Emails {
+			key := gomail.AddrKey(em.Address)
+			if key == "" {
+				continue
+			}
+			item.emails = append(item.emails, carddav.CardEmail{
+				Pos:     i,
+				AddrKey: key,
+				Address: em.Address,
+				Pref:    em.Pref,
+			})
+		}
+		for _, ph := range pc.Photos {
+			raw := ph.Data
+			if len(raw) == 0 && ph.URL != "" {
+				downloaded, derr := imagefetch.DownloadAvatar(ctx, photoHTTP, ph.URL)
+				if derr != nil {
+					continue
+				}
+				raw = downloaded
+			}
+			if len(raw) == 0 {
+				continue
+			}
+			checked, format, w, h, cerr := imagefetch.CheckAvatarImage(raw, "carddav")
+			if cerr != nil {
+				continue
+			}
+			item.photo = checked
+			item.photoFormat = format
+			item.photoWidth = w
+			item.photoHeight = h
+			break
+		}
+		prepared = append(prepared, item)
+	}
+
+	s.abWriteMu.Lock()
+	defer s.abWriteMu.Unlock()
+
+	// Verify collection is still enabled (SetAddressBookCollectionEnabled(false) or
+	// RemoveAddressBook may have run while network requests were in flight).
+	still, err := s.db.Query(ctx, "SELECT enabled FROM address_book_collections WHERE id = ?", col.id)
+	if err != nil || len(still.Values) == 0 || store.Int(still.Values[0][0]) == 0 {
+		return err
+	}
+
+	var stmts []sqlite.Statement
+	for _, href := range deleted {
+		stmts = append(stmts, sqlite.Statement{
+			SQL:  "DELETE FROM address_book_cards WHERE collection_id = ? AND href = ?",
+			Args: []any{col.id, href},
+		})
+	}
+	for _, item := range prepared {
+		var photoArg any
+		if len(item.photo) > 0 {
+			photoArg = item.photo
+		}
+		stmts = append(stmts,
+			sqlite.Statement{
+				SQL: `INSERT INTO address_book_cards
+					(collection_id, href, etag, fn, org, title, photo, photo_format, photo_width, photo_height)
+					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+					ON CONFLICT(collection_id, href) DO UPDATE SET
+						etag = excluded.etag,
+						fn = excluded.fn,
+						org = excluded.org,
+						title = excluded.title,
+						photo = excluded.photo,
+						photo_format = excluded.photo_format,
+						photo_width = excluded.photo_width,
+						photo_height = excluded.photo_height`,
+				Args: []any{col.id, item.href, item.etag, item.fn, item.org, item.title, photoArg, item.photoFormat, item.photoWidth, item.photoHeight},
+			},
+			sqlite.Statement{
+				SQL:  `DELETE FROM address_book_emails WHERE card_id = (SELECT id FROM address_book_cards WHERE collection_id = ? AND href = ?)`,
+				Args: []any{col.id, item.href},
+			},
+		)
+		for _, em := range item.emails {
+			pref := 0
+			if em.Pref {
+				pref = 1
+			}
+			stmts = append(stmts, sqlite.Statement{
+				SQL: `INSERT OR REPLACE INTO address_book_emails (card_id, pos, addr_key, address, pref)
+					VALUES ((SELECT id FROM address_book_cards WHERE collection_id = ? AND href = ?), ?, ?, ?, ?)`,
+				Args: []any{col.id, item.href, em.Pos, em.AddrKey, em.Address, pref},
+			})
+		}
+	}
+	stmts = append(stmts, sqlite.Statement{
+		SQL: `UPDATE address_book_collections
+			SET sync_token = ?, card_count = (SELECT COUNT(*) FROM address_book_cards WHERE collection_id = ?)
+			WHERE id = ? AND enabled = 1`,
+		Args: []any{nextSyncToken, col.id, col.id},
+	})
+	_, err = s.db.Transaction(ctx, stmts)
+	return err
+}
+
+func (s *Service) wakeAddressBooks() {
+	select {
+	case s.abWake <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Service) armAddressBookTimer(d time.Duration) {
+	s.abTimerMu.Lock()
+	defer s.abTimerMu.Unlock()
+	if s.abTimerStop != nil {
+		s.abTimerStop()
+	}
+	s.abTimerActive = true
+	s.abTimerStop = s.clk().AfterFunc(d, s.wakeAddressBooks)
+}
+
+func (s *Service) stopAddressBookTimer() {
+	s.abTimerMu.Lock()
+	defer s.abTimerMu.Unlock()
+	s.abTimerActive = false
+	if s.abTimerStop != nil {
+		s.abTimerStop()
+		s.abTimerStop = nil
+	}
+}
+
+func (s *Service) rearmAddressBookTimer() {
+	s.abTimerMu.Lock()
+	active := s.abTimerActive
+	if s.abTimerStop != nil {
+		s.abTimerStop()
+		s.abTimerStop = nil
+	}
+	if active {
+		s.abTimerStop = s.clk().AfterFunc(AddressBookSyncInterval, s.wakeAddressBooks)
+	}
+	s.abTimerMu.Unlock()
+}
+
+func (s *Service) startAddressBookSync() {
+	// Prime keychainValues best-effort so Redact covers stored address-book secrets before any sync.
+	if rows, err := s.db.Query(context.Background(), "SELECT id FROM address_books"); err == nil {
+		for _, r := range rows.Values {
+			id := store.Int(r[0])
+			_, _ = keychainGet(s.addressBookKeyringUser(id))
+			_, _ = keychainGet(s.addressBookOAuthClientUser(id))
+		}
+	}
+	if !s.opts.AutoSync {
+		return
+	}
+	ctx, end, err := s.begin(context.Background(), 0)
+	if err != nil {
+		return
+	}
+	s.armAddressBookTimer(AddressBookSyncInterval)
+	go func() {
+		defer end()
+		defer s.stopAddressBookTimer()
+		for {
+			s.syncDueAddressBooks(ctx)
+			s.armAddressBookTimer(AddressBookSyncInterval)
+			select {
+			case <-ctx.Done():
+				return
+			case <-s.abWake:
+			}
+		}
+	}()
+}
+
+func (s *Service) syncDueAddressBooks(ctx context.Context) {
+	rows, err := s.db.Query(ctx, `SELECT DISTINCT ab.id, ab.sort_order FROM address_books ab
+		JOIN address_book_collections c ON c.address_book_id = ab.id AND c.enabled = 1
+		WHERE ab.status != 'reauth_required'
+		ORDER BY ab.sort_order ASC, ab.id ASC`)
+	if err != nil || len(rows.Values) == 0 {
+		return
+	}
+	for _, r := range rows.Values {
+		if ctx.Err() != nil {
+			return
+		}
+		if err := s.syncOneAddressBook(ctx, store.Int(r[0])); err != nil && ctx.Err() == nil {
+			slog.Warn("address book background sync failed", "id", store.Int(r[0]), "err", s.Redact(err.Error()))
+		}
+	}
+	if ctx.Err() == nil {
+		s.notifyAddressBooksChanged(ctx)
+	}
+}

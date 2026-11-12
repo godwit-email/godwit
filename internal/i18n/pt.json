@@ -2240,5 +2240,8 @@
   "feature_reason_graph_folder_not_label": "No Outlook, uma pasta não é um marcador: excluí-la também exclui seus e-mails.",
   "feature_reason_graph_no_all_mail": "O Outlook não tem «Todos os e-mails»: arquivar move a mensagem para a pasta Arquivo.",
   "feature_reason_graph_folders_pending": "O gerenciamento de pastas pelo Microsoft Graph ainda não está disponível.",
-  "feature_reason_graph_no_push": "Aplicativos de desktop não recebem webhooks do Microsoft Graph; o Godwit verifica a cada minuto."
+  "feature_reason_graph_no_push": "Aplicativos de desktop não recebem webhooks do Microsoft Graph; o Godwit verifica a cada minuto.",
+  "wit_tool_search_contacts": "Pesquisar contatos",
+  "error_address_book_not_found": "Catálogo de endereços não encontrado.",
+  "error_no_address_books": "Nenhum catálogo de endereços CardDAV foi encontrado neste servidor."
 }

@@ -2240,5 +2240,8 @@
   "feature_reason_graph_folder_not_label": "Outlook의 폴더는 라벨이 아닙니다. 삭제하면 안의 메일도 함께 삭제됩니다.",
   "feature_reason_graph_no_all_mail": "Outlook에는 '전체보관함'이 없으므로 보관 시 보관 폴더로 이동합니다.",
   "feature_reason_graph_folders_pending": "Microsoft Graph를 통한 폴더 관리는 아직 지원되지 않습니다.",
-  "feature_reason_graph_no_push": "데스크톱 앱은 Microsoft Graph 웹훅을 받을 수 없어 1분마다 새 메일을 확인합니다."
+  "feature_reason_graph_no_push": "데스크톱 앱은 Microsoft Graph 웹훅을 받을 수 없어 1분마다 새 메일을 확인합니다.",
+  "wit_tool_search_contacts": "연락처 검색",
+  "error_address_book_not_found": "주소록을 찾을 수 없습니다.",
+  "error_no_address_books": "이 서버에서 CardDAV 주소록을 찾을 수 없습니다."
 }

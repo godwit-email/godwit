@@ -2240,5 +2240,8 @@
   "feature_reason_graph_folder_not_label": "Outlook のフォルダーはラベルではありません。削除すると中のメールも削除されます。",
   "feature_reason_graph_no_all_mail": "Outlook には「すべてのメール」がないため、アーカイブするとアーカイブフォルダーへ移動します。",
   "feature_reason_graph_folders_pending": "Microsoft Graph 経由のフォルダー管理にはまだ対応していません。",
-  "feature_reason_graph_no_push": "デスクトップアプリは Microsoft Graph の Webhook を受信できないため、1 分ごとに確認します。"
+  "feature_reason_graph_no_push": "デスクトップアプリは Microsoft Graph の Webhook を受信できないため、1 分ごとに確認します。",
+  "wit_tool_search_contacts": "連絡先を検索",
+  "error_address_book_not_found": "アドレス帳が見つかりません。",
+  "error_no_address_books": "このサーバーに CardDAV アドレス帳が見つかりませんでした。"
 }

@@ -2240,5 +2240,8 @@
   "feature_reason_graph_folder_not_label": "Dans Outlook, un dossier n’est pas un libellé : le supprimer supprime aussi ses e-mails.",
   "feature_reason_graph_no_all_mail": "Outlook n’a pas « Tous les messages » : archiver déplace le message vers le dossier Archives.",
   "feature_reason_graph_folders_pending": "La gestion des dossiers via Microsoft Graph n’est pas encore disponible.",
-  "feature_reason_graph_no_push": "Les applications de bureau ne peuvent pas recevoir les webhooks Microsoft Graph ; Godwit vérifie chaque minute."
+  "feature_reason_graph_no_push": "Les applications de bureau ne peuvent pas recevoir les webhooks Microsoft Graph ; Godwit vérifie chaque minute.",
+  "wit_tool_search_contacts": "Rechercher des contacts",
+  "error_address_book_not_found": "Carnet d’adresses introuvable.",
+  "error_no_address_books": "Aucun carnet d’adresses CardDAV n’a été trouvé sur ce serveur."
 }

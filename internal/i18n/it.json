@@ -2240,5 +2240,8 @@
   "feature_reason_graph_folder_not_label": "In Outlook una cartella non è un'etichetta: eliminarla elimina anche le sue email.",
   "feature_reason_graph_no_all_mail": "Outlook non ha «Tutti i messaggi»: l'archiviazione sposta i messaggi nella cartella Archivio.",
   "feature_reason_graph_folders_pending": "La gestione delle cartelle tramite Microsoft Graph non è ancora disponibile.",
-  "feature_reason_graph_no_push": "Le app desktop non possono ricevere webhook di Microsoft Graph; Godwit controlla ogni minuto."
+  "feature_reason_graph_no_push": "Le app desktop non possono ricevere webhook di Microsoft Graph; Godwit controlla ogni minuto.",
+  "wit_tool_search_contacts": "Cerca contatti",
+  "error_address_book_not_found": "Rubrica non trovata.",
+  "error_no_address_books": "Nessuna rubrica CardDAV trovata su questo server."
 }
