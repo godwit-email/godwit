@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"image"
 	"image/png"
@@ -817,5 +818,48 @@ func TestUIProgressStreams(t *testing.T) {
 		out["downloadRecognition"] = recEvents
 		out["recognitionInstalled"] = env.Svc.RecognitionModelInstalled()
 		return out
+	})
+}
+
+func TestExportAccounts(t *testing.T) {
+	runContract(t, func(t *testing.T, api contract.API, env *coretest.Env) any {
+		ctx := t.Context()
+		ih, ip, sh, sp, user, pass := env.StartServers(t)
+		acc, err := api.AddAccount(ctx, core.AccountInput{
+			Email:     "alice@example.com",
+			Name:      "Alice",
+			Username:  user,
+			Password:  pass,
+			Signature: "Best,\nAlice",
+			Sync:      &core.SyncRange{Months: 3},
+			Receiving: core.Server{Host: ih, Port: ip, Security: core.SecurityNone},
+			Sending:   core.Server{Host: sh, Port: sp, Security: core.SecurityNone},
+		})
+		require.NoError(t, err)
+		_, err = env.Svc.AddLocalArchive(ctx, "Local Archive")
+		require.NoError(t, err)
+		env.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Private Subject", "Private Body",
+			coretest.MessageID("m-exp@contract"), coretest.Date(day1)))
+
+		raw, err := api.ExportAccounts(ctx)
+		require.NoError(t, err)
+		text := string(raw)
+		assert.NotContains(t, text, pass)
+		assert.NotContains(t, text, "Private Subject")
+		assert.NotContains(t, text, "Private Body")
+		assert.NotContains(t, text, "Local Archive")
+
+		var exported core.AccountExport
+		require.NoError(t, json.Unmarshal(raw, &exported))
+		for i := range exported.Accounts {
+			if exported.Accounts[i].Receiving.Port == ip && exported.Accounts[i].Sending.Port == sp {
+				exported.Accounts[i].Receiving.Port, exported.Accounts[i].Sending.Port = -1, -1
+			}
+		}
+		return map[string]any{
+			"indented": strings.HasPrefix(text, "{\n  \"version\": 1,\n"),
+			"newline":  strings.HasSuffix(text, "\n"),
+			"export":   exported,
+		}
 	})
 }

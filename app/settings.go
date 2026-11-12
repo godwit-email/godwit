@@ -59,6 +59,7 @@ type settingsPage struct {
 	servers      serverForm                                                                     // the servers dialog's fields
 	reauth       map[int64]bool                                                                 // a browser sign-in runs for the account
 	rechecking   map[int64]bool                                                                 // a receive-only account's sending check runs
+	exporting    bool                                                                           // ExportAccounts runs
 	update       func(ctx context.Context, id int64, p core.AccountPatch) (core.Account, error) // tests swap it
 
 	aiTab, privacyTab int                         // the AI and 隐私与安全 pages' tabs

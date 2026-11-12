@@ -22,6 +22,7 @@ type API interface {
 	AddAccount(ctx context.Context, in core.AccountInput) (core.Account, error)
 	CheckAccount(ctx context.Context, in core.AccountInput) (core.CheckReport, error)
 	DetectProvider(ctx context.Context, email string) (auth.Provider, auth.Source, error)
+	ExportAccounts(ctx context.Context) ([]byte, error)
 	ListAccounts(ctx context.Context) ([]core.Account, error)
 	ListFolders(ctx context.Context, accountID int64) ([]core.Folder, error)
 	ListThreads(ctx context.Context, v core.View, cursor string, limit int) (core.ThreadPage, error)
@@ -212,6 +213,10 @@ func (r *Remote) CheckAccount(ctx context.Context, in core.AccountInput) (core.C
 
 func (r *Remote) DetectProvider(ctx context.Context, email string) (auth.Provider, auth.Source, error) {
 	return call2[auth.Provider, auth.Source](r, ctx, "DetectProvider", email)
+}
+
+func (r *Remote) ExportAccounts(ctx context.Context) ([]byte, error) {
+	return call[[]byte](r, ctx, "ExportAccounts")
 }
 
 func (r *Remote) ListAccounts(ctx context.Context) ([]core.Account, error) {

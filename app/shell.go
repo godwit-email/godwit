@@ -143,7 +143,7 @@ func (a *App) onEvent(ev events.Event) {
 		a.syncErr[ev.AccountID] = f
 		a.tick() // a failure that lasts turns red
 	case events.MessageReceived:
-		a.mailArrived(ev)
+		a.HandleEvent(ev)
 	case events.OutboxChanged:
 		a.offerUndo()
 	case events.PluginsChanged: // a card's plugin may have been switched

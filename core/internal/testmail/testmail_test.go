@@ -2,8 +2,10 @@ package testmail_test
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
@@ -370,4 +372,102 @@ func TestNotGmail(t *testing.T) {
 	require.NoError(t, err)
 	_, err = c.Fetch(imap.UIDSetNum(1), &imap.FetchOptions{UID: true, GmailMsgID: true}).Collect()
 	assert.Error(t, err)
+}
+
+func TestStartAcceptsTB(t *testing.T) {
+	var tb testing.TB = t
+	im := testmail.StartIMAP(tb)
+	addr, in := testmail.StartSMTP(tb)
+	require.NotEmpty(t, im.Addr)
+	require.NotEmpty(t, addr)
+	require.NotNil(t, in)
+	c := dial(t, im)
+	assert.True(t, c.Caps().Has(imap.CapIMAP4rev1))
+}
+
+type fetchedMsg struct {
+	uid   imap.UID
+	flags []imap.Flag
+	date  time.Time
+	raw   string
+}
+
+type mailboxSnapshot struct {
+	email   string
+	folders []string
+	byName  map[string][]fetchedMsg
+	total   int
+}
+
+func snapshotMailbox(t *testing.T, mb testmail.Mailbox) mailboxSnapshot {
+	t.Helper()
+	c := dial(t, mb.IMAP)
+	list, err := c.List("", "*", nil).Collect()
+	require.NoError(t, err)
+	folders := make([]string, len(list))
+	for i, d := range list {
+		folders[i] = d.Mailbox
+	}
+	slices.Sort(folders)
+	sec := &imap.FetchItemBodySection{Peek: true}
+	byName := make(map[string][]fetchedMsg, len(folders))
+	total := 0
+	for _, f := range folders {
+		sel, err := c.Select(f, &imap.SelectOptions{ReadOnly: true}).Wait()
+		require.NoError(t, err)
+		if sel.NumMessages == 0 {
+			byName[f] = nil
+			continue
+		}
+		msgs, err := c.Fetch(imap.SeqSet{{Start: 1, Stop: sel.NumMessages}}, &imap.FetchOptions{
+			UID: true, Flags: true, InternalDate: true,
+			BodySection: []*imap.FetchItemBodySection{sec},
+		}).Collect()
+		require.NoError(t, err)
+		got := make([]fetchedMsg, len(msgs))
+		for i, m := range msgs {
+			flags := slices.Clone(m.Flags)
+			slices.Sort(flags)
+			got[i] = fetchedMsg{
+				uid:   m.UID,
+				flags: flags,
+				date:  m.InternalDate.UTC(),
+				raw:   string(m.FindBodySection(sec)),
+			}
+		}
+		byName[f] = got
+		total += len(got)
+	}
+	return mailboxSnapshot{email: mb.Email, folders: folders, byName: byName, total: total}
+}
+
+func TestMailboxesScaleTiersAndDeterminism(t *testing.T) {
+	scales := testmail.Scales()
+	require.Len(t, scales, 3)
+	for i, sc := range scales {
+		if i > 0 {
+			assert.Greater(t, sc.Accounts, scales[i-1].Accounts)
+			assert.Greater(t, sc.Folders, scales[i-1].Folders)
+			assert.Greater(t, sc.Messages, scales[i-1].Messages)
+		}
+		boxes := testmail.StartMailboxes(t, sc, testmail.DefaultSeed)
+		require.Len(t, boxes, sc.Accounts, sc.Name)
+		for _, mb := range boxes {
+			snap := snapshotMailbox(t, mb)
+			assert.Len(t, snap.folders, sc.Folders, sc.Name)
+			assert.Equal(t, sc.Messages, snap.total, sc.Name)
+			assert.NotEmpty(t, snap.byName["INBOX"], sc.Name)
+		}
+	}
+
+	first := testmail.StartMailboxes(t, testmail.ScaleMedium, testmail.DefaultSeed)
+	second := testmail.StartMailboxes(t, testmail.ScaleMedium, testmail.DefaultSeed)
+	require.Len(t, first, len(second))
+	for i := range first {
+		assert.Equal(t, snapshotMailbox(t, first[i]), snapshotMailbox(t, second[i]))
+	}
+
+	other := testmail.StartMailboxes(t, testmail.ScaleSmall, testmail.DefaultSeed+1)
+	same := testmail.StartMailboxes(t, testmail.ScaleSmall, testmail.DefaultSeed)
+	assert.NotEqual(t, snapshotMailbox(t, same[0]), snapshotMailbox(t, other[0]))
 }
