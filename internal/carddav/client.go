@@ -309,11 +309,13 @@ type xmlHrefBox struct {
 }
 
 type xmlResourceType struct {
+	Present       bool
 	IsCollection  bool
 	IsAddressBook bool
 }
 
 func (rt *xmlResourceType) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	rt.Present = true
 	depth := 1
 	for depth > 0 {
 		tok, err := d.Token()
@@ -368,6 +370,9 @@ func okProps(r xmlResponse) (xmlProp, bool) {
 		code := parseHTTPStatusCode(ps.Status)
 		if code == 0 || (code >= 200 && code < 300) {
 			found = true
+			if ps.Prop.ResourceType.Present {
+				merged.ResourceType.Present = true
+			}
 			if ps.Prop.ResourceType.IsCollection {
 				merged.ResourceType.IsCollection = true
 			}
@@ -654,12 +659,26 @@ func (c *Client) ListCollections(ctx context.Context, home *url.URL, creds Crede
 	var cols []DiscoveredCollection
 	seen := map[string]bool{}
 	for _, r := range ms.Responses {
-		p, ok := okProps(r)
-		if !ok || !p.ResourceType.IsAddressBook {
-			continue
-		}
 		h, ok := canonHref(home, r.Href)
 		if !ok || seen[h] {
+			continue
+		}
+		if isDeletedResponse(r) {
+			continue
+		}
+		if err := responseFailure(r, "PROPFIND", h); err != nil {
+			return nil, err
+		}
+		for _, ps := range r.PropStats {
+			if code := parseHTTPStatusCode(ps.Status); code != 0 && (code < 200 || code >= 300) && ps.Prop.ResourceType.Present {
+				return nil, fmt.Errorf("carddav: PROPFIND %s: resourcetype HTTP %d", h, code)
+			}
+		}
+		p, ok := okProps(r)
+		if !ok {
+			return nil, fmt.Errorf("carddav: PROPFIND %s: missing ok propstat", h)
+		}
+		if !p.ResourceType.IsAddressBook {
 			continue
 		}
 		seen[h] = true

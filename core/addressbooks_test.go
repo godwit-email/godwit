@@ -676,3 +676,73 @@ func TestMultigetPerCardFailureRetainsSyncToken(t *testing.T) {
 	}
 	assert.ElementsMatch(t, []string{"one@example.com", "two@example.com"}, addrs)
 }
+
+func TestHomeSetPropfindPartialFailurePreservesCollections(t *testing.T) {
+	s := newCardDAVService(t, t.TempDir(), false)
+
+	srv := testmail.StartCardDAV(t)
+	srv.PutCollection("work", "Work")
+	srv.PutCollection("archive", "Archive")
+	srv.PutCard("work", "bob", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Bob\r\nEMAIL:bob@example.com\r\nEND:VCARD\r\n")
+	srv.PutCard("archive", "old", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Old\r\nEMAIL:old@example.com\r\nEND:VCARD\r\n")
+
+	ab, err := s.AddAddressBook(bg, AddressBookInput{
+		Preset: PresetCustom, Name: "PartialPropfind", URL: srv.URL(), Username: "alice", Password: "secret",
+	})
+	require.NoError(t, err)
+	var archiveColID int64
+	for _, col := range ab.Collections {
+		if col.Name == "Archive" {
+			archiveColID = col.ID
+		}
+	}
+	require.NotZero(t, archiveColID)
+	require.NoError(t, s.SetAddressBookCollectionEnabled(bg, archiveColID, false))
+
+	// Case 1: transient 500 response on "work" during home-set PROPFIND must fail
+	// before deletion reconciliation so cached "bob@example.com" is not cascaded away.
+	srv.SetCollectionPropfindHook(func(slug string) string {
+		if slug == "work" {
+			return `<D:response><D:href>/dav/addressbooks/alice/work/</D:href><D:status>HTTP/1.1 500 Internal Server Error</D:status></D:response>`
+		}
+		return ""
+	})
+	require.Error(t, s.SyncAddressBook(bg, ab.ID))
+	contacts, err := s.Contacts(bg)
+	require.NoError(t, err)
+	require.Len(t, contacts, 1)
+	assert.Equal(t, "bob@example.com", contacts[0].Address)
+
+	// Case 2: failed resourcetype propstat on disabled "archive" must fail rather
+	// than dropping "archive" and losing its disabled preference on recovery.
+	srv.SetCollectionPropfindHook(func(slug string) string {
+		if slug == "archive" {
+			return `<D:response><D:href>/dav/addressbooks/alice/archive/</D:href>` +
+				`<D:propstat><D:prop><D:displayname>Archive</D:displayname></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat>` +
+				`<D:propstat><D:prop><D:resourcetype/></D:prop><D:status>HTTP/1.1 404 Not Found</D:status></D:propstat>` +
+				`</D:response>`
+		}
+		return ""
+	})
+	require.Error(t, s.SyncAddressBook(bg, ab.ID))
+
+	// Recovery preserves both "work" contacts and "archive" disabled preference.
+	srv.SetCollectionPropfindHook(nil)
+	require.NoError(t, s.SyncAddressBook(bg, ab.ID))
+	books, err := s.ListAddressBooks(bg)
+	require.NoError(t, err)
+	require.Len(t, books, 1)
+	var archiveEnabled *bool
+	for _, col := range books[0].Collections {
+		if col.Name == "Archive" {
+			on := col.Enabled
+			archiveEnabled = &on
+		}
+	}
+	require.NotNil(t, archiveEnabled)
+	assert.False(t, *archiveEnabled, "disabled collection preference must survive transient home-set PROPFIND failure")
+	contacts, err = s.Contacts(bg)
+	require.NoError(t, err)
+	require.Len(t, contacts, 1)
+	assert.Equal(t, "bob@example.com", contacts[0].Address)
+}

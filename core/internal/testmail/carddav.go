@@ -72,6 +72,7 @@ type CardDAV struct {
 	noCollections         bool
 	disableSyncCollection bool
 	multigetHook          func(href string) int
+	colPropfindHook       func(slug string) string
 	colSeq                int
 	collections           map[string]*cardCollection
 	photos                map[string]*photoAsset
@@ -468,6 +469,12 @@ func (s *CardDAV) serve(w http.ResponseWriter, r *http.Request) {
 			slices.SortFunc(cols, func(a, b *cardCollection) int { return a.order - b.order })
 			for _, c := range cols {
 				colHref := "/dav/addressbooks/alice/" + c.slug + "/"
+				if s.colPropfindHook != nil {
+					if customXML := s.colPropfindHook(c.slug); customXML != "" {
+						b.WriteString(customXML)
+						continue
+					}
+				}
 				fmt.Fprintf(&b, `<D:response><D:href>%s</D:href><D:propstat><D:prop>`+
 					`<D:resourcetype><D:collection/><C:addressbook/></D:resourcetype>`+
 					`<D:displayname>%s</D:displayname>`+
@@ -620,4 +627,12 @@ func (s *CardDAV) SetMultigetHook(fn func(href string) int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.multigetHook = fn
+}
+
+// SetCollectionPropfindHook overrides the <D:response> XML emitted for a given
+// collection slug during a home-set PROPFIND when fn returns a non-empty string.
+func (s *CardDAV) SetCollectionPropfindHook(fn func(slug string) string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.colPropfindHook = fn
 }
