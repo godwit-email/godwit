@@ -53,6 +53,10 @@ var toPreBackendSchema = []string{
 	`ALTER TABLE accounts DROP COLUMN recv_path`,
 	`DROP INDEX messages_account_date`,
 	`ALTER TABLE ops DROP COLUMN refusals`,
+	`DROP TABLE address_book_emails`,
+	`DROP TABLE address_book_cards`,
+	`DROP TABLE address_book_collections`,
+	`DROP TABLE address_books`,
 	fmt.Sprintf("PRAGMA user_version = %d", slices.IndexFunc(store.Migrations, func(m []string) bool {
 		return strings.Contains(strings.Join(m, "\n"), "ADD COLUMN server_ref")
 	})),

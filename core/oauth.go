@@ -19,6 +19,9 @@ var grantTTL = 10 * time.Minute
 
 // oauthConfig returns the provider's OAuth settings; tests point it at testoauth.
 var oauthConfig = func(providerID string) (auth.OAuthConfig, error) {
+	if providerID == ProviderGoogleCardDAV {
+		return auth.GoogleCardDAVOAuth(), nil
+	}
 	p, ok := auth.ByID(providerID)
 	if !ok || p.OAuth == nil {
 		return auth.OAuthConfig{}, fmt.Errorf("provider %q does not sign in with OAuth", providerID)
@@ -29,8 +32,9 @@ var oauthConfig = func(providerID string) (auth.OAuthConfig, error) {
 // OAuthClient is the user's own OAuth client for a mail provider without one of
 // Godwit's (Gmail: a Workspace admin's Internal client). The zero value is the provider's.
 type OAuthClient struct {
-	ID, Secret string
-	Account    int64 // reauthorizing: the client that account was added with, if any
+	ID, Secret  string
+	Account     int64 // reauthorizing: the client that account was added with, if any
+	AddressBook int64 // reauthorizing: the client that address book was added with, if any
 }
 
 // BeginOAuth starts an authorization flow for the provider, with client when it
@@ -160,8 +164,11 @@ type oauthGrant struct {
 	client   OAuthClient
 }
 
-// resolveClient replaces c.Account with the client that account was added with.
+// resolveClient replaces c.Account or c.AddressBook with the client that entry was added with.
 func (s *Service) resolveClient(ctx context.Context, c OAuthClient) (OAuthClient, error) {
+	if c.AddressBook != 0 {
+		return s.resolveAddressBookClient(ctx, c.AddressBook)
+	}
 	if c.Account == 0 {
 		return c, nil
 	}

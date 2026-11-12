@@ -115,10 +115,11 @@ type settingsPage struct {
 	query    string // the sidebar's search
 	searched string // query, lowercased, when it last picked the tabs
 
-	models *modelsView
-	ext    *extView
-	labels *labelsView
-	rules  *rulesView
+	models       *modelsView
+	ext          *extView
+	labels       *labelsView
+	rules        *rulesView
+	addressBooks *addressBooksView
 
 	// security rescan
 	secDays     int
@@ -138,14 +139,22 @@ type settingsPage struct {
 func newSettingsPage(a *App) *settingsPage {
 	return &settingsPage{a: a, forms: map[int64]*accountForm{}, usage: map[int64]int64{}, imgSize: -1, boxes: map[int64]*mailbox{}, reauth: map[int64]bool{}, rechecking: map[int64]bool{}, sigDocs: map[int64]sigDoc{},
 		secDays: 30,
-		update:  a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestCapability, testPlugin: a.svc.TestPluginModel, serviceAvatar: a.svc.ModelServiceAvatar}, ext: &extView{a: a, tab: 1}, labels: newLabelsView(a), rules: &rulesView{a: a}}
+		update:  a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestCapability, testPlugin: a.svc.TestPluginModel, serviceAvatar: a.svc.ModelServiceAvatar}, ext: &extView{a: a, tab: 1}, labels: newLabelsView(a), rules: &rulesView{a: a}, addressBooks: newAddressBooksView(a)}
 }
 
-// section is the page shown: an unknown or missing account falls back to
-// the first account, then to General.
+// section is the page shown: an unknown or missing account or address book
+// falls back to the first account, then to General.
 func (p *settingsPage) section() (sec string, acc *core.Account) {
 	a := p.a
 	sec = a.route.Settings
+	if rest, ok := strings.CutPrefix(sec, "addressbook:"); ok {
+		if id, _ := strconv.ParseInt(rest, 10, 64); id > 0 {
+			if _, ok := a.standaloneBook(id); ok {
+				return sec, nil
+			}
+		}
+		sec = ""
+	}
 	if rest, ok := strings.CutPrefix(sec, "account:"); ok || sec == "" {
 		id, _ := strconv.ParseInt(rest, 10, 64)
 		for i := range a.accounts {
@@ -167,6 +176,7 @@ func (p *settingsPage) refresh(hints []events.Event) {
 	a := p.a
 	if hints == nil {
 		p.closeDialog()
+		p.addressBooks.close()
 		p.commitSignatureName() // another page now
 		p.sigDelete = false
 		p.closeCode() // the page shows the signature again when it is back
@@ -252,6 +262,9 @@ func (p *settingsPage) Title() (string, string) {
 	if sig, ok := p.shownSignature(sec); ok {
 		return i18n.T("settings.heading"), i18n.T("settings.signatures") + " · " + sig.Name
 	}
+	if ab, ok := p.shownBook(sec); ok {
+		return i18n.T("settings.heading"), i18n.T("settings.accounts") + " · " + ab.Name
+	}
 	switch {
 	case strings.HasPrefix(sec, "signature:"):
 		sec = "signatures"
@@ -261,13 +274,24 @@ func (p *settingsPage) Title() (string, string) {
 	return i18n.T("settings.heading"), i18n.T("settings." + sec)
 }
 
+// shownBook is the standalone address book whose page sec is.
+func (p *settingsPage) shownBook(sec string) (core.AddressBook, bool) {
+	rest, ok := strings.CutPrefix(sec, "addressbook:")
+	if !ok {
+		return core.AddressBook{}, false
+	}
+	id, _ := strconv.ParseInt(rest, 10, 64)
+	return p.a.standaloneBook(id)
+}
+
 var appSections = []string{"general", "signatures", "models", "labels", "rules", "extensions", "privacy", "labs", "about"}
 
 // sectionIcons are the app sections' sidebar icons.
 var sectionIcons = map[string]string{"general": "settings", "signatures": "quill-pen", "models": "brain-4", "labels": "tag", "rules": "filter", "extensions": "puzzle", "privacy": "shield", "labs": "flask", "about": "info"}
 
-// Sidebar: the accounts, each with its provider's mark and a status dot,
-// then Add account; then the app's pages.
+// Sidebar: the accounts list (mail accounts and address books with no mail
+// account, each with its mark, a status dot and what it syncs), then Add
+// account; then the app's pages.
 func (p *settingsPage) Sidebar(c *ui.Context) {
 	a := p.a
 	t, th := theme.Of(c), c.Theme()
@@ -291,29 +315,31 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 		if hit.accounts {
 			group(i18n.T("settings.accounts"), th.Space(1), th.Space(1.5))
 		}
-		account := func(acc core.Account) {
-			item(accountRoute(acc.ID)).Children(func() {
-				a.accountMark(c, acc)
-				ui.Text(c, accountName(acc)).SingleLine().Grow(1).Shrink(1)
-			})
+		entries := a.accountEntries()
+		entry := func(e accountEntry) {
+			route := accountRoute(e.key().Account)
+			if e.ab != nil {
+				route = addressBookRoute(e.ab.ID)
+			}
+			p.entryRow(c, e, route == cur, route)
 		}
-		switch n := len(a.accounts); {
+		switch n := len(entries); {
 		case !hit.accounts:
 		case hit.email == "" && n > 1: // dragged to reorder; not while a search hides some
-			p.accountOrder.Key = func(i int) any { return a.accounts[i].ID }
-			p.accountOrder.Reorder = func(rows []int, to int) { p.moveAccount(rows[0], to) }
+			p.accountOrder.Key = func(i int) any { return entries[i].key() }
+			p.accountOrder.Reorder = func(rows []int, to int) { p.moveEntry(rows[0], to) }
 			gap := th.Space(0.5) // the sidebar column's
 			kit.List(c, &p.accountOrder, n, func(i int) {
 				var top float32
 				if i > 0 {
 					top = gap
 				}
-				ui.Column(c).FillWidth().Padding(top, 0, 0, 0).Children(func() { account(a.accounts[i]) })
-			}).FillWidth().Height(float32(n)*(th.Space(8)+gap) - gap)
+				ui.Column(c).FillWidth().Padding(top, 0, 0, 0).Children(func() { entry(entries[i]) })
+			}).FillWidth().Height(float32(n)*(th.Space(11)+gap) - gap)
 		default:
-			for _, acc := range a.accounts {
-				if hit.email == "" || accountMatches(acc, hit.email) {
-					account(acc)
+			for _, e := range entries {
+				if hit.email == "" || e.acc != nil && accountMatches(*e.acc, hit.email) || e.ab != nil && strings.Contains(strings.ToLower(e.ab.Name), hit.email) {
+					entry(e)
 				}
 			}
 		}
@@ -368,6 +394,10 @@ func (p *settingsPage) Content(c *ui.Context) {
 						} else {
 							p.signaturesView(c)
 						}
+					case strings.HasPrefix(sec, "addressbook:"):
+						if ab, ok := p.shownBook(sec); ok {
+							p.addressBooks.page(c, ab)
+						}
 					case sec == "privacy":
 						p.privacyView(c)
 					case sec == "masklog":
@@ -392,6 +422,7 @@ func (p *settingsPage) Content(c *ui.Context) {
 		})
 	})
 	p.dialogView(c)
+	p.addressBooks.dialogView(c)
 }
 
 // pageHeading is a page's title and subtitle; action, if any, is a button

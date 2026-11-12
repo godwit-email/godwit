@@ -26,7 +26,6 @@ type Service interface {
 	DraftForApproval(ctx context.Context, approvalID int64) (int64, error)
 	EditProposedRule(ctx context.Context, id int64) (core.Rule, error)
 	FailQuestion(ctx context.Context, conv int64, question string, quoted []int64, reason string) error
-	Find(ctx context.Context, q core.FindQuery) (core.FindResult, error)
 	ForgetImageFailure(urls []string)
 	GetConversation(ctx context.Context, id int64) (core.Conversation, error)
 	GetDraft(ctx context.Context, id int64) (core.Draft, error)
@@ -68,6 +67,7 @@ type Service interface {
 	SystemTranslatorLanguages() []string
 	UndoLastAssist(ctx context.Context, draftID int64) error
 	UpdateSignature(ctx context.Context, id int64, p core.SignaturePatch) (core.Signature, error)
+	CompleteContacts(ctx context.Context, query string, limit int) ([]core.ContactCompletion, error)
 }
 
 var _ Service = (*core.Service)(nil)

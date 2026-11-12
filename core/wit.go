@@ -36,10 +36,12 @@ import (
 // for the model as any tool result is) and changes none.
 // create_skill 只在每次审批后新增本地提示词及展示名、内置图标、UI 绑定；不覆盖或自动运行。
 // list_skills 包含无 UI 绑定和 message/wit Skill；use_skill 只加载提示词，工具仍走原审批。
+// search_contacts only reads local mail-derived and cached address-book contacts
+// (no binary avatars, no network requests).
 // It stays a written list, not derived from what is registered (batchActions
 // included): a tool reaches Ask only by being named here.
 var askTools = []string{
-	"search_mail", "get_message", "get_thread", "read_attachment", "classify_mail",
+	"search_mail", "search_contacts", "get_message", "get_thread", "read_attachment", "classify_mail",
 	"list_skills", "use_skill", "read_skill_file", "create_skill", "get_account_profile", "create_draft",
 	"move_to_trash", "archive_mail", "mark_as_spam", "mark_as_read", "mark_as_unread",
 	"star_mail", "unstar_mail", "unsubscribe", "get_all_links", "open_link_in_browser",
@@ -270,6 +272,12 @@ func (s *Service) registerAskTools() {
 			"limit":      map[string]any{"type": "integer", "minimum": 1, "maximum": maxSearchResult},
 		}, "query"),
 		s.searchMail)
+	read("search_contacts", "Search the user's contacts from synced mail and enabled address books by name, organization, title or email address. Returns matching contacts with their name, organization/title and email addresses.",
+		object(map[string]any{
+			"query": stringProp,
+			"limit": map[string]any{"type": "integer", "minimum": 1, "maximum": maxSearchResult},
+		}, "query"),
+		s.witSearchContacts)
 	read("get_message", "Read one mail by its id (a mail the tools returned).", object(map[string]any{"id": intProp}, "id"), s.getMessage)
 	read("read_attachment", "Read the text of one attachment by its attachment id (listed with the mail): PDF, Word, Excel, PowerPoint, CSV, HTML or plain text. Images and archives are not readable.",
 		object(map[string]any{"id": intProp}, "id"), s.readAttachment)
@@ -512,6 +520,58 @@ func (s *Service) searchMail(ctx context.Context, args json.RawMessage) (any, er
 	}
 	items := s.summaryContext(runOf(ctx).scope, list)
 	return map[string]any{"results": blocks(items, s.cite(ctx, items))}, nil
+}
+
+func (s *Service) witSearchContacts(ctx context.Context, args json.RawMessage) (any, error) {
+	var in struct {
+		Query string `json:"query"`
+		Limit int    `json:"limit,omitempty"`
+	}
+	if err := json.Unmarshal(args, &in); err != nil {
+		return nil, err
+	}
+	if in.Limit <= 0 || in.Limit > maxSearchResult {
+		in.Limit = maxSearchResult
+	}
+	matches, err := s.SearchContacts(ctx, in.Query, in.Limit)
+	if err != nil {
+		return nil, err
+	}
+	if job := runOf(ctx); job != nil && job.scope != nil {
+		job.scope.MarkReadMail()
+	}
+	// A name taken from mail alone is in no header the masker reads: teach it before the result goes out.
+	names := make([]string, 0, len(matches))
+	for _, m := range matches {
+		names = append(names, m.Name)
+	}
+	mk, err := s.masker()
+	if err != nil {
+		return nil, err
+	}
+	if err := mk.LearnNames(names); err != nil {
+		return nil, err
+	}
+	results := make([]map[string]any, 0, len(matches))
+	for i, m := range matches {
+		var lines []string
+		if m.Name != "" {
+			lines = append(lines, "Name: "+m.Name)
+		}
+		if m.Subtitle != "" {
+			lines = append(lines, "Subtitle: "+m.Subtitle)
+		}
+		lines = append(lines, "Address: "+m.Address)
+		if len(m.Addresses) > 1 {
+			lines = append(lines, "Addresses: "+strings.Join(m.Addresses, ", "))
+		}
+		text := strings.Join(lines, "\n")
+		src := fmt.Sprintf("contact:%d", i+1)
+		results = append(results, map[string]any{
+			"contact": ai.Untrusted(src, text, ai.SuspectInjection(text)),
+		})
+	}
+	return map[string]any{"results": results}, nil
 }
 
 type idArgs struct {

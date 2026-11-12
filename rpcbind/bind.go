@@ -57,6 +57,8 @@ var table = []Error{
 	{Code: "account_not_found", Err: core.ErrAccountNotFound},
 	{Code: "bad_account_export", Err: core.ErrBadAccountExport},
 	{Code: "unsupported_export_version", Err: core.ErrUnsupportedExportVersion},
+	{Code: "address_book_not_found", Err: core.ErrAddressBookNotFound},
+	{Code: "no_address_books", Err: core.ErrNoAddressBooks},
 	{Code: "local_archive", Err: core.ErrLocalArchive},
 	{Code: "not_local_archive", Err: core.ErrNotLocalArchive},
 	{Code: "receive_only", Err: core.ErrReceiveOnly},
@@ -225,7 +227,7 @@ var hidden = map[string]bool{
 // by default (testdata/full_methods.txt).
 var uiOnly = map[string]bool{
 	// Remote fetches for the interface's avatars and directory dialog.
-	"SenderAvatar": true, "ModelServiceAvatar": true, "PluginReadme": true,
+	"SenderAvatar": true, "ContactAvatar": true, "ModelServiceAvatar": true, "PluginReadme": true,
 	// Progress streams for the interface's downloads and directory installs.
 	"InstallPluginFromRegistryStream": true, "PrepareModelStream": true, "DownloadRecognitionModelStream": true,
 	// The reader's two-step body load, disk-cached image helpers, and multi-attachment save stream.
@@ -310,8 +312,9 @@ func ListenWith(dataDir string, svc *core.Service, opts ListenOptions) (*rpc.Ser
 
 // audit records full's and ui's Send, SendAcknowledged and their Revision forms (by draft),
 // ResolveOutbox "resend" (by outbox item), Unsubscribe (by message), BeginPluginLogin, the rule
-// calls that make a rule forward (ruleForward) and the extension grants (egressGrant:
-// GrantMCPServer, SetMCPToolTrusted turning trust on, GrantPermission), and mcp's NewDraft (by
+// calls that make a rule forward (ruleForward), the extension grants (egressGrant:
+// GrantMCPServer, SetMCPToolTrusted turning trust on, GrantPermission), and the CardDAV calls that
+// reach or schedule polling of an address-book host (addressBookEgress); and mcp's NewDraft (by
 // source message) and SaveDraft (by draft); SetSettings widening MCPSend is audited inside
 // SetSettings in the same transaction as the write, and nothing else is audited. full's rows are
 // local_api, ui's are ui: a same-user program can present ui-token (ADR 0002). A row it cannot
@@ -319,7 +322,7 @@ func ListenWith(dataDir string, svc *core.Service, opts ListenOptions) (*rpc.Ser
 func audit(svc *core.Service, role, method string, params []json.RawMessage) error {
 	source := map[string]string{rpc.RoleFull: core.AuditLocalAPI, rpc.RoleUI: core.AuditUI, rpc.RoleMCP: core.AuditMCP}[role]
 	if role == rpc.RoleFull || role == rpc.RoleUI {
-		for _, check := range []func(*core.Service, string, []json.RawMessage) (int64, []string, bool, error){ruleForward, egressGrant} {
+		for _, check := range []func(*core.Service, string, []json.RawMessage) (int64, []string, bool, error){ruleForward, egressGrant, addressBookEgress} {
 			target, dests, ok, err := check(svc, method, params)
 			if err != nil {
 				return err
@@ -440,6 +443,88 @@ func egressGrant(_ *core.Service, method string, params []json.RawMessage) (targ
 			return 0, nil, false, nil
 		}
 		return 0, []string{name}, true, nil
+	}
+	return 0, nil, false, nil
+}
+
+// addressBookEgress reports whether a full call reaches a CardDAV server now or
+// leaves an enabled collection that background polling reaches later (ADR 0003).
+// Params that do not decode are left to the dispatcher to refuse.
+func addressBookEgress(svc *core.Service, method string, params []json.RawMessage) (target int64, dests []string, ok bool, err error) {
+	switch method {
+	case "AddAddressBook", "CheckAddressBook":
+		var in core.AddressBookInput
+		if len(params) != 1 || json.Unmarshal(params[0], &in) != nil {
+			return 0, nil, false, nil
+		}
+		if effective := core.AddressBookEffectiveURL(in); effective != "" {
+			dests = []string{effective}
+		}
+		return 0, dests, true, nil
+	case "UpdateAddressBookAuth":
+		var pw, flow string
+		var client core.OAuthClient
+		if len(params) != 4 || json.Unmarshal(params[0], &target) != nil || json.Unmarshal(params[1], &pw) != nil ||
+			json.Unmarshal(params[2], &flow) != nil || json.Unmarshal(params[3], &client) != nil {
+			return 0, nil, false, nil
+		}
+		books, err := svc.ListAddressBooks(context.Background())
+		if err != nil {
+			return 0, nil, false, err
+		}
+		for _, ab := range books {
+			if ab.ID == target && ab.URL != "" {
+				dests = []string{ab.URL}
+				break
+			}
+		}
+		return target, dests, true, nil
+	case "SyncAddressBook":
+		if len(params) != 1 || json.Unmarshal(params[0], &target) != nil {
+			return 0, nil, false, nil
+		}
+		books, err := svc.ListAddressBooks(context.Background())
+		if err != nil {
+			return 0, nil, false, err
+		}
+		for _, ab := range books {
+			if ab.URL == "" {
+				continue
+			}
+			if target > 0 && ab.ID == target {
+				dests = []string{ab.URL}
+				break
+			}
+			if target == 0 {
+				if len(ab.Collections) == 0 { // none left: sync-all still rediscovers it (core abPollable)
+					dests = append(dests, ab.URL)
+				}
+				for _, col := range ab.Collections {
+					if col.Enabled {
+						dests = append(dests, ab.URL)
+						break
+					}
+				}
+			}
+		}
+		return target, dests, true, nil
+	case "SetAddressBookCollectionEnabled":
+		var on bool
+		if len(params) != 2 || json.Unmarshal(params[0], &target) != nil || json.Unmarshal(params[1], &on) != nil || !on {
+			return 0, nil, false, nil
+		}
+		books, err := svc.ListAddressBooks(context.Background())
+		if err != nil {
+			return 0, nil, false, err
+		}
+		for _, ab := range books {
+			for _, col := range ab.Collections {
+				if col.ID == target && ab.URL != "" {
+					return target, []string{ab.URL}, true, nil
+				}
+			}
+		}
+		return target, nil, true, nil
 	}
 	return 0, nil, false, nil
 }

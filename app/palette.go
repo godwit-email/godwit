@@ -391,11 +391,24 @@ func (p *palette) convItems(cs []core.Conversation) []palItem {
 }
 
 func (p *palette) contactItems(cs []core.Contact) []palItem {
+	q := strings.ToLower(strings.TrimSpace(p.hl))
 	out := make([]palItem, 0, len(cs))
 	for _, ct := range cs {
 		addr := ct.Address
+		sub := addr
+		if q != "" && !strings.Contains(strings.ToLower(addr), q) {
+			for _, ea := range ct.Addresses {
+				if strings.Contains(strings.ToLower(ea.Address), q) {
+					sub = ea.Address
+					break
+				}
+			}
+		}
+		if ct.Subtitle != "" {
+			sub += " · " + ct.Subtitle
+		}
 		open := func() { p.a.openContact(addr) }
-		out = append(out, palItem{icon: "user", title: cmp.Or(ct.Name, addr), sub: addr, when: ct.Last, meta: i18n.Tf("palette.contact.mails", ct.Messages),
+		out = append(out, palItem{icon: "user", title: cmp.Or(ct.Name, addr), sub: sub, when: ct.Last, meta: i18n.Tf("palette.contact.mails", ct.Messages),
 			open: open, acts: p.contactActs(addr)})
 	}
 	return out

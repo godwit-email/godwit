@@ -31,15 +31,16 @@ import (
 // in (several on Gmail); FolderID is one of them: the view's folder in a
 // folder's list, else the inbox, another folder, All Mail, in that order.
 type MessageSummary struct {
-	ID, ThreadID, FolderID int64
-	FolderIDs              []int64
-	Subject, From, Snippet string
-	To, Cc                 []string
-	Date                   time.Time
-	Flags                  []string
-	HasAttachments         bool
-	AuthResults            string
-	Security               gomail.SecurityReport
+	ID, ThreadID, FolderID  int64
+	FolderIDs               []int64
+	Subject, From, FromName string
+	Snippet                 string
+	To, Cc                  []string
+	Date                    time.Time
+	Flags                   []string
+	HasAttachments          bool
+	AuthResults             string
+	Security                gomail.SecurityReport
 }
 
 // MessagePage is one page of a flat message list.
@@ -79,6 +80,18 @@ const msgCols = `m.id, m.thread_id, ` + shownFolder + `, m.subject, m.from_addr,
 
 var msgColCount = strings.Count(msgCols, ",") + 1
 
+func explicitHeaderName(from string) string {
+	a, err := mail.ParseAddress(from)
+	if err != nil {
+		return ""
+	}
+	name := strings.TrimSpace(a.Name)
+	if name != "" && !strings.EqualFold(name, a.Address) {
+		return name
+	}
+	return ""
+}
+
 func scanSummary(r []any) MessageSummary {
 	from := store.Str(r[4])
 	authRes := store.Str(r[11])
@@ -92,10 +105,65 @@ func scanSummary(r []any) MessageSummary {
 		sec = gomail.EvaluateSecurity(from, authRes)
 	}
 	return MessageSummary{ID: store.Int(r[0]), ThreadID: store.Int(r[1]), FolderID: store.Int(r[2]),
-		Subject: store.Str(r[3]), From: from, Snippet: gomail.Snippet(store.Str(r[5])), // clean of what an older sync kept
+		Subject: store.Str(r[3]), From: from, FromName: explicitHeaderName(from), Snippet: gomail.Snippet(store.Str(r[5])), // clean of what an older sync kept
 		To: jsonList(store.Str(r[6])), Cc: jsonList(store.Str(r[7])), Date: time.Unix(store.Int(r[8]), 0),
 		Flags: strings.Fields(store.Str(r[9])), HasAttachments: store.Int(r[10]) != 0,
 		AuthResults: authRes, Security: sec, FolderIDs: scanFolderIDs(r[15])}
+}
+
+func (s *Service) addressBookNames(ctx context.Context, keys []string) (map[string]string, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	out := map[string]string{}
+	for c := range slices.Chunk(keys, 200) {
+		args := make([]any, len(c))
+		for i, k := range c {
+			args[i] = k
+		}
+		rows, err := s.db.Query(ctx, `SELECT e.addr_key, c.fn
+			FROM address_book_emails e
+			JOIN address_book_cards c ON c.id = e.card_id
+			JOIN address_book_collections col ON col.id = c.collection_id AND col.enabled = 1
+			JOIN address_books ab ON ab.id = col.address_book_id
+			WHERE e.addr_key IN (`+placeholders(len(c))+`) AND c.fn <> ''
+			ORDER BY `+abPriority+`, col.id ASC, c.href ASC`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range rows.Values {
+			k := store.Str(r[0])
+			if out[k] == "" {
+				out[k] = store.Str(r[1])
+			}
+		}
+	}
+	return out, nil
+}
+
+func (s *Service) fillFromNames(ctx context.Context, items []MessageSummary) error {
+	var keys []string
+	for i := range items {
+		if items[i].FromName != "" {
+			continue
+		}
+		if k := gomail.AddrKey(items[i].From); k != "" && !slices.Contains(keys, k) {
+			keys = append(keys, k)
+		}
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	names, err := s.addressBookNames(ctx, keys)
+	if err != nil {
+		return err
+	}
+	for i := range items {
+		if items[i].FromName == "" {
+			items[i].FromName = names[gomail.AddrKey(items[i].From)]
+		}
+	}
+	return nil
 }
 
 // scanFolderIDs reads a shownFolders column.
@@ -258,6 +326,9 @@ func (s *Service) ListMessages(ctx context.Context, v View, cursor string, limit
 		last := page.Items[limit-1]
 		page.NextCursor = encodeCursor(last.Date.Unix(), last.ID)
 	}
+	if err := s.fillFromNames(ctx, page.Items); err != nil {
+		return MessagePage{}, err
+	}
 	return page, nil
 }
 
@@ -343,6 +414,9 @@ func (s *Service) searchMessages(ctx context.Context, cond string, args []any, l
 	out := make([]MessageSummary, 0, len(rows.Values))
 	for _, r := range rows.Values {
 		out = append(out, scanSummary(r))
+	}
+	if err := s.fillFromNames(ctx, out); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -618,7 +692,11 @@ func (s *Service) readMessage(ctx context.Context, id int64, loadRemoteImages, l
 		return Message{}, fmt.Errorf("message %d not found", id)
 	}
 	r := rows.Values[0]
-	summary := scanSummary(r)
+	summaries := []MessageSummary{scanSummary(r)}
+	if err := s.fillFromNames(ctx, summaries); err != nil {
+		return Message{}, err
+	}
+	summary := summaries[0]
 	msg := Message{MessageSummary: summary, ReplyTo: store.Str(r[msgColCount]), Text: store.Str(r[msgColCount+1]), Truncated: store.Int(r[msgColCount+3]) != 0, InJunk: store.Int(r[msgColCount+4]) != 0, AuthResults: summary.AuthResults, Security: summary.Security}
 	raw := store.Str(r[msgColCount+2])
 	ar, err := s.db.Query(ctx, "SELECT id, filename, content_type, size, inline, content_id FROM attachments WHERE message_id = ? ORDER BY id", id)

@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>方案 A · 邮件账户页里的通讯录</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FAFAFA}
+a{color:#171717}a:hover{color:#0A0A0A}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; box-sizing: border-box; display: flex; gap: 8px; padding: 44px 8px 8px; background: #FAFAFA; border: 1px solid rgba(0,0,0,0.12); border-radius: 12px; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A">
+<nav aria-label="设置" style="width: 248px; flex: none; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; padding: 0 4px">
+<div style="padding: 4px 6px 10px; font-size: 18px; font-weight: 600">设置</div>
+<div style="padding: 4px 8px 6px; font-size: 12px; color: #737373">账户</div>
+<sc-for list="{{accounts}}" as="a" hint-placeholder-count="3">
+<a href="{{a.href}}" aria-current="{{a.current}}" style="{{a.rowStyle}}"><span style="{{a.tileStyle}}">{{a.mark}}</span><span style="flex: 1; min-width: 0; display: flex; flex-direction: column"><span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{a.name}}</span><span style="font-size: 12px; color: #737373; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{a.kind}}</span></span><span style="{{a.dotStyle}}"></span></a>
+</sc-for>
+<a href="AddrBookAAdd.dc.html" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 8px; text-decoration: none; color: #737373"><span style="width: 20px; text-align: center">+</span>添加账户</a>
+<div style="padding: 12px 8px 4px; font-size: 12px; color: #737373">应用</div>
+<sc-for list="{{apps}}" as="i" hint-placeholder-count="7">
+<a href="#" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A"><span aria-hidden="true" style="width: 14px; height: 14px; margin: 0 1px; box-sizing: border-box; border: 1.5px solid #737373; border-radius: 4px"></span>{{i}}</a>
+</sc-for>
+</nav>
+<div style="flex: 1; min-width: 0; display: flex; overflow: auto; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 12px; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05)">
+<main style="flex: 1 1 auto; align-self: flex-start; min-width: 0; max-width: 760px; margin: 0 auto; padding: 32px; display: flex; flex-direction: column; gap: 32px">
+<div style="display: flex; align-items: center; gap: 16px">
+<span style="width: 48px; height: 48px; flex: none; border-radius: 12px; background: #0A84FF; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 600">iC</span>
+<span style="display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0">
+<h1 style="margin: 0; font-size: 29px; line-height: 1.25; font-weight: 600">you@icloud.com</h1>
+<span style="display: flex; align-items: center; gap: 8px; color: #737373">iCloud · 邮件与通讯录<span style="font-size: 12px; padding: 2px 8px; border-radius: 4px; color: #008236; background: #F0FDF4">已同步 · 刚刚</span></span>
+</span>
+</div>
+<section style="display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; padding: 0 16px; font-size: 14px; font-weight: 600">基本信息</h2>
+<div style="border-radius: 12px; background: #F5F5F5; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<dc-import name="SettingsRow" label="发件人名称" desc="收件人看到的名字" control="input" value="[你的名字]" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="同步状态" desc="已同步 · 刚刚 · 12 封未读" control="button" action="立即同步" hint-size="100%,48px"></dc-import>
+</div></div>
+<span style="padding: 0 16px; font-size: 12px; color: #737373">签名、邮箱行为等其余邮件设置不变，此处省略。</span>
+</section>
+<section aria-labelledby="ab-h" style="display: flex; flex-direction: column; gap: 10px">
+<h2 id="ab-h" style="margin: 0; padding: 0 16px; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px">通讯录<span style="font-size: 12px; font-weight: 500; padding: 1px 6px; border-radius: 4px; background: #EFF6FF; color: #1447E6">新</span></h2>
+<div style="border-radius: 12px; background: #F5F5F5; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<dc-import name="SettingsRow" label="同步 iCloud 通讯录" desc="312 张名片 · 用这个账户的应用专用密码读取，只读，不写回 iCloud" control="switch" on="{{yes}}" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="通讯录同步" desc="上次同步：刚刚 · 每 30 分钟检查一次" control="button" action="立即同步" hint-size="100%,48px"></dc-import>
+</div></div>
+<span style="padding: 0 16px; font-size: 12px; color: #737373">iCloud 只有一个地址簿，所以只有这一个开关；你在「通讯录」App 里建的分组不单独列出。姓名、公司职位和头像会出现在联系人、写信补全和读信里。同一个人在几个账户的通讯录里都有时，按左侧账户的顺序取，拖动账户即可调整。</span>
+</section>
+<section style="display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; padding: 0 16px; font-size: 14px; font-weight: 600">登录与服务器</h2>
+<div style="border-radius: 12px; background: #F5F5F5; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<dc-import name="SettingsRow" label="登录方式" desc="应用专用密码 · 邮件和通讯录共用，保存在系统钥匙串" control="button" action="更新密码" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="IMAP" control="value" value="imap.mail.me.com:993 · SSL/TLS" mono="{{yes}}" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="CardDAV" control="value" value="contacts.icloud.com" mono="{{yes}}" hint-size="100%,48px"></dc-import>
+</div></div>
+</section>
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var row = function (on) {
+      return 'display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 4px 8px; box-sizing: border-box; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: ' + (on ? '#EDEDED' : 'transparent');
+    };
+    var tile = function (bg) {
+      return 'width: 20px; height: 20px; flex: none; border-radius: 5px; background: ' + bg + '; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600';
+    };
+    var accounts = [
+      { name: 'you@icloud.com', kind: '邮件 · 通讯录', mark: 'iC', bg: '#0A84FF', href: 'AddrBookA.dc.html', on: true },
+      { name: 'work@company.example', kind: '邮件', mark: 'O', bg: '#0F6CBD', href: '#', on: false },
+      { name: '公司通讯录', kind: '通讯录 · Nextcloud', mark: 'N', bg: '#0082C9', href: 'AddrBookAOnly.dc.html', on: false }
+    ];
+    return {
+      yes: true,
+      accounts: accounts.map(function (a) {
+        return Object.assign({}, a, {
+          current: a.on ? 'page' : 'false',
+          rowStyle: row(a.on),
+          tileStyle: tile(a.bg),
+          dotStyle: 'width: 6px; height: 6px; flex: none; border-radius: 50%; background: #00A63E'
+        });
+      }),
+      apps: ['通用', '签名', '规则', '智能', '标签', '扩展', '隐私与安全', '关于'],
+      books: [
+        { name: '联系人', count: '312 张名片', on: true },
+        { name: '家人', count: '24 张名片', on: true },
+        { name: '旧同事', count: '89 张名片 · 关闭后本机缓存立即清除', on: false }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

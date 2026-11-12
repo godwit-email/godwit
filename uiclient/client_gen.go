@@ -21,6 +21,10 @@ func (cl *Client) AddAccount(ctx context.Context, in core.AccountInput) (core.Ac
 	return call[core.Account](cl, ctx, "AddAccount", in)
 }
 
+func (cl *Client) AddAddressBook(ctx context.Context, in core.AddressBookInput) (core.AddressBook, error) {
+	return call[core.AddressBook](cl, ctx, "AddAddressBook", in)
+}
+
 func (cl *Client) AddAttachmentAt(ctx context.Context, draftID int64, revision int64, srcPath string) (core.DraftAttachment, int64, error) {
 	return call2[core.DraftAttachment, int64](cl, ctx, "AddAttachmentAt", draftID, revision, srcPath)
 }
@@ -155,6 +159,14 @@ func (cl *Client) ClearMaskingLog(ctx context.Context) error {
 
 func (cl *Client) CompactConversation(ctx context.Context, id int64) error {
 	return callErr(cl, ctx, "CompactConversation", id)
+}
+
+func (cl *Client) CompleteContacts(ctx context.Context, query string, limit int) ([]core.ContactCompletion, error) {
+	return call[[]core.ContactCompletion](cl, ctx, "CompleteContacts", query, limit)
+}
+
+func (cl *Client) ContactAvatar(ctx context.Context, addr string) (core.Avatar, error) {
+	return call[core.Avatar](cl, ctx, "ContactAvatar", addr)
 }
 
 func (cl *Client) ContactDetail(ctx context.Context, addr string) (core.ContactDetail, error) {
@@ -343,6 +355,14 @@ func (cl *Client) ListAccounts(ctx context.Context) ([]core.Account, error) {
 
 func (cl *Client) ListActions(ctx context.Context, kind string) ([]core.ActionInfo, error) {
 	return call[[]core.ActionInfo](cl, ctx, "ListActions", kind)
+}
+
+func (cl *Client) ListAddressBookPresets() []core.AddressBookPreset {
+	return callVal[[]core.AddressBookPreset](cl, context.Background(), "ListAddressBookPresets")
+}
+
+func (cl *Client) ListAddressBooks(ctx context.Context) ([]core.AddressBook, error) {
+	return call[[]core.AddressBook](cl, ctx, "ListAddressBooks")
 }
 
 func (cl *Client) ListApprovals(ctx context.Context, conversationID int64) ([]core.Approval, error) {
@@ -581,6 +601,10 @@ func (cl *Client) RemoveAccount(ctx context.Context, id int64) error {
 	return callErr(cl, ctx, "RemoveAccount", id)
 }
 
+func (cl *Client) RemoveAddressBook(ctx context.Context, id int64) error {
+	return callErr(cl, ctx, "RemoveAddressBook", id)
+}
+
 func (cl *Client) RemoveAttachmentAt(ctx context.Context, draftID int64, attachmentID int64, revision int64) (int64, error) {
 	return call[int64](cl, ctx, "RemoveAttachmentAt", draftID, attachmentID, revision)
 }
@@ -597,12 +621,16 @@ func (cl *Client) RemoveModelService(ctx context.Context, id int64) error {
 	return callErr(cl, ctx, "RemoveModelService", id)
 }
 
+func (cl *Client) RenameAddressBook(ctx context.Context, id int64, name string) error {
+	return callErr(cl, ctx, "RenameAddressBook", id, name)
+}
+
 func (cl *Client) RenameLocalFolder(ctx context.Context, folderID int64, name string) error {
 	return callErr(cl, ctx, "RenameLocalFolder", folderID, name)
 }
 
-func (cl *Client) ReorderAccounts(ctx context.Context, ids []int64) error {
-	return callErr(cl, ctx, "ReorderAccounts", ids)
+func (cl *Client) ReorderAccountEntries(ctx context.Context, entries []core.AccountEntry) error {
+	return callErr(cl, ctx, "ReorderAccountEntries", entries)
 }
 
 func (cl *Client) ReorderLabels(ctx context.Context, ids []int64) error {
@@ -725,6 +753,10 @@ func (cl *Client) SenderAvatar(ctx context.Context, messageID int64, allowRemote
 	return call[core.Avatar](cl, ctx, "SenderAvatar", messageID, allowRemote)
 }
 
+func (cl *Client) SetAddressBookCollectionEnabled(ctx context.Context, collectionID int64, enabled bool) error {
+	return callErr(cl, ctx, "SetAddressBookCollectionEnabled", collectionID, enabled)
+}
+
 func (cl *Client) SetConversationModel(ctx context.Context, id int64, ref string, effort string) error {
 	return callErr(cl, ctx, "SetConversationModel", id, ref, effort)
 }
@@ -829,6 +861,10 @@ func (cl *Client) SubscribeConversation(id int64) (<-chan core.WitEvent, func())
 	return streamStop[core.WitEvent](cl, "SubscribeConversation", id)
 }
 
+func (cl *Client) SyncAddressBook(ctx context.Context, id int64) error {
+	return callErr(cl, ctx, "SyncAddressBook", id)
+}
+
 func (cl *Client) SyncNow(ctx context.Context, accountID int64) error {
 	return callErr(cl, ctx, "SyncNow", accountID)
 }
@@ -907,6 +943,10 @@ func (cl *Client) UntrustImageSender(ctx context.Context, addr string) error {
 
 func (cl *Client) UpdateAccount(ctx context.Context, id int64, p core.AccountPatch) (core.Account, error) {
 	return call[core.Account](cl, ctx, "UpdateAccount", id, p)
+}
+
+func (cl *Client) UpdateAddressBookAuth(ctx context.Context, id int64, password string, oauthFlowID string, client core.OAuthClient) (core.AddressBook, error) {
+	return call[core.AddressBook](cl, ctx, "UpdateAddressBookAuth", id, password, oauthFlowID, client)
 }
 
 func (cl *Client) UpdateLabel(ctx context.Context, id int64, in core.LabelInput) (core.Label, error) {

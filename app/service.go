@@ -140,7 +140,6 @@ type Service interface {
 	RemoveModelFiles(ctx context.Context, ref string) error
 	RemoveModelService(ctx context.Context, id int64) error
 	RenameLocalFolder(ctx context.Context, folderID int64, name string) error
-	ReorderAccounts(ctx context.Context, ids []int64) error
 	ReorderLabels(ctx context.Context, ids []int64) error
 	ReorderRules(ctx context.Context, ids []int64) error
 	RescanLabels(ctx context.Context, days int, all bool) (int, error)
@@ -213,6 +212,16 @@ type Service interface {
 	ViewGroupPage(ctx context.Context, id int64, groupID, cursor string, limit int) (core.ViewGroupPage, error)
 	ViewTemplates(ctx context.Context) ([]core.ViewTemplate, error)
 	ViewWhy(ctx context.Context, id, threadID int64) (core.ViewReason, error)
+	AddAddressBook(ctx context.Context, in core.AddressBookInput) (core.AddressBook, error)
+	ContactAvatar(ctx context.Context, addr string) (core.Avatar, error)
+	ListAddressBookPresets() []core.AddressBookPreset
+	ListAddressBooks(ctx context.Context) ([]core.AddressBook, error)
+	RemoveAddressBook(ctx context.Context, id int64) error
+	RenameAddressBook(ctx context.Context, id int64, name string) error
+	ReorderAccountEntries(ctx context.Context, entries []core.AccountEntry) error
+	SetAddressBookCollectionEnabled(ctx context.Context, collectionID int64, enabled bool) error
+	SyncAddressBook(ctx context.Context, id int64) error
+	UpdateAddressBookAuth(ctx context.Context, id int64, password, oauthFlowID string, client core.OAuthClient) (core.AddressBook, error)
 }
 
 var _ Service = (*core.Service)(nil)

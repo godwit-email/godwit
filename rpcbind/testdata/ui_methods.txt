@@ -3,6 +3,7 @@
 # TestUISurfacePinned fails until rpcbind.ExposeUI matches full_methods.txt + ui_methods.txt.
 CachedImage
 CachedImageDims
+ContactAvatar
 DownloadRecognitionModelStream
 ExportAccountsFile
 FetchAttachmentsStream

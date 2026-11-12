@@ -539,6 +539,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 		})
 	}
 	settingsSection(c, i18n.T("settings.account.basic"), "", basic...)
+	p.addressBooks.accountSection(c, acc)
 	usage := "…"
 	if n, ok := p.usage[acc.ID]; ok {
 		usage = formatBytes(n)
@@ -619,6 +620,9 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	}
 	if pr := acc.Sending.Protocol; pr != auth.EWS && pr != auth.JMAP && pr != auth.GmailAPI && acc.Receiving.Protocol != auth.Graph { // EWS, JMAP, Graph and Gmail API send through the server they receive from
 		login = append(login, server("SMTP", acc.Sending.Host, acc.Sending.Port, acc.Sending.Security, receiveOnlyHelp(acc)))
+	}
+	if ab, ok := a.linkedBook(acc.ID); ok {
+		login = append(login, row("CardDAV", "", func() { kit.Text(c, abHost(ab), t.Text.Sm).Font(theme.Mono).TextColor(t.Muted) }))
 	}
 	if acc.ReceiveOnly { // OAuth has no servers to change: it tries SMTP again as it is
 		login = append(login, row(i18n.T("settings.account.receive_only"), "", func() {
@@ -1438,30 +1442,4 @@ func (p *settingsPage) mailboxSection(c *ui.Context, id int64) {
 		rows = []func(){role(0), role(1), role(2), role(3), role(4)}
 	}
 	settingsSection(c, i18n.T("settings.account.mailbox"), i18n.T("settings.account.mailbox.help"), rows...)
-}
-
-// moveAccount puts the account at i before the one at to (len for the end),
-// the others in order: at once here, then saved. A failed save reloads the
-// order saved.
-func (p *settingsPage) moveAccount(i, to int) {
-	a := p.a
-	if to > i {
-		to-- // i is taken out first
-	}
-	if to == i {
-		return
-	}
-	moved := slices.Clone(a.accounts)
-	acc := moved[i]
-	a.accounts = slices.Insert(slices.Delete(moved, i, i+1), to, acc)
-	ids := make([]int64, len(a.accounts))
-	for k, acc := range a.accounts {
-		ids[k] = acc.ID
-	}
-	a.writes.Chain("accounts", func(ctx context.Context) error { return a.svc.ReorderAccounts(ctx, ids) }, func(err error) {
-		if err != nil {
-			a.toastErr(err)
-			a.load()
-		}
-	})
 }

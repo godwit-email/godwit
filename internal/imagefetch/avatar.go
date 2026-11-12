@@ -96,7 +96,7 @@ func CheckAvatarImage(data []byte, source string) (out []byte, format string, wi
 			err = fmt.Errorf("%w: %w", ErrAvatarMiss, err)
 		}
 	}()
-	if source != "bimi" && source != "favicon" && source != "gravatar" {
+	if source != "bimi" && source != "favicon" && source != "gravatar" && source != "carddav" {
 		return nil, "", 0, 0, ErrFormat
 	}
 	if len(data) > MaxAvatarBytes {
@@ -107,6 +107,9 @@ func CheckAvatarImage(data []byte, source string) (out []byte, format string, wi
 			return nil, "", 0, 0, ErrFormat
 		}
 		w, h, e := avatarSVG(data, source == "bimi")
+		if e == nil && source == "carddav" && (w > 1024 || h > 1024) {
+			return nil, "", 0, 0, ErrPixels
+		}
 		return data, "svg", w, h, e
 	}
 	if source == "bimi" {

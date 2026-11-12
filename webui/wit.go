@@ -417,9 +417,9 @@ func searchMail(ctx context.Context, svc Service, query string) ([]MailHit, erro
 	return out, keyed(err)
 }
 
-// SearchContacts is the address fields' completion: the contacts whose
-// address or any name they used holds query (core Find, every account),
-// latest first; none for blank query.
+// SearchContacts is the address fields' completion: single-address candidates
+// expanded from matching contacts (preferred and recent-mail first); none for
+// blank query.
 func (p *ComposePage) SearchContacts(ctx context.Context, query string) ([]ContactHit, error) {
 	_, svc, s, err := p.open(ctx)
 	if err != nil {
@@ -430,8 +430,8 @@ func (p *ComposePage) SearchContacts(ctx context.Context, query string) ([]Conta
 	if strings.TrimSpace(query) == "" {
 		return out, nil
 	}
-	res, err := svc.Find(ctx, core.FindQuery{SearchQuery: core.SearchQuery{Text: query}, Kind: "contact", Limit: quoteHits})
-	for _, c := range res.Contacts.Items {
+	hits, err := svc.CompleteContacts(ctx, query, quoteHits)
+	for _, c := range hits {
 		out = append(out, ContactHit{Name: c.Name, Address: c.Address, Entry: mail.FormatAddress(c.Name, c.Address)})
 	}
 	return out, keyed(err)

@@ -73,7 +73,7 @@ func cacheFiles(dataDir string) int {
 // The mcp role's whole surface, compared with every method of *core.Service.
 func TestMCPAllowlistContents(t *testing.T) {
 	want := []string{"GetDraft", "GetMessageText", "GetThread", "ListAccounts", "ListDrafts", "ListFolders",
-		"ListMessages", "ListThreads", "NewDraft", "RequestMCPSend", "SaveDraft", "Search"}
+		"ListMessages", "ListThreads", "NewDraft", "RequestMCPSend", "SaveDraft", "Search", "SearchContacts"}
 	newMode := []json.RawMessage{json.RawMessage(`1`), json.RawMessage(`"new"`), json.RawMessage(`0`)}
 	var got []string
 	for m := range reflect.TypeFor[*core.Service]().Methods() {
@@ -196,6 +196,10 @@ func TestMCPRoleAllowlist(t *testing.T) {
 		{"Unsubscribe", []any{msg.ID}},
 		{"UnsubscribeMethod", []any{msg.ID}},
 		{"NewMailtoDraft", []any{acc.ID, "mailto:eve@example.com"}},
+		{"AddAddressBook", []any{core.AddressBookInput{URL: "https://127.0.0.1:1"}}},
+		{"RemoveAddressBook", []any{int64(1)}},
+		{"SyncAddressBook", []any{int64(0)}},
+		{"CompleteContacts", []any{"bob", 10}},
 	} {
 		before := state()
 		err := c.Call(ctx, call.method, nil, call.args...)
@@ -210,6 +214,10 @@ func TestMCPRoleAllowlist(t *testing.T) {
 	var got core.MessageText
 	require.NoError(t, c.Call(ctx, "GetMessageText", &got, msg.ID))
 	assert.Contains(t, got.Text, "Meet on Friday.")
+	var contacts []core.ContactMatch
+	require.NoError(t, c.Call(ctx, "SearchContacts", &contacts, "bob", 10))
+	require.Len(t, contacts, 1)
+	assert.Equal(t, "bob@example.com", contacts[0].Address)
 	assert.Zero(t, cacheFiles(e.DataDir))
 }
 
@@ -884,4 +892,90 @@ func TestListenWithExternalToggle(t *testing.T) {
 		t.Fatal("RoleUI Subscribe stream did not receive event")
 	}
 	assert.Empty(t, auditRows(t, e.DataDir))
+}
+
+// CardDAV calls over full that reach a server now or enable unattended polling
+// record destination-aware audit rows, and stop before dialing when audit_log fails.
+func TestAuditAddressBookEgress(t *testing.T) {
+	logs(t)
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	ctx := t.Context()
+	srv := e.StartCardDAV(t)
+	srv.PutCard("contacts", "one", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:One\r\nEMAIL:one@example.com\r\nEND:VCARD\r\n")
+	host := strings.TrimPrefix(srv.URL(), "https://")
+
+	dir := listen(t, e.Svc)
+	full := dial(t, dir, rpc.RoleFull)
+
+	in := core.AddressBookInput{Preset: core.PresetCustom, Name: "Corp", URL: srv.URL(), Username: "alice", Password: "secret"}
+	require.NoError(t, full.Call(ctx, "CheckAddressBook", nil, in))
+	// A non-custom preset accompanied by an explicit URL override must audit the
+	// effective override host that CheckAddressBook actually dials, not the preset default.
+	overrideIn := core.AddressBookInput{Preset: core.PresetICloud, URL: srv.URL(), Username: "alice", Password: "secret"}
+	require.NoError(t, full.Call(ctx, "CheckAddressBook", nil, overrideIn))
+	var ab core.AddressBook
+	require.NoError(t, full.Call(ctx, "AddAddressBook", &ab, in))
+	require.Len(t, ab.Collections, 1)
+	colID := ab.Collections[0].ID
+
+	// Disabling a collection stops polling (not audited); re-enabling resumes polling (audited).
+	require.NoError(t, full.Call(ctx, "SetAddressBookCollectionEnabled", nil, colID, false))
+	require.NoError(t, full.Call(ctx, "SetAddressBookCollectionEnabled", nil, colID, true))
+	require.NoError(t, full.Call(ctx, "SyncAddressBook", nil, ab.ID))
+	require.NoError(t, full.Call(ctx, "SyncAddressBook", nil, int64(0)))
+
+	// Negative IDs are rejected without syncing all enabled address books.
+	reqsBeforeNeg := len(srv.Requests())
+	assert.ErrorContains(t, full.Call(ctx, "SyncAddressBook", nil, int64(-1)), core.ErrAddressBookNotFound.Error())
+	assert.Len(t, srv.Requests(), reqsBeforeNeg, "negative ID must not trigger sync-all")
+
+	require.NoError(t, full.Call(ctx, "UpdateAddressBookAuth", nil, ab.ID, "secret", "", core.OAuthClient{}))
+
+	// Linking a mail account's address book signs in to the preset's host with
+	// the account's password: audited with that host. Reordering reaches no server.
+	core.SetAddressBookPresetURLForTest(t, core.PresetICloud, srv.URL())
+	ih, ip, sh, sp, user, pass := e.StartServers(t)
+	acc, err := e.Svc.AddAccount(ctx, core.AccountInput{Email: "alice@icloud.com", Username: user, Password: pass, Provider: "icloud",
+		Receiving: core.Server{Host: ih, Port: ip, Security: core.SecurityNone}, Sending: core.Server{Host: sh, Port: sp, Security: core.SecurityNone}})
+	require.NoError(t, err)
+	var linked core.AddressBook
+	require.NoError(t, full.Call(ctx, "AddAddressBook", &linked, core.AddressBookInput{Account: acc.ID, Preset: core.PresetICloud}))
+	assert.Equal(t, acc.ID, linked.Account)
+	require.NoError(t, full.Call(ctx, "ReorderAccountEntries", nil, []core.AccountEntry{{AddressBook: ab.ID}, {Account: acc.ID}}))
+
+	assert.Equal(t, [][]any{
+		{"local_api", "CheckAddressBook", nil, host},
+		{"local_api", "CheckAddressBook", nil, host},
+		{"local_api", "AddAddressBook", nil, host},
+		{"local_api", "SetAddressBookCollectionEnabled", colID, host},
+		{"local_api", "SyncAddressBook", ab.ID, host},
+		{"local_api", "SyncAddressBook", nil, host},
+		{"local_api", "SyncAddressBook", int64(-1), ""},
+		{"local_api", "UpdateAddressBookAuth", ab.ID, host},
+		{"local_api", "AddAddressBook", nil, host},
+	}, auditRows(t, e.DataDir))
+
+	// Dropping audit_log stops egress before any request reaches the CardDAV server.
+	db, err := store.Open(ctx, filepath.Join(e.DataDir, "godwit.db"))
+	require.NoError(t, err)
+	_, err = db.Execute(ctx, "DROP TABLE audit_log")
+	require.NoError(t, err)
+	db.Close()
+
+	reqsBefore := len(srv.Requests())
+	for _, call := range []struct {
+		method string
+		args   []any
+	}{
+		{"CheckAddressBook", []any{in}},
+		{"AddAddressBook", []any{in}},
+		{"SyncAddressBook", []any{ab.ID}},
+		{"UpdateAddressBookAuth", []any{ab.ID, "secret", "", core.OAuthClient{}}},
+		{"SetAddressBookCollectionEnabled", []any{colID, true}},
+	} {
+		var we *rpc.WireError
+		require.ErrorAs(t, full.Call(ctx, call.method, nil, call.args...), &we, call.method)
+		assert.Equal(t, rpc.CodeInternal, we.Code, call.method)
+	}
+	assert.Len(t, srv.Requests(), reqsBefore, "no network traffic when audit_log fails")
 }

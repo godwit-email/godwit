@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>方案 C · 账户页分邮件和通讯录标签</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@500&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FAFAFA}
+a{color:#171717}a:hover{color:#0A0A0A}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; box-sizing: border-box; display: flex; gap: 8px; padding: 44px 8px 8px; background: #FAFAFA; border: 1px solid rgba(0,0,0,0.12); border-radius: 12px; overflow: hidden; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A">
+<nav aria-label="设置" style="width: 248px; flex: none; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; padding: 0 4px">
+<div style="padding: 4px 6px 10px; font-size: 18px; font-weight: 600">设置</div>
+<div style="padding: 4px 8px 6px; font-size: 12px; color: #737373">账户</div>
+<sc-for list="{{accounts}}" as="a" hint-placeholder-count="3">
+<a href="#" aria-current="{{a.current}}" style="{{a.rowStyle}}"><span style="{{a.tileStyle}}">{{a.mark}}</span><span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{a.name}}</span><span style="width: 6px; height: 6px; flex: none; border-radius: 50%; background: #00A63E"></span></a>
+</sc-for>
+<a href="#" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 8px; text-decoration: none; color: #737373"><span style="width: 20px; text-align: center">+</span>添加账户</a>
+<div style="padding: 12px 8px 4px; font-size: 12px; color: #737373">应用</div>
+<sc-for list="{{apps}}" as="i" hint-placeholder-count="7">
+<a href="#" style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A"><span aria-hidden="true" style="width: 14px; height: 14px; margin: 0 3px; box-sizing: border-box; border: 1.5px solid #737373; border-radius: 4px"></span>{{i}}</a>
+</sc-for>
+</nav>
+<div style="flex: 1; min-width: 0; display: flex; overflow: auto; background: #FFFFFF; border: 1px solid #E5E5E5; border-radius: 12px; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05)">
+<main style="flex: 1 1 auto; align-self: flex-start; min-width: 0; max-width: 760px; margin: 0 auto; padding: 32px; display: flex; flex-direction: column; gap: 24px">
+<div style="display: flex; align-items: center; gap: 16px">
+<span style="width: 48px; height: 48px; flex: none; border-radius: 12px; background: #0A84FF; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 600">iC</span>
+<span style="display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0">
+<h1 style="margin: 0; font-size: 29px; line-height: 1.25; font-weight: 600">you@icloud.com</h1>
+<span style="color: #737373">iCloud</span>
+</span>
+</div>
+<div role="tablist" aria-label="账户内容" style="display: flex; gap: 4px; padding: 4px; border-radius: 10px; background: #F5F5F5; align-self: flex-start">
+<button type="button" role="tab" aria-selected="false" style="height: 32px; padding: 0 16px; border: 0; border-radius: 8px; background: transparent; color: #525252">邮件</button>
+<button type="button" role="tab" aria-selected="true" style="height: 32px; padding: 0 16px; border: 0; border-radius: 8px; background: #FFFFFF; color: #0A0A0A; box-shadow: 0 1px 2px rgba(0,0,0,0.08)">通讯录</button>
+<button type="button" role="tab" aria-selected="false" style="height: 32px; padding: 0 16px; border: 0; border-radius: 8px; background: transparent; color: #525252">登录与服务器</button>
+</div>
+<section style="display: flex; flex-direction: column; gap: 10px">
+<div style="border-radius: 12px; background: #F5F5F5; overflow: hidden"><div style="display: flex; flex-direction: column; margin-top: -1px">
+<dc-import name="SettingsRow" label="同步 iCloud 通讯录" desc="312 张名片 · 只读，不写回 iCloud" control="switch" on="{{yes}}" hint-size="100%,48px"></dc-import>
+<dc-import name="SettingsRow" label="通讯录同步" desc="上次同步：刚刚 · 每 30 分钟检查一次" control="button" action="立即同步" hint-size="100%,48px"></dc-import>
+</div></div>
+<span style="padding: 0 16px; font-size: 12px; color: #737373">「邮件」标签放现在账户页的全部内容：基本信息、签名、同步、邮箱行为。只有通讯录的账户不显示「邮件」标签。</span>
+</section>
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var tile = function (bg) {
+      return 'width: 20px; height: 20px; flex: none; border-radius: 5px; background: ' + bg + '; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600';
+    };
+    var acc = [
+      { name: 'you@icloud.com', mark: 'iC', bg: '#0A84FF', on: true },
+      { name: 'work@company.example', mark: 'O', bg: '#0F6CBD', on: false },
+      { name: '公司通讯录', mark: 'N', bg: '#0082C9', on: false }
+    ];
+    return {
+      yes: true,
+      accounts: acc.map(function (a) {
+        return {
+          name: a.name, mark: a.mark, tileStyle: tile(a.bg), current: a.on ? 'page' : 'false',
+          rowStyle: 'display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 8px; text-decoration: none; color: #0A0A0A; background: ' + (a.on ? '#EDEDED' : 'transparent')
+        };
+      }),
+      apps: ['通用', '签名', '规则', '智能', '标签', '扩展', '隐私与安全', '关于'],
+      books: [
+        { name: '联系人', count: '312 张名片', on: true },
+        { name: '家人', count: '24 张名片', on: true },
+        { name: '旧同事', count: '89 张名片', on: false }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

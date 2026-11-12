@@ -5,23 +5,24 @@ package events
 import "sync"
 
 const (
-	MessageReceived   = "message.received"
-	MessagesChanged   = "messages.changed"
-	SyncStarted       = "sync.started"
-	SyncFinished      = "sync.finished"
-	SyncFailed        = "sync.failed"
-	OutboxChanged     = "outbox.changed"
-	SettingsChanged   = "settings.changed"
-	SkillsChanged     = "skills.changed"
-	ApprovalsChanged  = "approvals.changed"
-	RunsChanged       = "runs.changed" // a run of an ask conversation started or ended
-	PluginsChanged    = "plugins.changed"
-	MCPChanged        = "mcp.changed"
-	LabelsChanged     = "labels.changed"
-	SignaturesChanged = "signatures.changed"
-	ModelsChanged     = "models.changed"    // a plugin model's files were downloaded or removed
-	MCPSendsChanged   = "mcp_sends.changed" // godwit mcp's send requests waiting for the user changed
-	ImportProgress    = "import.progress"   // an .eml import into AccountID handled Done of Total files
+	MessageReceived     = "message.received"
+	MessagesChanged     = "messages.changed"
+	SyncStarted         = "sync.started"
+	SyncFinished        = "sync.finished"
+	SyncFailed          = "sync.failed"
+	OutboxChanged       = "outbox.changed"
+	SettingsChanged     = "settings.changed"
+	SkillsChanged       = "skills.changed"
+	ApprovalsChanged    = "approvals.changed"
+	RunsChanged         = "runs.changed" // a run of an ask conversation started or ended
+	PluginsChanged      = "plugins.changed"
+	MCPChanged          = "mcp.changed"
+	LabelsChanged       = "labels.changed"
+	SignaturesChanged   = "signatures.changed"
+	ModelsChanged       = "models.changed"        // a plugin model's files were downloaded or removed
+	MCPSendsChanged     = "mcp_sends.changed"     // godwit mcp's send requests waiting for the user changed
+	ImportProgress      = "import.progress"       // an .eml import into AccountID handled Done of Total files
+	AddressBooksChanged = "address_books.changed" // address books, collections, order or synced cards changed
 	// NotificationClicked: the backend got a click on notification Notification
 	// while a ui client is connected; the interface opens what it shows. With
 	// none, the backend starts the interface for it instead.
