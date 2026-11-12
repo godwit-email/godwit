@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/rpc"
 	"github.com/godwit-email/godwit/rpcbind"
 )
@@ -155,11 +156,14 @@ func stream[T any](c *Client, ctx context.Context, method string, args ...any) (
 	}
 	_, wit := any(*new(T)).(core.WitEvent)
 	var drop func(json.RawMessage) bool
-	if wit { // a stalled forwarder below drops old text on the rpc side too, never a run's end
+	switch any(*new(T)).(type) {
+	case core.WitEvent: // a stalled forwarder below drops old text on the rpc side too, never a run's end
 		drop = func(b json.RawMessage) bool {
 			var ev core.WitEvent
 			return json.Unmarshal(b, &ev) == nil && witText(ev.Kind)
 		}
+	case events.Event: // lossy but live, as the bus is in process: a slow reader loses the oldest, never the stream
+		drop = func(json.RawMessage) bool { return true }
 	}
 	raw, cancel, err := c.rpc.StreamDropping(ctx, method, drop, args...)
 	if err != nil {

@@ -281,6 +281,35 @@ func TestErrorCodecPreservesKeys(t *testing.T) {
 	assert.Equal(t, rpcbind.Key(backend.ErrAuthFailed), rpcbind.Key(err))
 }
 
+// A UI that falls behind on events loses the oldest, as the in-process bus
+// does, but its subscription lives on: the App's event pump has no restart.
+func TestSubscribeSurvivesSlowReader(t *testing.T) {
+	env := coretest.New(t, coretest.WithoutAutoSync())
+	_, cl, _ := startUIServer(t, env.Svc)
+	sub, stop := cl.Subscribe()
+	defer stop()
+	for i := range 3000 {
+		env.Svc.Publish(events.Event{Type: events.MessagesChanged, AccountID: int64(i + 1)})
+		if i%100 == 0 {
+			time.Sleep(time.Millisecond) // let the bus's forwarder keep up, as a burst of syncs would
+		}
+	}
+	time.Sleep(200 * time.Millisecond)
+	env.Svc.Publish(events.Event{Type: events.OpenRequested})
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case ev, ok := <-sub:
+			require.True(t, ok, "the subscription ended: %v", cl.StreamErr(sub))
+			if ev.Type == events.OpenRequested {
+				return
+			}
+		case <-timeout:
+			t.Fatal("the event after the burst never came")
+		}
+	}
+}
+
 func TestSubscriptionsAndDisconnectCause(t *testing.T) {
 	env := coretest.New(t, coretest.WithoutAutoSync())
 	srv, cl, _ := startUIServer(t, env.Svc)
