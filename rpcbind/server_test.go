@@ -737,6 +737,13 @@ func TestAuditAddressBookEgress(t *testing.T) {
 	require.NoError(t, full.Call(ctx, "SetAddressBookCollectionEnabled", nil, colID, false))
 	require.NoError(t, full.Call(ctx, "SetAddressBookCollectionEnabled", nil, colID, true))
 	require.NoError(t, full.Call(ctx, "SyncAddressBook", nil, ab.ID))
+	require.NoError(t, full.Call(ctx, "SyncAddressBook", nil, int64(0)))
+
+	// Negative IDs are rejected without syncing all enabled address books.
+	reqsBeforeNeg := len(srv.Requests())
+	assert.ErrorContains(t, full.Call(ctx, "SyncAddressBook", nil, int64(-1)), core.ErrAddressBookNotFound.Error())
+	assert.Len(t, srv.Requests(), reqsBeforeNeg, "negative ID must not trigger sync-all")
+
 	require.NoError(t, full.Call(ctx, "UpdateAddressBookAuth", nil, ab.ID, "secret", "", core.OAuthClient{}))
 
 	assert.Equal(t, [][]any{
@@ -745,6 +752,8 @@ func TestAuditAddressBookEgress(t *testing.T) {
 		{"local_api", "AddAddressBook", nil, host},
 		{"local_api", "SetAddressBookCollectionEnabled", colID, host},
 		{"local_api", "SyncAddressBook", ab.ID, host},
+		{"local_api", "SyncAddressBook", nil, host},
+		{"local_api", "SyncAddressBook", int64(-1), ""},
 		{"local_api", "UpdateAddressBookAuth", ab.ID, host},
 	}, auditRows(t, e.DataDir))
 

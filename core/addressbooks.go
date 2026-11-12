@@ -791,6 +791,9 @@ func (s *Service) UpdateAddressBookAuth(ctx context.Context, id int64, password,
 // SyncAddressBook immediately syncs one address book (id > 0) or all address books
 // that have at least one enabled collection (id == 0).
 func (s *Service) SyncAddressBook(ctx context.Context, id int64) error {
+	if id < 0 {
+		return ErrAddressBookNotFound
+	}
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return err
@@ -799,7 +802,9 @@ func (s *Service) SyncAddressBook(ctx context.Context, id int64) error {
 
 	if id > 0 {
 		err := s.syncOneAddressBook(ctx, id)
-		s.notifyAddressBooksChanged(ctx)
+		if !errors.Is(err, ErrAddressBookNotFound) {
+			s.notifyAddressBooksChanged(ctx)
+		}
 		return err
 	}
 
