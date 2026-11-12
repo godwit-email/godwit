@@ -214,11 +214,9 @@ func (p *platform) SaveFile(defaultName string) (string, error) {
 	}
 	return path, err
 }
-func (p *platform) Notify(n app.Notification) error {
-	return mygo.NewNotification(notificationOptions(n, p.notificationAvatar(n))).Show()
-}
-func (*platform) NotificationsSupported() bool { return mygo.NotificationsSupported() }
-func (*platform) SetOpenAtLogin(on bool) error { return mygo.App.SetOpenAtLogin(on) }
+func (p *platform) Notify(n app.Notification) error { return showNotification(p.svc, n) }
+func (*platform) NotificationsSupported() bool      { return mygo.NotificationsSupported() }
+func (*platform) SetOpenAtLogin(on bool) error      { return mygo.App.SetOpenAtLogin(on) }
 func (p *platform) SetTrayVisible(visible bool) {
 	if p.setTrayVisible != nil {
 		p.setTrayVisible(visible)
