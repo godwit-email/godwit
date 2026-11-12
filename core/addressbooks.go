@@ -666,7 +666,8 @@ func (s *Service) RemoveAddressBook(ctx context.Context, id int64) error {
 	defer end()
 
 	s.abWriteMu.Lock()
-	res, err := s.db.Execute(ctx, "DELETE FROM address_books WHERE id = ?", id)
+	// Durable before its keychain entries go: power loss must not bring the row back without them.
+	res, err := s.db.DurableExecute(ctx, "DELETE FROM address_books WHERE id = ?", id)
 	s.abWriteMu.Unlock()
 	if err != nil {
 		return err
