@@ -61,18 +61,23 @@ const (
 	AuditMCP      = "local_mcp"
 )
 
+// AuditUI is the audit source of Godwit's interface (the Local API's ui role):
+// a same-user program can present ui-token (ADR 0002), so its sends and grants
+// are audited, though not gated as external (no WithExternalSource).
+const AuditUI = "ui"
+
 // AuditRule is the audit source of what a rule sends off the machine: a
 // forward (target: the rule; destination: the recipient's domain) and a Wit
 // action, draft_reply or key_points (target: the message; destination: the
 // model service's host).
 const AuditRule = "rule"
 
-// AuditExternal writes an audit_log row for a call made from outside the
-// app: source (AuditLocalAPI or AuditMCP), the method as action, the
+// AuditExternal writes an audit_log row for a call made over the Local API:
+// source (AuditLocalAPI, AuditMCP or AuditUI), the method as action, the
 // target's ID (0 = none) and the destinations the call sets up, which are
 // stored as their domains. No content is stored.
 func (s *Service) AuditExternal(ctx context.Context, source, action string, target int64, dests ...string) error {
-	if source != AuditLocalAPI && source != AuditMCP {
+	if source != AuditLocalAPI && source != AuditMCP && source != AuditUI {
 		return fmt.Errorf("audit: unknown external source %q", source)
 	}
 	return s.gateway().Record(ctx, gateway.Entry{Source: source, Tool: action, TargetID: target, Destinations: dests, Decision: "allow"})

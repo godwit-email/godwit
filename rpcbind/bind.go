@@ -270,9 +270,9 @@ func Listen(dataDir string, svc *core.Service, version string) (*rpc.Server, err
 // ListenWith serves svc's exposed methods on <dataDir>/godwit.sock (see
 // rpc.Listen; the caller holds the owner lock). Errors go out through
 // NewCodec; the UI and API tokens and svc's secrets are redacted from them and
-// from the log. Sends, forwarding rules and grants by the full role and drafts
-// by the mcp role are audited before they are dispatched; RoleUI is Godwit's
-// own interface and is not audited as external; SetSettings widening MCPSend is
+// from the log. Sends, forwarding rules and grants by the full and ui roles and
+// drafts by the mcp role are audited before they are dispatched (ui's under its
+// own source, with no external-source gating); SetSettings widening MCPSend is
 // audited atomically with the save under settingsMu.
 func ListenWith(dataDir string, svc *core.Service, opts ListenOptions) (*rpc.Server, error) {
 	d, err := rpc.NewDispatcher(svc, Expose)
@@ -304,31 +304,31 @@ func ListenWith(dataDir string, svc *core.Service, opts ListenOptions) (*rpc.Ser
 	})
 }
 
-// audit records full's Send, SendAcknowledged and their Revision forms (by draft), ResolveOutbox
-// "resend" (by outbox item), Unsubscribe (by message), BeginPluginLogin, the rule calls that
-// make a rule forward (ruleForward) and the extension grants (egressGrant: GrantMCPServer,
-// SetMCPToolTrusted turning trust on, GrantPermission), and mcp's NewDraft (by source message)
-// and SaveDraft (by draft); SetSettings widening MCPSend is audited inside SetSettings in the
-// same transaction as the write, and nothing else is audited. A row it cannot write stops the call.
+// audit records full's and ui's Send, SendAcknowledged and their Revision forms (by draft),
+// ResolveOutbox "resend" (by outbox item), Unsubscribe (by message), BeginPluginLogin, the rule
+// calls that make a rule forward (ruleForward) and the extension grants (egressGrant:
+// GrantMCPServer, SetMCPToolTrusted turning trust on, GrantPermission), and mcp's NewDraft (by
+// source message) and SaveDraft (by draft); SetSettings widening MCPSend is audited inside
+// SetSettings in the same transaction as the write, and nothing else is audited. full's rows are
+// local_api, ui's are ui: a same-user program can present ui-token (ADR 0002). A row it cannot
+// write stops the call.
 func audit(svc *core.Service, role, method string, params []json.RawMessage) error {
-	if role == rpc.RoleFull {
+	source := map[string]string{rpc.RoleFull: core.AuditLocalAPI, rpc.RoleUI: core.AuditUI, rpc.RoleMCP: core.AuditMCP}[role]
+	if role == rpc.RoleFull || role == rpc.RoleUI {
 		for _, check := range []func(*core.Service, string, []json.RawMessage) (int64, []string, bool, error){ruleForward, egressGrant} {
 			target, dests, ok, err := check(svc, method, params)
 			if err != nil {
 				return err
 			}
 			if ok {
-				return svc.AuditExternal(context.Background(), core.AuditLocalAPI, method, target, dests...)
+				return svc.AuditExternal(context.Background(), source, method, target, dests...)
 			}
 		}
 	}
-	source := ""
 	switch {
-	case role == rpc.RoleFull && (method == "Send" || method == "SendAcknowledged" || method == "SendRevision" || method == "SendAcknowledgedRevision" ||
+	case (role == rpc.RoleFull || role == rpc.RoleUI) && (method == "Send" || method == "SendAcknowledged" || method == "SendRevision" || method == "SendAcknowledgedRevision" ||
 		method == "ResolveOutbox" && isResend(params) || method == "Unsubscribe" || method == "BeginPluginLogin"):
-		source = core.AuditLocalAPI
 	case role == rpc.RoleMCP && (method == "NewDraft" || method == "SaveDraft"):
-		source = core.AuditMCP
 	default:
 		return nil
 	}
