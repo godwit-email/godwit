@@ -231,6 +231,8 @@ var uiOnly = map[string]bool{
 	// The reader's two-step body load, disk-cached image helpers, and multi-attachment save stream.
 	"GetMessageLazyImages": true, "InlineImagesStream": true, "FetchAttachmentsStream": true,
 	"CachedImage": true, "CachedImageDims": true, "ForgetImageFailure": true,
+	// An original as a file: up to MaxMessageBytes would not fit one response as base64.
+	"RawMessageFile": true,
 	// Wire helper for the operating system's installed translation languages.
 	"SystemTranslatorLanguages": true,
 	// The Store package's About check: egress to the Store's catalog, through the user's proxy.

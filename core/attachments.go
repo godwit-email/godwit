@@ -403,6 +403,37 @@ func (s *Service) archivePart(a attRow) (string, error) {
 	return "", fmt.Errorf("attachment part %s not in the original", a.part)
 }
 
+// rawOutDir holds originals RawMessageFile hands to the interface; emptied at start.
+func (s *Service) rawOutDir() string { return filepath.Join(s.dataDir, "raw-out") }
+
+// RawMessageFile is GetRawMessage written to a new file (0600) in the data
+// directory, its path returned, for the interface: an original of up to
+// MaxMessageBytes would not fit one Local API response as base64. The
+// caller removes the file once read; what is left is removed at start.
+func (s *Service) RawMessageFile(ctx context.Context, messageID int64) (string, error) {
+	raw, err := s.GetRawMessage(ctx, messageID)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(s.rawOutDir(), 0o700); err != nil {
+		return "", err
+	}
+	f, err := os.CreateTemp(s.rawOutDir(), "*.eml")
+	if err != nil {
+		return "", err
+	}
+	if _, err = f.Write(raw); err == nil {
+		err = f.Close()
+	} else {
+		f.Close()
+	}
+	if err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
+}
+
 // GetRawMessage downloads the message's full original from the server, for a
 // Truncated message or for saving. Messages over MaxMessageBytes give ErrTooLarge.
 // A local archive's message is read from its original file, offline.

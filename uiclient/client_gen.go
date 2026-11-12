@@ -289,10 +289,6 @@ func (cl *Client) GetPluginConfig(ctx context.Context, name string) ([]core.Conf
 	return call[[]core.ConfigValue](cl, ctx, "GetPluginConfig", name)
 }
 
-func (cl *Client) GetRawMessage(ctx context.Context, messageID int64) ([]byte, error) {
-	return call[[]byte](cl, ctx, "GetRawMessage", messageID)
-}
-
 func (cl *Client) GetSettings(ctx context.Context) (core.Settings, error) {
 	return call[core.Settings](cl, ctx, "GetSettings")
 }
@@ -531,6 +527,10 @@ func (cl *Client) Purges(ctx context.Context, accountID int64) (map[string]core.
 
 func (cl *Client) QuickReplies(ctx context.Context, messageID int64) ([]core.QuickReply, error) {
 	return call[[]core.QuickReply](cl, ctx, "QuickReplies", messageID)
+}
+
+func (cl *Client) RawMessageFile(ctx context.Context, messageID int64) (string, error) {
+	return call[string](cl, ctx, "RawMessageFile", messageID)
 }
 
 func (cl *Client) ReadingLanguage(ctx context.Context) string {

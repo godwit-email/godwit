@@ -20,6 +20,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -829,4 +830,48 @@ func TestReaderImagesOverSocket(t *testing.T) {
 	handler.ServeHTTP(w3, httptest.NewRequest(http.MethodGet, fmt.Sprintf("http://m%d/%s", msgID, remoteTok), nil))
 	require.Equal(t, http.StatusOK, w3.Code)
 	assert.Equal(t, pic, w3.Body.Bytes())
+}
+
+// An original near MaxMessageBytes reaches the interface as a file, not one
+// base64 response: that would overflow the send queue and drop the
+// connection, which the interface takes for the backend's loss.
+func TestRawMessageFileLargeOriginal(t *testing.T) {
+	env := coretest.New(t, coretest.WithoutAutoSync())
+	_, cl, _ := startUIServer(t, env.Svc)
+	ctx := t.Context()
+	acc, err := env.Svc.AddLocalArchive(ctx, "old")
+	require.NoError(t, err)
+	folders, err := env.Svc.ListFolders(ctx, acc.ID)
+	require.NoError(t, err)
+	var inbox int64
+	for _, f := range folders {
+		if f.Role == "inbox" {
+			inbox = f.ID
+		}
+	}
+	// Written out, not coretest.Msg: its body encoding would push this over MaxMessageBytes.
+	raw := []byte("From: bob@example.com\r\nTo: me@example.com\r\nSubject: Big\r\nMessage-ID: <big@example.com>\r\n" +
+		"Date: Thu, 12 Nov 2026 10:00:00 +0000\r\nContent-Type: text/plain\r\n\r\n" +
+		strings.Repeat(strings.Repeat("x", 76)+"\r\n", (24<<20)/78))
+	p := filepath.Join(t.TempDir(), "big.eml")
+	require.NoError(t, os.WriteFile(p, raw, 0o600))
+	sum, err := env.Svc.ImportEML(ctx, acc.ID, inbox, []string{p})
+	require.NoError(t, err)
+	require.Equal(t, 1, sum.Imported, "%+v", sum)
+	page, err := env.Svc.ListMessages(ctx, core.View{FolderID: inbox}, "", 10)
+	require.NoError(t, err)
+	require.Len(t, page.Items, 1)
+
+	path, err := cl.RawMessageFile(ctx, page.Items[0].ID)
+	require.NoError(t, err)
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.True(t, bytes.Equal(raw, got), "the file holds the original")
+	fi, err := os.Stat(path)
+	require.NoError(t, err)
+	if runtime.GOOS != "windows" {
+		assert.Equal(t, os.FileMode(0o600), fi.Mode().Perm())
+	}
+	_, err = cl.ListAccounts(ctx)
+	require.NoError(t, err, "the connection survived")
 }

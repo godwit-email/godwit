@@ -1910,7 +1910,7 @@ func (p *mailPage) devHTML(it mailItem) {
 			id = t.Messages[len(t.Messages)-1].ID
 		}
 		var html string
-		if raw, err := a.svc.GetRawMessage(ctx, id); err == nil {
+		if raw, err := rawMessage(ctx, a.svc, id); err == nil {
 			parsed, err := gomail.Parse(raw)
 			if err != nil {
 				return err

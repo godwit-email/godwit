@@ -66,7 +66,7 @@ type Service interface {
 	GetMessageLazyImages(ctx context.Context, id int64, loadRemoteImages bool) (core.Message, error)
 	GetMessageText(ctx context.Context, id int64) (core.MessageText, error)
 	GetPluginConfig(ctx context.Context, name string) ([]core.ConfigValue, error)
-	GetRawMessage(ctx context.Context, messageID int64) ([]byte, error)
+	RawMessageFile(ctx context.Context, messageID int64) (string, error)
 	GetSettings(ctx context.Context) (core.Settings, error)
 	GetThread(ctx context.Context, id int64) (core.Thread, error)
 	GrantMCPServer(ctx context.Context, id int64) error

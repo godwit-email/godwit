@@ -13,6 +13,7 @@ InstallPluginFromRegistryStream
 ModelServiceAvatar
 PluginReadme
 PrepareModelStream
+RawMessageFile
 RecentLog
 ReplaceUIBackend
 SenderAvatar

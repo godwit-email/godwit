@@ -286,6 +286,7 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	s.labelJudge = s.defaultLabelJudge
 	s.securityJudge = s.defaultSecurityJudge
 	s.securityRaw = s.GetRawMessage
+	_ = os.RemoveAll(s.rawOutDir()) // RawMessageFile's left by an interface that died
 	s.assets = newModelAssets(s)
 	if exe, err := os.Executable(); err == nil {
 		s.nativeCmd = []string{exe, "plugin-host"}
