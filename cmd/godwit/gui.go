@@ -271,6 +271,10 @@ func gui(ctx context.Context, dataDir, open string) int {
 		sig.SetService(client)
 		uiLang := "" // keep the database preference authoritative over MyGo's saved locale
 		st, err := client.GetSettings(ctx)
+		if backendOnlyAtLogin(wasOpenedAtLogin(), st, err) {
+			mygo.App.Quit() // the backend stays under 一直继续 (StopUIBackend refuses), with its tray
+			return
+		}
 		if err != nil {
 			log.Printf("reading settings: %v; the menus use the system language", err)
 			st.ShowTrayIcon = true // the default: an unreadable preference must not take the icon away
@@ -450,6 +454,14 @@ func gui(ctx context.Context, dataDir, open string) int {
 		log.Fatal(err)
 	}
 	return code
+}
+
+// backendOnlyAtLogin reports whether an interface the system started at
+// login is there only for the backend (一直继续, not 开机时自动启动), or for
+// a login item nothing wants any more: it quits before its window opens.
+// Settings it could not read keep the window.
+func backendOnlyAtLogin(atLogin bool, st core.Settings, err error) bool {
+	return atLogin && err == nil && !st.LaunchAtLogin
 }
 
 // quitApp quits again once the compose windows closed; tests swap it.

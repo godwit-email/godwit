@@ -1031,6 +1031,7 @@
   "settings_background_sync_inbox": "僅收件匣",
   "settings_background_sync_all": "全部資料夾",
   "settings_launch_at_login_help": "登入後在背景啟動 Godwit",
+  "settings_login_item_off": "系統設定裡已關閉 Godwit 的登入啟動；請在那裡重新開啟",
   "settings_local_api": "本機 API",
   "settings_local_api_client_off": "已斷開 {arg1}。",
   "settings_local_api_client_on": "已接入 {arg1}，重新啟動它後生效。",

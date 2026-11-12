@@ -1031,6 +1031,7 @@
   "settings_background_sync_inbox": "Solo posta in arrivo",
   "settings_background_sync_all": "Tutte le cartelle",
   "settings_launch_at_login_help": "Avvia Godwit in background dopo l’accesso",
+  "settings_login_item_off": "L'avvio all'accesso è disattivato nelle impostazioni di sistema; riattivalo lì",
   "settings_local_api": "API locale",
   "settings_local_api_client_off": "{arg1} scollegato.",
   "settings_local_api_client_on": "{arg1} collegato. Riavvialo per usare Godwit.",

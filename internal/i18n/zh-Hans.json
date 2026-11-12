@@ -1031,6 +1031,7 @@
   "settings_background_sync_inbox": "仅收件箱",
   "settings_background_sync_all": "全部文件夹",
   "settings_launch_at_login_help": "登录后在后台启动 Godwit",
+  "settings_login_item_off": "系统设置里已关闭 Godwit 的登录启动；请在那里重新开启",
   "settings_local_api": "本机 API",
   "settings_local_api_client_off": "已断开 {arg1}。",
   "settings_local_api_client_on": "已接入 {arg1}，重启它后生效。",

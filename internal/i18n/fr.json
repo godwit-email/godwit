@@ -1031,6 +1031,7 @@
   "settings_background_sync_inbox": "Boîte de réception seule",
   "settings_background_sync_all": "Tous les dossiers",
   "settings_launch_at_login_help": "Démarre Godwit en arrière-plan après l’ouverture de session",
+  "settings_login_item_off": "Le lancement à l'ouverture de session est désactivé dans les réglages du système ; réactivez-le là",
   "settings_local_api": "API locale",
   "settings_local_api_client_off": "{arg1} déconnecté.",
   "settings_local_api_client_on": "{arg1} connecté. Redémarrez-le pour utiliser Godwit.",

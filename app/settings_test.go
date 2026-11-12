@@ -572,6 +572,51 @@ func TestSettingsSaveFailureReverts(t *testing.T) {
 	h.called("SetOpenAtLogin false")
 }
 
+// loginCalls are the platform's SetOpenAtLogin calls so far.
+func (h *harness) loginCalls() []string {
+	return slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return !strings.HasPrefix(c, "SetOpenAtLogin") })
+}
+
+func TestSettingsLoginItemFollowsBothSettings(t *testing.T) {
+	h, _ := withAccount(t)
+	h.setLayout(func(st *core.Settings) { st.BackgroundReceive = core.BackgroundReceiveAlways })
+	h.until("registered for 一直继续", func() bool { return slices.Equal(h.loginCalls(), []string{"SetOpenAtLogin true"}) })
+	h.setLayout(func(st *core.Settings) { st.LaunchAtLogin = true }) // the one login item serves both
+	h.setLayout(func(st *core.Settings) { st.BackgroundReceive = core.BackgroundReceiveUntilQuit })
+	h.setLayout(func(st *core.Settings) { st.LaunchAtLogin = false })
+	h.until("unregistered once neither wants it", func() bool {
+		return slices.Equal(h.loginCalls(), []string{"SetOpenAtLogin true", "SetOpenAtLogin false"})
+	})
+}
+
+func TestSettingsLoginItemNotForBackendOnLinux(t *testing.T) {
+	old := goos
+	goos = "linux"
+	t.Cleanup(func() { goos = old })
+	h, _ := withAccount(t)
+	h.setLayout(func(st *core.Settings) { st.BackgroundReceive = core.BackgroundReceiveAlways })
+	h.setLayout(func(st *core.Settings) { st.LaunchAtLogin = true })
+	h.until("only 开机时自动启动 registers", func() bool { return slices.Equal(h.loginCalls(), []string{"SetOpenAtLogin true"}) })
+}
+
+func TestSettingsLoginItemOffInSystem(t *testing.T) {
+	h, _ := withAccount(t)
+	h.plat.mu.Lock()
+	h.plat.loginOff = true // the user turned it off in the system's login items
+	h.plat.mu.Unlock()
+	h.openSettings("general")
+	h.click("开机时自动启动")
+	h.see("系统设置里已关闭 Godwit 的登录启动")
+	h.plat.mu.Lock()
+	h.plat.loginOff = false
+	h.plat.mu.Unlock()
+	h.post(func() { h.app.SetForeground(true) }) // back from the system's settings
+	h.until("the note gone", func() bool { h.tt.Frame(); return !h.tt.HasText("系统设置里已关闭 Godwit 的登录启动") })
+	if got := h.loginCalls(); !slices.Equal(got, []string{"SetOpenAtLogin true"}) {
+		t.Fatalf("login calls %v: Godwit must not register again by itself", got)
+	}
+}
+
 func TestSettingsPrivacyAndAbout(t *testing.T) {
 	h, _ := withAccount(t)
 	h.openSettings("privacy")

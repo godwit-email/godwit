@@ -1031,6 +1031,7 @@
   "settings_background_sync_inbox": "Chỉ Hộp thư đến",
   "settings_background_sync_all": "Tất cả thư mục",
   "settings_launch_at_login_help": "Khởi động Godwit trong nền sau khi bạn đăng nhập",
+  "settings_login_item_off": "Khởi động khi đăng nhập đã bị tắt trong cài đặt hệ thống; hãy bật lại ở đó",
   "settings_local_api": "Local API",
   "settings_local_api_client_off": "Đã ngắt kết nối {arg1}.",
   "settings_local_api_client_on": "Đã kết nối {arg1}. Khởi động lại để dùng Godwit.",

@@ -1928,6 +1928,7 @@
   "settings_background_sync_inbox": "Inbox only",
   "settings_background_sync_all": "All folders",
   "settings_launch_at_login_help": "Starts Godwit in the background after login",
+  "settings_login_item_off": "Login startup is off for Godwit in your system's settings; turn it back on there",
   "settings_local_api": "Local API",
   "settings_local_api_client_off": "Disconnected {arg1}.",
   "settings_local_api_client_on": "Connected {arg1}. Restart it to use Godwit.",
