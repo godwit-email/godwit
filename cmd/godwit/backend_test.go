@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/godwit-email/godwit/app"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/i18n"
@@ -109,6 +110,25 @@ func TestUIStartsBackend(t *testing.T) {
 	}
 	if _, err := ownerlock.Acquire(dir); !errors.Is(err, ownerlock.ErrAnotherOwner) {
 		t.Fatalf("the backend does not own the data directory: %v", err)
+	}
+	stopBackend(c)
+	exited(t, dir)
+}
+
+// Closing the window while Godwit keeps running in the background exits the
+// interface without stopping the backend it started (closeExit): the next
+// interface connects to that one.
+func TestUIExitLeavesBackend(t *testing.T) {
+	s := startsBackends(t)
+	dir := shortDir(t)
+	c := connect(t, dir)
+	c.Close() // gui's OnQuit with leaveBackend
+	c = connect(t, dir)
+	if s.count() != 1 {
+		t.Fatalf("%d backends started: the first stopped with the interface", s.count())
+	}
+	if _, err := c.ListAccounts(t.Context()); err != nil {
+		t.Fatal(err)
 	}
 	stopBackend(c)
 	exited(t, dir)
@@ -243,9 +263,39 @@ func TestUIStartedBackendFollowsLocalAPI(t *testing.T) {
 	exited(t, dir)
 }
 
-// A click the backend got goes to a connected interface on its events, and
-// nowhere without one (the interface starting for it is #733's).
-func TestBackendForwardsNotificationClick(t *testing.T) {
+// launchedUIs are the interfaces the backend started (uiCmd): their
+// arguments; each runs this test binary with no test, and ends at once.
+type launchedUIs struct {
+	mu   sync.Mutex
+	args [][]string
+}
+
+func (l *launchedUIs) all() [][]string { l.mu.Lock(); defer l.mu.Unlock(); return slices.Clone(l.args) }
+
+func launchesUIs(t *testing.T) *launchedUIs {
+	t.Helper()
+	l := &launchedUIs{}
+	prev := uiCmd
+	uiCmd = func(dataDir, what string) (*exec.Cmd, error) {
+		cmd, err := prev(dataDir, what)
+		if err != nil {
+			return nil, err
+		}
+		l.mu.Lock()
+		l.args = append(l.args, cmd.Args[1:])
+		l.mu.Unlock()
+		cmd.Args = []string{cmd.Path, "-test.run=^$"}
+		return cmd, nil
+	}
+	t.Cleanup(func() { uiCmd = prev })
+	return l
+}
+
+// The tray's Open and Compose and a notification's click go to a connected
+// interface on its events; with none, the backend starts the interface on
+// its data directory, telling it what to open.
+func TestBackendShowsUI(t *testing.T) {
+	l := launchesUIs(t)
 	dir := shortDir(t)
 	svc, err := core.New(context.Background(), core.Options{DataDir: dir})
 	if err != nil {
@@ -254,12 +304,23 @@ func TestBackendForwardsNotificationClick(t *testing.T) {
 	t.Cleanup(func() { svc.Close() })
 	ch, unsub := svc.Subscribe()
 	defer unsub()
-	notificationClicked(svc, "message:1")
+	for _, what := range []string{app.OpenWindow, app.OpenCompose, "message:1"} {
+		showUI(svc, dir, what)
+	}
 	select {
 	case ev := <-ch:
 		t.Fatalf("%+v with no interface connected", ev)
 	case <-time.After(50 * time.Millisecond):
 	}
+	want := [][]string{
+		{"--data-dir", dir, "--open", app.OpenWindow},
+		{"--data-dir", dir, "--open", app.OpenCompose},
+		{"--data-dir", dir, "--open", "message:1"},
+	}
+	if got := l.all(); !slices.EqualFunc(got, want, slices.Equal) {
+		t.Fatalf("interfaces started with %q, want %q", got, want)
+	}
+
 	srv, err := rpcbind.ListenWith(dir, svc, rpcbind.ListenOptions{Version: "test"})
 	if err != nil {
 		t.Fatal(err)
@@ -274,20 +335,27 @@ func TestBackendForwardsNotificationClick(t *testing.T) {
 	evs, stop := ui.Subscribe()
 	defer stop()
 	waitCond(t, "the interface connected", svc.UIConnected)
-	notificationClicked(svc, "message:2")
-	for {
+	for _, what := range []string{app.OpenWindow, app.OpenCompose, "message:2"} {
+		showUI(svc, dir, what)
+	}
+	var got []events.Event
+	for len(got) < 3 {
 		select {
 		case ev := <-evs:
-			if ev.Type != events.NotificationClicked {
-				continue
+			switch ev.Type {
+			case events.OpenRequested, events.ComposeRequested, events.NotificationClicked:
+				got = append(got, ev)
 			}
-			if ev.Notification != "message:2" {
-				t.Fatalf("%+v", ev)
-			}
-			return
 		case <-time.After(5 * time.Second):
-			t.Fatal("the click did not reach the interface")
+			t.Fatalf("the interface got %+v", got)
 		}
+	}
+	if got[0].Type != events.OpenRequested || got[1].Type != events.ComposeRequested ||
+		got[2].Type != events.NotificationClicked || got[2].Notification != "message:2" {
+		t.Fatalf("the interface got %+v", got)
+	}
+	if n := len(l.all()); n != 3 {
+		t.Fatalf("%d interfaces started beside the connected one", n-3)
 	}
 }
 

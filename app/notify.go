@@ -96,6 +96,23 @@ func (a *App) showUnread(inbox int) {
 	}
 }
 
+// What Open opens besides a notification's subject: the main window, or a
+// new compose window.
+const OpenWindow, OpenCompose = "window", "compose"
+
+// Open shows what a launch (godwit --open) or the backend's tray asks for:
+// OpenWindow, OpenCompose, or else a notification id (NotificationClicked).
+func (a *App) Open(what string) {
+	switch what {
+	case OpenWindow:
+		a.plat.ShowWindow()
+	case OpenCompose:
+		a.Compose()
+	default:
+		a.NotificationClicked(what)
+	}
+}
+
 // Compose starts a new draft in a compose window, as the sidebar's button does.
 func (a *App) Compose() { a.mail.compose() }
 

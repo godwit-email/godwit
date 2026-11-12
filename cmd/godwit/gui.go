@@ -73,12 +73,14 @@ func (b bestEffort) Write(p []byte) (int, error) {
 }
 
 // gui runs the desktop app on dataDir until it quits or ctx ends. On the
-// default directory a second GUI focuses the first (singleInstance). It is a
-// client of dataDir's backend (ADR 0038), which it starts when none runs
-// (connectBackend) and stops as it quits unless the user started it; when the
-// backend cannot start it says why in an error dialog, exiting 2 if another
-// process owns dataDir, and when the backend goes away it says so and exits.
-func gui(ctx context.Context, dataDir string) int {
+// default directory a second GUI hands the first what it opens (openArg). It
+// opens open first (App.Open). It is a client of dataDir's backend (ADR
+// 0038), which it starts when none runs (connectBackend) and stops as it
+// quits unless the user started it, or the quit is closing its window while
+// Godwit keeps running in the background (mainCloseAction); when the backend
+// cannot start it says why in an error dialog, exiting 2 if another process
+// owns dataDir, and when the backend goes away it says so and exits.
+func gui(ctx context.Context, dataDir, open string) int {
 	log.SetOutput(logOutput(os.Stderr)) // and slog, while its default is unset; an error report carries the recent lines
 	mygo.App.SetName("Godwit")
 	if !packaged() { // the Microsoft Store updates the MSIX
@@ -95,7 +97,8 @@ func gui(ctx context.Context, dataDir string) int {
 	defer cancel()
 	code := 0
 	var client *uiclient.Client
-	var quitting atomic.Bool // the backend's going is ours, not a crash
+	var quitting atomic.Bool     // the backend's going is ours, not a crash
+	var leaveBackend atomic.Bool // the quit under way is closeExit's: the backend stays
 	var plat *platform
 	var a *app.App
 	var clicked []string                           // notification clicks before the App exists, as the one that launched it
@@ -286,6 +289,9 @@ func gui(ctx context.Context, dataDir string) int {
 
 		opts := windowOptions(runtime.GOOS)
 		bench.configureWindow(&opts)
+		mainClosed := false  // the window closed: the interface goes with its last compose window
+		quitAsked := false   // a quit closes the compose windows: their going is not the window's close
+		var closeMain func() // set below, before any compose window opens
 		plat = &platform{
 			dataDir: dataDir,
 			svc:     client,
@@ -302,6 +308,11 @@ func gui(ctx context.Context, dataDir string) int {
 		var composeMu sync.Mutex
 		windows.OnChange = func() { // no window is open yet
 			a.OnUI(a.ComposeWindowsChanged)
+			a.OnUI(func() {
+				if mainClosed && !quitAsked && windows.Count() == 0 {
+					closeMain() // decided again, now that none is open
+				}
+			})
 			go func() { // the backend's 直接发送 leaves these drafts alone
 				composeMu.Lock()
 				defer composeMu.Unlock()
@@ -330,9 +341,13 @@ func gui(ctx context.Context, dataDir string) int {
 			a.SetWitPage(v, wit.SetConversation, wit.SetCreated)
 			a.SetWitAsk(wit.Handoff)
 		}
-		win.OnFocus(func() { a.SetForeground(true) })
+		win.OnFocus(func() {
+			mainClosed, quitAsked = false, false
+			leaveBackend.Store(false) // a quit the user kept (a failed save asked) is over
+			a.SetForeground(true)
+		})
 		win.OnBlur(func() { a.SetForeground(false) })
-		mygo.App.OnSecondInstance(func([]string, string) { plat.ShowWindow() })
+		mygo.App.OnSecondInstance(func(args []string, _ string) { a.Open(openArg(args)) })
 		mygo.App.OnActivate(func(visible bool) {
 			if !visible && bench == nil {
 				plat.ShowWindow()
@@ -377,31 +392,43 @@ func gui(ctx context.Context, dataDir string) int {
 			updateMenu()
 		})
 
-		// Closing the window hides it while the App keeps running in the
-		// background; otherwise closing quits. Every quit goes through
-		// quitHook: first the compose windows close, each flushing its page,
-		// then nq waits for the main window's writes (a failed or slow one
-		// asks first) and quits again. Hiding needs no save: nothing closes.
+		// Closing the window while the App keeps running in the background
+		// exits the interface, the backend staying, once no compose window is
+		// open; otherwise closing quits (mainCloseAction). Every quit goes
+		// through quitHook: first the compose windows close, each flushing
+		// its page, then nq waits for the main window's writes (a failed or
+		// slow one asks first) and quits again. Hiding needs no save.
 		nq := &nativeQuit{beforeClose: a.BeforeClose, close: a.Close, quit: func() { go quitAgain() }} // mygo's calls are goroutine-safe
+		closeMain = func() {
+			mainClosed = true
+			switch mainCloseAction(a.KeepInBackground(), closeExitsUI, windows.Count(), runtime.GOOS, a.TrayIconShown()) {
+			case closeExit:
+				win.Hide()
+				leaveBackend.Store(true)
+				mygo.App.Quit()
+			case closeHide:
+				win.Hide()
+			case closeMinimize:
+				win.Minimize()
+			case closeQuit:
+				mygo.App.Quit()
+			}
+		}
 		win.OnClose(func(e *mygo.CloseEvent) {
 			if nq.flushed {
 				return // the quit's last step closes it
 			}
 			e.PreventDefault()
-			if a.KeepInBackground() {
-				if closeMinimizes(runtime.GOOS, a.TrayIconShown()) {
-					win.Minimize()
-					return
-				}
-				win.Hide()
-				return
-			}
-			mygo.App.Quit()
+			closeMain()
 		})
-		mygo.App.OnBeforeQuit(quitHook(windows, nq.onQuit, nq.reset))
+		hook := quitHook(windows, nq.onQuit, nq.reset)
+		mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) { quitAsked = true; hook(e) })
 		a.Start(ctx)
 		a.SetForeground(win.IsFocused())
 		bench.bindWindow(win, a)
+		if open != app.OpenWindow { // the window shows already
+			a.Open(open)
+		}
 		for _, id := range clicked { // the App takes them once it has loaded; the last one wins
 			a.NotificationClicked(id)
 		}
@@ -412,7 +439,11 @@ func gui(ctx context.Context, dataDir string) int {
 	mygo.App.OnQuit(func() {
 		if client != nil {
 			quitting.Store(true)
-			stopBackend(client)
+			if leaveBackend.Load() {
+				client.Close()
+			} else {
+				stopBackend(client)
+			}
 		}
 	})
 	if err := mygo.App.Run(); err != nil {

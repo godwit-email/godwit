@@ -911,10 +911,21 @@ func TestHeadlessTrayActions(t *testing.T) {
 		t.Fatalf("GetSettings after Hide Tray Icon = %+v, %v", st, err)
 	}
 
-	// Quit cleanly shuts down the backend without cancelling runCtx; with no
-	// interface connected it waits for none (TestTrayQuitAsksInterfaceFirst).
+	// With no interface connected, Open and Compose start one (TestBackendShowsUI).
 	_ = c.Close()
 	_ = uiClient.Close()
+	launched := launchesUIs(t)
+	opened := func(what string) func() bool {
+		return func() bool {
+			return slices.ContainsFunc(launched.all(), func(args []string) bool { return slices.Contains(args, what) })
+		}
+	}
+	waitCond(t, "Open starts the interface", func() bool { sink.Actions().open(); return opened(app.OpenWindow)() })
+	sink.Actions().compose()
+	waitCond(t, "Compose starts the interface", opened(app.OpenCompose))
+
+	// Quit cleanly shuts down the backend without cancelling runCtx; with no
+	// interface connected it waits for none (TestTrayQuitAsksInterfaceFirst).
 	sink.Actions().quit()
 	select {
 	case code := <-done:

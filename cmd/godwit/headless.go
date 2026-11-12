@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"os/exec"
 	"slices"
 	"sync"
 	"time"
@@ -69,14 +70,15 @@ func linuxHasDisplay(getenv func(string) string) bool {
 func mygoHeadlessDesktop() *headlessDesktop {
 	var plat *platform
 	var svc *core.Service // main thread, as the clicks
+	var dataDir string
 	return &headlessDesktop{
 		translator: systemTranslator,
 		openURL:    mygo.Shell.OpenExternal,
 		printPDF:   printPDF,
 		post:       mygo.RunOnMain,
-		newPlatform: func(dataDir string, s *core.Service) headlessPlatform {
-			svc = s
-			plat = &platform{dataDir: dataDir, svc: s}
+		newPlatform: func(dir string, s *core.Service) headlessPlatform {
+			svc, dataDir = s, dir
+			plat = &platform{dataDir: dir, svc: s}
 			return plat
 		},
 		run: func(ctx context.Context, ready func(stop func())) (bool, error) {
@@ -93,7 +95,7 @@ func mygoHeadlessDesktop() *headlessDesktop {
 			defer offLocale()
 			offClick := mygo.App.OnNotificationClick(func(id string) {
 				if svc != nil {
-					notificationClicked(svc, id)
+					showUI(svc, dataDir, id)
 				}
 			})
 			defer offClick()
@@ -240,7 +242,8 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 		if d.newPlatform != nil {
 			if plat := d.newPlatform(dataDir, svc); plat != nil {
 				sink = plat
-				tray = newBackendTray(svc, plat, lang, post, clock, logWarn, func() { quitFromTray(svc, onStop) })
+				tray = newBackendTray(svc, plat, lang, post, clock, logWarn, func(what string) { showUI(svc, dataDir, what) },
+					func() { quitFromTray(svc, onStop) })
 			}
 		}
 	}
@@ -340,14 +343,45 @@ func quitFromTray(svc *core.Service, stop func()) {
 	}()
 }
 
-// notificationClicked takes a click on one of the backend's notifications:
-// a connected interface opens what it shows (NotificationClicked); it
-// dedupes, as macOS may hand the click to it as well.
-func notificationClicked(svc *core.Service, id string) {
-	if !svc.UIConnected() {
-		return // shortcut: dropped with no interface connected; #733 starts the interface for it
+// uiCmd is the interface the backend starts on dataDir to open what: this
+// executable, not headless, outliving the backend (detachBackend). Tests swap it.
+var uiCmd = func(dataDir, what string) (*exec.Cmd, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return nil, err
 	}
-	svc.Publish(events.Event{Type: events.NotificationClicked, Notification: id})
+	cmd := exec.Command(exe, "--data-dir", dataDir, "--open", what)
+	detachBackend(cmd)
+	return cmd, nil
+}
+
+// showUI opens what in the interface (app.App.Open: app.OpenWindow,
+// app.OpenCompose or a notification id), for the tray's Open and Compose and
+// a click on one of the backend's notifications: a connected interface is asked on its events, else
+// one is started (uiCmd). The interface dedupes clicks, as macOS may hand one
+// to it as well; a second interface started meanwhile hands its --open to the
+// first (OnSecondInstance).
+func showUI(svc *core.Service, dataDir, what string) {
+	if svc.UIConnected() {
+		ev := events.Event{Type: events.NotificationClicked, Notification: what}
+		switch what {
+		case app.OpenWindow:
+			ev = events.Event{Type: events.OpenRequested}
+		case app.OpenCompose:
+			ev = events.Event{Type: events.ComposeRequested}
+		}
+		svc.Publish(ev)
+		return
+	}
+	cmd, err := uiCmd(dataDir, what)
+	if err == nil {
+		err = cmd.Start()
+	}
+	if err != nil {
+		slog.Warn("starting the interface", "err", err)
+		return
+	}
+	go func() { _ = cmd.Wait() }() // reaps it; its exit is its own
 }
 
 type systemClock struct{}
@@ -368,6 +402,7 @@ type backendTray struct {
 	post    func(func())
 	clock   app.Clock
 	logf    func(string, ...any)
+	show    func(what string) // showUI
 	onQuit  func()
 
 	ctx    context.Context
@@ -389,7 +424,7 @@ type backendTray struct {
 	closed       bool
 }
 
-func newBackendTray(svc *core.Service, plat headlessPlatform, sysLang string, post func(func()), clock app.Clock, logf func(string, ...any), onQuit func()) *backendTray {
+func newBackendTray(svc *core.Service, plat headlessPlatform, sysLang string, post func(func()), clock app.Clock, logf func(string, ...any), show func(string), onQuit func()) *backendTray {
 	if clock == nil {
 		clock = systemClock{}
 	}
@@ -401,6 +436,7 @@ func newBackendTray(svc *core.Service, plat headlessPlatform, sysLang string, po
 		post:       post,
 		clock:      clock,
 		logf:       logf,
+		show:       show,
 		onQuit:     onQuit,
 		ctx:        ctx,
 		cancel:     cancel,
@@ -411,6 +447,8 @@ func newBackendTray(svc *core.Service, plat headlessPlatform, sysLang string, po
 func (t *backendTray) Start() {
 	t.codesStarted = t.clock.Now().Truncate(time.Second)
 	t.plat.BindTray(trayActions{
+		open:    func() { t.show(app.OpenWindow) },
+		compose: func() { t.show(app.OpenCompose) },
 		syncAll: t.syncAll,
 		hide:    t.hideTrayIcon,
 		quit:    t.onQuit,

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"slices"
 	"strconv"
 	"testing"
 
@@ -62,6 +63,53 @@ func TestSocketUIOpensBackendClick(t *testing.T) {
 	}
 	if shown != 2 {
 		t.Fatalf("ShowWindow %d times, want 2: the repeated click was not dropped", shown)
+	}
+}
+
+// An interface started again after it exited loads the mail list and the
+// unread counts whole, mail that came meanwhile included: no event of it
+// reached an interface.
+func TestSocketUIReopensFresh(t *testing.T) {
+	h, acc := notifyHarness(t, nil)
+	h.dropUI()
+	h.until("the UI to disconnect", func() bool { return !h.env.Svc.UIConnected() })
+	h.backendArrive(acc, "First while closed")
+	h.backendArrive(acc, "Second while closed")
+	n := len(h.plat.Calls())
+	h.connectUI()
+	h.see("First while closed")
+	h.see("Second while closed")
+	h.until("the app icon to count both", func() bool { return slices.Contains(h.plat.Calls()[n:], "SetAppUnread 2") })
+}
+
+// Open and Compose in the backend's tray reach the App over its events: Open
+// shows the window, Compose opens a new compose window.
+func TestSocketUIOpensFromBackendTray(t *testing.T) {
+	h, _ := notifyHarness(t, nil)
+	h.env.Svc.Publish(events.Event{Type: events.OpenRequested})
+	h.until("the window shown", func() bool { return slices.Contains(h.plat.Calls(), "ShowWindow") })
+	h.env.Svc.Publish(events.Event{Type: events.ComposeRequested})
+	h.composeOpened(0)
+}
+
+// What a launch asks the App to open (godwit --open, as the backend starts
+// it or a second launch hands it over): the window, a compose window, or a
+// notification's message.
+func TestAppOpen(t *testing.T) {
+	h, acc := notifyHarness(t, func(st *core.Settings) { st.NotifyPreview = true })
+	h.backendArrive(acc, "Opened at launch")
+	h.dropUI()
+	h.connectUI() // the interface the click started
+	h.app.Open(h.notesAfter(1)[0].ID)
+	h.until("the message open", func() bool {
+		return h.app.route.ThreadID != 0 && h.tt.HasText("body of Opened at launch")
+	})
+	h.app.Open(OpenCompose)
+	h.composeOpened(0)
+	n := len(h.plat.Calls())
+	h.app.Open(OpenWindow)
+	if !slices.Contains(h.plat.Calls()[n:], "ShowWindow") {
+		t.Fatal("Open(OpenWindow) did not show the window")
 	}
 }
 

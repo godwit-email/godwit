@@ -18,7 +18,9 @@ status: proposed
 ## 生命周期
 
 - 界面启动时后端不在，就拉起它并等 `godwit.sock`。
-- **关窗即释放界面进程**，后端与托盘留下继续收信；重开窗口是一次界面冷启动（耗时先量出来）。
+- **关窗即释放界面进程**，后端与托盘留下继续收信；重开窗口是一次界面冷启动（耗时先量出来）。还有撰写窗口开着时只藏起主窗口，最后一个窗口关掉后界面才退出。冷启动数字不可接受时退回「关窗只隐藏界面」，只改 `cmd/godwit/platform.go` 的 `closeExitsUI`（#738）。
+- 后端要界面显示什么（托盘的打开、写邮件，点通知）时：有 `ui` 连接就发事件（`OpenRequested`、`ComposeRequested`、`NotificationClicked`）；没有就以 `--data-dir <目录> --open window|compose|<通知 id>` 拉起界面，已在运行的界面经单实例锁收到同样的参数。
+- 应用图标上的未读数由界面设置，随界面进程退出而消失（macOS 的 Dock 角标、Windows 的任务栏标记都属于界面进程）；界面不在时只有后端托盘上的未读数（开了「在菜单栏显示未读数」时）。
 - **退出默认连后端一起退出**；设置里的「后台收信」三态取代 `KeepInBackground`：关窗后停止 / 关窗后继续、退出即停止（默认）/ 一直继续。选「一直继续」时由系统的登录项拉起（macOS 的 `SMAppService.mainAppService`、Windows 非商店包的注册表 `Run` 或 MSIX 的 `uap5:StartupTask`），托盘菜单里另设「退出并停止收信」。
 - 托盘图标与菜单归后端：打开窗口、立即同步、退出并停止收信（及现有的写邮件、最近登录验证码）。
 - **单实例锁只给界面**：`mygo.App.RequestSingleInstanceLock()` 按 `bundleIdentifier + 应用名` 建锁，只由界面调用（二次启动把参数转交给已在运行的界面并聚焦窗口）；后端进程不调它，只靠数据目录上的 `ownerlock` 保证单一拥有者，两者互不抢锁。
