@@ -150,8 +150,8 @@ func watchBackend(c *uiclient.Client, quitting *atomic.Bool, lost func()) {
 }
 
 // stopBackend asks c's backend to stop as the interface quits, and waits a
-// little for it to go so a relaunch finds it gone. A backend the user started
-// refuses and keeps running.
+// little for it to go so a relaunch finds it gone. A backend the user started,
+// or one whose 后台收信 is 一直继续, refuses and keeps running.
 func stopBackend(c *uiclient.Client) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

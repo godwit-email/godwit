@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -20,9 +21,11 @@ import (
 	"github.com/godwit-email/godwit/app"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/syslang"
 	"github.com/godwit-email/godwit/rpc"
 	"github.com/godwit-email/godwit/rpcbind"
+	"github.com/godwit-email/godwit/uiclient"
 )
 
 type recordingSink struct {
@@ -35,7 +38,20 @@ type recordingSink struct {
 	codesHistory    [][]core.SignInCode
 	banners         []*core.SignInCode
 	actions         trayActions
+	quitStop        bool
 	notes           []app.Notification
+}
+
+func (s *recordingSink) SetTrayQuitStop(on bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.quitStop = on
+}
+
+func (s *recordingSink) QuitStop() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.quitStop
 }
 
 func (s *recordingSink) NotificationsSupported() bool { return s.supported }
@@ -302,6 +318,7 @@ func TestHeadlessGraphicalEngineOptions(t *testing.T) {
 
 	var pdfCalls atomic.Int32
 	var openedURL atomic.Pointer[string]
+	sink := &recordingSink{supported: true}
 	withHeadlessDesktop(t, func() *headlessDesktop {
 		return &headlessDesktop{
 			translator: func() core.SystemTranslator { return fakeTranslator{} },
@@ -316,7 +333,7 @@ func TestHeadlessGraphicalEngineOptions(t *testing.T) {
 				pdfCalls.Add(1)
 				return []byte("%PDF-1.4\nfake\n"), nil
 			},
-			newPlatform: func(string, *core.Service) headlessPlatform { return &recordingSink{supported: true} },
+			newPlatform: func(string, *core.Service) headlessPlatform { return sink },
 			run: func(ctx context.Context, ready func(stop func())) (bool, error) {
 				loopCtx, stop := context.WithCancel(ctx)
 				defer stop()
@@ -383,7 +400,39 @@ func TestHeadlessGraphicalEngineOptions(t *testing.T) {
 		t.Fatalf("written PDF = %q, %v", data, err)
 	}
 
-	// 4. OpenURL opens approved Wit links.
+	// 4. RequestMCPSend under 每次确认 (default) with no interface connected
+	// waits for the user behind a notification that names no mail content.
+	var draft core.Draft
+	if err := c.Call(ctx, "NewDraft", &draft, acc.ID, "new", int64(0)); err != nil {
+		t.Fatalf("NewDraft: %v", err)
+	}
+	draft.To = []string{"bob@example.com"}
+	draft.Subject = "Quarterly plan"
+	draft.HTML = "<p>the plan body</p>"
+	if err := c.Call(ctx, "SaveDraft", &draft, draft); err != nil {
+		t.Fatalf("SaveDraft: %v", err)
+	}
+	var sent bool
+	if err := c.Call(ctx, "RequestMCPSend", &sent, draft.ID, draft.Revision); err != nil || sent {
+		t.Fatalf("RequestMCPSend = (%v, %v), want waiting", sent, err)
+	}
+	var pending []core.MCPSend
+	if err := c.Call(ctx, "PendingMCPSends", &pending); err != nil || len(pending) != 1 {
+		t.Fatalf("PendingMCPSends = %+v, %v", pending, err)
+	}
+	notes := slices.DeleteFunc(sink.Notes(), func(n app.Notification) bool { return !strings.HasPrefix(n.ID, "mcp_send:") })
+	if len(notes) != 1 || notes[0].ID != "mcp_send:"+strconv.FormatInt(pending[0].ID, 10) || notes[0].Body == "" ||
+		strings.Contains(notes[0].Body+notes[0].Title+notes[0].Subtitle, "plan") {
+		t.Fatalf("notifications %+v", notes)
+	}
+
+	// 5. OpenURL opens approved Wit links; a Wit run waits on approvals, so it
+	// needs an interface connected.
+	uic, err := rpc.Dial(dir, rpc.RoleUI, "ui-test", rpcbind.NewCodec())
+	if err != nil {
+		t.Fatalf("Dial RoleUI: %v", err)
+	}
+	defer uic.Close()
 	var ms core.ModelService
 	err = c.Call(ctx, "AddModelService", &ms, core.ModelServiceInput{
 		Name: "local", Kind: "openai", BaseURL: llmURL, APIKey: "test-key", Models: []string{"m1"},
@@ -429,23 +478,6 @@ func TestHeadlessGraphicalEngineOptions(t *testing.T) {
 	}
 	if got := openedURL.Load(); got == nil || *got != "https://example.com/hello" {
 		t.Fatalf("OpenURL got %v", got)
-	}
-
-	// 5. RequestMCPSend under 每次确认 (default) still rejects with ErrMCPSendOff.
-	var draft core.Draft
-	if err := c.Call(ctx, "NewDraft", &draft, acc.ID, "new", int64(0)); err != nil {
-		t.Fatalf("NewDraft: %v", err)
-	}
-	draft.To = []string{"bob@example.com"}
-	draft.Subject = "Hello"
-	draft.HTML = "<p>Hi</p>"
-	if err := c.Call(ctx, "SaveDraft", &draft, draft); err != nil {
-		t.Fatalf("SaveDraft: %v", err)
-	}
-	var sent bool
-	err = c.Call(ctx, "RequestMCPSend", &sent, draft.ID, draft.Revision)
-	if !errors.Is(err, core.ErrMCPSendOff) || sent {
-		t.Fatalf("RequestMCPSend = (%v, %v), want ErrMCPSendOff", sent, err)
 	}
 
 	if code := stop(); code != 0 {
@@ -911,10 +943,21 @@ func TestHeadlessTrayActions(t *testing.T) {
 		t.Fatalf("GetSettings after Hide Tray Icon = %+v, %v", st, err)
 	}
 
-	// Quit cleanly shuts down the backend without cancelling runCtx; with no
-	// interface connected it waits for none (TestTrayQuitAsksInterfaceFirst).
+	// With no interface connected, Open and Compose start one (TestBackendShowsUI).
 	_ = c.Close()
 	_ = uiClient.Close()
+	launched := launchesUIs(t)
+	opened := func(what string) func() bool {
+		return func() bool {
+			return slices.ContainsFunc(launched.all(), func(args []string) bool { return slices.Contains(args, what) })
+		}
+	}
+	waitCond(t, "Open starts the interface", func() bool { sink.Actions().open(); return opened(app.OpenWindow)() })
+	sink.Actions().compose()
+	waitCond(t, "Compose starts the interface", opened(app.OpenCompose))
+
+	// Quit cleanly shuts down the backend without cancelling runCtx; with no
+	// interface connected it waits for none (TestTrayQuitAsksInterfaceFirst).
 	sink.Actions().quit()
 	select {
 	case code := <-done:
@@ -929,6 +972,85 @@ func TestHeadlessTrayActions(t *testing.T) {
 	}
 	if strings.Contains(stderr.String(), "tray:") || strings.Contains(stderr.String(), "level=ERROR") {
 		t.Fatalf("unexpected tray warning/error in stderr: %q", stderr.String())
+	}
+}
+
+// Under 一直继续 the tray offers 退出并停止收信 and its plain Quit asks the
+// interface to quit, the backend staying; the setting takes effect at once.
+func TestHeadlessTrayQuitUnderAlways(t *testing.T) {
+	sink := &recordingSink{supported: true}
+	withHeadlessDesktop(t, func() *headlessDesktop {
+		return &headlessDesktop{
+			newPlatform: func(string, *core.Service) headlessPlatform { return sink },
+			run: func(ctx context.Context, ready func(stop func())) (bool, error) {
+				loopCtx, stop := context.WithCancel(ctx)
+				defer stop()
+				ready(stop)
+				<-loopCtx.Done()
+				return true, nil
+			},
+		}
+	})
+	dir := shortDir(t)
+	runCtx, cancelRun := context.WithCancel(context.Background())
+	defer cancelRun()
+	stderr := &syncBuf{}
+	done := make(chan int, 1)
+	go func() { done <- run(runCtx, []string{"--headless", "--data-dir", dir}, nil, &syncBuf{}, stderr) }()
+	c := dialWait(t, dir)
+	ctx := context.Background()
+	if sink.QuitStop() {
+		t.Fatal("退出并停止收信 shown under the default")
+	}
+	setReceive := func(mode string) {
+		t.Helper()
+		var st core.Settings
+		if err := c.Call(ctx, "GetSettings", &st); err != nil {
+			t.Fatal(err)
+		}
+		st.BackgroundReceive = mode
+		if err := c.Call(ctx, "SetSettings", nil, st); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setReceive(core.BackgroundReceiveAlways)
+	waitCond(t, "退出并停止收信 shown", sink.QuitStop)
+
+	ui, err := uiclient.Dial(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs, unsub := ui.Subscribe()
+	defer unsub()
+	sink.Actions().quit()
+	for ev := range evs {
+		if ev.Type == events.QuitRequested {
+			break
+		}
+	}
+	ui.Close()
+	time.Sleep(200 * time.Millisecond)
+	select {
+	case code := <-done:
+		t.Fatalf("Quit stopped the backend under 一直继续 (code %d)", code)
+	default:
+	}
+	if err := c.Call(ctx, "GetSettings", new(core.Settings)); err != nil {
+		t.Fatalf("backend gone after Quit: %v", err)
+	}
+
+	setReceive(core.BackgroundReceiveUntilQuit)
+	waitCond(t, "退出并停止收信 hidden", func() bool { return !sink.QuitStop() })
+	setReceive(core.BackgroundReceiveAlways)
+	waitCond(t, "退出并停止收信 shown again", sink.QuitStop)
+	sink.Actions().quitStop()
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Fatalf("exit code %d; stderr %q", code, stderr.String())
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("退出并停止收信 left the backend running")
 	}
 }
 

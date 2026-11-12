@@ -293,6 +293,19 @@ func TestBackendTrayMenuAndHeadlessBannerDismiss(t *testing.T) {
 		t.Fatalf("clicks synced=%v hidden=%v quit=%v", synced, hidden, quit)
 	}
 
+	// Under 一直继续, 退出并停止收信 follows Quit.
+	var quitStop bool
+	p.trayQuitStop = true
+	items = p.trayMenuItems(trayActions{syncAll: func() {}, hide: func() {}, quit: func() {}, quitStop: func() { quitStop = true }}, now)
+	if len(items) != 8 || items[6].Label != i18n.T("tray.quit") || items[7].Label != i18n.T("tray.quit_stop") {
+		t.Fatalf("unexpected backend tray menu under 一直继续: %+v", items)
+	}
+	items[7].Click(items[7], nil)
+	if !quitStop {
+		t.Fatal("退出并停止收信 did nothing")
+	}
+	p.trayQuitStop = false
+
 	var opened, composed bool
 	guiItems := p.trayMenuItems(trayActions{
 		open:    func() { opened = true },

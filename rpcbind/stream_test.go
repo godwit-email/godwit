@@ -24,6 +24,7 @@ func TestWitStreamCancelledOverSocket(t *testing.T) {
 			t.Run(method+"/"+how, func(t *testing.T) {
 				e := coretest.New(t, coretest.WithoutAutoSync())
 				ctx := t.Context()
+				core.WithUISession(ctx, e.Svc) // an interface to take the run's approvals (ErrNoUI)
 				l := e.LLM(t)
 				defer l.Release()
 				chunks := make([]string, rpc.StreamBuffer/2)

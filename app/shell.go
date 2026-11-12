@@ -121,6 +121,12 @@ func (a *App) onEvent(ev events.Event) {
 	case events.NotificationClicked: // the backend's notification
 		a.NotificationClicked(ev.Notification)
 		return
+	case events.OpenRequested: // the backend's tray
+		a.Open(OpenWindow)
+		return
+	case events.ComposeRequested: // the backend's tray
+		a.Open(OpenCompose)
+		return
 	case events.QuitRequested: // the backend's tray
 		if a.quit != nil {
 			a.quit()

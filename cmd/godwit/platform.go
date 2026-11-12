@@ -53,6 +53,7 @@ type platform struct {
 	codeBanner     *signInBanner
 	updateTray     func()
 	setTrayVisible func(visible bool)
+	trayQuitStop   bool // 退出并停止收信 shows; UI thread
 
 	dataDir      string
 	svc          avatarService
@@ -199,6 +200,8 @@ type trayActions struct {
 	syncAll func()
 	hide    func()
 	quit    func()
+	// quitStop is 退出并停止收信, shown while SetTrayQuitStop is on.
+	quitStop func()
 }
 
 func (p *platform) trayMenuItems(act trayActions, now time.Time) []*mygo.MenuItem {
@@ -217,7 +220,20 @@ func (p *platform) trayMenuItems(act trayActions, now time.Time) []*mygo.MenuIte
 		mygo.Separator(),
 		&mygo.MenuItem{Label: i18n.T("tray.quit"), Click: func(*mygo.MenuItem, *mygo.Window) { act.quit() }},
 	)
+	if p.trayQuitStop && act.quitStop != nil {
+		items = append(items, &mygo.MenuItem{Label: i18n.T("tray.quit_stop"), Click: func(*mygo.MenuItem, *mygo.Window) { act.quitStop() }})
+	}
 	return items
+}
+
+// SetTrayQuitStop shows or hides 退出并停止收信 (BackgroundReceiveAlways).
+func (p *platform) SetTrayQuitStop(on bool) {
+	if p.trayQuitStop != on {
+		p.trayQuitStop = on
+		if p.updateTray != nil {
+			p.updateTray()
+		}
+	}
 }
 
 func (p *platform) BindTray(act trayActions) {
@@ -262,6 +278,9 @@ func (p *platform) SetTrayUnread(n int) {
 		p.tray.SetTitle(title) // shown on macOS only
 	}
 }
+
+// SetAppUnread badges the app icon; the badge goes with the interface process,
+// leaving only the backend's tray count while no interface runs (ADR 0038).
 func (*platform) SetAppUnread(n int) { mygo.App.SetBadgeCount(n) }
 func (p *platform) ShowWindow() {
 	if p.win.IsMinimized() {
@@ -503,6 +522,38 @@ type trayBox struct{ w, h, inkW float32 }
 // minimizes it rather than hiding it: without a tray icon, only macOS's Dock
 // can bring back a hidden window, and a minimized one keeps its taskbar entry.
 func closeMinimizes(goos string, hasTray bool) bool { return !hasTray && goos != "darwin" }
+
+// closeExitsUI: closing the main window while Godwit keeps running in the
+// background exits the interface process; the backend and its tray stay.
+// shortcut: false hides the window instead, the interface staying; switch if
+// the interface's cold start proves too slow (#738).
+const closeExitsUI = true
+
+// closeAction is what closing the main window does (mainCloseAction).
+type closeAction int
+
+const (
+	closeQuit     closeAction = iota // the quit, which stops a backend the interface started
+	closeExit                        // the interface quits; the backend stays
+	closeHide                        // the window hides
+	closeMinimize                    // the window minimizes
+)
+
+// mainCloseAction is what closing the main window does: with keep
+// (App.KeepInBackground) off, the quit; on, the interface exits (exits:
+// closeExitsUI) once none of its compose windows is open, hiding the window
+// meanwhile, or else the window hides or minimizes (closeMinimizes).
+func mainCloseAction(keep, exits bool, compose int, goos string, hasTray bool) closeAction {
+	switch {
+	case !keep:
+		return closeQuit
+	case exits && compose == 0:
+		return closeExit
+	case !exits && closeMinimizes(goos, hasTray):
+		return closeMinimize
+	}
+	return closeHide
+}
 
 func trayBoxFor(goos string) trayBox {
 	if goos == "darwin" {

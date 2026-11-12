@@ -23,10 +23,16 @@ const (
 	MCPSendsChanged   = "mcp_sends.changed" // godwit mcp's send requests waiting for the user changed
 	ImportProgress    = "import.progress"   // an .eml import into AccountID handled Done of Total files
 	// NotificationClicked: the backend got a click on notification Notification
-	// while a ui client is connected; the interface opens what it shows.
+	// while a ui client is connected; the interface opens what it shows. With
+	// none, the backend starts the interface for it instead.
 	NotificationClicked = "notification.clicked"
 	// QuitRequested: Quit was chosen in the backend's tray; the interface quits as its own Quit does.
 	QuitRequested = "quit.requested"
+	// OpenRequested and ComposeRequested: Open or Compose was chosen in the
+	// backend's tray while a ui client is connected; the interface shows its
+	// main window, or a new compose window.
+	OpenRequested    = "open.requested"
+	ComposeRequested = "compose.requested"
 )
 
 // subscriberBuffer is the per-subscriber queue capacity.

@@ -24,8 +24,8 @@ func TestSettingsDefaults(t *testing.T) {
 	s := settingsService(t, t.TempDir(), "")
 	got, err := s.GetSettings(t.Context())
 	require.NoError(t, err)
-	assert.Equal(t, Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: 5, ReplyLanguage: "match",
-		KeepInBackground: true, ShowTrayIcon: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, ThreadCollapse: true, ThreadCollapseThreshold: 5, RemoteImages: "auto", AutoLabel: true, LabelDisplay: "both", JudgeThreshold: 0.8, BackgroundSync: "inbox",
+	assert.Equal(t, Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: 6, ReplyLanguage: "match",
+		BackgroundReceive: "until_quit", ShowTrayIcon: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, ThreadCollapse: true, ThreadCollapseThreshold: 5, RemoteImages: "auto", AutoLabel: true, LabelDisplay: "both", JudgeThreshold: 0.8, BackgroundSync: "inbox",
 		MCPSend: "confirm", Masking: true, MaskCategories: defaultMaskCategories(),
 		SecurityWarnings: true, VerifiedBadge: true, ProxyMode: "system"}, got)
 }
@@ -262,6 +262,52 @@ func TestSettingsBackgroundSyncMigration(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, want, got.BackgroundSync, stored)
 	}
+}
+
+// Version 5's KeepInBackground switch became BackgroundReceive: on keeps
+// receiving until the quit, off stops when the window closes.
+func TestSettingsBackgroundReceiveMigration(t *testing.T) {
+	for stored, want := range map[string]string{
+		`{"KeepInBackground":true,"SettingsVersion":5}`:      BackgroundReceiveUntilQuit,
+		`{"KeepInBackground":false,"SettingsVersion":5}`:     BackgroundReceiveStopOnClose,
+		`{"SettingsVersion":5}`:                              BackgroundReceiveUntilQuit,
+		`{"BackgroundReceive":"always","SettingsVersion":6}`: BackgroundReceiveAlways,
+	} {
+		s := settingsService(t, t.TempDir(), "")
+		_, err := s.db.Execute(t.Context(), "INSERT INTO settings(key, value) VALUES ('app', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", stored)
+		require.NoError(t, err)
+		got, err := s.GetSettings(t.Context())
+		require.NoError(t, err)
+		assert.Equal(t, want, got.BackgroundReceive, stored)
+	}
+}
+
+func TestSettingsBackgroundReceiveValidated(t *testing.T) {
+	s := settingsService(t, t.TempDir(), "")
+	in, _ := s.GetSettings(t.Context())
+	in.BackgroundReceive = "forever"
+	_, err := s.SetSettings(t.Context(), in)
+	assert.Error(t, err)
+}
+
+// Under 一直继续 the interface's quit leaves the backend running.
+func TestStopUIBackendKeepsReceivingAlways(t *testing.T) {
+	keyring.MockInit()
+	stopped := 0
+	s, err := New(t.Context(), Options{DataDir: t.TempDir(), StopUIBackend: func() { stopped++ }})
+	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
+	st, _ := s.GetSettings(t.Context())
+	st.BackgroundReceive = BackgroundReceiveAlways
+	_, err = s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+	assert.Error(t, s.StopUIBackend(t.Context()))
+	assert.Zero(t, stopped)
+	st.BackgroundReceive = BackgroundReceiveUntilQuit
+	_, err = s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+	assert.NoError(t, s.StopUIBackend(t.Context()))
+	assert.Equal(t, 1, stopped)
 }
 
 func TestSettingsVersionStamped(t *testing.T) {

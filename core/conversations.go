@@ -1056,6 +1056,9 @@ func (s *Service) startRun(ctx context.Context, conv Conversation, prompt string
 // launch.
 func (s *Service) launch(ctx context.Context, end func(), conv Conversation, prompt string, tools []toolDesc,
 	quoted []int64, at int64, claimed ...sqlite.Statement) (*witStream, error) {
+	if err := s.needUI(ctx); err != nil {
+		return nil, err
+	}
 	conv, err := s.conversation(ctx, conv.ID)
 	if err != nil {
 		return nil, err

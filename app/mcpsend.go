@@ -35,7 +35,8 @@ type mcpSendState struct {
 // mcpSendHold is how long 发送 stays off after the shown request changes.
 const mcpSendHold = 2 * time.Second
 
-// loadMCPSends reads the waiting requests after mcp_sends.changed.
+// loadMCPSends reads the waiting requests after mcp_sends.changed, at the
+// first load and on a click of the backend's notification of one.
 func (a *App) loadMCPSends() {
 	var ps []core.MCPSend
 	a.do(func(ctx context.Context) (err error) {
