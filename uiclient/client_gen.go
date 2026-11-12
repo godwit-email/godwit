@@ -317,6 +317,10 @@ func (cl *Client) ImagesAllowed(ctx context.Context, message int64) (bool, error
 	return call[bool](cl, ctx, "ImagesAllowed", message)
 }
 
+func (cl *Client) ImportAccounts(ctx context.Context, data []byte) (core.AccountImportResult, error) {
+	return call[core.AccountImportResult](cl, ctx, "ImportAccounts", data)
+}
+
 func (cl *Client) ImportEML(ctx context.Context, accountID int64, folderID int64, paths []string) (core.ImportSummary, error) {
 	return call[core.ImportSummary](cl, ctx, "ImportEML", accountID, folderID, paths)
 }
@@ -499,6 +503,10 @@ func (cl *Client) PluginTags(ctx context.Context, messageID int64) ([]core.Tag, 
 
 func (cl *Client) PollPluginLogin(ctx context.Context, name string, flow string) (core.PluginLoginState, error) {
 	return call[core.PluginLoginState](cl, ctx, "PollPluginLogin", name, flow)
+}
+
+func (cl *Client) PreviewAccountImport(ctx context.Context, data []byte) (core.AccountImportPreview, error) {
+	return call[core.AccountImportPreview](cl, ctx, "PreviewAccountImport", data)
 }
 
 func (cl *Client) PreviewMasking(ctx context.Context, st core.Settings, text string) (string, error) {

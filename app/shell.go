@@ -277,6 +277,7 @@ func (a *App) View(c *ui.Context) {
 	a.mail.reader.unsubscribeDialog(c)
 	a.mail.reader.attachmentConflictDialog(c)
 	a.mcpSendDialog(c)
+	a.pages[PageSettings].(*settingsPage).importDialog(c)
 	kit.ToastHost(c, i18n.T("toast.close"))
 	// Last, on the root, which overlays (menus, dialogs, Select lists, toasts)
 	// attach to: a c.SetTheme mid-frame resets its background to the theme's,

@@ -40,27 +40,34 @@ type settingsPage struct {
 	a *App
 
 	// accounts
-	accountOrder ui.ListState // the sidebar's accounts, dragged to reorder them
-	forms        map[int64]*accountForm
-	usage        map[int64]int64    // attachment cache bytes per account; absent until read
-	boxes        map[int64]*mailbox // 邮箱行为 per account; absent until read
-	dialog       string             // the open dialog: "password", "client", "servers", "remove", "cache"; "" none
-	dlgAcc       int64              // the account the dialog is about
-	dlgGen       uint64             // bumped per dialog opened; an older dialog's result leaves it alone
-	open         bool               // the dialog shows; Escape or a click outside clears it
-	busy         bool               // the dialog's action runs
-	dlgErr       error              // the dialog action's failure
-	secret       string             // the password dialog's field
-	client       clientForm         // the client dialog's OAuth client
-	showSecret   bool
-	iconSelected string                                                                         // the icon dialog's chosen icon: '' or label:<name>
-	iconUpload   []byte                                                                         // the icon dialog's uploaded image, over iconSelected
-	iconPreview  ui.ImageSource                                                                 // iconUpload decoded
-	servers      serverForm                                                                     // the servers dialog's fields
-	reauth       map[int64]bool                                                                 // a browser sign-in runs for the account
-	rechecking   map[int64]bool                                                                 // a receive-only account's sending check runs
-	exporting    bool                                                                           // ExportAccounts runs
-	update       func(ctx context.Context, id int64, p core.AccountPatch) (core.Account, error) // tests swap it
+	accountOrder  ui.ListState // the sidebar's accounts, dragged to reorder them
+	forms         map[int64]*accountForm
+	usage         map[int64]int64    // attachment cache bytes per account; absent until read
+	boxes         map[int64]*mailbox // 邮箱行为 per account; absent until read
+	dialog        string             // the open dialog: "password", "client", "servers", "remove", "cache"; "" none
+	dlgAcc        int64              // the account the dialog is about
+	dlgGen        uint64             // bumped per dialog opened; an older dialog's result leaves it alone
+	open          bool               // the dialog shows; Escape or a click outside clears it
+	busy          bool               // the dialog's action runs
+	dlgErr        error              // the dialog action's failure
+	secret        string             // the password dialog's field
+	client        clientForm         // the client dialog's OAuth client
+	showSecret    bool
+	iconSelected  string                                                                         // the icon dialog's chosen icon: '' or label:<name>
+	iconUpload    []byte                                                                         // the icon dialog's uploaded image, over iconSelected
+	iconPreview   ui.ImageSource                                                                 // iconUpload decoded
+	servers       serverForm                                                                     // the servers dialog's fields
+	reauth        map[int64]bool                                                                 // a browser sign-in runs for the account
+	rechecking    map[int64]bool                                                                 // a receive-only account's sending check runs
+	exporting     bool                                                                           // ExportAccounts runs
+	importing     bool                                                                           // OpenFiles + PreviewAccountImport runs
+	importOpen    bool                                                                           // the import confirmation dialog shows
+	importBusy    bool                                                                           // ImportAccounts runs
+	importGen     uint64                                                                         // bumped per import dialog opened
+	importData    []byte                                                                         // the file bytes waiting for confirmation
+	importPreview core.AccountImportPreview                                                      // the preview shown in the dialog
+	importErr     error                                                                          // ImportAccounts's failure
+	update        func(ctx context.Context, id int64, p core.AccountPatch) (core.Account, error) // tests swap it
 
 	aiTab, privacyTab int                         // the AI and 隐私与安全 pages' tabs
 	clients           map[string]mcpclients.State // 接入 AI 应用: how each AI app stands, as last read
@@ -316,6 +323,12 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 					ui.Icon(c, icons.Get("plus")).Size(theme.IconSm, theme.IconSm)
 				})
 				ui.Text(c, i18n.T("settings.add_account"))
+			})
+			kit.SidebarItem(c, kit.SidebarItemOpts{Muted: true, OnClick: p.importAccounts}).Children(func() {
+				ui.Row(c).Width(theme.MarkSm).Justify(ui.Center).Children(func() {
+					ui.Icon(c, icons.Get("file-text")).Size(theme.IconSm, theme.IconSm)
+				})
+				ui.Text(c, i18n.T("settings.import_accounts"))
 			})
 		}
 		if len(hit.apps) > 0 {

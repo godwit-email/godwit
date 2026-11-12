@@ -2011,3 +2011,229 @@ func TestSettingsAccountExport(t *testing.T) {
 		t.Fatalf("unexpected exported account: %+v", got)
 	}
 }
+
+func TestSettingsAccountImport(t *testing.T) {
+	h, alice := withAccount(t)
+	h.resize(1440, 3000)
+
+	ih2, ip2, sh2, sp2, user2, pass2 := h.env.StartServers(t)
+
+	// 1. Cancelling OpenFiles writes nothing and opens no dialog.
+	h.openSettings(accountRoute(alice.ID))
+	h.see(i18n.T("settings.account.import.row"))
+	h.click(i18n.T("settings.account.import.button"))
+	h.called("OpenFiles false")
+	h.drain()
+	h.tt.Frame()
+	if h.tt.HasText(i18n.T("settings.account.import.desc")) {
+		t.Fatal("cancelling OpenFiles opened import confirmation dialog")
+	}
+
+	// 2. Corrupted JSON and unsupported format version show clear errors and write nothing.
+	badFile := filepath.Join(t.TempDir(), "corrupt.json")
+	if err := os.WriteFile(badFile, []byte(`{"version": 1, broken`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.plat.mu.Lock()
+	h.plat.files = []string{badFile}
+	h.plat.mu.Unlock()
+	h.click(i18n.T("settings.account.import.button"))
+	h.see(i18n.T("error.bad_account_export"))
+
+	verFile := filepath.Join(t.TempDir(), "future.json")
+	if err := os.WriteFile(verFile, []byte(`{"version": 99, "accounts": []}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.plat.mu.Lock()
+	h.plat.files = []string{verFile}
+	h.plat.mu.Unlock()
+	h.click(i18n.T("settings.account.import.button"))
+	h.see(i18n.T("error.unsupported_export_version"))
+
+	if accs, err := h.env.Svc.ListAccounts(context.Background()); err != nil || len(accs) != 1 {
+		t.Fatalf("expected 1 account after failed imports, got %d (err=%v)", len(accs), err)
+	}
+
+	// 3. Valid file previews accounts + server hosts first; cancelling dialog writes nothing; confirming imports and skips existing.
+	exportDoc := core.AccountExport{
+		Version: core.AccountExportVersion,
+		Accounts: []core.ExportedAccount{
+			{
+				Email:     alice.Email,
+				Name:      alice.Name,
+				Username:  alice.Username,
+				Provider:  alice.Provider,
+				Receiving: core.ExportedServer{Protocol: alice.Receiving.Protocol, Host: alice.Receiving.Host, Port: alice.Receiving.Port, Security: alice.Receiving.Security, Auth: alice.Receiving.Auth},
+				Sending:   core.ExportedServer{Protocol: alice.Sending.Protocol, Host: alice.Sending.Host, Port: alice.Sending.Port, Security: alice.Sending.Security, Auth: alice.Sending.Auth},
+			},
+			{
+				Email:     "bob@example.com",
+				Name:      "Bob",
+				Username:  user2,
+				Provider:  "other",
+				Receiving: core.ExportedServer{Protocol: auth.IMAP, Host: ih2, Port: ip2, Security: core.SecurityNone, Auth: core.AuthPassword},
+				Sending:   core.ExportedServer{Protocol: auth.SMTP, Host: sh2, Port: sp2, Security: core.SecurityNone, Auth: core.AuthPassword},
+				Sync:      core.ExportedSyncRange{Limit: 2000},
+			},
+			{
+				Email:     "carol@outlook.com",
+				Name:      "Carol",
+				Username:  "carol@outlook.com",
+				Provider:  "outlook",
+				Receiving: core.ExportedServer{Protocol: auth.IMAP, Host: "outlook.office365.com", Port: 993, Security: core.SecurityTLS, Auth: "oauth"},
+				Sending:   core.ExportedServer{Protocol: auth.SMTP, Host: "smtp-mail.outlook.com", Port: 587, Security: core.SecurityStartTLS, Auth: "oauth"},
+				Sync:      core.ExportedSyncRange{Limit: 2000},
+			},
+		},
+	}
+	goodBytes, err := json.Marshal(exportDoc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	goodFile := filepath.Join(t.TempDir(), "accounts.json")
+	if err := os.WriteFile(goodFile, goodBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	h.plat.mu.Lock()
+	h.plat.files = []string{goodFile}
+	h.plat.mu.Unlock()
+	h.click(i18n.T("settings.account.import.button"))
+	h.see(i18n.T("settings.account.import.desc"))
+	h.see("bob@example.com")
+	h.see("carol@outlook.com")
+	h.see("outlook.office365.com:993")
+	h.see("smtp-mail.outlook.com:587")
+	h.see(i18n.T("settings.account.import.existing"))
+
+	// Nothing written before confirmation!
+	if accs, err := h.env.Svc.ListAccounts(context.Background()); err != nil || len(accs) != 1 {
+		t.Fatalf("accounts written before user confirmed: %d (err=%v)", len(accs), err)
+	}
+
+	// Cancel confirmation -> still nothing written.
+	h.click(i18n.T("common.cancel"))
+	h.drain()
+	if accs, err := h.env.Svc.ListAccounts(context.Background()); err != nil || len(accs) != 1 {
+		t.Fatalf("accounts written after cancelling confirmation: %d (err=%v)", len(accs), err)
+	}
+
+	// Re-open and confirm import.
+	h.click(i18n.T("settings.account.import.button"))
+	h.see(i18n.T("settings.account.import.desc"))
+	h.click(i18n.T("settings.account.import.confirm"))
+
+	h.until("imported accounts loaded", func() bool { return len(h.app.accounts) == 3 })
+	h.see(i18n.Tf("settings.account.import.done", 2))
+	h.see(i18n.Tf("settings.account.import.skipped", 1))
+
+	// Navigated to imported bob@example.com showing clear needs-reauthorization state.
+	h.see(i18n.T("settings.account.status.reauth_required"))
+	h.see(i18n.T("settings.account.reauth.imported"))
+
+	// One-click password entry reauthorizes bob@example.com!
+	p := h.app.pages[PageSettings].(*settingsPage)
+	var bob core.Account
+	for _, a := range h.app.accounts {
+		if a.Email == "bob@example.com" {
+			bob = a
+		}
+	}
+	p.openDialog("password", bob)
+	h.tt.Frame()
+	p.secret = pass2
+	h.click(i18n.T("common.save"))
+	h.until("bob reauthorized", func() bool {
+		a, ok := h.app.accountByID(bob.ID)
+		return ok && a.Status == "ok"
+	})
+}
+
+func TestSettingsImportedOAuthOwnClientRequiresSecret(t *testing.T) {
+	h, acc := withAccount(t)
+	fo := &fakeOAuth{flows: map[string]chan flowResult{}}
+	h.app.oauth = fo
+	fetch := h.app.fetch
+	h.app.fetch = func(ctx context.Context) (core.Settings, []core.Account, error) {
+		st, accs, err := fetch(ctx)
+		for i := range accs {
+			accs[i].Provider = "gmail"
+			accs[i].AuthType = "oauth"
+			accs[i].OAuthClientID = "imported-own.apps.googleusercontent.com"
+			accs[i].Status = "reauth_required"
+			accs[i].StatusDetail = "credentials_missing"
+			accs[i].Folders = 0
+		}
+		return st, accs, err
+	}
+	h.app.load()
+	h.until("imported oauth state loaded", func() bool {
+		a, _ := h.app.accountByID(acc.ID)
+		return a.StatusDetail == "credentials_missing"
+	})
+	p := h.openSettings(accountRoute(acc.ID))
+	h.see(i18n.T("settings.account.reauth.imported"))
+
+	h.click(i18n.T("settings.account.reauth.browser"))
+	h.see("客户端 ID")
+	if h.tt.HasText(i18n.T("settings.account.client.secret_help")) {
+		t.Fatal("missing-credentials dialog claimed saved secret can be kept by leaving blank")
+	}
+	// Clicking sign-in with blank secret does nothing because client secret is missing.
+	h.click(i18n.T("onboarding.own_client.signin"))
+	h.drain()
+	if len(fo.began()) != 0 {
+		t.Fatalf("began OAuth without client secret: %+v", fo.began())
+	}
+
+	h.fill("客户端密钥", "secret-123")
+	h.click(i18n.T("onboarding.own_client.signin"))
+	h.until("sign-in started with supplied secret", func() bool { return len(fo.began()) == 1 })
+	if got, want := fo.began()[0], (core.OAuthClient{ID: "imported-own.apps.googleusercontent.com", Secret: "secret-123"}); got != want {
+		t.Fatalf("got client %+v, want %+v", got, want)
+	}
+	fo.fail("f1", context.Canceled)
+	h.until("reauth ended", func() bool { return !p.reauth[acc.ID] })
+}
+
+func TestOnboardingAccountImport(t *testing.T) {
+	h := newHarness(t)
+	h.until("onboarding shown", func() bool { return h.app.route.Page == PageOnboarding })
+	ih, ip, sh, sp, user, pass := h.env.StartServers(t)
+	_ = pass
+
+	exportBytes, err := json.Marshal(core.AccountExport{
+		Version: core.AccountExportVersion,
+		Accounts: []core.ExportedAccount{
+			{
+				Email:     "newpc@example.com",
+				Name:      "New PC",
+				Username:  user,
+				Provider:  "other",
+				IsDefault: true,
+				Receiving: core.ExportedServer{Protocol: auth.IMAP, Host: ih, Port: ip, Security: core.SecurityNone, Auth: core.AuthPassword},
+				Sending:   core.ExportedServer{Protocol: auth.SMTP, Host: sh, Port: sp, Security: core.SecurityNone, Auth: core.AuthPassword},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := filepath.Join(t.TempDir(), "godwit-accounts.json")
+	if err := os.WriteFile(f, exportBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.plat.mu.Lock()
+	h.plat.files = []string{f}
+	h.plat.mu.Unlock()
+
+	h.click(i18n.T("settings.import_accounts"))
+	h.see(i18n.T("settings.account.import.title"))
+	h.see("newpc@example.com")
+	h.click(i18n.T("settings.account.import.confirm"))
+
+	h.until("routed to imported account settings", func() bool {
+		return h.app.route.Page == PageSettings && len(h.app.accounts) == 1
+	})
+	h.see(i18n.T("settings.account.reauth.imported"))
+}
