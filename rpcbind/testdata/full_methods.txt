@@ -80,6 +80,7 @@ GrantPermission
 ImageCache
 ImageCacheSize
 ImagesAllowed
+ImportAccounts
 ImportEML
 InlineSignatureImages
 InstallPlugin
@@ -130,6 +131,7 @@ PluginLogout
 PluginTags
 PollPluginLogin
 PrepareModel
+PreviewAccountImport
 PreviewMasking
 PreviewRule
 PreviewView

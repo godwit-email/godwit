@@ -506,3 +506,114 @@ func TestExportAccounts(t *testing.T) {
 		}
 	})
 }
+
+func TestImportAccounts(t *testing.T) {
+	runContract(t, func(t *testing.T, api contract.API, env *coretest.Env) any {
+		ctx := t.Context()
+		ih, ip, sh, sp, user, pass := env.StartServers(t)
+
+		alice, err := api.AddAccount(ctx, core.AccountInput{
+			Email:     "alice@example.com",
+			Name:      "Alice",
+			Alias:     "Work",
+			Username:  user,
+			Password:  pass,
+			Signature: "Best,\nAlice",
+			Sync:      &core.SyncRange{Months: 6},
+			Receiving: core.Server{Host: ih, Port: ip, Security: core.SecurityNone},
+			Sending:   core.Server{Host: sh, Port: sp, Security: core.SecurityNone},
+		})
+		require.NoError(t, err)
+		bob, err := api.AddAccount(ctx, core.AccountInput{
+			Email:     "bob@example.com",
+			Name:      "Bob",
+			Username:  user,
+			Password:  pass,
+			Sync:      &core.SyncRange{},
+			Receiving: core.Server{Host: ih, Port: ip, Security: core.SecurityNone},
+			Sending:   core.Server{Host: sh, Port: sp, Security: core.SecurityNone},
+		})
+		require.NoError(t, err)
+
+		raw, err := api.ExportAccounts(ctx)
+		require.NoError(t, err)
+
+		// Clear accounts and signatures to simulate importing into a fresh installation.
+		require.NoError(t, api.RemoveAccount(ctx, alice.ID))
+		require.NoError(t, api.RemoveAccount(ctx, bob.ID))
+		sigs, err := env.Svc.ListSignatures(ctx)
+		require.NoError(t, err)
+		for _, sg := range sigs {
+			require.NoError(t, env.Svc.DeleteSignature(ctx, sg.ID))
+		}
+
+		// Sentinel errors cross RPC and write zero accounts.
+		badJSON := res(api.ImportAccounts(ctx, []byte(`{corrupted`)))
+		badVer := res(api.ImportAccounts(ctx, []byte(`{"version":99,"accounts":[]}`)))
+		emptyAfterErr, err := api.ListAccounts(ctx)
+		require.NoError(t, err)
+		require.Empty(t, emptyAfterErr)
+
+		scrubPreview := func(p core.AccountImportPreview) core.AccountImportPreview {
+			for i := range p.Accounts {
+				if p.Accounts[i].ReceivingPort == ip {
+					p.Accounts[i].ReceivingPort = -1
+				}
+				if p.Accounts[i].SendingPort == sp {
+					p.Accounts[i].SendingPort = -1
+				}
+			}
+			return p
+		}
+		scrubAccount := func(a core.Account) core.Account {
+			if a.Receiving.Port == ip {
+				a.Receiving.Port = -1
+			}
+			if a.Sending.Port == sp {
+				a.Sending.Port = -1
+			}
+			a.Features = nil
+			return a
+		}
+		scrubResult := func(r core.AccountImportResult) core.AccountImportResult {
+			for i := range r.Imported {
+				r.Imported[i] = scrubAccount(r.Imported[i])
+			}
+			return r
+		}
+
+		prev1, err := api.PreviewAccountImport(ctx, raw)
+		require.NoError(t, err)
+		imp1, err := api.ImportAccounts(ctx, raw)
+		require.NoError(t, err)
+
+		// Export after import matches original export byte-for-byte.
+		reexported, err := api.ExportAccounts(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, string(raw), string(reexported))
+
+		// Second preview and import skip duplicates.
+		prev2, err := api.PreviewAccountImport(ctx, raw)
+		require.NoError(t, err)
+		imp2, err := api.ImportAccounts(ctx, raw)
+		require.NoError(t, err)
+
+		// Supplying password clears reauth_required on the imported account.
+		require.NoError(t, api.UpdatePassword(ctx, imp1.Imported[0].ID, pass))
+		listed, err := api.ListAccounts(ctx)
+		require.NoError(t, err)
+		for i := range listed {
+			listed[i] = scrubAccount(listed[i])
+		}
+
+		return map[string]any{
+			"badJSON": badJSON,
+			"badVer":  badVer,
+			"prev1":   scrubPreview(prev1),
+			"imp1":    scrubResult(imp1),
+			"prev2":   scrubPreview(prev2),
+			"imp2":    scrubResult(imp2),
+			"listed":  listed,
+		}
+	})
+}

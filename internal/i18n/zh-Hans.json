@@ -2245,5 +2245,20 @@
   "feature_reason_graph_folder_not_label": "Outlook 的文件夹不是标签：删除文件夹会连同里面的邮件一起删除。",
   "feature_reason_graph_no_all_mail": "Outlook 没有「所有邮件」：归档会把邮件移到归档文件夹。",
   "feature_reason_graph_folders_pending": "暂不支持通过 Microsoft Graph 管理文件夹。",
-  "feature_reason_graph_no_push": "桌面端无法接收 Microsoft Graph 的推送通知，Godwit 会改为每分钟轮询一次。"
+  "feature_reason_graph_no_push": "桌面端无法接收 Microsoft Graph 的推送通知，Godwit 会改为每分钟轮询一次。",
+  "error_account_exists": "这个邮箱地址已用另一种协议添加过了。",
+  "error_bad_account_export": "这个文件不是有效的 Godwit 账户导出文件。",
+  "error_unsupported_export_version": "当前版本的 Godwit 不认识这个账户导出文件的格式版本。",
+  "settings_import_accounts": "导入账户…",
+  "settings_account_import_button": "导入…",
+  "settings_account_import_confirm": "确认导入",
+  "settings_account_import_desc": "请核对每个账户将连接的服务器。导出文件不含密码和令牌，导入后需逐个重新授权才会同步。",
+  "settings_account_import_done": "已导入 {arg1, number, ::group-off} 个账户",
+  "settings_account_import_empty": "这个文件里没有可导入的账户。",
+  "settings_account_import_existing": "已存在，跳过",
+  "settings_account_import_help": "导入导出的账户配置，不含凭据，导入后需逐个重新授权",
+  "settings_account_import_row": "从文件导入账户配置",
+  "settings_account_import_skipped": "{arg1, number, ::group-off} 个账户已存在，已跳过",
+  "settings_account_import_title": "导入账户",
+  "settings_account_reauth_imported": "这个账户刚从文件导入，还没有凭据，重新授权后开始同步。"
 }

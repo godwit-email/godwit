@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -488,7 +489,9 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 
 	if acc.Status == "reauth_required" {
 		msg := i18n.T("settings.account.reauth.unknown")
-		if at, ok := a.syncedAtBy[acc.ID]; ok {
+		if acc.StatusDetail == "credentials_missing" && acc.Folders == 0 {
+			msg = i18n.T("settings.account.reauth.imported")
+		} else if at, ok := a.syncedAtBy[acc.ID]; ok {
 			msg = i18n.Tf("settings.account.reauth", a.ago(at))
 		}
 		if oauthRefused(acc) {
@@ -631,6 +634,9 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	settingsSection(c, i18n.T("settings.account.export"), "",
 		row(i18n.T("settings.account.export.row"), i18n.T("settings.account.export.help"), func() {
 			settingButton(c, i18n.T("settings.account.export.button"), kit.Outline, p.exporting).OnClick(p.exportAccounts)
+		}),
+		row(i18n.T("settings.account.import.row"), i18n.T("settings.account.import.help"), func() {
+			settingButton(c, i18n.T("settings.account.import.button"), kit.Outline, p.importing).OnClick(p.importAccounts)
 		}))
 	remove()
 }
@@ -664,6 +670,172 @@ func (p *settingsPage) exportAccounts() {
 		} else if saved {
 			a.toastAs(kit.ToastSuccess, i18n.T("settings.account.export.done"))
 		}
+	})
+}
+
+const accountImportMax = 16 << 20
+
+func (p *settingsPage) importAccounts() {
+	if p.importing {
+		return
+	}
+	a := p.a
+	plat := a.plat
+	p.importing = true
+	var data []byte
+	var preview core.AccountImportPreview
+	picked := false
+	a.do(func(ctx context.Context) error {
+		paths, err := plat.OpenFiles(false)
+		if err != nil || len(paths) == 0 {
+			return err
+		}
+		fh, err := os.Open(paths[0])
+		if err != nil {
+			return err
+		}
+		defer fh.Close()
+		data, err = io.ReadAll(io.LimitReader(fh, accountImportMax+1))
+		if err != nil {
+			return err
+		}
+		if len(data) > accountImportMax {
+			return core.ErrBadAccountExport
+		}
+		preview, err = a.svc.PreviewAccountImport(ctx, data)
+		if err != nil {
+			return err
+		}
+		picked = true
+		return nil
+	}, func(err error) {
+		p.importing = false
+		if err != nil {
+			a.toastErr(err)
+			return
+		}
+		if !picked {
+			return
+		}
+		if a.addAccount != nil {
+			a.closeAddAccount()
+		}
+		p.importGen++
+		p.importData, p.importPreview = data, preview
+		p.importOpen, p.importBusy, p.importErr = true, false, nil
+	})
+}
+
+func (p *settingsPage) closeImportDialog() {
+	p.importOpen, p.importBusy, p.importErr = false, false, nil
+	p.importData, p.importPreview = nil, core.AccountImportPreview{}
+}
+
+func importServersLabel(e core.AccountImportEntry) string {
+	recv := strings.ToUpper(e.ReceivingProtocol) + " " + net.JoinHostPort(e.ReceivingHost, strconv.Itoa(e.ReceivingPort))
+	if e.ReceiveOnly || (e.SendingProtocol == e.ReceivingProtocol && e.SendingHost == e.ReceivingHost && e.SendingPort == e.ReceivingPort) {
+		return recv
+	}
+	return recv + " · " + strings.ToUpper(e.SendingProtocol) + " " + net.JoinHostPort(e.SendingHost, strconv.Itoa(e.SendingPort))
+}
+
+func (p *settingsPage) importDialog(c *ui.Context) {
+	if p.importData == nil {
+		return
+	}
+	if !p.importOpen {
+		p.closeImportDialog()
+		return
+	}
+	t, th := theme.Of(c), c.Theme()
+	kit.Dialog(c, &p.importOpen, i18n.T("settings.account.import.title"),
+		kit.DialogOpts{Size: kit.DialogMd, Desc: i18n.T("settings.account.import.desc"), Close: i18n.T("common.close")},
+		func() {
+			if len(p.importPreview.Accounts) == 0 {
+				kit.Text(c, i18n.T("settings.account.import.empty"), t.Text.Base).TextColor(t.Muted)
+			} else {
+				ui.Column(c).Radius(t.Radius.Lg).Border(theme.Hairline, t.Border).Clip().Children(func() {
+					for i, entry := range p.importPreview.Accounts {
+						if i > 0 {
+							hairline(c)
+						}
+						ui.Column(c).FillWidth().Padding(th.Space(3), th.Space(3.5)).Gap(th.Space(1)).Children(func() {
+							ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Wrap().Children(func() {
+								kit.Text(c, entry.Email, t.Text.Base).FontWeight(500)
+								if entry.Name != "" {
+									kit.Text(c, entry.Name, t.Text.Sm).TextColor(t.Muted)
+								}
+								if entry.ReceiveOnly {
+									kit.Badge(c, i18n.T("settings.account.receive_only"))
+								}
+								if entry.Existing {
+									kit.Badge(c, i18n.T("settings.account.import.existing"))
+								}
+							})
+							kit.Text(c, importServersLabel(entry), t.Text.Sm).Font(theme.Mono).TextColor(t.Muted)
+						})
+					}
+				})
+			}
+			if p.importErr != nil {
+				kit.Alert(c, kit.Danger, humanize(p.importErr), nil)
+			}
+		},
+		func() {
+			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline, Disabled: p.importBusy}).OnClick(p.closeImportDialog)
+			kit.Button(c, i18n.T("settings.account.import.confirm"), kit.ButtonOpts{
+				Disabled: p.importBusy || len(p.importPreview.Accounts) == 0,
+			}).OnClick(p.confirmAccountImport)
+		})
+}
+
+func (p *settingsPage) confirmAccountImport() {
+	if p.importBusy {
+		return
+	}
+	a := p.a
+	p.importBusy, p.importErr = true, nil
+	gen, data := p.importGen, p.importData
+	var res core.AccountImportResult
+	a.do(func(ctx context.Context) (err error) {
+		res, err = a.svc.ImportAccounts(ctx, data)
+		return err
+	}, func(err error) {
+		if gen != p.importGen || !p.importOpen {
+			return
+		}
+		p.importBusy = false
+		if err != nil {
+			p.importErr = err
+			return
+		}
+		p.closeImportDialog()
+		title := i18n.Tf("settings.account.import.done", len(res.Imported))
+		if len(res.Skipped) > 0 {
+			a.toasts = append(a.toasts, ui.Toast{
+				Title:       title,
+				Description: i18n.Tf("settings.account.import.skipped", len(res.Skipped)),
+				Type:        kit.ToastSuccess,
+			})
+		} else {
+			a.toastAs(kit.ToastSuccess, title)
+		}
+		if len(res.Imported) > 0 {
+			fromOnboarding := a.route.Page == PageOnboarding
+			for _, acc := range res.Imported {
+				if _, ok := a.accountByID(acc.ID); !ok {
+					a.accounts = append(a.accounts, acc)
+				}
+				if a.unread != nil {
+					a.unread[acc.ID] = 0
+				}
+			}
+			a.navigate(Route{Page: PageSettings, Settings: accountRoute(res.Imported[0].ID)})
+			if fromOnboarding {
+				a.history = nil
+			}
+		}
+		a.load()
 	})
 }
 
@@ -871,13 +1043,18 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 			pub = nil
 			p.client.public = false
 		}
+		missing := acc.StatusDetail == "credentials_missing"
+		secretHelp := i18n.T("settings.account.client.secret_help")
+		if missing {
+			secretHelp = i18n.T("onboarding.secret.help")
+		}
 		body = func() {
 			p.client.choice(c, pub)
-			p.client.view(c, a, i18n.T("settings.account.client.secret_help"), pub)
+			p.client.view(c, a, secretHelp, pub)
 		}
 		client := p.client.client(pub)
-		incomplete = client.ID == "" || client.Secret == "" && client.ID != acc.OAuthClientID // a new client needs its secret
-		if client.Secret == "" && client.ID == acc.OAuthClientID {
+		incomplete = client.ID == "" || client.Secret == "" && (missing || client.ID != acc.OAuthClientID) // a new or unstored client needs its secret
+		if client.Secret == "" && !missing && client.ID == acc.OAuthClientID {
 			client = core.OAuthClient{Account: id} // the saved secret
 		}
 		confirm = func() {

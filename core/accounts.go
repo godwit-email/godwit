@@ -745,7 +745,11 @@ func (s *Service) updatePassword(ctx context.Context, id int64, password string,
 	if err := keychainSet(user, password); err != nil {
 		return fmt.Errorf("save credentials to keychain: %w", err)
 	}
-	if acc.ReceiveOnly != (err != nil) { // sending takes the new password, or (JMAP) refuses it
+	if !send {
+		if _, err := s.db.Execute(ctx, "UPDATE accounts SET receive_only = ?, features = COALESCE(?, features) WHERE id = ?", b2i(err != nil), encodeFeatures(r.desc), id); err != nil {
+			return err
+		}
+	} else if acc.ReceiveOnly != (err != nil) {
 		if _, err := s.db.Execute(ctx, "UPDATE accounts SET receive_only = ? WHERE id = ?", b2i(err != nil), id); err != nil {
 			return err
 		}

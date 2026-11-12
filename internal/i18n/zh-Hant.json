@@ -2245,5 +2245,20 @@
   "feature_reason_graph_folder_not_label": "Outlook 的資料夾不是標籤：刪除資料夾會連同裡面的郵件一起刪除。",
   "feature_reason_graph_no_all_mail": "Outlook 沒有「所有郵件」：封存會把郵件移到封存資料夾。",
   "feature_reason_graph_folders_pending": "暫不支援透過 Microsoft Graph 管理資料夾。",
-  "feature_reason_graph_no_push": "桌面端無法接收 Microsoft Graph 的推播通知，Godwit 會改為每分鐘輪詢一次。"
+  "feature_reason_graph_no_push": "桌面端無法接收 Microsoft Graph 的推播通知，Godwit 會改為每分鐘輪詢一次。",
+  "error_account_exists": "這個信箱地址已使用另一種協定新增過了。",
+  "error_bad_account_export": "這個檔案不是有效的 Godwit 帳戶匯出檔案。",
+  "error_unsupported_export_version": "目前版本的 Godwit 不支援這個帳戶匯出檔案的格式版本。",
+  "settings_import_accounts": "匯入帳戶…",
+  "settings_account_import_button": "匯入…",
+  "settings_account_import_confirm": "確認匯入",
+  "settings_account_import_desc": "請核對每個帳戶將連線的伺服器。匯出檔案不含密碼與權杖，匯入後需逐一重新授權才會同步。",
+  "settings_account_import_done": "已匯入 {arg1, number, ::group-off} 個帳戶",
+  "settings_account_import_empty": "這個檔案裡沒有可匯入的帳戶。",
+  "settings_account_import_existing": "已存在，略過",
+  "settings_account_import_help": "匯入已匯出的帳戶設定，不含憑證，匯入後需逐一重新授權",
+  "settings_account_import_row": "從檔案匯入帳戶設定",
+  "settings_account_import_skipped": "{arg1, number, ::group-off} 個帳戶已存在，已略過",
+  "settings_account_import_title": "匯入帳戶",
+  "settings_account_reauth_imported": "這個帳戶剛從檔案匯入，尚無憑證，重新授權後開始同步。"
 }

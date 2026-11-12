@@ -2245,5 +2245,20 @@
   "feature_reason_graph_folder_not_label": "Dans Outlook, un dossier n’est pas un libellé : le supprimer supprime aussi ses e-mails.",
   "feature_reason_graph_no_all_mail": "Outlook n’a pas « Tous les messages » : archiver déplace le message vers le dossier Archives.",
   "feature_reason_graph_folders_pending": "La gestion des dossiers via Microsoft Graph n’est pas encore disponible.",
-  "feature_reason_graph_no_push": "Les applications de bureau ne peuvent pas recevoir les webhooks Microsoft Graph ; Godwit vérifie chaque minute."
+  "feature_reason_graph_no_push": "Les applications de bureau ne peuvent pas recevoir les webhooks Microsoft Graph ; Godwit vérifie chaque minute.",
+  "error_account_exists": "Un compte avec cette adresse e-mail existe déjà avec un autre protocole.",
+  "error_bad_account_export": "Ce fichier n’est pas une exportation de comptes Godwit valide.",
+  "error_unsupported_export_version": "Ce fichier d’exportation utilise une version de format que cette version de Godwit ne reconnaît pas.",
+  "settings_import_accounts": "Importer des comptes…",
+  "settings_account_import_button": "Importer…",
+  "settings_account_import_confirm": "Importer",
+  "settings_account_import_desc": "Vérifiez les serveurs de messagerie auxquels chaque compte se connectera. Les mots de passe et jetons ne sont pas inclus ; chaque compte devra être réautorisé.",
+  "settings_account_import_done": "{arg1, plural, one {{arg1, number, ::group-off} compte importé} many {{arg1, number, ::group-off} comptes importés} other {{arg1, number, ::group-off} comptes importés}}",
+  "settings_account_import_empty": "Ce fichier ne contient aucun compte à importer.",
+  "settings_account_import_existing": "Existe déjà, ignoré",
+  "settings_account_import_help": "Ajoute les comptes exportés sans identifiants ; chacun demandera une reconnexion",
+  "settings_account_import_row": "Importer la configuration des comptes depuis un fichier",
+  "settings_account_import_skipped": "{arg1, number, ::group-off} existaient déjà, ignorés",
+  "settings_account_import_title": "Importer des comptes",
+  "settings_account_reauth_imported": "Ce compte a été importé sans identifiants. Autorisez-le pour démarrer la synchronisation."
 }
