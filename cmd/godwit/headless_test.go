@@ -22,16 +22,67 @@ import (
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/internal/syslang"
 	"github.com/godwit-email/godwit/rpc"
+	"github.com/godwit-email/godwit/rpcbind"
 )
 
 type recordingSink struct {
-	mu        sync.Mutex
-	supported bool
-	notes     []app.Notification
+	mu              sync.Mutex
+	supported       bool
+	bannerSupported bool
+	trayVisible     bool
+	visibility      []bool
+	unread          []int
+	codesHistory    [][]core.SignInCode
+	banners         []*core.SignInCode
+	actions         trayActions
+	notes           []app.Notification
 }
 
-func (s *recordingSink) NotificationsSupported() bool    { return s.supported }
-func (s *recordingSink) SignInCodeBannerSupported() bool { return false }
+func (s *recordingSink) NotificationsSupported() bool { return s.supported }
+func (s *recordingSink) SignInCodeBannerSupported() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bannerSupported && s.trayVisible
+}
+
+func (s *recordingSink) BindTray(act trayActions) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.actions = act
+}
+
+func (s *recordingSink) SetTrayVisible(visible bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.trayVisible = visible
+	s.visibility = append(s.visibility, visible)
+}
+
+func (s *recordingSink) SetTrayUnread(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.unread = append(s.unread, n)
+}
+
+func (s *recordingSink) SetSignInCodes(codes []core.SignInCode) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.codesHistory = append(s.codesHistory, slices.Clone(codes))
+}
+
+func (s *recordingSink) ShowSignInCode(code *core.SignInCode) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if code == nil {
+		s.banners = append(s.banners, nil)
+		return
+	}
+	cp := *code
+	s.banners = append(s.banners, &cp)
+}
+
+func (s *recordingSink) SetThemeSource(string)      {}
+func (s *recordingSink) SetLanguage(string, string) {}
 
 func (s *recordingSink) Notify(n app.Notification) error {
 	s.mu.Lock()
@@ -44,6 +95,109 @@ func (s *recordingSink) Notes() []app.Notification {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return slices.Clone(s.notes)
+}
+
+func (s *recordingSink) Visibility() []bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.visibility)
+}
+
+func (s *recordingSink) Unread() []int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.unread)
+}
+
+func (s *recordingSink) LastUnread() (int, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.unread) == 0 {
+		return 0, false
+	}
+	return s.unread[len(s.unread)-1], true
+}
+
+func (s *recordingSink) Actions() trayActions {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.actions
+}
+
+func (s *recordingSink) LastCodes() ([]core.SignInCode, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.codesHistory) == 0 {
+		return nil, false
+	}
+	return slices.Clone(s.codesHistory[len(s.codesHistory)-1]), true
+}
+
+func (s *recordingSink) Banners() []*core.SignInCode {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*core.SignInCode, len(s.banners))
+	for i, b := range s.banners {
+		if b != nil {
+			cp := *b
+			out[i] = &cp
+		}
+	}
+	return out
+}
+
+type stepTimer struct {
+	at      time.Time
+	fn      func()
+	stopped bool
+}
+
+type stepClock struct {
+	mu     sync.Mutex
+	now    time.Time
+	timers []*stepTimer
+}
+
+func newStepClock(now time.Time) *stepClock {
+	return &stepClock{now: now}
+}
+
+func (c *stepClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *stepClock) AfterFunc(d time.Duration, fn func()) func() bool {
+	c.mu.Lock()
+	t := &stepTimer{at: c.now.Add(d), fn: fn}
+	c.timers = append(c.timers, t)
+	c.mu.Unlock()
+	return func() bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if t.stopped {
+			return false
+		}
+		t.stopped = true
+		return true
+	}
+}
+
+func (c *stepClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	c.now = c.now.Add(d)
+	var due []func()
+	for _, t := range c.timers {
+		if !t.stopped && !t.at.After(c.now) {
+			t.stopped = true
+			due = append(due, t.fn)
+		}
+	}
+	c.mu.Unlock()
+	for _, fn := range due {
+		go fn()
+	}
 }
 
 func withHeadlessDesktop(t *testing.T, fn func() *headlessDesktop) {
@@ -93,7 +247,7 @@ func TestHeadlessGraphicalNotifies(t *testing.T) {
 	sink := &recordingSink{supported: true}
 	withHeadlessDesktop(t, func() *headlessDesktop {
 		return &headlessDesktop{
-			newSink: func(*core.Service) app.NotificationSink { return sink },
+			newPlatform: func(string, *core.Service) headlessPlatform { return sink },
 			run: func(ctx context.Context, ready func(stop func())) (bool, error) {
 				loopCtx, stop := context.WithCancel(ctx)
 				defer stop()
@@ -162,7 +316,7 @@ func TestHeadlessGraphicalEngineOptions(t *testing.T) {
 				pdfCalls.Add(1)
 				return []byte("%PDF-1.4\nfake\n"), nil
 			},
-			newSink: func(*core.Service) app.NotificationSink { return &recordingSink{supported: true} },
+			newPlatform: func(string, *core.Service) headlessPlatform { return &recordingSink{supported: true} },
 			run: func(ctx context.Context, ready func(stop func())) (bool, error) {
 				loopCtx, stop := context.WithCancel(ctx)
 				defer stop()
@@ -406,10 +560,22 @@ func TestHeadlessWithoutGraphicalSession(t *testing.T) {
 		t.Fatalf("RequestMCPSend = (%v, %v), want ErrMCPSendOff", sent, err)
 	}
 
+	// Toggling tray settings and receiving a sign-in code without a graphical session produces no tray or errors.
+	var st core.Settings
+	if err := c.Call(ctx, "GetSettings", &st); err != nil {
+		t.Fatalf("GetSettings: %v", err)
+	}
+	st.ShowTrayIcon = false
+	st.UnreadInMenuBar = true
+	if err := c.Call(ctx, "SetSettings", nil, st); err != nil {
+		t.Fatalf("SetSettings: %v", err)
+	}
+	deliver("From: login@example.com\r\nTo: alice@example.com\r\nSubject: Verification code: 102938\r\nMessage-ID: <ng1@example.com>\r\n\r\nCode 102938.\r\n")
+
 	if code := stop(); code != 0 {
 		t.Fatalf("exit code %d; stderr %q", code, stderr.String())
 	}
-	if strings.Contains(stderr.String(), "notify:") || strings.Contains(stderr.String(), "level=ERROR") {
+	if strings.Contains(stderr.String(), "notify:") || strings.Contains(stderr.String(), "tray:") || strings.Contains(stderr.String(), "level=ERROR") {
 		t.Fatalf("unexpected error in stderr: %q", stderr.String())
 	}
 }
@@ -458,10 +624,12 @@ func TestHeadlessDesktopSelectionAndFallback(t *testing.T) {
 	}
 	inMain = prevMain
 
-	// When a desktop runner fails to initialize before ready, headless falls back cleanly.
+	// When a desktop runner fails to initialize before ready, headless falls back cleanly without creating a tray.
+	fallbackSink := &recordingSink{supported: true}
 	withHeadlessDesktop(t, func() *headlessDesktop {
 		return &headlessDesktop{
-			translator: func() core.SystemTranslator { return fakeTranslator{} },
+			translator:  func() core.SystemTranslator { return fakeTranslator{} },
+			newPlatform: func(string, *core.Service) headlessPlatform { return fallbackSink },
 			run: func(context.Context, func(func())) (bool, error) {
 				return false, errors.New("mygo: cannot open display")
 			},
@@ -475,6 +643,9 @@ func TestHeadlessDesktopSelectionAndFallback(t *testing.T) {
 	}
 	if slices.ContainsFunc(plugins, func(p core.PluginInfo) bool { return p.Name == "system-translation" }) {
 		t.Fatalf("fallback kept desktop SystemTranslator: %+v", plugins)
+	}
+	if got := fallbackSink.Visibility(); len(got) != 0 {
+		t.Fatalf("fallback created tray: %v", got)
 	}
 	if code := stop(); code != 0 {
 		t.Fatalf("exit code %d; stderr %q", code, stderr.String())
@@ -506,5 +677,384 @@ func TestSigintShutdownNoDesktop(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, rpc.SocketName)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("socket left behind: %v", err)
+	}
+}
+
+func waitCond(t *testing.T, desc string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", desc)
+		}
+		time.Sleep(15 * time.Millisecond)
+	}
+}
+
+func TestHeadlessTrayVisibilityAndUnread(t *testing.T) {
+	env := coretest.New(t, coretest.WithoutAutoSync())
+	var currentSink atomic.Pointer[recordingSink]
+	withHeadlessDesktop(t, func() *headlessDesktop {
+		return &headlessDesktop{
+			newPlatform: func(string, *core.Service) headlessPlatform { return currentSink.Load() },
+			run: func(ctx context.Context, ready func(stop func())) (bool, error) {
+				loopCtx, stop := context.WithCancel(ctx)
+				defer stop()
+				ready(stop)
+				<-loopCtx.Done()
+				return true, nil
+			},
+		}
+	})
+
+	sink1 := &recordingSink{supported: true, bannerSupported: true}
+	currentSink.Store(sink1)
+
+	dir := shortDir(t)
+	c, stderr, stop := startHeadless(t, dir)
+	ctx := context.Background()
+
+	// Initial startup sets tray visible and clears badge (0).
+	if got := sink1.Visibility(); !slices.Equal(got, []bool{true}) {
+		t.Fatalf("initial visibility = %v, want [true]", got)
+	}
+	if n, ok := sink1.LastUnread(); !ok || n != 0 {
+		t.Fatalf("initial unread = (%d, %v), want (0, true)", n, ok)
+	}
+
+	acc, deliver := addTestAccount(t, env, c)
+	deliver("From: a@example.com\r\nTo: alice@example.com\r\nSubject: One\r\nMessage-ID: <u1@example.com>\r\n\r\nFirst.\r\n")
+	// UnreadInMenuBar defaults to false: badge stays 0 until enabled.
+	var st core.Settings
+	if err := c.Call(ctx, "GetSettings", &st); err != nil {
+		t.Fatalf("GetSettings: %v", err)
+	}
+	st.UnreadInMenuBar = true
+	if err := c.Call(ctx, "SetSettings", nil, st); err != nil {
+		t.Fatalf("SetSettings UnreadInMenuBar=true: %v", err)
+	}
+	waitCond(t, "unread=1", func() bool { n, ok := sink1.LastUnread(); return ok && n == 1 })
+
+	deliver("From: b@example.com\r\nTo: alice@example.com\r\nSubject: Two\r\nMessage-ID: <u2@example.com>\r\n\r\nSecond.\r\n")
+	waitCond(t, "unread=2", func() bool { n, ok := sink1.LastUnread(); return ok && n == 2 })
+
+	// Mark one message read -> unread=1.
+	var folders []core.Folder
+	if err := c.Call(ctx, "ListFolders", &folders, acc.ID); err != nil {
+		t.Fatalf("ListFolders: %v", err)
+	}
+	inboxIdx := slices.IndexFunc(folders, func(f core.Folder) bool { return f.Role == "inbox" })
+	var page core.MessagePage
+	if err := c.Call(ctx, "ListMessages", &page, core.View{FolderID: folders[inboxIdx].ID}, "", 10); err != nil || len(page.Items) != 2 {
+		t.Fatalf("ListMessages = %+v, %v", page, err)
+	}
+	if err := c.Call(ctx, "SetFlags", nil, []int64{page.Items[0].ID}, []string{`\Seen`}, []string(nil)); err != nil {
+		t.Fatalf("SetFlags: %v", err)
+	}
+	waitCond(t, "unread=1 after SetFlags", func() bool { n, ok := sink1.LastUnread(); return ok && n == 1 })
+
+	// Turn off UnreadInMenuBar -> badge clears to 0 while tray remains visible.
+	st.UnreadInMenuBar = false
+	if err := c.Call(ctx, "SetSettings", nil, st); err != nil {
+		t.Fatalf("SetSettings UnreadInMenuBar=false: %v", err)
+	}
+	waitCond(t, "unread=0 when UnreadInMenuBar=false", func() bool { n, ok := sink1.LastUnread(); return ok && n == 0 })
+	if got := sink1.Visibility(); !slices.Equal(got, []bool{true}) {
+		t.Fatalf("visibility changed unexpectedly: %v", got)
+	}
+
+	// Re-enable UnreadInMenuBar -> badge restores to 1.
+	st.UnreadInMenuBar = true
+	if err := c.Call(ctx, "SetSettings", nil, st); err != nil {
+		t.Fatalf("SetSettings UnreadInMenuBar=true: %v", err)
+	}
+	waitCond(t, "unread=1 when UnreadInMenuBar=true", func() bool { n, ok := sink1.LastUnread(); return ok && n == 1 })
+
+	// Hide tray via ShowTrayIcon=false -> SetTrayVisible(false) and badge clears to 0.
+	st.ShowTrayIcon = false
+	if err := c.Call(ctx, "SetSettings", nil, st); err != nil {
+		t.Fatalf("SetSettings ShowTrayIcon=false: %v", err)
+	}
+	waitCond(t, "tray hidden", func() bool { return slices.Equal(sink1.Visibility(), []bool{true, false}) })
+	waitCond(t, "unread=0 when ShowTrayIcon=false", func() bool { n, ok := sink1.LastUnread(); return ok && n == 0 })
+
+	// Re-show tray -> SetTrayVisible(true) and badge restores to 1.
+	st.ShowTrayIcon = true
+	if err := c.Call(ctx, "SetSettings", nil, st); err != nil {
+		t.Fatalf("SetSettings ShowTrayIcon=true: %v", err)
+	}
+	waitCond(t, "tray re-shown", func() bool { return slices.Equal(sink1.Visibility(), []bool{true, false, true}) })
+	waitCond(t, "unread=1 restored", func() bool { n, ok := sink1.LastUnread(); return ok && n == 1 })
+
+	// Persist ShowTrayIcon=false and restart backend on the same dataDir -> starts hidden with badge 0.
+	st.ShowTrayIcon = false
+	if err := c.Call(ctx, "SetSettings", nil, st); err != nil {
+		t.Fatalf("SetSettings ShowTrayIcon=false before restart: %v", err)
+	}
+	waitCond(t, "tray hidden before restart", func() bool { return slices.Equal(sink1.Visibility(), []bool{true, false, true, false}) })
+	_ = c.Close()
+	if code := stop(); code != 0 {
+		t.Fatalf("first exit code %d; stderr %q", code, stderr.String())
+	}
+
+	sink2 := &recordingSink{supported: true, bannerSupported: true}
+	currentSink.Store(sink2)
+	_, stderr2, stop2 := startHeadless(t, dir)
+	if got := sink2.Visibility(); !slices.Equal(got, []bool{false}) {
+		t.Fatalf("restarted visibility = %v, want [false]", got)
+	}
+	if n, ok := sink2.LastUnread(); !ok || n != 0 {
+		t.Fatalf("restarted unread = (%d, %v), want (0, true)", n, ok)
+	}
+	if code := stop2(); code != 0 {
+		t.Fatalf("second exit code %d; stderr %q", code, stderr2.String())
+	}
+}
+
+func TestHeadlessTrayActions(t *testing.T) {
+	env := coretest.New(t, coretest.WithoutAutoSync())
+	sink := &recordingSink{supported: true, bannerSupported: true}
+	withHeadlessDesktop(t, func() *headlessDesktop {
+		return &headlessDesktop{
+			newPlatform: func(string, *core.Service) headlessPlatform { return sink },
+			run: func(ctx context.Context, ready func(stop func())) (bool, error) {
+				loopCtx, stop := context.WithCancel(ctx)
+				defer stop()
+				ready(stop)
+				<-loopCtx.Done()
+				return true, nil
+			},
+		}
+	})
+
+	dir := shortDir(t)
+	runCtx, cancelRun := context.WithCancel(context.Background())
+	defer cancelRun()
+	stderr := &syncBuf{}
+	done := make(chan int, 1)
+	go func() { done <- run(runCtx, []string{"--headless", "--data-dir", dir}, nil, &syncBuf{}, stderr) }()
+	c := dialWait(t, dir)
+	ctx := context.Background()
+
+	// Add an IMAP account (which already has Archive) plus a Local Archive account.
+	ref := env.AddAccount(t, "alice@example.com")
+	im := env.IMAP(ref.ID)
+	ih, ip, sh, sp := env.Endpoints(ref.ID)
+	var acc core.Account
+	err := c.Call(ctx, "AddAccount", &acc, core.AccountInput{
+		Name:      "work",
+		Email:     "alice@example.com",
+		Username:  "alice",
+		Password:  "secret",
+		Receiving: core.Server{Host: ih, Port: ip, Security: core.SecurityNone},
+		Sending:   core.Server{Host: sh, Port: sp, Security: core.SecurityNone},
+		IsDefault: true,
+	})
+	if err != nil {
+		t.Fatalf("AddAccount: %v", err)
+	}
+	if err := c.Call(ctx, "SyncNow", nil, acc.ID); err != nil {
+		t.Fatalf("initial SyncNow: %v", err)
+	}
+	var localAcc core.Account
+	if err := c.Call(ctx, "AddLocalArchive", &localAcc, "Old Mail"); err != nil {
+		t.Fatalf("AddLocalArchive: %v", err)
+	}
+
+	var folders []core.Folder
+	if err := c.Call(ctx, "ListFolders", &folders, acc.ID); err != nil {
+		t.Fatalf("ListFolders: %v", err)
+	}
+	archiveIdx := slices.IndexFunc(folders, func(f core.Folder) bool { return f.Name == "Archive" })
+	if archiveIdx < 0 {
+		t.Fatalf("Archive folder not synced: %+v", folders)
+	}
+	archiveFolderID := folders[archiveIdx].ID
+
+	// Set UI foreground=false so background rounds stay inbox-only, and let the
+	// initial AddAccount worker round settle before appending to Archive.
+	uiClient, err := rpc.Dial(dir, rpc.RoleUI, "ui-test", rpcbind.NewCodec())
+	if err != nil {
+		t.Fatalf("Dial RoleUI: %v", err)
+	}
+	defer uiClient.Close()
+	if err := uiClient.Call(ctx, "SetUIForeground", nil, false); err != nil {
+		t.Fatalf("SetUIForeground: %v", err)
+	}
+	time.Sleep(150 * time.Millisecond)
+
+	// Append directly to Archive on the IMAP server: background worker is resting
+	// on INBOX IDLE and inbox-only, so only tray Sync All (SyncNow) fetches Archive.
+	raw := "From: colleague@example.com\r\nTo: alice@example.com\r\nSubject: Archived Note\r\nMessage-ID: <arc1@example.com>\r\n\r\nBody.\r\n"
+	if _, err := im.User.Append("Archive", bytes.NewReader([]byte(raw)), &imap.AppendOptions{}); err != nil {
+		t.Fatalf("append Archive: %v", err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	var beforePage core.MessagePage
+	if err := c.Call(ctx, "ListMessages", &beforePage, core.View{FolderID: archiveFolderID}, "", 10); err != nil || len(beforePage.Items) != 0 {
+		t.Fatalf("Archive fetched before Sync All: %+v, %v", beforePage, err)
+	}
+
+	sink.Actions().syncAll()
+	waitCond(t, "Sync All fetches Archive message", func() bool {
+		var p core.MessagePage
+		return c.Call(ctx, "ListMessages", &p, core.View{FolderID: archiveFolderID}, "", 10) == nil && len(p.Items) == 1
+	})
+
+	// Hide Tray Icon updates Settings.ShowTrayIcon=false and hides tray.
+	sink.Actions().hide()
+	waitCond(t, "Hide Tray Icon hides tray", func() bool {
+		return slices.Equal(sink.Visibility(), []bool{true, false})
+	})
+	var st core.Settings
+	if err := c.Call(ctx, "GetSettings", &st); err != nil || st.ShowTrayIcon {
+		t.Fatalf("GetSettings after Hide Tray Icon = %+v, %v", st, err)
+	}
+
+	// Quit cleanly shuts down the backend without cancelling runCtx.
+	_ = c.Close()
+	sink.Actions().quit()
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Fatalf("Quit exit code %d; stderr %q", code, stderr.String())
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatalf("backend did not exit after tray Quit; stderr %q", stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, rpc.SocketName)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("socket left behind after Quit: %v", err)
+	}
+	if strings.Contains(stderr.String(), "tray:") || strings.Contains(stderr.String(), "level=ERROR") {
+		t.Fatalf("unexpected tray warning/error in stderr: %q", stderr.String())
+	}
+}
+
+func TestHeadlessTraySignInCodesAndBanner(t *testing.T) {
+	env := coretest.New(t, coretest.WithoutAutoSync())
+	clk := newStepClock(time.Now())
+	sink := &recordingSink{supported: true, bannerSupported: true}
+	withHeadlessDesktop(t, func() *headlessDesktop {
+		return &headlessDesktop{
+			clock:       clk,
+			newPlatform: func(string, *core.Service) headlessPlatform { return sink },
+			run: func(ctx context.Context, ready func(stop func())) (bool, error) {
+				loopCtx, stop := context.WithCancel(ctx)
+				defer stop()
+				ready(stop)
+				<-loopCtx.Done()
+				return true, nil
+			},
+		}
+	})
+
+	dir := shortDir(t)
+	c, stderr, stop := startHeadless(t, dir)
+	ctx := context.Background()
+
+	if codes, ok := sink.LastCodes(); !ok || len(codes) != 0 {
+		t.Fatalf("initial sign-in codes = (%+v, %v), want empty", codes, ok)
+	}
+
+	_, deliver := addTestAccount(t, env, c)
+
+	// 1. Background arrival with NotifyNewMail && NotifyPreview && bannerSupported:
+	// updates tray recent codes, shows floating banner, suppresses duplicate notification.
+	deliver("From: Login <login@example.com>\r\nTo: alice@example.com\r\nSubject: Verification code: 482913\r\nMessage-ID: <code1@example.com>\r\n\r\nYour verification code is 482913.\r\n")
+	waitCond(t, "sign-in code 482913 in tray", func() bool {
+		codes, ok := sink.LastCodes()
+		return ok && len(codes) == 1 && codes[0].Code == "482913"
+	})
+	waitCond(t, "banner shown for 482913", func() bool {
+		bs := sink.Banners()
+		return slices.ContainsFunc(bs, func(b *core.SignInCode) bool { return b != nil && b.Code == "482913" })
+	})
+	clk.Advance(app.NotifyWait)
+	time.Sleep(80 * time.Millisecond)
+	if notes := sink.Notes(); len(notes) != 0 {
+		t.Fatalf("duplicate notification sent when banner shown: %+v", notes)
+	}
+
+	// 2. UI in foreground suppresses banner (and notifications) while still updating tray submenu.
+	uiClient, err := rpc.Dial(dir, rpc.RoleUI, "ui-test", rpcbind.NewCodec())
+	if err != nil {
+		t.Fatalf("Dial RoleUI: %v", err)
+	}
+	defer uiClient.Close()
+	if err := uiClient.Call(ctx, "SetUIForeground", nil, true); err != nil {
+		t.Fatalf("SetUIForeground(true): %v", err)
+	}
+	bannersBefore := len(sink.Banners())
+	deliver("From: Login <login@example.com>\r\nTo: alice@example.com\r\nSubject: Verification code: 739104\r\nMessage-ID: <code2@example.com>\r\n\r\nYour verification code is 739104.\r\n")
+	waitCond(t, "sign-in code 739104 in tray", func() bool {
+		codes, ok := sink.LastCodes()
+		return ok && len(codes) == 2 && codes[0].Code == "739104"
+	})
+	for _, b := range sink.Banners()[bannersBefore:] {
+		if b != nil {
+			t.Fatalf("banner shown while UIForeground()=true: %+v", b)
+		}
+	}
+	clk.Advance(app.NotifyWait)
+	time.Sleep(80 * time.Millisecond)
+	if notes := sink.Notes(); len(notes) != 0 {
+		t.Fatalf("notification sent while UIForeground()=true: %+v", notes)
+	}
+
+	// 3. With NotifyPreview=false (and !UIForeground()), recent codes still populate tray submenu,
+	// no banner is shown, and an ordinary generic notification is sent instead.
+	if err := uiClient.Call(ctx, "SetUIForeground", nil, false); err != nil {
+		t.Fatalf("SetUIForeground(false): %v", err)
+	}
+	var st core.Settings
+	if err := c.Call(ctx, "GetSettings", &st); err != nil {
+		t.Fatalf("GetSettings: %v", err)
+	}
+	st.NotifyPreview = false
+	if err := c.Call(ctx, "SetSettings", nil, st); err != nil {
+		t.Fatalf("SetSettings NotifyPreview=false: %v", err)
+	}
+	waitCond(t, "banner dismissed when NotifyPreview=false", func() bool {
+		bs := sink.Banners()
+		return len(bs) > 0 && bs[len(bs)-1] == nil
+	})
+	bannersBefore = len(sink.Banners())
+	deliver("From: Login <login@example.com>\r\nTo: alice@example.com\r\nSubject: Verification code: 918273\r\nMessage-ID: <code3@example.com>\r\n\r\nYour verification code is 918273.\r\n")
+	waitCond(t, "sign-in code 918273 in tray", func() bool {
+		codes, ok := sink.LastCodes()
+		return ok && len(codes) == 3 && codes[0].Code == "918273"
+	})
+	for _, b := range sink.Banners()[bannersBefore:] {
+		if b != nil {
+			t.Fatalf("banner shown when NotifyPreview=false: %+v", b)
+		}
+	}
+	clk.Advance(app.NotifyWait)
+	waitCond(t, "generic notification when NotifyPreview=false", func() bool {
+		return len(sink.Notes()) == 1
+	})
+	if n := sink.Notes()[0]; n.Title != "Godwit" {
+		t.Fatalf("expected generic notification, got %+v", n)
+	}
+
+	// 4. Advancing past the 15-minute expiry window fires the expiry timer and clears codes + banner.
+	for range 32 {
+		clk.Advance(30 * time.Second)
+		codes, ok := sink.LastCodes()
+		if ok && len(codes) == 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	waitCond(t, "expired sign-in codes cleared", func() bool {
+		codes, ok := sink.LastCodes()
+		return ok && len(codes) == 0
+	})
+	if bs := sink.Banners(); len(bs) == 0 || bs[len(bs)-1] != nil {
+		t.Fatalf("expected final banner call to dismiss (nil), got %+v", bs)
+	}
+
+	if code := stop(); code != 0 {
+		t.Fatalf("exit code %d; stderr %q", code, stderr.String())
 	}
 }

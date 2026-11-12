@@ -413,13 +413,25 @@ func signInAvatar(ctx context.Context, svc avatarService, id int64) ui.ImageSour
 	return img
 }
 
+func (p *platform) dismissSignInBanner(b *signInBanner, onMain func(func())) {
+	onMain(func() {
+		if p.codeBanner == b {
+			p.ShowSignInCode(nil)
+		}
+	})
+}
+
 // A tray flyout with Focusable=false keeps the target app's keyboard even
 // when Copy is clicked. A normal ShowInactive window would activate on click.
 func (p *platform) ShowSignInCode(code *core.SignInCode) {
 	if b := p.codeBanner; b != nil {
 		p.codeBanner = nil
-		b.timer.Stop()
-		b.win.Close()
+		if b.timer != nil {
+			b.timer.Stop()
+		}
+		if b.win != nil {
+			b.win.Close()
+		}
 	}
 	if code == nil || p.tray == nil || !freshSignInCode(*code, time.Now()) {
 		return
@@ -435,11 +447,7 @@ func (p *platform) ShowSignInCode(code *core.SignInCode) {
 	b.win.SetPosition(b.position.X, b.position.Y)
 	initialPosition := b.position
 	b.timer = time.AfterFunc(12*time.Second, func() {
-		p.win.Update(func() {
-			if p.codeBanner == b {
-				p.ShowSignInCode(nil)
-			}
-		})
+		p.dismissSignInBanner(b, mygo.RunOnMain)
 	})
 	p.codeBanner = b
 	ctx, stop := context.WithCancel(context.Background())
