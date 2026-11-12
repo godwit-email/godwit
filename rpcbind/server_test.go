@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
@@ -184,6 +186,8 @@ func TestMCPRoleAllowlist(t *testing.T) {
 		{"InstallPlugin", []any{coretest.PluginFixture(t, "card-demo")}},
 		{"AddAccount", []any{core.AccountInput{Email: "eve@example.com", Username: "u", Password: "p", Receiving: core.Server{Host: "127.0.0.1", Port: 1}, Sending: core.Server{Host: "127.0.0.1", Port: 1}}}},
 		{"ExportAccounts", nil},
+		{"PreviewAccountImport", []any{[]byte(`{"version":1,"accounts":[]}`)}},
+		{"ImportAccounts", []any{[]byte(`{"version":1,"accounts":[]}`)}},
 		{"RemoveModelService", []any{services[0].ID}},
 		{"SetPluginConfig", []any{"config-demo", map[string]any{"plan": "pro"}}},
 		{"GetMessage", []any{msg.ID, true}},
@@ -792,4 +796,84 @@ func TestAuditSetSettingsConcurrentWidening(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, core.MCPSendOff, got.MCPSend, "widening after off cannot commit without audit_log")
 	}
+}
+
+func TestListenWithExternalToggle(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	ctx := t.Context()
+	dir, err := os.MkdirTemp("", "gw")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	srv, err := rpcbind.ListenWith(dir, e.Svc, rpcbind.ListenOptions{Version: "test"})
+	require.NoError(t, err)
+	go srv.Serve(context.Background())
+	t.Cleanup(func() { srv.Close() })
+
+	uiTokBytes, err := os.ReadFile(filepath.Join(dir, rpc.UITokenName))
+	require.NoError(t, err)
+	_, err = os.Stat(filepath.Join(dir, rpc.TokenName))
+	require.ErrorIs(t, err, os.ErrNotExist)
+
+	ui := dial(t, dir, rpc.RoleUI)
+	require.NoError(t, ui.Call(ctx, "SetInboxOnly", nil, true))
+	var inboxOnly bool
+	require.NoError(t, ui.Call(ctx, "InboxOnly", &inboxOnly))
+	assert.True(t, inboxOnly)
+	uiEvents, uiCancel, err := ui.Stream(ctx, "Subscribe")
+	require.NoError(t, err)
+	defer uiCancel()
+
+	dialRawToken := func(token, role string) error {
+		conn, err := net.Dial("unix", filepath.Join(dir, rpc.SocketName))
+		require.NoError(t, err)
+		c := rpc.NewClient(conn)
+		defer c.Close()
+		return c.Call(ctx, "hello", nil, token, role, "raw-test")
+	}
+
+	for _, role := range []string{rpc.RoleFull, rpc.RoleMCP} {
+		_, err := rpc.Dial(dir, role, "ext-test", nil)
+		require.ErrorIs(t, err, os.ErrNotExist)
+		var we *rpc.WireError
+		require.ErrorAs(t, dialRawToken(string(uiTokBytes), role), &we)
+		assert.Equal(t, rpc.CodeUnauthenticated, we.Code)
+	}
+
+	require.NoError(t, srv.SetExternal(true))
+	apiTokBytes, err := os.ReadFile(filepath.Join(dir, rpc.TokenName))
+	require.NoError(t, err)
+
+	var we *rpc.WireError
+	require.ErrorAs(t, dialRawToken(string(apiTokBytes), rpc.RoleUI), &we)
+	assert.Equal(t, rpc.CodeUnauthenticated, we.Code)
+
+	full, mcp := dial(t, dir, rpc.RoleFull), dial(t, dir, rpc.RoleMCP)
+	var accs []core.Account
+	require.NoError(t, full.Call(ctx, "ListAccounts", &accs))
+	require.NoError(t, mcp.Call(ctx, "ListAccounts", &accs))
+
+	require.NoError(t, srv.SetExternal(false))
+	_, err = os.Stat(filepath.Join(dir, rpc.TokenName))
+	require.ErrorIs(t, err, os.ErrNotExist)
+	for _, c := range []*rpc.Client{full, mcp} {
+		select {
+		case <-c.Done():
+		case <-time.After(2 * time.Second):
+			t.Fatal("external connection not dropped")
+		}
+	}
+
+	// RoleUI remains connected and receives events on its live Subscribe stream.
+	var st core.Settings
+	require.NoError(t, ui.Call(ctx, "GetSettings", &st))
+	st.Theme = "dark"
+	require.NoError(t, ui.Call(ctx, "SetSettings", &st, st))
+	select {
+	case _, ok := <-uiEvents:
+		require.True(t, ok)
+	case <-time.After(2 * time.Second):
+		t.Fatal("RoleUI Subscribe stream did not receive event")
+	}
+	assert.Empty(t, auditRows(t, e.DataDir))
 }

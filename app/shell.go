@@ -207,9 +207,11 @@ func (a *App) toastErr(err error) {
 	switch {
 	case msg == "":
 	case msg == i18n.Tf("error.unknown", err.Error()):
-		u := issueURL(a.svc.Redact(err.Error()), a.svc.Redact(RecentLog.String()))
+		errText := err.Error()
 		a.toasts = append(a.toasts, ui.Toast{ID: msg, Title: msg, Type: kit.ToastError,
-			Action: i18n.T("error.report"), OnAction: func() { a.do(func(context.Context) error { return a.plat.OpenURL(u) }, a.toastErr) }})
+			Action: i18n.T("error.report"), OnAction: func() {
+				a.do(func(context.Context) error { return a.plat.OpenURL(issueURL(errText, a.svc.RecentLog())) }, a.toastErr)
+			}})
 	default:
 		a.toastAs(kit.ToastError, msg)
 	}
@@ -275,6 +277,7 @@ func (a *App) View(c *ui.Context) {
 	a.mail.reader.unsubscribeDialog(c)
 	a.mail.reader.attachmentConflictDialog(c)
 	a.mcpSendDialog(c)
+	a.pages[PageSettings].(*settingsPage).importDialog(c)
 	kit.ToastHost(c, i18n.T("toast.close"))
 	// Last, on the root, which overlays (menus, dialogs, Select lists, toasts)
 	// attach to: a c.SetTheme mid-frame resets its background to the theme's,

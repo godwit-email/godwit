@@ -55,6 +55,9 @@ var table = []Error{
 	{Code: "secret_not_found", Err: core.ErrSecretNotFound},
 	{Code: "wrong_account", Err: core.ErrWrongAccount},
 	{Code: "account_not_found", Err: core.ErrAccountNotFound},
+	{Code: "account_exists", Err: core.ErrAccountExists},
+	{Code: "bad_account_export", Err: core.ErrBadAccountExport},
+	{Code: "unsupported_export_version", Err: core.ErrUnsupportedExportVersion},
 	{Code: "local_archive", Err: core.ErrLocalArchive},
 	{Code: "not_local_archive", Err: core.ErrNotLocalArchive},
 	{Code: "receive_only", Err: core.ErrReceiveOnly},
@@ -229,6 +232,8 @@ var uiOnly = map[string]bool{
 	"CachedImage": true, "CachedImageDims": true, "ForgetImageFailure": true,
 	// Wire helper for the operating system's installed translation languages.
 	"SystemTranslatorLanguages": true,
+	// Redacted recent log lines for bug reports, and the interface's IANA time zone for Wit runs.
+	"RecentLog": true, "SetTimeZone": true,
 	// Window foreground, open compose drafts, and background-round narrowing; external clients use SyncNow.
 	"SetUIForeground": true, "SetComposeOpen": true, "SetInboxOnly": true, "InboxOnly": true,
 }
@@ -245,14 +250,26 @@ func ExposeUI(method string) bool {
 	return Expose(method) || uiOnly[method]
 }
 
-// Listen serves svc's exposed methods on <dataDir>/godwit.sock (see
-// rpc.Listen; the caller holds the owner lock). Errors go out through
-// NewCodec; the API token and svc's secrets are redacted from them and from
-// the log. Sends, forwarding rules and grants by the full role and drafts by
-// the mcp role are audited before they are dispatched; RoleUI is Godwit's own
-// interface and is not audited as external; SetSettings widening MCPSend is
-// audited atomically with the save under settingsMu.
+// ListenOptions configures ListenWith.
+type ListenOptions struct {
+	Version  string
+	External bool // allow RoleFull and RoleMCP connections and write api-token
+}
+
+// Listen serves svc's exposed methods on <dataDir>/godwit.sock with external
+// access enabled (see ListenWith).
 func Listen(dataDir string, svc *core.Service, version string) (*rpc.Server, error) {
+	return ListenWith(dataDir, svc, ListenOptions{Version: version, External: true})
+}
+
+// ListenWith serves svc's exposed methods on <dataDir>/godwit.sock (see
+// rpc.Listen; the caller holds the owner lock). Errors go out through
+// NewCodec; the UI and API tokens and svc's secrets are redacted from them and
+// from the log. Sends, forwarding rules and grants by the full role and drafts
+// by the mcp role are audited before they are dispatched; RoleUI is Godwit's
+// own interface and is not audited as external; SetSettings widening MCPSend is
+// audited atomically with the save under settingsMu.
+func ListenWith(dataDir string, svc *core.Service, opts ListenOptions) (*rpc.Server, error) {
 	d, err := rpc.NewDispatcher(svc, Expose)
 	if err != nil {
 		return nil, err
@@ -262,12 +279,13 @@ func Listen(dataDir string, svc *core.Service, version string) (*rpc.Server, err
 		return nil, err
 	}
 	return rpc.Listen(dataDir, d, rpc.ServerOptions{
-		Conn:         rpc.ConnOptions{MaxActive: 256},
-		Version:      version,
-		Codec:        NewCodec(),
-		Redact:       svc.Redact,
-		UIDispatcher: ui,
-		Audit:        func(role, method string, params []json.RawMessage) error { return audit(svc, role, method, params) },
+		Conn:            rpc.ConnOptions{MaxActive: 256},
+		Version:         opts.Version,
+		DisableExternal: !opts.External,
+		Codec:           NewCodec(),
+		Redact:          svc.Redact,
+		UIDispatcher:    ui,
+		Audit:           func(role, method string, params []json.RawMessage) error { return audit(svc, role, method, params) },
 		Context: func(ctx context.Context, role string) context.Context {
 			switch role {
 			case rpc.RoleFull:

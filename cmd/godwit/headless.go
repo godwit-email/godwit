@@ -183,7 +183,7 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 		return nil, 1
 	}
 	old := slog.Default() // the log package follows slog's default
-	slog.SetDefault(slog.New(newLogHandler(stderr, svc.Redact)))
+	slog.SetDefault(slog.New(newLogHandler(logOutput(stderr), svc.Redact)))
 	closeSvc := func() {
 		svc.Close() // still logging through Redact
 		slog.SetDefault(old)

@@ -89,6 +89,15 @@ func token(t *testing.T, dir string) string {
 	return string(b)
 }
 
+func uiToken(t *testing.T, dir string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(dir, rpc.UITokenName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
 func wantCode(t *testing.T, m wire, code int) {
 	t.Helper()
 	if m.Error == nil || m.Error.Code != code {
@@ -227,11 +236,17 @@ func TestTokenFilePerms(t *testing.T) {
 	dir := shortDir(t)
 	s, _, _ := startServer(t, dir, rpc.ServerOptions{})
 	tok := token(t, dir)
-	if b, err := hex.DecodeString(tok); err != nil || len(b) != 32 {
-		t.Fatalf("token %q is not 32 hex bytes", tok)
+	utok := uiToken(t, dir)
+	if tok == utok {
+		t.Fatal("ui-token and api-token are identical")
+	}
+	for name, val := range map[string]string{rpc.TokenName: tok, rpc.UITokenName: utok} {
+		if b, err := hex.DecodeString(val); err != nil || len(b) != 32 {
+			t.Fatalf("%s %q is not 32 hex bytes", name, val)
+		}
 	}
 	if runtime.GOOS != "windows" {
-		for _, p := range []string{filepath.Join(dir, rpc.TokenName), s.Path()} {
+		for _, p := range []string{filepath.Join(dir, rpc.TokenName), filepath.Join(dir, rpc.UITokenName), s.Path()} {
 			fi, err := os.Stat(p)
 			if err != nil {
 				t.Fatal(err)
@@ -242,12 +257,12 @@ func TestTokenFilePerms(t *testing.T) {
 		}
 	}
 	entries, _ := os.ReadDir(dir)
-	if len(entries) != 2 {
+	if len(entries) != 3 {
 		t.Errorf("leftover files: %v", entries)
 	}
 	s.Close()
 	startServer(t, dir, rpc.ServerOptions{})
-	if token(t, dir) == tok {
+	if token(t, dir) == tok || uiToken(t, dir) == utok {
 		t.Fatal("token reused across starts")
 	}
 }
@@ -282,13 +297,16 @@ func TestCloseCleansUp(t *testing.T) {
 	}
 	for range events {
 	}
-	for _, name := range []string{rpc.SocketName, rpc.TokenName} {
+	for _, name := range []string{rpc.SocketName, rpc.UITokenName, rpc.TokenName} {
 		if _, err := os.Lstat(filepath.Join(dir, name)); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("%s left behind: %v", name, err)
 		}
 	}
 	if _, err := rpc.Dial(dir, rpc.RoleFull, "t", nil); err == nil {
 		t.Fatal("Dial after Close succeeded")
+	}
+	if _, err := rpc.Dial(dir, rpc.RoleUI, "t", nil); err == nil {
+		t.Fatal("UI Dial after Close succeeded")
 	}
 }
 
@@ -466,8 +484,10 @@ func TestConcurrentClose(t *testing.T) {
 		default:
 			t.Fatalf("%s returned before the stream stopped", who)
 		}
-		if _, err := os.Lstat(filepath.Join(dir, rpc.TokenName)); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("%s returned before the token was removed", who)
+		for _, name := range []string{rpc.UITokenName, rpc.TokenName} {
+			if _, err := os.Lstat(filepath.Join(dir, name)); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("%s returned before %s was removed", who, name)
+			}
 		}
 	}
 	check("Close")
@@ -539,5 +559,156 @@ func TestRoleUIDispatcherAndMaxActive(t *testing.T) {
 	defer mcp.Close()
 	if err := mcp.Call(context.Background(), "InboxOnly", &on); !errors.As(err, &we) || we.Code != rpc.CodeForbidden {
 		t.Fatalf("mcp InboxOnly = %v, want CodeForbidden", err)
+	}
+}
+
+func TestDualTokensAndSetExternal(t *testing.T) {
+	logged := logs(t)
+	dir := shortDir(t)
+	// A leftover api-token from a previous run is cleared when starting with external off.
+	if err := os.WriteFile(filepath.Join(dir, rpc.TokenName), []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, _, _ := startServer(t, dir, rpc.ServerOptions{DisableExternal: true})
+
+	utok := uiToken(t, dir)
+	if _, err := os.Stat(filepath.Join(dir, rpc.TokenName)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("api-token with DisableExternal: %v", err)
+	}
+
+	// External off: RoleUI connects and works; RoleFull and RoleMCP fail.
+	ui, err := rpc.Dial(dir, rpc.RoleUI, "ui-test", nil)
+	if err != nil {
+		t.Fatalf("Dial RoleUI with external off: %v", err)
+	}
+	defer ui.Close()
+	var accs []string
+	if err := ui.Call(context.Background(), "ListAccounts", &accs); err != nil || len(accs) != 1 {
+		t.Fatalf("ui ListAccounts = %v, %v", accs, err)
+	}
+	uiEvents, uiCancel, err := ui.Stream(context.Background(), "Watch")
+	if err != nil {
+		t.Fatalf("ui Watch = %v", err)
+	}
+	defer uiCancel()
+
+	// Redact with disabled empty api-token must not insert [redacted] between runes,
+	// while still redacting ui-token.
+	_ = ui.Call(context.Background(), "Fail", nil, "plain "+utok)
+	if l := logged(); !strings.Contains(l, `bad mode \"plain [redacted]\"`) && !strings.Contains(l, `bad mode "plain [redacted]"`) {
+		t.Fatalf("log with empty api-token = %q", l)
+	}
+	if strings.Contains(logged(), utok) {
+		t.Fatalf("ui-token leaked into log: %q", logged())
+	}
+
+	for _, role := range []string{rpc.RoleFull, rpc.RoleMCP} {
+		if c, err := rpc.Dial(dir, role, "ext-test", nil); err == nil {
+			c.Close()
+			t.Fatalf("Dial %s succeeded with external off", role)
+		}
+		// Passing ui-token on the socket for full/mcp is rejected.
+		r := dialRaw(t, s)
+		r.send(`{"jsonrpc":"2.0","id":1,"method":"hello","params":["%s","%s","ext"]}`, utok, role)
+		wantCode(t, r.recv(), rpc.CodeUnauthenticated)
+		r.closed()
+	}
+
+	// Enable external access dynamically: api-token appears (0600), idempotent.
+	if err := s.SetExternal(true); err != nil {
+		t.Fatalf("SetExternal(true): %v", err)
+	}
+	atok := token(t, dir)
+	if atok == utok {
+		t.Fatal("api-token equals ui-token")
+	}
+	if runtime.GOOS != "windows" {
+		fi, err := os.Stat(filepath.Join(dir, rpc.TokenName))
+		if err != nil || fi.Mode().Perm() != 0o600 {
+			t.Fatalf("api-token stat = %v, %v", fi, err)
+		}
+	}
+	if err := s.SetExternal(true); err != nil {
+		t.Fatalf("SetExternal(true) idempotent: %v", err)
+	}
+	if got := token(t, dir); got != atok {
+		t.Fatalf("SetExternal(true) rotated active token: %q != %q", got, atok)
+	}
+
+	// Token separation: api-token cannot claim RoleUI; ui-token still cannot claim RoleFull/RoleMCP.
+	{
+		r := dialRaw(t, s)
+		r.send(`{"jsonrpc":"2.0","id":1,"method":"hello","params":["%s","ui","ext"]}`, atok)
+		wantCode(t, r.recv(), rpc.CodeUnauthenticated)
+		r.closed()
+	}
+	for _, role := range []string{rpc.RoleFull, rpc.RoleMCP} {
+		r := dialRaw(t, s)
+		r.send(`{"jsonrpc":"2.0","id":1,"method":"hello","params":["%s","%s","ui"]}`, utok, role)
+		wantCode(t, r.recv(), rpc.CodeUnauthenticated)
+		r.closed()
+	}
+
+	full, err := rpc.Dial(dir, rpc.RoleFull, "full-test", nil)
+	if err != nil {
+		t.Fatalf("Dial RoleFull: %v", err)
+	}
+	defer full.Close()
+	mcp, err := rpc.Dial(dir, rpc.RoleMCP, "mcp-test", nil)
+	if err != nil {
+		t.Fatalf("Dial RoleMCP: %v", err)
+	}
+	defer mcp.Close()
+	if err := full.Call(context.Background(), "ListAccounts", &accs); err != nil {
+		t.Fatalf("full ListAccounts: %v", err)
+	}
+	if err := mcp.Call(context.Background(), "ListAccounts", &accs); err != nil {
+		t.Fatalf("mcp ListAccounts: %v", err)
+	}
+	_ = full.Call(context.Background(), "Fail", nil, atok)
+	if strings.Contains(logged(), atok) {
+		t.Fatalf("api-token leaked into log: %q", logged())
+	}
+
+	// Disable external access while connected: api-token disappears, full and mcp
+	// connections drop immediately, and RoleUI stays open and working.
+	if err := s.SetExternal(false); err != nil {
+		t.Fatalf("SetExternal(false): %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, rpc.TokenName)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("api-token after SetExternal(false): %v", err)
+	}
+	for name, c := range map[string]*rpc.Client{"full": full, "mcp": mcp} {
+		select {
+		case <-c.Done():
+		case <-time.After(2 * time.Second):
+			t.Fatalf("%s connection was not dropped by SetExternal(false)", name)
+		}
+		if err := c.Call(context.Background(), "ListAccounts", &accs); err == nil {
+			t.Fatalf("%s Call succeeded after SetExternal(false)", name)
+		}
+	}
+	for _, role := range []string{rpc.RoleFull, rpc.RoleMCP} {
+		r := dialRaw(t, s)
+		r.send(`{"jsonrpc":"2.0","id":1,"method":"hello","params":["%s","%s","ext"]}`, atok, role)
+		wantCode(t, r.recv(), rpc.CodeUnauthenticated)
+		r.closed()
+	}
+
+	// Live RoleUI connection and stream are uninterrupted.
+	select {
+	case <-ui.Done():
+		t.Fatal("RoleUI connection was closed by SetExternal(false)")
+	case _, ok := <-uiEvents:
+		if !ok {
+			t.Fatal("RoleUI stream was closed by SetExternal(false)")
+		}
+	default:
+	}
+	if err := ui.Call(context.Background(), "ListAccounts", &accs); err != nil || len(accs) != 1 {
+		t.Fatalf("ui ListAccounts after SetExternal(false) = %v, %v", accs, err)
+	}
+	if err := s.SetExternal(false); err != nil {
+		t.Fatalf("SetExternal(false) idempotent: %v", err)
 	}
 }

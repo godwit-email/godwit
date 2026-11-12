@@ -68,45 +68,78 @@ type platform struct {
 	saveDir      string                 // last directory chosen in SaveFile or OpenDirectory
 	downloadsDir func() (string, error) // mygo.App.Path(PathDownloads); tests swap it
 	apiMu        sync.Mutex
-	api          *rpc.Server // nil while the Local API is off
-	apiGen       uint64      // the newest request that asked for api
+	api          *rpc.Server // always listening while the owner runs; nil before start or after failure/quit
+	apiExt       bool        // whether external (full/mcp) access is enabled on api
+	apiGen       uint64      // the newest request that asked for external access
 
-	onAPIStop func(gen uint64, err error)              // told when the server ends by itself
-	listenAPI func() (*rpc.Server, error)              // opens the Local API server
+	onAPIStop func(gen uint64, err error)              // told when the server ends by itself while external access is on
+	listenAPI func(external bool) (*rpc.Server, error) // opens the Local API server
 	serve     func(context.Context, *rpc.Server) error // Server.Serve; tests swap it
 	closeAPI  func(*rpc.Server) error                  // Server.Close; tests swap it
 }
 
 func (p *platform) DataDir() (string, bool) { return p.dataDir, !singleInstance(p.dataDir) }
 
+func (p *platform) startLocalAPI(external bool) error {
+	p.apiMu.Lock()
+	defer p.apiMu.Unlock()
+	_, err := p.ensureLocalAPI(external)
+	return err
+}
+
+func (p *platform) ensureLocalAPI(external bool) (*rpc.Server, error) {
+	if p.api != nil {
+		if err := p.api.SetExternal(external); err != nil {
+			return nil, err
+		}
+		p.apiExt = external
+		return p.api, nil
+	}
+	if p.listenAPI == nil {
+		return nil, errors.New("the Local API server is unavailable")
+	}
+	srv, err := p.listenAPI(external)
+	if err != nil {
+		return nil, err
+	}
+	p.api = srv
+	p.apiExt = external
+	serve := p.serve
+	if serve == nil {
+		serve = func(ctx context.Context, s *rpc.Server) error { return s.Serve(ctx) }
+	}
+	go p.serveAPI(srv, serve)
+	return srv, nil
+}
+
 func (p *platform) SetLocalAPI(gen uint64, on bool) (string, error) {
 	p.apiMu.Lock()
 	defer p.apiMu.Unlock()
 	if !on {
+		p.apiExt = false
 		if p.api == nil {
 			return "", nil
 		}
-		err := p.close(p.api)
-		p.api = nil
+		return "", p.api.SetExternal(false)
+	}
+	srv, err := p.ensureLocalAPI(true)
+	if err != nil {
 		return "", err
 	}
-	if p.api == nil {
-		if p.listenAPI == nil {
-			return "", errors.New("the Local API server is unavailable")
-		}
-		srv, err := p.listenAPI()
-		if err != nil {
-			return "", err
-		}
-		p.api = srv
-		serve := p.serve
-		if serve == nil {
-			serve = func(ctx context.Context, s *rpc.Server) error { return s.Serve(ctx) }
-		}
-		go p.serveAPI(srv, serve)
-	}
 	p.apiGen = gen
-	return p.api.Path(), nil
+	return srv.Path(), nil
+}
+
+func (p *platform) closeLocalAPI() error {
+	p.apiMu.Lock()
+	defer p.apiMu.Unlock()
+	if p.api == nil {
+		return nil
+	}
+	srv := p.api
+	p.api = nil
+	p.apiExt = false
+	return p.close(srv)
 }
 
 func (p *platform) close(srv *rpc.Server) error {
@@ -537,9 +570,9 @@ func (*platform) TempDir() string {
 }
 
 // serveAPI serves srv until it closes. If it ends while still the current
-// server, which no SetLocalAPI(false) asked for, it closes srv and forgets
-// it under apiMu, so a newer server cannot start before srv's files are
-// gone, then tells the App which request the server was for.
+// server, which no closeLocalAPI asked for, it closes srv and forgets it under
+// apiMu, so a newer server cannot start before srv's files are gone, then
+// tells the App when external access was on.
 func (p *platform) serveAPI(srv *rpc.Server, serve func(context.Context, *rpc.Server) error) {
 	err := serve(context.Background(), srv)
 	p.apiMu.Lock()
@@ -548,6 +581,8 @@ func (p *platform) serveAPI(srv *rpc.Server, serve func(context.Context, *rpc.Se
 		return // closed on request
 	}
 	p.api = nil
+	ext := p.apiExt
+	p.apiExt = false
 	err = errors.Join(err, p.close(srv))
 	gen := p.apiGen
 	p.apiMu.Unlock()
@@ -555,7 +590,7 @@ func (p *platform) serveAPI(srv *rpc.Server, serve func(context.Context, *rpc.Se
 		err = errors.New("the Local API server stopped")
 	}
 	log.Print(p.svc.Redact("local API: " + err.Error()))
-	if p.onAPIStop != nil {
+	if ext && p.onAPIStop != nil {
 		p.onAPIStop(gen, err)
 	}
 }

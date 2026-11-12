@@ -7,6 +7,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -232,8 +233,14 @@ func (r *Reader) unbind(key any) {
 // read on a goroutine.
 func (r *Reader) Allow(message int64) {
 	r.reload(message, func(st *bodyOf) {
+		var urls []string
 		for token := range st.failed { // a retry: try them again now
-			r.svc.ImageCache().ForgetFailure(st.tokens[token])
+			if u := st.tokens[token]; u != "" {
+				urls = append(urls, u)
+			}
+		}
+		if len(urls) > 0 && r.svc != nil {
+			r.svc.ForgetImageFailure(urls)
 		}
 		st.allowed, st.failed = true, nil
 		// Inline images missed are tried again; those had come from the attachment cache.
@@ -354,7 +361,10 @@ func (r *Reader) build(ctx context.Context, svc Service, message, v int64, allow
 	var tokens map[string]string
 	budget := imagefetch.NewBudget() // the message's images, inline and remote
 	if m.HTML != "" {
-		b.HTML, tokens = prepareBody(m.HTML, budget, message, svc.ImageCache().Dims)
+		b.HTML, tokens = prepareBody(m.HTML, budget, message, func(src string) (int, int, bool) {
+			d := svc.CachedImageDims(src)
+			return d.Width, d.Height, d.OK
+		})
 	} else {
 		b.Plain = m.Text
 	}
@@ -582,7 +592,11 @@ func (r *Reader) ImageHandler() http.Handler {
 			http.NotFound(w, req)
 			return
 		}
-		img, err := svc.ImageCache().Get(req.Context(), src)
+		img, err := svc.CachedImage(req.Context(), src)
+		var data []byte
+		if err == nil {
+			data, err = os.ReadFile(img.Path)
+		}
 		if err != nil {
 			if req.Context().Err() == nil { // not the page going away
 				log.Printf("image proxy: message %d: %v", message, err)
@@ -591,11 +605,11 @@ func (r *Reader) ImageHandler() http.Handler {
 			http.Error(w, "image unavailable", http.StatusBadGateway)
 			return
 		}
-		if !r.chargePixels(message, token, img) {
+		if !r.chargePixels(message, token, img.Width, img.Height) {
 			http.Error(w, "the message's images have too many pixels", http.StatusForbidden)
 			return
 		}
-		writeImage(w, img.Format, img.Data)
+		writeImage(w, img.Format, data)
 	})
 }
 
@@ -746,7 +760,7 @@ func (r *Reader) imageFailedLocked(message int64, token string) {
 
 // chargePixels takes img's pixels from message's budget, once per token; false
 // when the message is gone or has none left.
-func (r *Reader) chargePixels(message int64, token string, img imagecache.Image) bool {
+func (r *Reader) chargePixels(message int64, token string, width, height int) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	st := r.msgs[message]
@@ -756,7 +770,7 @@ func (r *Reader) chargePixels(message int64, token string, img imagecache.Image)
 	if st.charged[token] {
 		return true
 	}
-	if st.pixels.TakePixels(int64(img.Width)*int64(img.Height)) != nil {
+	if st.pixels.TakePixels(int64(width)*int64(height)) != nil {
 		return false
 	}
 	st.charged[token] = true

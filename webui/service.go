@@ -6,7 +6,6 @@ import (
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/mail"
-	"github.com/godwit-email/godwit/internal/imagecache"
 )
 
 // Service is the subset of the mail engine the web UI pages call.
@@ -19,6 +18,8 @@ type Service interface {
 	AssistConversation(ctx context.Context, draftID int64, create bool) (int64, error)
 	AssistSkill(ctx context.Context, draftID int64, skill string, opts core.SkillOptions) (<-chan core.WitEvent, error)
 	AssistWith(ctx context.Context, draftID int64, input string, quoted []int64) (<-chan core.WitEvent, error)
+	CachedImage(ctx context.Context, src string) (core.CachedImageFile, error)
+	CachedImageDims(src string) core.ImageDims
 	CancelRun(ctx context.Context, runID int64) error
 	CompactConversation(ctx context.Context, id int64) error
 	DeleteDraftIfEmpty(ctx context.Context, id, revision int64) (deleted bool, err error)
@@ -26,11 +27,11 @@ type Service interface {
 	EditProposedRule(ctx context.Context, id int64) (core.Rule, error)
 	FailQuestion(ctx context.Context, conv int64, question string, quoted []int64, reason string) error
 	Find(ctx context.Context, q core.FindQuery) (core.FindResult, error)
+	ForgetImageFailure(urls []string)
 	GetConversation(ctx context.Context, id int64) (core.Conversation, error)
 	GetDraft(ctx context.Context, id int64) (core.Draft, error)
 	GetMessageLazyImages(ctx context.Context, id int64, loadRemoteImages bool) (core.Message, error)
 	GetSettings(ctx context.Context) (core.Settings, error)
-	ImageCache() *imagecache.Cache
 	ImagesAllowed(ctx context.Context, message int64) (bool, error)
 	InlineImages(ctx context.Context, id int64, each func(cid string, a mail.Attachment)) error
 	ListAccounts(ctx context.Context) ([]core.Account, error)
@@ -64,7 +65,7 @@ type Service interface {
 	SignatureShown(ctx context.Context, block string) (string, error)
 	SubscribeConversation(id int64) (<-chan core.WitEvent, func())
 	SystemLanguage() string
-	SystemTranslator() core.SystemTranslator
+	SystemTranslatorLanguages() []string
 	UndoLastAssist(ctx context.Context, draftID int64) error
 	UpdateSignature(ctx context.Context, id int64, p core.SignaturePatch) (core.Signature, error)
 }

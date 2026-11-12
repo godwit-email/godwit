@@ -73,6 +73,7 @@ type Service interface {
 	GrantPermission(ctx context.Context, name string) error
 	ImageCacheSize() int64
 	ImagesAllowed(ctx context.Context, message int64) (bool, error)
+	ImportAccounts(ctx context.Context, data []byte) (core.AccountImportResult, error)
 	ImportEML(ctx context.Context, accountID, folderID int64, paths []string) (core.ImportSummary, error)
 	InlineSignatureImages(ctx context.Context, html string) (string, error)
 	InstallPlugin(ctx context.Context, srcDir string) (core.PluginInfo, error)
@@ -117,6 +118,7 @@ type Service interface {
 	PluginTags(ctx context.Context, messageID int64) ([]core.Tag, error)
 	PollPluginLogin(ctx context.Context, name, flow string) (core.PluginLoginState, error)
 	PrepareModelWithProgress(ctx context.Context, ref string, progress func(core.ModelStatus)) (core.ModelStatus, error)
+	PreviewAccountImport(ctx context.Context, data []byte) (core.AccountImportPreview, error)
 	PreviewMasking(ctx context.Context, st core.Settings, text string) (string, error)
 	PreviewRule(ctx context.Context, d core.RuleDoc, limit int) (core.RulePreview, error)
 	PreviewView(ctx context.Context, d core.SavedViewDoc, viewID int64, limit int) (core.ViewContents, error)
@@ -124,13 +126,13 @@ type Service interface {
 	Purges(ctx context.Context, accountID int64) (map[string]core.Purge, error)
 	QuickReplies(ctx context.Context, messageID int64) ([]core.QuickReply, error)
 	Reauthorize(ctx context.Context, id int64, flowID string) error
+	RecentLog() string
 	RecentSignInCodes(ctx context.Context, now time.Time) ([]core.SignInCode, error)
 	RecheckSending(ctx context.Context, id int64) (core.CheckReport, error)
 	RecognitionModelBackend(ctx context.Context) (*core.RecognitionModelBackend, error)
 	RecognitionModelError() error
 	RecognitionModelInstalled() bool
 	RecordCapStatus(ctx context.Context, id, version int64, c string, st core.CapStatus) error
-	Redact(text string) string
 	RefreshMCPTools(ctx context.Context, id int64) error
 	RefreshPluginRegistry(ctx context.Context) error
 	RemoveAccount(ctx context.Context, id int64) error

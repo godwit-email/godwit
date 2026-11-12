@@ -912,6 +912,9 @@ func (o *onboarding) pickView(c *ui.Context) {
 			})
 		}
 	})
+	sp := o.a.pages[PageSettings].(*settingsPage)
+	kit.Button(c, i18n.T("settings.import_accounts"), kit.ButtonOpts{Variant: kit.Link, Disabled: sp.importing}).
+		LineHeight(theme.LineFor(i18n.T("settings.import_accounts"))).AlignSelf(ui.Center).OnClick(sp.importAccounts)
 }
 
 func (o *onboarding) backLink(c *ui.Context) {

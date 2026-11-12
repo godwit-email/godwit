@@ -139,3 +139,19 @@ func TestServiceRedact(t *testing.T) {
 	out := s.Redact("a password-from-keychain b refresh-token-written c plugin-secret-value d access-token-cached e model-key-123456 f short")
 	assert.Equal(t, "a [redacted] b [redacted] c [redacted] d [redacted] e [redacted] f short", out)
 }
+
+func TestServiceRecentLogRedacted(t *testing.T) {
+	keyring.MockInit()
+	s := newMailContextService(t)
+	s.secrets.Add("plugin-secret-value")
+	_, err := s.AddModelService(t.Context(), ModelServiceInput{Name: "m", Kind: "openai", BaseURL: "https://example.com/v1", APIKey: "model-secret-9876", Models: []string{"x"}})
+	require.NoError(t, err)
+
+	var ring LogRing
+	_, err = ring.Write([]byte("boot plugin-secret-value\nmodel model-secret-9876 ok\n"))
+	require.NoError(t, err)
+	s.opts.RecentLog = ring.String
+
+	got := s.RecentLog()
+	assert.Equal(t, "boot [redacted]\nmodel [redacted] ok", got)
+}
