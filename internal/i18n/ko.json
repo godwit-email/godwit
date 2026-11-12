@@ -2303,7 +2303,5 @@
   "settings_addressbooks_ssl": "항상 HTTPS(SSL)로 암호화해 연결합니다.",
   "contacts_addresses": "주소",
   "contacts_addresses_more": "주소 {arg1, number, ::group-off}개 더 보기",
-  "contacts_addresses_search": "주소 {arg1, number, ::group-off}개 검색",
-  "contacts_addresses_search_label": "주소 검색",
   "contacts_address_menu": "{arg1} 작업"
 }

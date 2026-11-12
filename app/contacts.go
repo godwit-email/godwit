@@ -43,9 +43,6 @@ type contactsPage struct {
 	unsubID  int64
 	unsubDlg bool
 
-	addrsOpen bool   // the +N list of the contact's other addresses
-	addrQuery string // its search
-
 	avatars    map[string]*contactAvatar // by primary address and newest message, as settingsSavedVer was
 	avatarsVer uint64
 }
@@ -522,8 +519,8 @@ func (p *contactsPage) detailView(c *ui.Context) {
 }
 
 // addressLine is the contact's first address, a menu of what to do with it,
-// and with more, +N: the list of them all, the blocked last, searchable when
-// long. One address or thirty, the head keeps one line.
+// and with more, +N: a native menu of them all, the blocked last, each a
+// submenu of the same actions. One address or thirty, the head keeps one line.
 func (p *contactsPage) addressLine(c *ui.Context, addrs []core.ContactAddress) {
 	if len(addrs) == 0 {
 		return
@@ -538,59 +535,34 @@ func (p *contactsPage) addressLine(c *ui.Context, addrs []core.ContactAddress) {
 			return
 		}
 		more := len(addrs) - 1
-		// the mail search's filter chip: the app's one chip that opens a list
-		chip := filterChip(c, "+"+strconv.Itoa(more), false, &p.addrsOpen, func() { p.addrQuery = "" }).
-			Label(i18n.Tf("contacts.addresses.more", more))
-		kit.Popover(c, chip, &p.addrsOpen, func() {
-			if len(addrs) > 8 {
-				kit.Input(c, &p.addrQuery, kit.InputOpts{Placeholder: i18n.Tf("contacts.addresses.search", len(addrs))}).
-					FillWidth().AutoFocus().Label(i18n.T("contacts.addresses.search_label"))
-			}
-			q := strings.ToLower(strings.TrimSpace(p.addrQuery))
+		filterChip(c, "+"+strconv.Itoa(more), false, nil, nil).Label(i18n.Tf("contacts.addresses.more", more)).Menu(func(m *ui.Menu) {
 			var groups [2][]core.ContactAddress // the others, then the blocked
 			for _, ea := range addrs {
-				if q != "" && !strings.Contains(strings.ToLower(ea.Address), q) {
-					continue
-				}
 				i := 0
 				if slices.Contains(a.blocked, ea.Address) {
 					i = 1
 				}
 				groups[i] = append(groups[i], ea)
 			}
-			ui.Scroll(c).Width(theme.ContactAddrsWidth).MaxHeight(theme.ContactAddrsHeight).Children(func() {
-				for gi, g := range groups {
-					if len(g) == 0 {
-						continue
-					}
-					title := i18n.T("contacts.addresses")
-					if gi == 1 {
-						title = i18n.T("reader.blocked_badge")
-					}
-					kit.MenuLabel(c.Key(gi), title+" · "+strconv.Itoa(len(g)))
-					for _, ea := range g {
-						p.addressRow(c.Key(ea.Address), ea, gi == 1)
+			for gi, g := range groups {
+				if len(g) == 0 {
+					continue
+				}
+				title := i18n.T("contacts.addresses")
+				if gi == 1 {
+					m.Separator()
+					title = i18n.T("reader.blocked_badge")
+				}
+				m.Item(title + " · " + strconv.Itoa(len(g))).Disabled(true)
+				for _, ea := range g {
+					addr, blocked := ea.Address, gi == 1
+					it := m.Submenu(addr, func(m *ui.Menu) { p.addressMenu(c, m, addr, blocked) })
+					if ea.Pref {
+						it.Trailing(i18n.T("contacts.preferred"))
 					}
 				}
-			})
+			}
 		})
-	})
-}
-
-// addressRow is an address in the +N list, a row as the filter chips' menus
-// have; a click opens its menu, as the head's address does.
-func (p *contactsPage) addressRow(c *ui.Context, ea core.ContactAddress, blocked bool) {
-	t, th := theme.Of(c), c.Theme()
-	addr := ea.Address
-	kit.Pressable(c, kit.PressableOpts{}).Label(addr).FillWidth().Padding(th.Space(1.5), th.Space(2)).Gap(th.Space(2)).Radius(t.Radius.Md).
-		Menu(func(m *ui.Menu) { p.addressMenu(c, m, addr, blocked) }).Children(func() {
-		text := kit.Text(c, addr, t.Text.Sm).SingleLine().Grow(1).Shrink(1).MinWidth(0)
-		if blocked {
-			text.TextColor(t.Muted)
-		}
-		if ea.Pref {
-			kit.Text(c, i18n.T("contacts.preferred"), t.Text.Xs).TextColor(t.Muted).Shrink(0)
-		}
 	})
 }
 
@@ -609,7 +581,7 @@ func (p *contactsPage) addressMenu(c *ui.Context, m *ui.Menu, addr string, block
 	if blocked {
 		blk = i18n.T("reader.unblock_sender")
 	}
-	if m.Item(blk).Chosen() {
+	if m.Item(blk).Danger().Chosen() {
 		p.blockAddrs([]string{addr}, !blocked)
 	}
 }

@@ -342,11 +342,12 @@ func TestContactsMultiAddressAndActions(t *testing.T) {
 		t.Fatalf("draft 1 To %q", d.To)
 	}
 
-	// +1 lists both, the preferred marked; a row's actions show on hover.
+	// +1 is a native menu of both, the preferred marked, each a submenu of its actions.
 	h.click("另外 1 个地址")
-	h.see("首选")
-	h.click("bob@work.com")
-	if err := h.tt.ChooseMenuItem("复制邮箱地址"); err != nil {
+	if menu := h.tt.Menu(); !slices.Equal(menu, []string{"地址 · 2", "bob@home.com", "bob@work.com"}) {
+		t.Fatalf("+1 menu %q", menu)
+	}
+	if err := h.tt.ChooseMenuItem("bob@work.com", "复制邮箱地址"); err != nil {
 		t.Fatalf("%v; menu %q", err, h.tt.Menu())
 	}
 	h.drain()
@@ -355,21 +356,21 @@ func TestContactsMultiAddressAndActions(t *testing.T) {
 	}
 	h.see("已复制邮箱地址")
 
-	// Per-address block blocks only that address; top whole-card button still offers 屏蔽发件人.
-	if !h.app.contacts().addrsOpen {
-		h.click("另外 1 个地址")
-	}
-	h.click("bob@work.com")
-	if err := h.tt.ChooseMenuItem("屏蔽发件人"); err != nil {
+	// Per-address block blocks only that address, which moves to the menu's 已屏蔽 group.
+	h.click("另外 1 个地址")
+	if err := h.tt.ChooseMenuItem("bob@work.com", "屏蔽发件人"); err != nil {
 		t.Fatalf("%v; menu %q", err, h.tt.Menu())
 	}
 	h.drain()
 	h.until("secondary blocked only", func() bool {
 		return slices.Contains(h.app.blocked, "bob@work.com") && !slices.Contains(h.app.blocked, "bob@home.com")
 	})
-	h.see("已屏蔽 · 1") // the list's own group of blocked addresses
+	h.click("另外 1 个地址")
+	if menu := h.tt.Menu(); !slices.Equal(menu, []string{"地址 · 1", "bob@home.com", "-", "已屏蔽 · 1", "bob@work.com"}) {
+		t.Fatalf("+1 menu after block %q", menu)
+	}
 	h.tt.Key(0, ui.KeyEscape)
-	h.until("the list closed", func() bool { return !h.app.contacts().addrsOpen })
+	h.drain()
 	h.click("已屏蔽")
 	h.see("已屏蔽 · 1")
 

@@ -2303,7 +2303,5 @@
   "settings_addressbooks_ssl": "Se connecte toujours en HTTPS (SSL).",
   "contacts_addresses": "Adresses",
   "contacts_addresses_more": "{arg1, number, ::group-off} autres adresses",
-  "contacts_addresses_search": "Rechercher parmi {arg1, number, ::group-off} adresses",
-  "contacts_addresses_search_label": "Rechercher des adresses",
   "contacts_address_menu": "Actions pour {arg1}"
 }
