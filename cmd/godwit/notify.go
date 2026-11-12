@@ -13,14 +13,6 @@ func showNotification(svc avatarService, n app.Notification) error {
 	return mygo.NewNotification(notificationOptions(n, notificationAvatar(svc, n))).Show()
 }
 
-type desktopNotifySink struct{ svc avatarService }
-
-func (desktopNotifySink) NotificationsSupported() bool    { return mygo.NotificationsSupported() }
-func (desktopNotifySink) SignInCodeBannerSupported() bool { return false }
-func (s desktopNotifySink) Notify(n app.Notification) error {
-	return showNotification(s.svc, n)
-}
-
 type noNotifySink struct{}
 
 func (noNotifySink) NotificationsSupported() bool    { return false }

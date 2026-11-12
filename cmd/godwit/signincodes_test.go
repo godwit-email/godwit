@@ -257,3 +257,64 @@ func TestSignInAvatarUsesInterface(t *testing.T) {
 		t.Fatalf("SenderAvatar(%d, %v), want (42, false)", gotID, gotRemote)
 	}
 }
+
+func TestBackendTrayMenuAndHeadlessBannerDismiss(t *testing.T) {
+	now := time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
+	p := &platform{
+		signInCodes: []core.SignInCode{{MessageID: 9, Code: "654321", From: "Login <id@example.com>", ReceivedAt: now}},
+	}
+	var synced, hidden, quit bool
+	items := p.trayMenuItems(trayActions{
+		syncAll: func() { synced = true },
+		hide:    func() { hidden = true },
+		quit:    func() { quit = true },
+	}, now)
+	if len(items) != 7 {
+		t.Fatalf("backend tray menu len = %d, want 7: %+v", len(items), items)
+	}
+	for _, it := range items {
+		if it.Label == i18n.T("tray.open") || it.Label == i18n.T("mail.compose") {
+			t.Fatalf("backend tray menu must omit Open and Compose: %+v", it)
+		}
+	}
+	if items[0].Label != i18n.T("tray.sync_all") ||
+		items[1].Type != mygo.MenuItemSeparator ||
+		items[2].Label != i18n.T("codes.recent") || len(items[2].Submenu) != 1 || items[2].Submenu[0].Label != "654 321" ||
+		items[3].Type != mygo.MenuItemSeparator ||
+		items[4].Label != i18n.T("tray.hide") ||
+		items[5].Type != mygo.MenuItemSeparator ||
+		items[6].Label != i18n.T("tray.quit") {
+		t.Fatalf("unexpected backend tray menu items: %+v", items)
+	}
+	items[0].Click(items[0], nil)
+	items[4].Click(items[4], nil)
+	items[6].Click(items[6], nil)
+	if !synced || !hidden || !quit {
+		t.Fatalf("clicks synced=%v hidden=%v quit=%v", synced, hidden, quit)
+	}
+
+	var opened, composed bool
+	guiItems := p.trayMenuItems(trayActions{
+		open:    func() { opened = true },
+		compose: func() { composed = true },
+		syncAll: func() {},
+		hide:    func() {},
+		quit:    func() {},
+	}, now)
+	if len(guiItems) != 9 || guiItems[0].Label != i18n.T("tray.open") || guiItems[1].Label != i18n.T("mail.compose") {
+		t.Fatalf("unexpected GUI tray menu items: %+v", guiItems)
+	}
+	guiItems[0].Click(guiItems[0], nil)
+	guiItems[1].Click(guiItems[1], nil)
+	if !opened || !composed {
+		t.Fatalf("GUI clicks opened=%v composed=%v", opened, composed)
+	}
+
+	// Dismissing a sign-in banner when p.win == nil (backend tray-only mode) must not panic.
+	b := &signInBanner{code: core.SignInCode{MessageID: 9, Code: "654321"}}
+	p.codeBanner = b
+	p.dismissSignInBanner(b, func(f func()) { f() })
+	if p.codeBanner != nil {
+		t.Fatalf("codeBanner was not cleared: %+v", p.codeBanner)
+	}
+}

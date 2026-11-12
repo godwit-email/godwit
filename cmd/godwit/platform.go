@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/plugins/updater"
@@ -234,6 +235,62 @@ func (p *platform) SaveFile(defaultName string) (string, error) {
 func (p *platform) Notify(n app.Notification) error { return showNotification(p.svc, n) }
 func (*platform) NotificationsSupported() bool      { return mygo.NotificationsSupported() }
 func (*platform) SetOpenAtLogin(on bool) error      { return mygo.App.SetOpenAtLogin(on) }
+
+type trayActions struct {
+	open    func()
+	compose func()
+	syncAll func()
+	hide    func()
+	quit    func()
+}
+
+func (p *platform) trayMenuItems(act trayActions, now time.Time) []*mygo.MenuItem {
+	var items []*mygo.MenuItem
+	if act.open != nil {
+		items = append(items, &mygo.MenuItem{Label: i18n.T("tray.open"), Click: func(*mygo.MenuItem, *mygo.Window) { act.open() }})
+	}
+	if act.compose != nil {
+		items = append(items, &mygo.MenuItem{Label: i18n.T("mail.compose"), Click: func(*mygo.MenuItem, *mygo.Window) { act.compose() }})
+	}
+	items = append(items, &mygo.MenuItem{Label: i18n.T("tray.sync_all"), Click: func(*mygo.MenuItem, *mygo.Window) { act.syncAll() }})
+	items = append(items, recentCodeMenu(p.signInCodes, now, p.signInCodeIcon, p.useSignInCode)...)
+	items = append(items,
+		mygo.Separator(),
+		&mygo.MenuItem{Label: i18n.T("tray.hide"), Click: func(*mygo.MenuItem, *mygo.Window) { act.hide() }},
+		mygo.Separator(),
+		&mygo.MenuItem{Label: i18n.T("tray.quit"), Click: func(*mygo.MenuItem, *mygo.Window) { act.quit() }},
+	)
+	return items
+}
+
+func (p *platform) BindTray(act trayActions) {
+	menu := func() *mygo.Menu { return mygo.NewMenu(p.trayMenuItems(act, time.Now())) }
+	p.updateTray = func() {
+		if p.tray != nil {
+			p.tray.SetMenu(menu())
+		}
+	}
+	p.setTrayVisible = func(visible bool) {
+		if visible == (p.tray != nil) {
+			return
+		}
+		if !visible {
+			p.ShowSignInCode(nil) // the banner is a flyout of the tray
+			p.tray.Destroy()
+			p.tray = nil
+			return
+		}
+		if icon, err := trayIcon(trayBoxFor(runtime.GOOS)); err != nil {
+			log.Print(err)
+		} else if p.tray, err = mygo.NewTray(mygo.TrayOptions{Icon: icon, IconIsTemplate: true, ToolTip: "Godwit",
+			Menu: menu()}); err != nil {
+			log.Print(err) // no tray here (Linux without an indicator host)
+		} else if runtime.GOOS == "windows" && act.open != nil {
+			p.tray.OnClick(act.open) // Windows opens the app on a left click; the menu stays on the right
+		}
+	}
+}
+
 func (p *platform) SetTrayVisible(visible bool) {
 	if p.setTrayVisible != nil {
 		p.setTrayVisible(visible)
@@ -257,6 +314,15 @@ func (p *platform) ShowWindow() {
 	p.win.Focus()
 }
 func (*platform) SetThemeSource(theme string) { mygo.Theme.SetSource(mygo.ThemeSource(theme)) }
+func (p *platform) SetLanguage(uiLang, sysLang string) {
+	if os.Getenv("MYGO_LOCALE") == "" {
+		mygo.App.SetLocale(uiLocale(uiLang, sysLang))
+	}
+	i18n.SetLanguage(mygo.App.Locale())
+	if p.updateTray != nil {
+		p.updateTray()
+	}
+}
 func (p *platform) OpenCompose(draftID int64) { p.windows.Open(draftID) }
 func (p *platform) DraftDeleted(id int64)     { p.windows.CloseDraft(id) }
 func (p *platform) ComposeOpen(id int64) bool { return p.windows.IsOpen(id) }

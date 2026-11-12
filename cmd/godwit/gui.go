@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	"github.com/egoist/mygo"
 	mygoi18n "github.com/egoist/mygo/i18n"
@@ -370,50 +369,19 @@ func gui(ctx context.Context, dataDir string) int {
 			}))
 		}
 		updateMenu()
-		trayMenu := func() *mygo.Menu {
-			items := []*mygo.MenuItem{
-				{Label: i18n.T("tray.open"), Click: func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow() }},
-				{Label: i18n.T("mail.compose"), Click: compose},
-				{Label: i18n.T("tray.sync_all"), Click: func(*mygo.MenuItem, *mygo.Window) { a.SyncAll() }},
-				mygo.Separator(),
-				{Label: i18n.T("tray.hide"), Click: func(*mygo.MenuItem, *mygo.Window) { a.HideTrayIcon() }},
-				mygo.Separator(),
-				{Label: i18n.T("tray.quit"), Click: func(*mygo.MenuItem, *mygo.Window) { mygo.App.Quit() }},
-			}
-			items = slices.Insert(items, 3, recentCodeMenu(plat.signInCodes, time.Now(), plat.signInCodeIcon, plat.useSignInCode)...)
-			return mygo.NewMenu(items)
-		}
-		plat.updateTray = func() {
-			if plat.tray != nil {
-				plat.tray.SetMenu(trayMenu())
-			}
-		}
-
-		plat.setTrayVisible = func(visible bool) {
-			if visible == (plat.tray != nil) {
-				return
-			}
-			if !visible {
-				plat.ShowSignInCode(nil) // the banner is a flyout of the tray
-				plat.tray.Destroy()
-				plat.tray = nil
-				return
-			}
-			if icon, err := trayIcon(trayBoxFor(runtime.GOOS)); err != nil {
-				log.Print(err)
-			} else if plat.tray, err = mygo.NewTray(mygo.TrayOptions{Icon: icon, IconIsTemplate: true, ToolTip: "Godwit",
-				Menu: trayMenu()}); err != nil {
-				log.Print(err) // no tray here (Linux without an indicator host)
-			} else if runtime.GOOS == "windows" {
-				plat.tray.OnClick(plat.ShowWindow) // Windows opens the app on a left click; the menu stays on the right
-			}
-		}
-		plat.setTrayVisible(st.ShowTrayIcon)
+		plat.BindTray(trayActions{
+			open:    plat.ShowWindow,
+			compose: a.Compose,
+			syncAll: a.SyncAll,
+			hide:    a.HideTrayIcon,
+			quit:    mygo.App.Quit,
+		})
+		plat.SetTrayVisible(st.ShowTrayIcon)
 		mygo.App.OnLocaleChanged(func(locale string) {
 			i18n.SetLanguage(locale)
 			updateMenu()
-			if plat.tray != nil {
-				plat.tray.SetMenu(trayMenu())
+			if plat.updateTray != nil {
+				plat.updateTray()
 			}
 		})
 
