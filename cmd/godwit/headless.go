@@ -220,10 +220,15 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 		slog.SetDefault(old)
 	}
 
+	// No interface is in front yet: background rounds follow 后台同步 until one
+	// reports foreground (a login start under 一直继续 may never get one).
+	st, stErr := svc.GetSettings(ctx)
+	if stErr == nil {
+		svc.SetInboxOnly(st.BackgroundSync != core.BackgroundSyncAll)
+	}
 	external := true
 	if uiStarted {
-		st, err := svc.GetSettings(ctx)
-		external = err == nil && st.LocalAPI
+		external = stErr == nil && st.LocalAPI
 	}
 	srv, err := rpcbind.ListenWith(dataDir, svc, rpcbind.ListenOptions{Version: app.Version, External: external, UIStarted: uiStarted})
 	if err != nil {
@@ -343,12 +348,16 @@ func followLocalAPI(ctx context.Context, svc *core.Service, srv *rpc.Server) {
 	}
 }
 
-// quitWait bounds how long the tray's Quit waits for the interface to quit first.
-const quitWait = 10 * time.Second
+// quitWait bounds how long the tray's Quit waits for the interface to quit
+// first. Tests shorten it.
+var quitWait = 2 * time.Minute
 
 // quitFromTray is the tray's Quit: with an interface connected, it asks it to
 // quit first (QuitRequested), so it saves what it holds, then stops once it has
-// gone or quitWait passed; stop is the backend's usual close path.
+// gone; stop is the backend's usual close path. An interface still connected
+// after quitWait cancelled its quit (or is stuck asking about unsaved edits),
+// so the backend keeps running: stopping it would end that interface and lose
+// the edits.
 func quitFromTray(svc *core.Service, stop func()) {
 	if stop == nil {
 		return
@@ -358,8 +367,13 @@ func quitFromTray(svc *core.Service, stop func()) {
 		return
 	}
 	svc.Publish(events.Event{Type: events.QuitRequested})
+	end := time.Now().Add(quitWait)
 	go func() {
-		for end := time.Now().Add(quitWait); svc.UIConnected() && time.Now().Before(end); {
+		for svc.UIConnected() {
+			if time.Now().After(end) {
+				slog.Info("tray quit: the interface did not quit; the backend keeps running")
+				return
+			}
 			time.Sleep(50 * time.Millisecond)
 		}
 		stop()

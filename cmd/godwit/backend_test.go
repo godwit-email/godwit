@@ -537,3 +537,35 @@ func TestTrayQuitAsksInterfaceFirst(t *testing.T) {
 	ui.Close()
 	waitCond(t, "the backend to stop", stopped.Load)
 }
+
+// An interface that cancels the tray's Quit (unsaved edits) stays connected:
+// the backend must not stop under it, which would end it and lose the edits.
+func TestTrayQuitCancelledKeepsBackend(t *testing.T) {
+	old := quitWait
+	quitWait = 200 * time.Millisecond
+	t.Cleanup(func() { quitWait = old })
+	dir := shortDir(t)
+	svc, err := core.New(context.Background(), core.Options{DataDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { svc.Close() })
+	srv, err := rpcbind.ListenWith(dir, svc, rpcbind.ListenOptions{Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve(context.Background())
+	t.Cleanup(func() { srv.Close() })
+	ui, err := uiclient.Dial(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ui.Close()
+	waitCond(t, "the interface connected", svc.UIConnected)
+	var stopped atomic.Bool
+	quitFromTray(svc, func() { stopped.Store(true) })
+	time.Sleep(4 * quitWait)
+	if stopped.Load() {
+		t.Fatal("the backend stopped under an interface that stayed")
+	}
+}

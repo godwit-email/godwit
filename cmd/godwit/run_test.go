@@ -105,6 +105,22 @@ func startHeadless(t *testing.T, dir string) (c *rpc.Client, stderr *syncBuf, st
 	return dialWait(t, dir), stderr, stop
 }
 
+// With no interface in front, a backend's rounds follow 后台同步 from the
+// start: a login start under 一直继续 may never see an interface report.
+func TestHeadlessStartsNarrowed(t *testing.T) {
+	dir := shortDir(t)
+	startHeadless(t, dir)
+	ui, err := rpc.Dial(dir, rpc.RoleUI, "ui-test", rpcbind.NewCodec())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ui.Close()
+	var on bool
+	if err := ui.Call(context.Background(), "InboxOnly", &on); err != nil || !on {
+		t.Fatalf("InboxOnly = %v, %v; want true before any foreground report", on, err)
+	}
+}
+
 func TestHeadlessServes(t *testing.T) {
 	dir := shortDir(t)
 	c, stderr, stop := startHeadless(t, dir)
