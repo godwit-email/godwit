@@ -118,6 +118,14 @@ func (a *App) onEvent(ev events.Event) {
 	case events.ImportProgress: // only its toast shows it; MessagesChanged refreshes the rest
 		a.mail.importProgress(ev)
 		return
+	case events.NotificationClicked: // the backend's notification
+		a.NotificationClicked(ev.Notification)
+		return
+	case events.QuitRequested: // the backend's tray
+		if a.quit != nil {
+			a.quit()
+		}
+		return
 	case events.SettingsChanged:
 		a.mail.reader.invalidateAvatars(false)
 		a.mail.reader.refreshAvatars() // core answers for the new settings; an unsaved local change still holds them
@@ -142,10 +150,6 @@ func (a *App) onEvent(ev events.Event) {
 		}
 		a.syncErr[ev.AccountID] = f
 		a.tick() // a failure that lasts turns red
-	case events.MessageReceived:
-		if a.MailNotifier != nil {
-			a.HandleEvent(ev)
-		}
 	case events.OutboxChanged:
 		a.offerUndo()
 	case events.PluginsChanged: // a card's plugin may have been switched

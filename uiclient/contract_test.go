@@ -445,9 +445,6 @@ func TestContractSettingsImagesTranslatorAndRecentLog(t *testing.T) {
 		out["trusted"] = resVal(svc.TrustedImageSenders(ctx))
 		out["blocked"] = resVal(svc.BlockedSenders(ctx))
 
-		svc.SetInboxOnly(true)
-		svc.SetInboxOnly(false)
-
 		pic := makePNG(t, 10, 6)
 		var fail atomic.Bool
 		fail.Store(true)

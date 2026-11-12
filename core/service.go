@@ -87,8 +87,9 @@ type Options struct {
 	// ModelsDev is models.dev's catalog (ai.ModelsDevURL), where models'
 	// display names and context windows come from; "" fetches none (the apps set it).
 	ModelsDev string
-	// ConfirmWindow: a window can confirm godwit mcp's sends (每次确认); the
-	// GUI sets it. Without one (--headless) 每次确认 refuses them, as 不允许.
+	// ConfirmWindow: a window can confirm godwit mcp's sends (每次确认) even
+	// with no ui client connected (tests set it). Without one, and with no ui
+	// client connected, 每次确认 refuses them, as 不允许.
 	ConfirmWindow bool
 	// ComposeOpen reports whether draftID's compose window is open or
 	// opening; the GUI sets it, and 直接发送 leaves such a draft alone. nil: none is.
@@ -115,6 +116,10 @@ type Options struct {
 	// RecentLog reads the process's recent log lines for RecentLog(); nil reads
 	// package-level RecentLog.
 	RecentLog func() string
+	// StopUIBackend shuts this backend down through its usual close path; set
+	// when the interface started it (ADR 0038). nil: the user started it, and
+	// the ui role's StopUIBackend is refused.
+	StopUIBackend func()
 }
 
 // Service owns the database and event bus of one Godwit data directory.
@@ -565,6 +570,22 @@ func (s *Service) cleanOrphans(ctx context.Context) error {
 
 // Subscribe returns UI notifications and a func that unsubscribes.
 func (s *Service) Subscribe() (<-chan events.Event, func()) { return s.bus.Subscribe() }
+
+// Publish announces ev to every Subscribe stream, the ui client's among them:
+// the owner process's own events (a notification clicked, a quit from its
+// tray). Not exposed over RPC.
+func (s *Service) Publish(ev events.Event) { s.bus.Publish(ev) }
+
+// StopUIBackend shuts down a backend the interface started (Options.StopUIBackend),
+// as quitting Godwit does; it returns before the shutdown runs. A backend the
+// user started (--headless) refuses and keeps running.
+func (s *Service) StopUIBackend(context.Context) error {
+	if s.opts.StopUIBackend == nil {
+		return errors.New("the user started this backend; it keeps running")
+	}
+	s.opts.StopUIBackend()
+	return nil
+}
 
 // lockAccount takes the account's sync lock, or gives up when ctx ends. It closes
 // a connection kept for the next file, so the holder's is the account's only one.

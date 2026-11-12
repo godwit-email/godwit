@@ -2,7 +2,6 @@ package app
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"os"
 	"slices"
@@ -18,16 +17,15 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/events"
-	"github.com/godwit-email/godwit/internal/mcpclients"
 )
 
 const defaultBenchPoll = 50 * time.Millisecond
 
 // BenchmarkNotifyLatency measures server-arrival-to-Platform.Notify latency on
 // a seeded mailbox (ScaleSmall, seed 716) for push (IMAP IDLE) and polling
-// (WithoutIdle). App's 1s notifyWait batching window is advanced on the fake
-// clock as soon as mailArrived arms it, so ns/op reports pipeline latency
-// excluding that fixed 1s wait.
+// (WithoutIdle), through the backend's MailNotifier. Its 1s notifyWait
+// batching window is advanced on the fake clock as soon as mailArrived arms
+// it, so ns/op reports pipeline latency excluding that fixed 1s wait.
 func BenchmarkNotifyLatency(b *testing.B) {
 	b.Run("idle", func(b *testing.B) {
 		core.SetChatterWithinForTest(b, 0)
@@ -88,7 +86,6 @@ type notifyBench struct {
 	tb         testing.TB
 	env        *coretest.Env
 	acc        core.Account
-	app        *App
 	plat       *fakePlatform
 	clock      *fakeClock
 	syncCh     <-chan events.Event
@@ -129,28 +126,22 @@ func newNotifyBench(tb testing.TB, opts ...coretest.Option) *notifyBench {
 			nb.signal()
 		}
 	}
-	nb.app = New(Deps{
-		Svc:            env.Svc,
-		Platform:       nb.plat,
-		Post:           nb.post,
-		Clock:          nb.clock,
-		SystemLanguage: "zh-CN",
-		Logf:           func(string, ...any) {},
+	// The backend's notifier, as the backend process runs it (headless.go).
+	n := NewMailNotifier(MailNotifierDeps{Svc: env.Svc, Sink: nb.plat, Clock: nb.clock, Foreground: env.Svc.UIForeground,
+		Post: nb.post, Logf: func(string, ...any) {}})
+	ch, unsub := env.Svc.Subscribe()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for ev := range ch {
+			n.HandleEvent(ev)
+		}
+	}()
+	tb.Cleanup(func() {
+		unsub()
+		<-done
+		n.Close()
 	})
-	home := tb.TempDir()
-	nb.app.mcpEnv = func() (mcpclients.Env, error) {
-		return mcpclients.Env{Home: home, OS: "darwin", Temp: home, Run: func(string, ...string) error { return nil }}, nil
-	}
-	ctx, stop := context.WithCancel(context.Background())
-	tb.Cleanup(stop)
-	nb.app.Start(ctx)
-	tb.Cleanup(nb.app.Close)
-
-	nb.waitLoaded()
-	nb.clock.advance(notifyWait)
-	nb.drain()
-	nb.batchArmed.Store(false)
-	nb.resetPlat()
 	return nb
 }
 
@@ -241,32 +232,12 @@ func (nb *notifyBench) finishRound(msgID int64) {
 			}
 			if sawArrival && ev.Type == events.SyncFinished {
 				nb.drain()
-				if nb.app.refreshStop != nil {
-					nb.clock.advance(refreshEvery)
-					nb.drain()
-				}
 				nb.batchArmed.Store(false)
 				nb.resetPlat()
 				return
 			}
 		case <-deadline:
 			nb.tb.Fatalf("timed out waiting for sync round of message %d to finish", msgID)
-		}
-	}
-}
-
-func (nb *notifyBench) waitLoaded() {
-	nb.tb.Helper()
-	deadline := time.After(10 * time.Second)
-	for {
-		nb.drain()
-		if nb.app.loaded && !nb.app.mail.loading {
-			return
-		}
-		select {
-		case <-nb.wake:
-		case <-deadline:
-			nb.tb.Fatal("timed out waiting for initial App load")
 		}
 	}
 }

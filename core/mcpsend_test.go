@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -58,6 +59,23 @@ func TestMCPSendOff(t *testing.T) {
 			assert.Zero(t, e.outboxLen(t))
 		})
 	}
+}
+
+// A backend without a window of its own offers 每次确认 while a ui client
+// is connected to confirm it, and refuses again once none is (ADR 0038).
+func TestMCPSendConfirmWhileUIConnected(t *testing.T) {
+	e, d := mcpSendEnv(t, MCPSendConfirm, false)
+	ctx, disconnect := context.WithCancel(bg)
+	WithUISession(ctx, e.s)
+	sent, err := e.s.RequestMCPSend(bg, d.ID, d.Revision)
+	require.NoError(t, err)
+	assert.False(t, sent)
+	assert.Len(t, e.pendingSends(t), 1)
+
+	disconnect()
+	require.Eventually(t, func() bool { return !e.s.UIConnected() }, time.Second, time.Millisecond)
+	_, err = e.s.RequestMCPSend(bg, d.ID, d.Revision)
+	require.ErrorIs(t, err, ErrMCPSendOff)
 }
 
 func TestMCPSendConfirm(t *testing.T) {

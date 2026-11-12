@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -9,171 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/godwit-email/godwit/app"
-	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/ownerlock"
-	"github.com/godwit-email/godwit/rpc"
-	"github.com/godwit-email/godwit/rpcbind"
 )
-
-func listenIn(dir string, svc *core.Service) func(bool) (*rpc.Server, error) {
-	return func(external bool) (*rpc.Server, error) {
-		return rpcbind.ListenWith(dir, svc, rpcbind.ListenOptions{Version: app.Version, External: external})
-	}
-}
-
-// The owner's Local API server is always listening for RoleUI (ui-token);
-// SetLocalAPI toggles external access (api-token, RoleFull and RoleMCP) while
-// keeping RoleUI connected, and closeLocalAPI tears down the whole server.
-func TestLocalAPIStartsServer(t *testing.T) {
-	dir := shortDir(t)
-	svc, err := core.New(context.Background(), core.Options{DataDir: dir})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { svc.Close() })
-	p := &platform{dataDir: dir, svc: svc, listenAPI: listenIn(dir, svc)}
-	t.Cleanup(func() { p.closeLocalAPI() })
-
-	if err := p.startLocalAPI(false); err != nil {
-		t.Fatalf("startLocalAPI(false): %v", err)
-	}
-	for _, name := range []string{rpc.SocketName, rpc.UITokenName} {
-		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
-			t.Fatalf("%s after startLocalAPI(false): %v", name, err)
-		}
-	}
-	if _, err := os.Stat(filepath.Join(dir, rpc.TokenName)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("api-token with external off: %v", err)
-	}
-
-	uiClient, err := rpc.Dial(dir, rpc.RoleUI, "ui-test", nil)
-	if err != nil {
-		t.Fatalf("Dial RoleUI with external off: %v", err)
-	}
-	defer uiClient.Close()
-	var accs []core.Account
-	if err := uiClient.Call(context.Background(), "ListAccounts", &accs); err != nil {
-		t.Fatalf("ui ListAccounts: %v", err)
-	}
-	if _, err := rpc.Dial(dir, rpc.RoleFull, "full-test", nil); err == nil {
-		t.Fatal("Dial RoleFull succeeded with external off")
-	}
-	if code := run(context.Background(), []string{"call", "--data-dir", dir, "ListAccounts"}, nil, &syncBuf{}, &syncBuf{}); code == 0 {
-		t.Fatal("godwit call succeeded with external off")
-	}
-	path, err := p.SetLocalAPI(1, true)
-	if err != nil || path != filepath.Join(dir, rpc.SocketName) {
-		t.Fatalf("SetLocalAPI(true) = %q, %v", path, err)
-	}
-	if again, err := p.SetLocalAPI(1, true); err != nil || again != path { // already on: the same server
-		t.Fatalf("SetLocalAPI(true) again = %q, %v", again, err)
-	}
-	fullClient := dialWait(t, dir)
-	if err := fullClient.Call(context.Background(), "ListAccounts", &accs); err != nil {
-		t.Fatal(err)
-	}
-	mcpClient, err := rpc.Dial(dir, rpc.RoleMCP, "mcp-test", nil)
-	if err != nil {
-		t.Fatalf("Dial RoleMCP: %v", err)
-	}
-	defer mcpClient.Close()
-	if code := run(context.Background(), []string{"call", "--data-dir", dir, "ListAccounts"}, nil, &syncBuf{}, &syncBuf{}); code != 0 {
-		t.Fatalf("godwit call exit code %d with external on", code)
-	}
-
-	if path, err := p.SetLocalAPI(2, false); err != nil || path != "" {
-		t.Fatalf("SetLocalAPI(false) = %q, %v", path, err)
-	}
-	if _, err := os.Stat(filepath.Join(dir, rpc.TokenName)); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("api-token after off: %v", err)
-	}
-	for _, ext := range []*rpc.Client{fullClient, mcpClient} {
-		select {
-		case <-ext.Done():
-		case <-time.After(2 * time.Second):
-			t.Fatal("external client was not dropped on SetLocalAPI(false)")
-		}
-	}
-	// Socket, ui-token, and the live RoleUI connection stay open.
-	for _, name := range []string{rpc.SocketName, rpc.UITokenName} {
-		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
-			t.Errorf("%s missing after external off: %v", name, err)
-		}
-	}
-	if err := uiClient.Call(context.Background(), "ListAccounts", &accs); err != nil {
-		t.Fatalf("ui ListAccounts after external off: %v", err)
-	}
-	if _, err := p.SetLocalAPI(2, false); err != nil { // already off
-		t.Fatal(err)
-	}
-
-	if err := p.closeLocalAPI(); err != nil {
-		t.Fatalf("closeLocalAPI: %v", err)
-	}
-	for _, name := range []string{rpc.SocketName, rpc.UITokenName, rpc.TokenName} {
-		if _, err := os.Stat(filepath.Join(dir, name)); !errors.Is(err, os.ErrNotExist) {
-			t.Errorf("%s after closeLocalAPI: %v", name, err)
-		}
-	}
-}
-
-// Serve ending by itself closes that server, forgets it, and tells the App;
-// the switch can start a fresh one afterwards.
-func TestLocalAPIServeFailure(t *testing.T) {
-	dir := shortDir(t)
-	svc, err := core.New(context.Background(), core.Options{DataDir: dir})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { svc.Close() })
-	stopped := make(chan error, 1)
-	p := &platform{dataDir: dir, svc: svc, listenAPI: listenIn(dir, svc), onAPIStop: func(gen uint64, err error) {
-		if gen != 1 {
-			t.Errorf("stopped for request %d, want 1", gen)
-		}
-		stopped <- err
-	}}
-	t.Cleanup(func() { p.closeLocalAPI() })
-	fail := errors.New("accept: too many open files")
-	p.serve = func(context.Context, *rpc.Server) error { return fail }
-	if _, err := p.SetLocalAPI(1, true); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case err := <-stopped:
-		if !errors.Is(err, fail) {
-			t.Fatalf("stopped with %v", err)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("the App was not told")
-	}
-	p.apiMu.Lock()
-	api := p.api
-	p.apiMu.Unlock()
-	if api != nil {
-		t.Fatal("the dead server is still current")
-	}
-	if _, err := os.Stat(filepath.Join(dir, rpc.SocketName)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("socket after the failure: %v", err)
-	}
-	p.serve = nil
-	if _, err := p.SetLocalAPI(1, true); err != nil {
-		t.Fatal(err)
-	}
-	dialWait(t, dir)
-	if _, err := p.SetLocalAPI(2, false); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case err := <-stopped:
-		t.Fatalf("a requested stop told the App %v", err)
-	default:
-	}
-}
 
 func TestPlatformDataDir(t *testing.T) {
 	t.Setenv("MYGO_ENV", "production")
@@ -254,57 +92,6 @@ func TestOpenFailure(t *testing.T) {
 			t.Fatalf("%q carries the error's text", m)
 		}
 	}
-}
-
-// The dead server's cleanup cannot remove a newer server's socket and token:
-// a SetLocalAPI(true) during it waits for it.
-func TestLocalAPICleanupRace(t *testing.T) {
-	dir := shortDir(t)
-	svc, err := core.New(context.Background(), core.Options{DataDir: dir})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { svc.Close() })
-	closing, release := make(chan struct{}), make(chan struct{})
-	var dead *rpc.Server
-	cleaned := make(chan struct{})
-	p := &platform{dataDir: dir, svc: svc, listenAPI: listenIn(dir, svc), onAPIStop: func(uint64, error) { close(cleaned) }}
-	t.Cleanup(func() { p.closeLocalAPI() })
-	p.serve = func(_ context.Context, s *rpc.Server) error { dead = s; return errors.New("accept failed") }
-	p.closeAPI = func(s *rpc.Server) error {
-		if s == dead {
-			close(closing)
-			<-release
-		}
-		return s.Close()
-	}
-	if _, err := p.SetLocalAPI(1, true); err != nil {
-		t.Fatal(err)
-	}
-	<-closing // the dead server's cleanup has begun
-	p.serve = nil
-	started := make(chan error, 1)
-	go func() { _, err := p.SetLocalAPI(3, true); started <- err }()
-	select {
-	case err := <-started: // it did not wait: the cleanup now runs after it
-		close(release)
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(200 * time.Millisecond):
-		close(release)
-		if err := <-started; err != nil {
-			t.Fatal(err)
-		}
-	}
-	<-cleaned
-	for _, name := range []string{rpc.SocketName, rpc.TokenName} {
-		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
-			t.Fatalf("the new server's %s: %v", name, err)
-		}
-	}
-	dialWait(t, dir)
-	p.SetLocalAPI(4, false)
 }
 
 // Only a GUI on the default data directory takes mygo's single-instance

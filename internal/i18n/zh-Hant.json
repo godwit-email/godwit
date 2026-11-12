@@ -28,6 +28,7 @@
   "wit_skill_output_replace_body": "取代內文",
   "wit_skill_output_replace_draft": "取代草稿",
   "app_another_owner": "Godwit 已在執行（GUI 或 headless）。",
+  "app_backend_lost": "Godwit 的背景程序意外結束。再次開啟 Godwit 即可重新啟動它。",
   "app_lock_failed": "Godwit 無法開啟資料目錄。",
   "app_open_failed": "Godwit 無法開啟資料目錄：{arg1}。",
   "app_open_failed_other": "資料庫無法開啟",

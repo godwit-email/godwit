@@ -183,9 +183,10 @@ func TestHeadlessSecondInstance(t *testing.T) {
 	}
 }
 
-func TestGUIAndHeadlessExclusive(t *testing.T) {
+// A second backend on a data directory leaves it to its owner untouched.
+func TestHeadlessAnotherOwner(t *testing.T) {
 	dir := shortDir(t)
-	release, err := ownerlock.Acquire(dir) // the GUI holds it
+	release, err := ownerlock.Acquire(dir) // another backend holds it
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +196,7 @@ func TestGUIAndHeadlessExclusive(t *testing.T) {
 		t.Fatalf("code %d, stderr %q", code, stderr.String())
 	}
 	if _, err := os.Stat(filepath.Join(dir, "godwit.db")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("headless opened the database while the GUI owns it: %v", err)
+		t.Fatalf("headless opened the database while another owns it: %v", err)
 	}
 }
 

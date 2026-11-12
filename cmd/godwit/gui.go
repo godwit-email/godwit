@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/egoist/mygo"
@@ -18,12 +19,10 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/app"
 	"github.com/godwit-email/godwit/core"
-	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/theme"
 	"github.com/godwit-email/godwit/ownerlock"
-	"github.com/godwit-email/godwit/rpc"
-	"github.com/godwit-email/godwit/rpcbind"
+	"github.com/godwit-email/godwit/uiclient"
 	"github.com/godwit-email/godwit/webui"
 )
 
@@ -74,9 +73,11 @@ func (b bestEffort) Write(p []byte) (int, error) {
 }
 
 // gui runs the desktop app on dataDir until it quits or ctx ends. On the
-// default directory a second GUI focuses the first (singleInstance). It owns
-// dataDir (ownerlock) before opening it; if another process does, it says so
-// in an error dialog and exits 2.
+// default directory a second GUI focuses the first (singleInstance). It is a
+// client of dataDir's backend (ADR 0038), which it starts when none runs
+// (connectBackend) and stops as it quits unless the user started it; when the
+// backend cannot start it says why in an error dialog, exiting 2 if another
+// process owns dataDir, and when the backend goes away it says so and exits.
 func gui(ctx context.Context, dataDir string) int {
 	log.SetOutput(logOutput(os.Stderr)) // and slog, while its default is unset; an error report carries the recent lines
 	mygo.App.SetName("Godwit")
@@ -93,8 +94,8 @@ func gui(ctx context.Context, dataDir string) int {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	code := 0
-	var release func() error
-	var svc *core.Service
+	var client *uiclient.Client
+	var quitting atomic.Bool // the backend's going is ours, not a crash
 	var plat *platform
 	var a *app.App
 	var clicked []string                           // notification clicks before the App exists, as the one that launched it
@@ -245,34 +246,28 @@ func gui(ctx context.Context, dataDir string) int {
 			lang = preferred[0]
 		}
 		var err error
-		release, err = ownerlock.Acquire(dataDir)
+		client, err = connectBackend(dataDir, backendWait)
 		if err != nil {
+			log.Printf("starting the backend: %v", err)
 			i18n.SetLanguage(lang)
 			var msg string
-			msg, code = lockFailure(err)
+			msg, code = startupFailure(err)
 			mygo.Dialog.Error("Godwit", msg)
 			mygo.App.Quit()
 			return
 		}
-		reg, err := registrySource()
-		if err == nil {
-			svc, err = core.New(ctx, core.Options{DataDir: dataDir, AutoSync: true, LabelMail: true, SecurityMail: true, SystemLanguage: lang,
-				Registry: reg, ModelsDev: ai.ModelsDevURL, AppVersion: app.Version, SystemTranslator: systemTranslator(), AppleIntelligence: appleIntelligence(),
-				ConfirmWindow: true, ComposeOpen: windows.IsOpen, OpenURL: mygo.Shell.OpenExternal, GuardCoreML: guardCoreML(), PrintPDF: printPDF})
-		}
-		if err != nil {
-			i18n.SetLanguage(lang)
-			code = 1
-			mygo.Dialog.Error("Godwit", openFailure(err))
-			mygo.App.Quit()
-			return
-		}
-		pages.SetService(svc)
-		wit.SetService(svc)
-		reader.SetService(svc)
-		sig.SetService(svc)
+		watchBackend(client, &quitting, func() {
+			mygo.RunOnMain(func() {
+				mygo.Dialog.Error("Godwit", i18n.T("app.backend_lost"))
+				os.Exit(1) // nothing left to save to; the next start starts a backend again
+			})
+		})
+		pages.SetService(client)
+		wit.SetService(client)
+		reader.SetService(client)
+		sig.SetService(client)
 		uiLang := "" // keep the database preference authoritative over MyGo's saved locale
-		st, err := svc.GetSettings(ctx)
+		st, err := client.GetSettings(ctx)
 		if err != nil {
 			log.Printf("reading settings: %v; the menus use the system language", err)
 			st.ShowTrayIcon = true // the default: an unreadable preference must not take the icon away
@@ -293,10 +288,7 @@ func gui(ctx context.Context, dataDir string) int {
 		bench.configureWindow(&opts)
 		plat = &platform{
 			dataDir: dataDir,
-			svc:     svc,
-			listenAPI: func(external bool) (*rpc.Server, error) {
-				return rpcbind.ListenWith(dataDir, svc, rpcbind.ListenOptions{Version: app.Version, External: external})
-			},
+			svc:     client,
 			windows: windows,
 			wit:     wit,
 			roles:   roles,
@@ -304,14 +296,20 @@ func gui(ctx context.Context, dataDir string) int {
 			sig:     sig,
 		}
 		var win *mygo.Window
-		a = app.New(app.Deps{Svc: svc, Platform: plat, Settings: st, Post: func(f func()) { win.Update(f) },
-			SystemLanguage: lang, SetLanguage: setLanguage,
+		a = app.New(app.Deps{Svc: client, Platform: plat, Settings: st, Post: func(f func()) { win.Update(f) },
+			SystemLanguage: lang, SetLanguage: setLanguage, Quit: mygo.App.Quit,
 			Vibrancy: opts.Vibrancy != mygo.VibrancyNone, Dev: mygo.IsDev()})
-		plat.onAPIStop = a.LocalAPIStopped
-		if err := plat.startLocalAPI(st.LocalAPI); err != nil {
-			log.Print(svc.Redact("local API: " + err.Error()))
+		var composeMu sync.Mutex
+		windows.OnChange = func() { // no window is open yet
+			a.OnUI(a.ComposeWindowsChanged)
+			go func() { // the backend's 直接发送 leaves these drafts alone
+				composeMu.Lock()
+				defer composeMu.Unlock()
+				if err := client.RPC().Call(ctx, "SetComposeOpen", nil, windows.OpenDrafts()); err != nil {
+					log.Printf("reporting the compose windows: %v", err)
+				}
+			}()
 		}
-		windows.OnChange = func() { a.OnUI(a.ComposeWindowsChanged) } // no window is open yet
 		opts.Content = bench.view(a)
 		win = mygo.NewWindow(opts)
 		plat.win = win
@@ -373,21 +371,10 @@ func gui(ctx context.Context, dataDir string) int {
 				{Label: i18n.T("mail.compose"), Click: compose},
 			}))
 		}
-		updateMenu()
-		plat.BindTray(trayActions{
-			open:    plat.ShowWindow,
-			compose: a.Compose,
-			syncAll: a.SyncAll,
-			hide:    a.HideTrayIcon,
-			quit:    mygo.App.Quit,
-		})
-		plat.SetTrayVisible(st.ShowTrayIcon)
+		updateMenu() // the tray is the backend's
 		mygo.App.OnLocaleChanged(func(locale string) {
 			i18n.SetLanguage(locale)
 			updateMenu()
-			if plat.updateTray != nil {
-				plat.updateTray()
-			}
 		})
 
 		// Closing the window hides it while the App keeps running in the
@@ -402,7 +389,7 @@ func gui(ctx context.Context, dataDir string) int {
 			}
 			e.PreventDefault()
 			if a.KeepInBackground() {
-				if closeMinimizes(runtime.GOOS, plat.tray != nil) {
+				if closeMinimizes(runtime.GOOS, a.TrayIconShown()) {
 					win.Minimize()
 					return
 				}
@@ -420,16 +407,12 @@ func gui(ctx context.Context, dataDir string) int {
 		}
 		clicked = nil
 	})
-	// Before a relaunch starts the next Godwit, which needs dataDir's lock.
+	// After BeforeClose saved the App's writes; before a relaunch starts the
+	// next Godwit, whose backend needs dataDir's lock.
 	mygo.App.OnQuit(func() {
-		if plat != nil {
-			plat.closeLocalAPI() // after BeforeClose, before the Service closes
-		}
-		if svc != nil {
-			svc.Close()
-		}
-		if release != nil {
-			release()
+		if client != nil {
+			quitting.Store(true)
+			stopBackend(client)
 		}
 	})
 	if err := mygo.App.Run(); err != nil {

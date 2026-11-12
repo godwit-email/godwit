@@ -28,6 +28,7 @@
   "wit_skill_output_replace_body": "Remplacer le corps",
   "wit_skill_output_replace_draft": "Remplacer le brouillon",
   "app_another_owner": "Godwit est déjà en cours d’exécution (l’application ou godwit --headless) pour ce répertoire de données.",
+  "app_backend_lost": "Le processus d’arrière-plan de Godwit s’est arrêté de manière inattendue. Ouvrez à nouveau Godwit pour le redémarrer.",
   "app_lock_failed": "Godwit n’a pas pu ouvrir son répertoire de données.",
   "app_open_failed": "Godwit n’a pas pu ouvrir son répertoire de données : {arg1}.",
   "app_open_failed_other": "la base de données n’a pas pu être ouverte",

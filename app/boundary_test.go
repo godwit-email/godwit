@@ -62,6 +62,44 @@ func TestImportBoundary(t *testing.T) {
 	}
 }
 
+// TestUIOpensNoEngine: the interface (app/, webui/, uiclient/, internal/ and
+// cmd/godwit but its backend, headless.go) is a client of the backend's
+// (ADR 0038): it neither takes a data directory's owner lock nor constructs
+// a core.Service (test files excepted).
+func TestUIOpensNoEngine(t *testing.T) {
+	backend := filepath.Join("..", "cmd", "godwit", "headless.go")
+	checked := 0
+	for _, dir := range []string{".", "../internal", "../cmd/godwit", "../uiclient", "../webui"} {
+		err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") || p == backend {
+				return err
+			}
+			f, err := parser.ParseFile(token.NewFileSet(), p, nil, 0)
+			if err != nil {
+				return err
+			}
+			checked++
+			ast.Inspect(f, func(n ast.Node) bool {
+				sel, ok := n.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				if x, ok := sel.X.(*ast.Ident); ok && (x.Name == "core" && sel.Sel.Name == "New" || x.Name == "ownerlock" && sel.Sel.Name == "Acquire") {
+					t.Errorf("%s calls %s.%s: only the backend opens the engine", p, x.Name, sel.Sel.Name)
+				}
+				return true
+			})
+			return nil
+		})
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no source files checked")
+	}
+}
+
 // TestServiceInterface verifies that App accepts any Service implementation,
 // non-test UI files do not reference concrete *core.Service outside compile-time
 // satisfaction checks, and each Service interface lists only called methods

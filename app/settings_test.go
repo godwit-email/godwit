@@ -1058,20 +1058,6 @@ func TestLocalAPINewestFailureReverts(t *testing.T) {
 	}
 }
 
-// The server stopping by itself turns the switch off with the reason.
-func TestLocalAPIServerStopped(t *testing.T) {
-	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, func(st *core.Settings) { st.LocalAPI = true })
-	h.aiTab(aiApps)
-	h.see("/tmp/gw/godwit.sock")
-	h.app.LocalAPIStopped(h.app.localAPIGen, errors.New("accept: too many open files"))
-	h.see("accept: too many open files")
-	h.until("saved off", func() bool {
-		st, err := h.env.Svc.GetSettings(context.Background())
-		return err == nil && !st.LocalAPI && !h.app.settings.LocalAPI
-	})
-	h.until("the socket hides", func() bool { h.tt.Frame(); return !h.tt.HasText("/tmp/gw/godwit.sock") })
-}
-
 // A data directory other than the default goes into the MCP config.
 func TestLocalAPIMCPConfigDataDir(t *testing.T) {
 	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, func(st *core.Settings) { st.LocalAPI = true })
@@ -1088,35 +1074,6 @@ func TestLocalAPIMCPConfigDataDir(t *testing.T) {
 	h.click("复制配置")
 	if got := h.tt.Clipboard(); got != config {
 		t.Fatalf("clipboard %q, want %q", got, config)
-	}
-}
-
-// A stop notice for a server the user has since replaced changes nothing.
-func TestLocalAPIStaleStopIgnored(t *testing.T) {
-	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, func(st *core.Settings) { st.LocalAPI = true })
-	h.called("SetLocalAPI true")
-	h.until("on", func() bool { return h.app.writes.chains["local-api"] == nil })
-	old := h.app.localAPIGen
-	h.aiTab(aiApps)
-	h.click("允许外部应用和脚本接入")
-	h.click("允许外部应用和脚本接入")
-	h.until("off and on again", func() bool {
-		return h.app.writes.chains["local-api"] == nil && h.app.writes.keys["settings"] == nil && h.app.localAPIGen == old+2
-	})
-	h.app.LocalAPIStopped(old, errors.New("the old server died"))
-	h.drain()
-	h.tt.Frame()
-	h.until("settled", func() bool { return h.app.writes.chains["local-api"] == nil && h.app.writes.keys["settings"] == nil })
-	st, err := h.env.Svc.GetSettings(context.Background())
-	if err != nil || !st.LocalAPI || !h.app.settings.LocalAPI {
-		t.Fatalf("saved %v (%v), switch %v; want on", st.LocalAPI, err, h.app.settings.LocalAPI)
-	}
-	if h.app.localAPIGen != old+2 {
-		t.Fatalf("a stale notice made a request (gen %d, want %d)", h.app.localAPIGen, old+2)
-	}
-	h.see("/tmp/gw/godwit.sock")
-	if h.tt.HasText("the old server died") {
-		t.Fatal("a stale notice shows")
 	}
 }
 

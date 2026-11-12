@@ -22,7 +22,8 @@ import (
 	"github.com/godwit-email/godwit/uiclient"
 )
 
-// harness runs an App on a real coretest Service in a headless Tester. Posted
+// harness runs an App in a headless Tester as the ui client of a backend
+// serving a real coretest Service. Posted
 // callbacks queue up and run only on the test goroutine (until, advance, click,
 // typeText), as they would on the UI thread.
 type harness struct {
@@ -37,10 +38,11 @@ type harness struct {
 	home  string             // where 接入 AI 应用 looks for the AI apps: never this computer's
 	dev   bool
 
-	sock     string           // the backend's data directory in socket mode; "" in process
-	ui       *uiclient.Client // the App's connection in socket mode
-	notifier *MailNotifier    // the backend's in socket mode
+	sock     string           // the backend's data directory
+	ui       *uiclient.Client // the App's connection
+	notifier *MailNotifier    // the backend's
 	received atomic.Int64     // MessageReceived events the backend's notifier took
+	quits    atomic.Int32     // Deps.Quit calls
 
 	mu    sync.Mutex
 	queue []func()
@@ -65,11 +67,6 @@ func newDevHarness(t *testing.T, setup ...func(*coretest.Env)) *harness {
 	return newHarnessDev(t, true, nil, setup...)
 }
 
-// uiTransport is the env var that picks how the App reaches the Service:
-// "socket" runs it as the ui role over the Local API socket, against a
-// backend serving the test's Env; anything else calls the Service in process.
-const uiTransport = "GODWIT_UI_TRANSPORT"
-
 func newHarnessDev(t *testing.T, dev bool, opts []coretest.Option, setup ...func(*coretest.Env)) *harness {
 	t.Helper()
 	h := &harness{t: t, env: coretest.New(t, opts...), plat: &fakePlatform{}, clock: newFakeClock(), dev: dev}
@@ -78,32 +75,26 @@ func newHarnessDev(t *testing.T, dev bool, opts []coretest.Option, setup ...func
 		s(h.env)
 	}
 	h.home = t.TempDir()
-	if os.Getenv(uiTransport) == "socket" {
-		h.serve()
-	}
+	h.serve()
 	h.connectUI()
 	t.Cleanup(func() { // before the Env's cleanup closes the Service
 		h.app.Close()
 		h.stop()
-		if h.ui != nil {
-			h.ui.Close()
-		}
+		h.ui.Close()
 	})
 	return h
 }
 
-// connectUI makes and starts the App, over a new ui connection in socket mode.
+// connectUI makes and starts the App, over a new ui connection.
 func (h *harness) connectUI() {
 	h.t.Helper()
-	var svc Service = h.env.Svc
-	if h.sock != "" {
-		cl, err := uiclient.Dial(h.sock, "")
-		if err != nil {
-			h.t.Fatal(err)
-		}
-		h.ui, svc = cl, cl
+	cl, err := uiclient.Dial(h.sock, "")
+	if err != nil {
+		h.t.Fatal(err)
 	}
-	h.app = New(Deps{Svc: svc, Platform: h.plat, Post: h.post, Clock: h.clock, SystemLanguage: "zh-CN", Logf: h.logf, Dev: h.dev, Remote: h.sock != ""})
+	h.ui = cl
+	h.app = New(Deps{Svc: cl, Platform: h.plat, Post: h.post, Clock: h.clock, SystemLanguage: "zh-CN", Logf: h.logf, Dev: h.dev,
+		Quit: func() { h.quits.Add(1) }})
 	h.app.mcpEnv = func() (mcpclients.Env, error) {
 		return mcpclients.Env{Home: h.home, OS: "darwin", Temp: h.home, Run: func(string, ...string) error { return nil }}, nil
 	}
@@ -113,8 +104,8 @@ func (h *harness) connectUI() {
 	h.app.Start(ctx)
 }
 
-// dropUI closes the App and its ui connection, as the UI process exiting.
-// Socket mode only; connectUI brings a new one.
+// dropUI closes the App and its ui connection, as the UI process exiting;
+// connectUI brings a new one.
 func (h *harness) dropUI() {
 	h.app.Close()
 	h.stop()

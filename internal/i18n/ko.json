@@ -28,6 +28,7 @@
   "wit_skill_output_replace_body": "본문 바꾸기",
   "wit_skill_output_replace_draft": "초안 바꾸기",
   "app_another_owner": "이 데이터 디렉터리에서 이미 Godwit(GUI 또는 headless)이 실행 중입니다.",
+  "app_backend_lost": "Godwit의 백그라운드 프로세스가 예기치 않게 종료되었습니다. Godwit을 다시 열면 다시 시작됩니다.",
   "app_lock_failed": "Godwit이 데이터 디렉터리를 열 수 없습니다.",
   "app_open_failed": "Godwit이 데이터 디렉터리를 열 수 없습니다: {arg1}.",
   "app_open_failed_other": "데이터베이스를 열 수 없습니다",
