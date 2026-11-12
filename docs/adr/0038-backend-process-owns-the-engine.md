@@ -18,7 +18,7 @@ status: proposed
 ## 生命周期
 
 - 界面启动时后端不在，就拉起它并等 `godwit.sock`。
-- **关窗即释放界面进程**，后端与托盘留下继续收信；重开窗口是一次界面冷启动（耗时先量出来）。还有撰写窗口开着时只藏起主窗口，最后一个窗口关掉后界面才退出。冷启动数字不可接受时退回「关窗只隐藏界面」，只改 `cmd/godwit/platform.go` 的 `closeExitsUI`（#738）。
+- **关窗先隐藏，隐藏满 5 分钟后界面进程退出**，后端与托盘留下继续收信（见下文「关窗的取舍」）。5 分钟内重开就是把隐藏的窗口拿出来；之后重开是一次界面冷启动。计时到点时撰写窗口还开着，就等最后一个关掉后界面才退出。时长只有 `cmd/godwit/platform.go` 的 `hiddenExitAfter` 一处。
 - 后端要界面显示什么（托盘的打开、写邮件，点通知）时：有 `ui` 连接就发事件（`OpenRequested`、`ComposeRequested`、`NotificationClicked`）；没有就以 `--data-dir <目录> --open window|compose|<通知 id>` 拉起界面，已在运行的界面经单实例锁收到同样的参数。
 - 应用图标上的未读数由界面设置，随界面进程退出而消失（macOS 的 Dock 角标、Windows 的任务栏标记都属于界面进程）；界面不在时只有后端托盘上的未读数（开了「在菜单栏显示未读数」时）。
 - **退出默认连后端一起退出**；设置里的「后台收信」三态取代 `KeepInBackground`：关窗后停止 / 关窗后继续、退出即停止（默认）/ 一直继续。选「一直继续」时由系统的登录项拉起（macOS 的 `SMAppService.mainAppService`、Windows 非商店包的注册表 `Run` 或 MSIX 的 `uap5:StartupTask`），托盘菜单里另设「退出并停止收信」。
@@ -41,6 +41,12 @@ macOS 与 Windows 做全套（托盘、原生通知、登录启动），Linux �
 - **已核实与待签包真机验收的边界**：
   - 已在本机 macOS arm64 构建产物 `dist/darwin-arm64/Godwit.app`（ad-hoc 签名）、`mygo@v0.8.3` 源码与 `msix.yml` 上核实：`Info.plist`（`email.godwit.app`、`CFBundleExecutable=Godwit`、`NSUserActivityTypes=[INSendMessageIntent]`）；ad-hoc 下仅带 `disable-library-validation` 时 `SecTaskCopyValueForEntitlement` 返回 `false` 自动回退普通通知；`Godwit.app/Contents/MacOS/Godwit --headless` 正常监听 `godwit.sock` 响应 `call`、不出现在 `lsappinfo`/Dock、收 `SIGINT` 零退出码清理 socket 与 token。
   - 依赖正式签名环境或 Windows 实机、归入发版前人工核对清单（#737）的项：Developer ID 签名加公证并嵌入 `embedded.provisionprofile` 后的发件人头像通知与 `SMAppService` 首次批准体验，以及 Windows MSIX 实机上的 `uap5:StartupTask` 启停与卸载无残留。
+
+## 关窗的取舍（#738）
+
+[`docs/process-benchmark.md`](../process-benchmark.md) 拆分前后同机实测（中位数）：关窗即退出界面后，后台进程树的 RSS 从约 440–456 MiB 降到 132–157 MiB（界面与 WebView 的子进程约 300 MiB 被释放），30 秒内的上下文切换降九成以上；代价是重开窗口从约 30 ms 的「显示隐藏窗口」变成 330–500 ms 的界面冷启动。
+
+结论：**关窗先隐藏，隐藏满 5 分钟后界面进程退出**。刚关就重开的常见情形保持瞬开；长时间放在后台才换回那约 300 MiB。隐藏期间界面照样报「不在前台」，后端照常发通知；后台收信为「关窗后停止」与 ⌘Q 不变。
 
 ## Considered Options
 
