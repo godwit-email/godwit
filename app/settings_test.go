@@ -1236,7 +1236,7 @@ func TestSyncRangeOptionsAndFolders(t *testing.T) {
 	h, acc := withAccount(t)
 	h.syncNow(acc)
 	h.openSettings(accountRoute(acc.ID))
-	h.waitMail("the header counts the folders", func() bool { return h.tt.HasText("其他 IMAP 邮箱 · 4 个文件夹") })
+	h.waitMail("the header counts the folders", func() bool { return h.tt.HasText("其他邮箱 · 4 个文件夹") })
 }
 
 // A signature page that never answers the flush holds the close for

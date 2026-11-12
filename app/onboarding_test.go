@@ -59,7 +59,7 @@ func TestOnboardingPasswordFlow(t *testing.T) {
 	h.firstRun()
 	h.see("先把邮箱接进来")
 	h.see("密码只存在系统钥匙串")
-	h.click("其他 IMAP 邮箱")
+	h.click("其他邮箱")
 	h.fill("邮箱地址", "new@example.com")
 	h.manualServers()
 	h.fill("密码", "secret")
@@ -264,7 +264,7 @@ func TestSecretZeroWidthCharacters(t *testing.T) {
 func TestOnboardingPasswordVisibility(t *testing.T) {
 	h := newHarness(t)
 	o := h.firstRun()
-	h.click("其他 IMAP 邮箱")
+	h.click("其他邮箱")
 	h.fill("密码", "typed-secret")
 	h.click("显示密码")
 	h.see("隐藏密码")
@@ -633,7 +633,7 @@ func TestAddAccountSheet(t *testing.T) {
 	h, _ := withAccount(t)
 	h.app.openAddAccount()
 	h.see("添加账户")
-	h.click("其他 IMAP 邮箱")
+	h.click("其他邮箱")
 	h.fill("邮箱地址", "second@example.com")
 	h.manualServers()
 	h.fill("密码", "secret")
@@ -679,7 +679,7 @@ func TestAddAccountSheet(t *testing.T) {
 func (h *harness) toDone(email string) *onboarding {
 	h.t.Helper()
 	o := h.firstRun()
-	h.click("其他 IMAP 邮箱")
+	h.click("其他邮箱")
 	h.fill("邮箱地址", email)
 	h.manualServers()
 	h.fill("密码", "secret")
@@ -750,7 +750,7 @@ func TestOnboardingSyncRangeRetry(t *testing.T) {
 func TestOnboardingSettingsErrors(t *testing.T) {
 	h := newHarness(t)
 	h.firstRun()
-	h.click("其他 IMAP 邮箱")
+	h.click("其他邮箱")
 	h.fill("邮箱地址", "new@example.com")
 	h.fill("密码", "secret")
 	h.click("连接")
@@ -822,7 +822,7 @@ func TestOnboardingDoneBadgeUsesSuccessTokens(t *testing.T) {
 func TestOnboardingManualLabels(t *testing.T) {
 	h := newHarness(t)
 	h.firstRun()
-	h.click("其他 IMAP 邮箱")
+	h.click("其他邮箱")
 	if _, open := h.tt.Find("IMAP 服务器"); !open {
 		h.click("手动设置服务器")
 	}
@@ -892,7 +892,7 @@ func TestOnboardingFeishuLarkTileAfterDetection(t *testing.T) {
 func TestOnboardingOtherTileFillsDetectedServers(t *testing.T) {
 	h := newHarness(t)
 	o := h.firstRun()
-	h.click("其他 IMAP 邮箱")
+	h.click("其他邮箱")
 	o.email = "a@corp.example"
 
 	// A blind guess leaves the manual fields empty.
@@ -923,7 +923,7 @@ func TestOnboardingOtherTileFillsDetectedServers(t *testing.T) {
 func TestOnboardingOtherTileClearsServersOfPreviousAddress(t *testing.T) {
 	h := newHarness(t)
 	o := h.firstRun()
-	h.click("其他 IMAP 邮箱")
+	h.click("其他邮箱")
 
 	o.email = "a@corp.example"
 	o.detectedSrc = auth.SourceMX
@@ -955,7 +955,7 @@ func TestOnboardingOtherTileClearsServersOfPreviousAddress(t *testing.T) {
 func TestOnboardingOtherTileConnectWaitsForDetection(t *testing.T) {
 	h := newHarness(t)
 	o := h.firstRun()
-	h.click("其他 IMAP 邮箱")
+	h.click("其他邮箱")
 
 	o.email, o.secret = "a@corp.example", "secret"
 	o.detectedSrc = auth.SourceMX
@@ -977,7 +977,7 @@ func TestOnboardingOtherTileConnectWaitsForDetection(t *testing.T) {
 func TestOnboardingOtherTileAppliesServersWithSameIMAPHost(t *testing.T) {
 	h := newHarness(t)
 	o := h.firstRun()
-	h.click("其他 IMAP 邮箱")
+	h.click("其他邮箱")
 
 	imap := auth.Server{Host: "mail.example", Port: 993, Security: core.SecurityTLS}
 	o.email = "a@one.example"

@@ -45,7 +45,7 @@ func TestOnboardingGraph(t *testing.T) {
 	o := h.firstRun()
 
 	// Non-Outlook providers never offer Microsoft Graph.
-	h.click("其他 IMAP 邮箱")
+	h.click("其他邮箱")
 	if _, open := h.tt.Find("IMAP 服务器"); !open {
 		h.click("手动设置服务器")
 	}

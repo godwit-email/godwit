@@ -650,7 +650,7 @@
     }
   },
   "onboarding_invalid_wrong_account": "you signed in to a different address",
-  "onboarding_lede": "Any IMAP mailbox works, and you can add more than one account.",
+  "onboarding_lede": "IMAP, POP3, Exchange and more work, and you can add more than one account.",
   "onboarding_license": "Godwit is open source · Apache-2.0",
   "onboarding_login_app_password": "App password",
   "onboarding_login_authorization_code": "Authorization code",
@@ -843,7 +843,7 @@
   "provider_netease126_mark": "126",
   "provider_netease163": "NetEase 163 Mail",
   "provider_netease163_mark": "163",
-  "provider_other": "Other IMAP mailbox",
+  "provider_other": "Other Mail",
   "provider_other_mark": "@",
   "provider_outlook": "Outlook / Hotmail",
   "provider_outlook_mark": "O",

@@ -867,6 +867,11 @@ func presetMark(c *ui.Context, preset string, size float32) {
 			return
 		}
 	}
+	iconMark(c, "contacts", size)
+}
+
+// iconMark is icon on a mark's tile, for an entry with no logo of its own.
+func iconMark(c *ui.Context, icon string, size float32) {
 	t := theme.Of(c)
 	r := min(t.Radius.Lg, size/4)
 	if size <= theme.MarkSm {
@@ -877,7 +882,7 @@ func presetMark(c *ui.Context, preset string, size float32) {
 		iconSz = theme.IconSm
 	}
 	ui.Box(c).Size(size, size).Shrink(0).Radius(r).Background(t.Hover).Border(theme.Hairline, t.Border).Center().Children(func() {
-		ui.Icon(c, icons.Get("contacts")).Size(iconSz, iconSz).TextColor(t.Foreground)
+		ui.Icon(c, icons.Get(icon)).Size(iconSz, iconSz).TextColor(t.Foreground)
 	})
 }
 

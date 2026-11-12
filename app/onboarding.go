@@ -269,7 +269,7 @@ func (o *onboarding) detect(email string, then func(auth.Provider)) {
 
 // found records p as email's provider. From the 飞书/Lark tile, it also says
 // which of the two the sign-in is, unless the servers were edited; from the
-// 其他 IMAP tile, a non-guess match fills in the servers unless edited.
+// 其他邮箱 tile, a non-guess match fills in the servers unless edited.
 func (o *onboarding) found(p auth.Provider, email string) {
 	o.detected, o.detectedFor = p, email
 	if o.step == stepPassword && feishuOrLark(o.prov) && feishuOrLark(p) && p.ID != o.prov.ID &&
@@ -813,6 +813,10 @@ func mark(c *ui.Context, p auth.Provider, size float32) {
 	}
 	t := theme.Of(c)
 	text := providerMark(p)
+	if text == "@" { // no mark of its own (其他邮箱): a mail icon, as the CardDAV tile's
+		iconMark(c, "mail", size)
+		return
+	}
 	fs := t.Text.Xs
 	if size >= theme.MarkLg {
 		fs = t.Text.Base
