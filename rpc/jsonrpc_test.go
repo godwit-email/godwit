@@ -551,3 +551,58 @@ func TestClientNeverDropsStreamCancel(t *testing.T) {
 		}
 	}
 }
+
+type progressItem struct {
+	N   int
+	Err error `json:"-"`
+}
+
+func (p progressItem) StreamError() error { return p.Err }
+
+type streamErrTarget struct{ end error }
+
+func (s *streamErrTarget) Run() (<-chan progressItem, error) {
+	ch := make(chan progressItem, 3)
+	ch <- progressItem{N: 1}
+	ch <- progressItem{N: 2}
+	if s.end != nil {
+		ch <- progressItem{Err: s.end}
+	}
+	close(ch)
+	return ch, nil
+}
+
+func TestStreamApplicationError(t *testing.T) {
+	errBadSum := errors.New("checksum mismatch")
+	codec := &rpc.Codec{}
+	codec.RegisterSentinel("bad_sum", errBadSum, errBadSum.Error())
+
+	d, err := rpc.NewDispatcher(&streamErrTarget{end: errBadSum}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, _ := serve(t, d, rpc.ConnOptions{EncodeError: func(e error) *rpc.WireError { return codec.Encode(e, nil) }})
+	c := rpc.NewClient(conn)
+	c.DecodeError = codec.Decode
+	defer c.Close()
+
+	events, cancel, err := c.Stream(context.Background(), "Run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	var got []int
+	for raw := range events {
+		var p progressItem
+		if err := json.Unmarshal(raw, &p); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, p.N)
+	}
+	if len(got) != 2 || got[0] != 1 || got[1] != 2 {
+		t.Fatalf("events = %v, want [1 2]", got)
+	}
+	if serr := c.StreamErr(events); !errors.Is(serr, errBadSum) {
+		t.Fatalf("StreamErr = %v, want errBadSum", serr)
+	}
+}

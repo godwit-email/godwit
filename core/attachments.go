@@ -91,6 +91,36 @@ func (s *Service) GetAttachment(ctx context.Context, attachmentID int64) (string
 	return path, info, err
 }
 
+// FetchedAttachment is one attachment cached on disk by FetchAttachmentsStream.
+type FetchedAttachment struct {
+	Path string
+	Info AttachmentInfo
+	Err  error `json:"-"`
+}
+
+// StreamError returns the mid-stream failure, if any.
+func (a FetchedAttachment) StreamError() error { return a.Err }
+
+func sendStream[T any](ctx context.Context, ch chan<- T, v T) bool {
+	select {
+	case ch <- v:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func sendStreamFinal[T any](ctx context.Context, ch chan<- T, v T) {
+	select {
+	case ch <- v:
+	default:
+		select {
+		case ch <- v:
+		case <-ctx.Done():
+		}
+	}
+}
+
 // FetchAttachments gets each attachment's cached file over one connection,
 // downloading first if needed, and calls fn for each in order.
 func (s *Service) FetchAttachments(ctx context.Context, attachmentIDs []int64, fn func(path string, info AttachmentInfo) error) (err error) {
@@ -110,6 +140,37 @@ func (s *Service) FetchAttachments(ctx context.Context, attachmentIDs []int64, f
 		}
 	}
 	return nil
+}
+
+// FetchAttachmentsStream streams each attachment's cached file path and info in
+// order over one connection, downloading first if needed.
+func (s *Service) FetchAttachmentsStream(ctx context.Context, attachmentIDs []int64) (<-chan FetchedAttachment, error) {
+	fctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	ids := slices.Clone(attachmentIDs)
+	ch := make(chan FetchedAttachment, 16)
+	f := &attachmentFetcher{s: s, ctx: fctx, end: end}
+	go func() {
+		defer close(ch)
+		for _, id := range ids {
+			path, info, gerr := f.get(id)
+			if gerr != nil {
+				_ = f.close()
+				sendStreamFinal(fctx, ch, FetchedAttachment{Err: gerr})
+				return
+			}
+			if !sendStream(fctx, ch, FetchedAttachment{Path: path, Info: info}) {
+				_ = f.close()
+				return
+			}
+		}
+		if cerr := f.close(); cerr != nil {
+			sendStreamFinal(fctx, ch, FetchedAttachment{Err: cerr})
+		}
+	}()
+	return ch, nil
 }
 
 // attachmentFetcher gets attachments one after another over one connection: a
