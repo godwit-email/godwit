@@ -2266,7 +2266,9 @@
   "settings_account_import_existing": "Zaten var, atlandı",
   "settings_account_import_help": "Dışa aktarılan hesapları kimlik bilgileri olmadan ekler; her biri yeniden giriş ister",
   "settings_account_import_row": "Hesap ayarlarını bir dosyadan içe aktar",
+  "settings_account_import_protocol": "{arg1} olarak zaten var, atlandı",
   "settings_account_import_skipped": "{arg1, number, ::group-off} hesap zaten vardı, atlandı",
+  "settings_account_import_skipped_protocol": "{arg1, number, ::group-off} hesap başka bir protokolle zaten vardı, atlandı",
   "settings_account_import_title": "Hesapları içe aktar",
   "settings_account_reauth_imported": "Bu hesap kimlik bilgileri olmadan içe aktarıldı. Eşitlemeyi başlatmak için yetkilendirin."
 }

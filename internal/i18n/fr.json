@@ -2266,7 +2266,9 @@
   "settings_account_import_existing": "Existe déjà, ignoré",
   "settings_account_import_help": "Ajoute les comptes exportés sans identifiants ; chacun demandera une reconnexion",
   "settings_account_import_row": "Importer la configuration des comptes depuis un fichier",
+  "settings_account_import_protocol": "Existe en {arg1}, ignoré",
   "settings_account_import_skipped": "{arg1, number, ::group-off} existaient déjà, ignorés",
+  "settings_account_import_skipped_protocol": "{arg1, number, ::group-off} existaient déjà avec un autre protocole, ignorés",
   "settings_account_import_title": "Importer des comptes",
   "settings_account_reauth_imported": "Ce compte a été importé sans identifiants. Autorisez-le pour démarrer la synchronisation."
 }

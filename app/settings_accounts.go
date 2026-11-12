@@ -768,7 +768,9 @@ func (p *settingsPage) importDialog(c *ui.Context) {
 								if entry.ReceiveOnly {
 									kit.Badge(c, i18n.T("settings.account.receive_only"))
 								}
-								if entry.Existing {
+								if entry.ExistingProtocol != "" {
+									kit.Badge(c, i18n.Tf("settings.account.import.protocol", strings.ToUpper(entry.ExistingProtocol)))
+								} else if entry.Existing {
 									kit.Badge(c, i18n.T("settings.account.import.existing"))
 								}
 							})
@@ -812,9 +814,22 @@ func (p *settingsPage) confirmAccountImport() {
 		p.closeImportDialog()
 		title := i18n.Tf("settings.account.import.done", len(res.Imported))
 		if len(res.Skipped) > 0 {
+			other := 0
+			for _, s := range res.Skipped {
+				if s.ExistingProtocol != "" {
+					other++
+				}
+			}
+			var desc []string
+			if same := len(res.Skipped) - other; same > 0 {
+				desc = append(desc, i18n.Tf("settings.account.import.skipped", same))
+			}
+			if other > 0 {
+				desc = append(desc, i18n.Tf("settings.account.import.skipped_protocol", other))
+			}
 			a.toasts = append(a.toasts, ui.Toast{
 				Title:       title,
-				Description: i18n.Tf("settings.account.import.skipped", len(res.Skipped)),
+				Description: strings.Join(desc, " · "),
 				Type:        kit.ToastSuccess,
 			})
 		} else {

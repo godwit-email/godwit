@@ -2266,7 +2266,9 @@
   "settings_account_import_existing": "이미 있음, 건너뜀",
   "settings_account_import_help": "자격 증명 없이 내보낸 계정을 추가하며 각 계정에서 다시 로그인해야 합니다",
   "settings_account_import_row": "파일에서 계정 설정 가져오기",
+  "settings_account_import_protocol": "{arg1}(으)로 이미 있음, 건너뜀",
   "settings_account_import_skipped": "{arg1, number, ::group-off}개는 이미 있어 건너뛰었습니다",
+  "settings_account_import_skipped_protocol": "{arg1, number, ::group-off}개는 다른 프로토콜로 이미 있어 건너뛰었습니다",
   "settings_account_import_title": "계정 가져오기",
   "settings_account_reauth_imported": "이 계정은 자격 증명 없이 가져왔습니다. 다시 인증하면 동기화가 시작됩니다."
 }

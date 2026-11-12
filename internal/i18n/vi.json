@@ -2266,7 +2266,9 @@
   "settings_account_import_existing": "Đã tồn tại, bỏ qua",
   "settings_account_import_help": "Thêm các tài khoản đã xuất mà không kèm thông tin đăng nhập; mỗi tài khoản sẽ yêu cầu đăng nhập lại",
   "settings_account_import_row": "Nhập cài đặt tài khoản từ tệp",
+  "settings_account_import_protocol": "Đã tồn tại dạng {arg1}, bỏ qua",
   "settings_account_import_skipped": "Đã có {arg1, number, ::group-off} tài khoản, đã bỏ qua",
+  "settings_account_import_skipped_protocol": "Đã có {arg1, number, ::group-off} tài khoản với giao thức khác, đã bỏ qua",
   "settings_account_import_title": "Nhập tài khoản",
   "settings_account_reauth_imported": "Tài khoản này được nhập mà chưa có thông tin đăng nhập. Hãy ủy quyền lại để bắt đầu đồng bộ."
 }

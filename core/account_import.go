@@ -44,13 +44,24 @@ type AccountImportEntry struct {
 	SendingPort       int    `json:"sending_port"`
 	ReceiveOnly       bool   `json:"receive_only,omitempty"`
 	Auth              string `json:"auth"`
-	Existing          bool   `json:"existing,omitempty"`
+	// Existing marks an address already on this device or earlier in the file: ImportAccounts skips it.
+	Existing bool `json:"existing,omitempty"`
+	// ExistingProtocol is the local account's receiving protocol when it differs from the file's.
+	ExistingProtocol string `json:"existing_protocol,omitempty"`
+}
+
+// AccountImportSkip is one address ImportAccounts skipped. ExistingProtocol is
+// the local account's receiving protocol when it differs from the file's;
+// empty when the address already exists with the same protocol.
+type AccountImportSkip struct {
+	Email            string `json:"email"`
+	ExistingProtocol string `json:"existing_protocol,omitempty"`
 }
 
 // AccountImportResult reports the accounts ImportAccounts created and the addresses it skipped.
 type AccountImportResult struct {
-	Imported []Account `json:"imported"`
-	Skipped  []string  `json:"skipped"`
+	Imported []Account           `json:"imported"`
+	Skipped  []AccountImportSkip `json:"skipped"`
 }
 
 func normalizeImportEmail(raw string) (clean, norm string, err error) {
@@ -284,11 +295,12 @@ func (s *Service) PreviewAccountImport(ctx context.Context, data []byte) (Accoun
 	for _, item := range parsed {
 		ea := item.acc
 		already := seen[item.norm]
+		other := ""
 		if proto, ok := existing[item.norm]; ok {
-			if proto != ea.Receiving.Protocol {
-				return AccountImportPreview{}, fmt.Errorf("account %s: %w", ea.Email, ErrAccountExists)
-			}
 			already = true
+			if proto != ea.Receiving.Protocol {
+				other = proto
+			}
 		}
 		seen[item.norm] = true
 		entries = append(entries, AccountImportEntry{
@@ -303,6 +315,7 @@ func (s *Service) PreviewAccountImport(ctx context.Context, data []byte) (Accoun
 			ReceiveOnly:       ea.ReceiveOnly,
 			Auth:              ea.Receiving.Auth,
 			Existing:          already,
+			ExistingProtocol:  other,
 		})
 	}
 	return AccountImportPreview{Accounts: entries}, nil
@@ -310,8 +323,8 @@ func (s *Service) PreviewAccountImport(ctx context.Context, data []byte) (Accoun
 
 // ImportAccounts validates data and imports every new account in a single
 // transaction with status reauth_required (credentials_missing), without
-// dialing any server. Accounts with the same address and receiving protocol
-// are skipped and reported in Skipped.
+// dialing any server. Addresses already on this device are skipped and
+// reported in Skipped, with the local protocol when it differs.
 func (s *Service) ImportAccounts(ctx context.Context, data []byte) (AccountImportResult, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
@@ -333,19 +346,19 @@ func (s *Service) ImportAccounts(ctx context.Context, data []byte) (AccountImpor
 
 	seen := make(map[string]bool, len(parsed))
 	toImport := make([]ExportedAccount, 0, len(parsed))
-	skipped := make([]string, 0)
+	skipped := make([]AccountImportSkip, 0)
 	for _, item := range parsed {
 		ea := item.acc
 		if proto, ok := existing[item.norm]; ok {
+			skip := AccountImportSkip{Email: ea.Email}
 			if proto != ea.Receiving.Protocol {
-				s.sigMu.Unlock()
-				return AccountImportResult{}, fmt.Errorf("account %s: %w", ea.Email, ErrAccountExists)
+				skip.ExistingProtocol = proto
 			}
-			skipped = append(skipped, ea.Email)
+			skipped = append(skipped, skip)
 			continue
 		}
 		if seen[item.norm] {
-			skipped = append(skipped, ea.Email)
+			skipped = append(skipped, AccountImportSkip{Email: ea.Email})
 			continue
 		}
 		seen[item.norm] = true

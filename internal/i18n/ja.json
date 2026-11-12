@@ -2266,7 +2266,9 @@
   "settings_account_import_existing": "既存のためスキップ",
   "settings_account_import_help": "資格情報なしでアカウント設定を追加します。各アカウントで再ログインが必要です",
   "settings_account_import_row": "ファイルからアカウント設定を読み込む",
+  "settings_account_import_protocol": "{arg1} で既存のためスキップ",
   "settings_account_import_skipped": "{arg1, number, ::group-off} 件は既に存在するためスキップしました",
+  "settings_account_import_skipped_protocol": "{arg1, number, ::group-off} 件は別のプロトコルで既に存在するためスキップしました",
   "settings_account_import_title": "アカウントを読み込む",
   "settings_account_reauth_imported": "このアカウントは資格情報なしで読み込まれました。再認証すると同期が始まります。"
 }

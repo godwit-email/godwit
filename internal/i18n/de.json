@@ -2266,7 +2266,9 @@
   "settings_account_import_existing": "Bereits vorhanden, übersprungen",
   "settings_account_import_help": "Fügt exportierte Konten ohne Zugangsdaten hinzu; jedes Konto fragt erneut nach der Anmeldung",
   "settings_account_import_row": "Kontoeinstellungen aus einer Datei importieren",
+  "settings_account_import_protocol": "Als {arg1} vorhanden, übersprungen",
   "settings_account_import_skipped": "{arg1, number, ::group-off} bereits vorhanden, übersprungen",
+  "settings_account_import_skipped_protocol": "{arg1, number, ::group-off} mit anderem Protokoll vorhanden, übersprungen",
   "settings_account_import_title": "Konten importieren",
   "settings_account_reauth_imported": "Dieses Konto wurde ohne Zugangsdaten importiert. Autorisieren Sie es, um die Synchronisierung zu starten."
 }

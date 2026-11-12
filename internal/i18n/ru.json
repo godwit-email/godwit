@@ -2266,7 +2266,9 @@
   "settings_account_import_existing": "Уже есть, пропущен",
   "settings_account_import_help": "Добавляет экспортированные аккаунты без учётных данных; для каждого потребуется войти заново",
   "settings_account_import_row": "Импортировать настройки аккаунтов из файла",
+  "settings_account_import_protocol": "Уже есть как {arg1}, пропущен",
   "settings_account_import_skipped": "Уже существовало, пропущено: {arg1, number, ::group-off}",
+  "settings_account_import_skipped_protocol": "Уже существовало с другим протоколом, пропущено: {arg1, number, ::group-off}",
   "settings_account_import_title": "Импорт аккаунтов",
   "settings_account_reauth_imported": "Этот аккаунт импортирован без учётных данных. Авторизуйте его, чтобы начать синхронизацию."
 }

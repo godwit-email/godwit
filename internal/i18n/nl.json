@@ -2266,7 +2266,9 @@
   "settings_account_import_existing": "Bestaat al, overgeslagen",
   "settings_account_import_help": "Voegt geëxporteerde accounts toe zonder inloggegevens; elk account vraagt opnieuw om aanmelding",
   "settings_account_import_row": "Accountinstellingen uit een bestand importeren",
+  "settings_account_import_protocol": "Bestaat al als {arg1}, overgeslagen",
   "settings_account_import_skipped": "{arg1, number, ::group-off} bestonden al, overgeslagen",
+  "settings_account_import_skipped_protocol": "{arg1, number, ::group-off} bestonden al met een ander protocol, overgeslagen",
   "settings_account_import_title": "Accounts importeren",
   "settings_account_reauth_imported": "Dit account is zonder inloggegevens geïmporteerd. Autoriseer het om te beginnen met synchroniseren."
 }
