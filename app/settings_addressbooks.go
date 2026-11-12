@@ -696,9 +696,10 @@ func (v *addressBooksView) addDialogView(c *ui.Context) {
 		incomplete := strings.TrimSpace(v.username) == "" || v.password == "" || !urlOK
 		label := i18n.T("onboarding.connect")
 		if v.busy { // discovery takes a while: the spinner in the button, as the contacts page's refresh
-			kit.ButtonFrame(c, kit.ButtonOpts{Disabled: true}).Label(label).Children(func() {
+			connecting := i18n.T("onboarding.check.connecting")
+			kit.ButtonFrame(c, kit.ButtonOpts{Disabled: true}).Label(connecting).Children(func() {
 				kit.Spinner(c).Size(theme.Icon, theme.Icon)
-				ui.Text(c, label)
+				ui.Text(c, connecting)
 			})
 			return
 		}
