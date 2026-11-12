@@ -4,16 +4,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/mcpclients"
+	"github.com/godwit-email/godwit/ownerlock"
+	"github.com/godwit-email/godwit/rpcbind"
+	"github.com/godwit-email/godwit/uiclient"
 )
 
 // harness runs an App on a real coretest Service in a headless Tester. Posted
@@ -29,6 +35,11 @@ type harness struct {
 	stop  context.CancelFunc // cancels the ctx the App was started with
 	size  [2]int             // the window's, once resize set it; else 1280×820
 	home  string             // where 接入 AI 应用 looks for the AI apps: never this computer's
+	dev   bool
+
+	sock     string           // the backend's data directory in socket mode; "" in process
+	ui       *uiclient.Client // the App's connection in socket mode
+	received atomic.Int64     // MessageReceived events the backend's notifier took
 
 	mu    sync.Mutex
 	queue []func()
@@ -53,25 +64,102 @@ func newDevHarness(t *testing.T, setup ...func(*coretest.Env)) *harness {
 	return newHarnessDev(t, true, nil, setup...)
 }
 
+// uiTransport is the env var that picks how the App reaches the Service:
+// "socket" runs it as the ui role over the Local API socket, against a
+// backend serving the test's Env; anything else calls the Service in process.
+const uiTransport = "GODWIT_UI_TRANSPORT"
+
 func newHarnessDev(t *testing.T, dev bool, opts []coretest.Option, setup ...func(*coretest.Env)) *harness {
 	t.Helper()
-	h := &harness{t: t, env: coretest.New(t, opts...), plat: &fakePlatform{}, clock: newFakeClock()}
+	h := &harness{t: t, env: coretest.New(t, opts...), plat: &fakePlatform{}, clock: newFakeClock(), dev: dev}
 	h.plat.svc = h.env.Svc
 	for _, s := range setup {
 		s(h.env)
 	}
-	h.app = New(Deps{Svc: h.env.Svc, Platform: h.plat, Post: h.post, Clock: h.clock, SystemLanguage: "zh-CN", Logf: h.logf, Dev: dev})
 	h.home = t.TempDir()
+	if os.Getenv(uiTransport) == "socket" {
+		h.serve()
+	}
+	h.connectUI()
+	t.Cleanup(func() { // before the Env's cleanup closes the Service
+		h.app.Close()
+		h.stop()
+		if h.ui != nil {
+			h.ui.Close()
+		}
+	})
+	return h
+}
+
+// connectUI makes and starts the App, over a new ui connection in socket mode.
+func (h *harness) connectUI() {
+	h.t.Helper()
+	var svc Service = h.env.Svc
+	if h.sock != "" {
+		cl, err := uiclient.Dial(h.sock, "")
+		if err != nil {
+			h.t.Fatal(err)
+		}
+		h.ui, svc = cl, cl
+	}
+	h.app = New(Deps{Svc: svc, Platform: h.plat, Post: h.post, Clock: h.clock, SystemLanguage: "zh-CN", Logf: h.logf, Dev: h.dev, Remote: h.sock != ""})
 	h.app.mcpEnv = func() (mcpclients.Env, error) {
 		return mcpclients.Env{Home: h.home, OS: "darwin", Temp: h.home, Run: func(string, ...string) error { return nil }}, nil
 	}
 	h.tt = ui.NewTester(h.app.View, 1280, 820)
 	ctx, stop := context.WithCancel(context.Background())
 	h.stop = stop
-	t.Cleanup(stop)
 	h.app.Start(ctx)
-	t.Cleanup(h.app.Close) // before the Env's cleanup closes the Service
-	return h
+}
+
+// dropUI closes the App and its ui connection, as the UI process exiting.
+// Socket mode only; connectUI brings a new one.
+func (h *harness) dropUI() {
+	h.app.Close()
+	h.stop()
+	h.ui.Close()
+}
+
+// serve runs a backend on the Env: the Local API socket, in a short
+// directory for the Unix socket path limit, and the backend's notifier,
+// showing notifications on the fake platform.
+func (h *harness) serve() {
+	t := h.t
+	dir, err := os.MkdirTemp("", "gw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	release, err := ownerlock.Acquire(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { release() })
+	srv, err := rpcbind.ListenWith(dir, h.env.Svc, rpcbind.ListenOptions{Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve(context.Background())
+	t.Cleanup(func() { srv.Close() })
+
+	n := NewMailNotifier(MailNotifierDeps{Svc: h.env.Svc, Sink: h.plat, Clock: h.clock, Foreground: h.env.Svc.UIForeground, Logf: h.logf})
+	ch, unsub := h.env.Svc.Subscribe()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for ev := range ch {
+			n.HandleEvent(ev)
+			if ev.Type == events.MessageReceived {
+				h.received.Add(1)
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		unsub()
+		<-done
+		n.Close()
+	})
+	h.sock = dir
 }
 
 func (h *harness) logf(format string, args ...any) {

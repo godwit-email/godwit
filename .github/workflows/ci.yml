@@ -172,6 +172,15 @@ jobs:
             for pid in "${pids[@]}"; do wait "$pid" || rc=1; done
             ((rc == 0)) || exit 1
           done
+      - name: test mail list and reader over the UI socket
+        shell: bash
+        env:
+          CGO_ENABLED: "0"
+          GODWIT_UI_TRANSPORT: socket
+        run: |
+          # The step above runs them in process; the migrated group grows to all of app.
+          tests=$(grep -ho '^func Test[A-Za-z0-9_]*' app/mail_list_test.go app/reader*_test.go | cut -c6- | paste -sd '|' -)
+          go test -count=1 -run "^($tests)\$" ./app
 
   # The UI suite (app) and core run their tests one after another in a single
   # process; split core across shards 0 and 5, app across shards 1..4, and run

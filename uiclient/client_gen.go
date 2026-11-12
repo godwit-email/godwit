@@ -789,6 +789,10 @@ func (cl *Client) SetSkillEnabled(ctx context.Context, name string, enabled bool
 	return callErr(cl, ctx, "SetSkillEnabled", name, enabled)
 }
 
+func (cl *Client) SetUIForeground(ctx context.Context, on bool) error {
+	return callErr(cl, ctx, "SetUIForeground", on)
+}
+
 func (cl *Client) SetViewException(ctx context.Context, id int64, threadID int64, kind string) error {
 	return callErr(cl, ctx, "SetViewException", id, threadID, kind)
 }
