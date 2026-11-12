@@ -272,6 +272,32 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 		return Conversation{}, err
 	}
 	defer end()
+	// A read is kept only if no run of the conversation moved meanwhile:
+	// otherwise what it saved may be half in it. Runs move a few times each,
+	// and a new one waits for the user: the reads settle.
+	for {
+		before, err := s.runStates(ctx, id)
+		var c Conversation
+		if err == nil {
+			c, err = s.readConversation(ctx, id)
+		}
+		var after string
+		if err == nil {
+			after, err = s.runStates(ctx, id)
+		}
+		if err != nil {
+			return Conversation{}, err
+		}
+		if after == before {
+			return c, nil
+		}
+		if err := ctx.Err(); err != nil {
+			return Conversation{}, err
+		}
+	}
+}
+
+func (s *Service) readConversation(ctx context.Context, id int64) (Conversation, error) {
 	c, err := s.conversation(ctx, id)
 	if err != nil {
 		return Conversation{}, err
@@ -279,6 +305,11 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 	h, err := s.history(ctx, id)
 	if err != nil {
 		return Conversation{}, err
+	}
+	if beforeFollowRead != nil {
+		fn := beforeFollowRead
+		beforeFollowRead = nil
+		fn()
 	}
 	acts, err := s.activity(ctx, "c.id = ?", id)
 	if err != nil {
@@ -760,33 +791,10 @@ func (s *Service) FollowConversation(ctx context.Context, id int64) (Conversatio
 	}
 	defer end()
 	w, stop := s.subscribe(id, true)
-	// A read is kept only if no run of the conversation moved meanwhile:
-	// otherwise what it saved may be half in it. Runs move a few times each,
-	// and a new one waits for the user: the reads settle.
-	var c Conversation
-	for try := 0; ; try++ {
-		before, err := s.runStates(ctx, id)
-		if err == nil && try == 0 && beforeFollowRead != nil {
-			beforeFollowRead()
-		}
-		if err == nil {
-			c, err = s.GetConversation(ctx, id)
-		}
-		var after string
-		if err == nil {
-			after, err = s.runStates(ctx, id)
-		}
-		if err != nil {
-			stop()
-			return Conversation{}, nil, nil, err
-		}
-		if after == before {
-			break
-		}
-		if err := ctx.Err(); err != nil {
-			stop()
-			return Conversation{}, nil, nil, err
-		}
+	c, err := s.GetConversation(ctx, id)
+	if err != nil {
+		stop()
+		return Conversation{}, nil, nil, err
 	}
 	read := map[int64]bool{} // runs whose saved history is in c
 	for _, t := range c.Turns {

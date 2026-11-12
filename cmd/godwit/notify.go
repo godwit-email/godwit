@@ -7,14 +7,13 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/godwit-email/godwit/app"
-	"github.com/godwit-email/godwit/core"
 )
 
-func showNotification(svc *core.Service, n app.Notification) error {
+func showNotification(svc avatarService, n app.Notification) error {
 	return mygo.NewNotification(notificationOptions(n, notificationAvatar(svc, n))).Show()
 }
 
-type desktopNotifySink struct{ svc *core.Service }
+type desktopNotifySink struct{ svc avatarService }
 
 func (desktopNotifySink) NotificationsSupported() bool    { return mygo.NotificationsSupported() }
 func (desktopNotifySink) SignInCodeBannerSupported() bool { return false }

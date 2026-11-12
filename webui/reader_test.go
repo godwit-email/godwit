@@ -262,7 +262,7 @@ func TestReaderTranslationNeedsNoReread(t *testing.T) {
 	k := f.page(m.ID)
 	original, err := f.p.Load(pageCtx(k))
 	require.NoError(t, err)
-	f.r.getMessage = func(context.Context, *core.Service, int64, bool) (core.Message, error) {
+	f.r.getMessage = func(context.Context, Service, int64, bool) (core.Message, error) {
 		return core.Message{}, errors.New("mail unavailable")
 	}
 	f.r.Translate(m.ID, map[string]string{"Hello reader": "你好"})
@@ -330,7 +330,7 @@ func TestReaderTranslationDuringImageReload(t *testing.T) {
 			require.NoError(t, err)
 			started, release := make(chan struct{}), make(chan struct{})
 			real := f.r.getMessage
-			f.r.getMessage = func(ctx context.Context, svc *core.Service, id int64, remote bool) (core.Message, error) {
+			f.r.getMessage = func(ctx context.Context, svc Service, id int64, remote bool) (core.Message, error) {
 				close(started)
 				<-release
 				if tc.fail {
@@ -364,7 +364,7 @@ func TestReaderTranslationDuringImageReload(t *testing.T) {
 				assert.Contains(t, body.HTML, "你好")
 			}
 			if tc.fail {
-				f.r.getMessage = func(context.Context, *core.Service, int64, bool) (core.Message, error) {
+				f.r.getMessage = func(context.Context, Service, int64, bool) (core.Message, error) {
 					t.Error("switching after a failed reload must use the cached original")
 					return core.Message{}, errors.New("mail unavailable")
 				}
@@ -471,7 +471,7 @@ func TestReaderBuiltAndFailed(t *testing.T) {
 	f.mu.Unlock()
 
 	real := f.r.getMessage
-	f.r.getMessage = func(ctx context.Context, svc *core.Service, id int64, remote bool) (core.Message, error) {
+	f.r.getMessage = func(ctx context.Context, svc Service, id int64, remote bool) (core.Message, error) {
 		if remote {
 			return core.Message{}, errors.New("server went away")
 		}
@@ -598,7 +598,7 @@ func TestReaderAvatar(t *testing.T) {
 		"the message's policy (ask) blocks its avatar, with no page bound")
 
 	var asked []int64
-	f.r.getAvatar = func(_ context.Context, _ *core.Service, id int64) (core.Avatar, error) {
+	f.r.getAvatar = func(_ context.Context, _ Service, id int64) (core.Avatar, error) {
 		asked = append(asked, id)
 		return core.Avatar{Data: []byte("<svg/>"), Format: "svg"}, nil
 	}
@@ -672,7 +672,7 @@ func TestReaderAllowReloads(t *testing.T) {
 
 // fakeMessage makes the reader read message bodies from fn.
 func (f *readerFixture) fakeMessage(fn func(id int64, remote bool) core.Message) {
-	f.r.getMessage = func(_ context.Context, _ *core.Service, id int64, remote bool) (core.Message, error) {
+	f.r.getMessage = func(_ context.Context, _ Service, id int64, remote bool) (core.Message, error) {
 		m := fn(id, remote)
 		m.ID = id
 		return m, nil
@@ -856,7 +856,7 @@ func TestReaderInlineImagesLoadThroughProxyOnce(t *testing.T) {
 		return core.Message{HTML: `<img src="cid:a"><img src="cid:b"><img src="cid:gone">`}
 	})
 	var calls atomic.Int32
-	f.r.getInline = func(_ context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+	f.r.getInline = func(_ context.Context, _ Service, _ int64, each func(string, mail.Attachment)) error {
 		calls.Add(1)
 		each("a", mail.Attachment{Data: pic})
 		each("b", mail.Attachment{Data: []byte("not an image")})
@@ -888,7 +888,7 @@ func TestReaderInlineImageServedBeforeTheRest(t *testing.T) {
 		return core.Message{HTML: `<img src="cid:a"><img src="cid:b">`}
 	})
 	stopped := make(chan struct{})
-	f.r.getInline = func(ctx context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+	f.r.getInline = func(ctx context.Context, _ Service, _ int64, each func(string, mail.Attachment)) error {
 		each("a", mail.Attachment{Data: pic})
 		<-ctx.Done() // b never arrives
 		close(stopped)
@@ -914,7 +914,7 @@ func TestReaderInlineImageDownloadFailureIsTold(t *testing.T) {
 		return core.Message{HTML: `<img src="cid:a"><img src="cid:b"><img src="cid:c">`}
 	})
 	pic := pngOf(t, 2, 2)
-	f.r.getInline = func(_ context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+	f.r.getInline = func(_ context.Context, _ Service, _ int64, each func(string, mail.Attachment)) error {
 		each("a", mail.Attachment{Data: pic})
 		each("b", mail.Attachment{Data: []byte("not an image")})
 		return context.DeadlineExceeded
@@ -934,7 +934,7 @@ func TestReaderInlineImageDownloadStoppedIsNotTold(t *testing.T) {
 	f.fakeMessage(func(int64, bool) core.Message { return core.Message{HTML: `<img src="cid:a">`} })
 	running := make(chan struct{})
 	var calls atomic.Int32
-	f.r.getInline = func(ctx context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+	f.r.getInline = func(ctx context.Context, _ Service, _ int64, each func(string, mail.Attachment)) error {
 		if calls.Add(1) > 1 {
 			each("a", mail.Attachment{Data: pic})
 			return nil
@@ -969,7 +969,7 @@ func TestReaderRetryRefetchesInlineImages(t *testing.T) {
 	f := newReaderFixture(t)
 	f.fakeMessage(func(int64, bool) core.Message { return core.Message{HTML: `<img src="cid:a">`} })
 	var calls atomic.Int32
-	f.r.getInline = func(_ context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+	f.r.getInline = func(_ context.Context, _ Service, _ int64, each func(string, mail.Attachment)) error {
 		if calls.Add(1) > 1 {
 			each("a", mail.Attachment{Data: pic})
 		}
@@ -998,7 +998,7 @@ func TestReaderInlineImageOverBudgetRefused(t *testing.T) {
 	f.fakeMessage(func(int64, bool) core.Message {
 		return core.Message{HTML: `<img src="cid:huge"><img src="cid:big"><img src="cid:p0"><img src="cid:p1"><img src="cid:p2">`}
 	})
-	f.r.getInline = func(_ context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+	f.r.getInline = func(_ context.Context, _ Service, _ int64, each func(string, mail.Attachment)) error {
 		for cid, data := range images {
 			each(cid, mail.Attachment{Data: data})
 		}
@@ -1037,7 +1037,7 @@ func TestReaderInlineImageCountReservedInOrder(t *testing.T) {
 	}
 	f := newReaderFixture(t)
 	f.fakeMessage(func(int64, bool) core.Message { return core.Message{HTML: all.String()} })
-	f.r.getInline = func(_ context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+	f.r.getInline = func(_ context.Context, _ Service, _ int64, each func(string, mail.Attachment)) error {
 		for i := range imagefetch.MaxImages + 1 {
 			each(fmt.Sprintf("n%d", i), mail.Attachment{Data: pic})
 		}

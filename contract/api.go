@@ -5,6 +5,7 @@ package contract
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -21,6 +22,7 @@ type API interface {
 	AddAccount(ctx context.Context, in core.AccountInput) (core.Account, error)
 	CheckAccount(ctx context.Context, in core.AccountInput) (core.CheckReport, error)
 	DetectProvider(ctx context.Context, email string) (auth.Provider, auth.Source, error)
+	ExportAccounts(ctx context.Context) ([]byte, error)
 	ListAccounts(ctx context.Context) ([]core.Account, error)
 	ListFolders(ctx context.Context, accountID int64) ([]core.Folder, error)
 	ListThreads(ctx context.Context, v core.View, cursor string, limit int) (core.ThreadPage, error)
@@ -58,7 +60,30 @@ type API interface {
 	CancelOAuth(flowID string)
 }
 
-var _ API = (*core.Service)(nil)
+// UIAPI extends API with the methods exposed only to RoleUI.
+type UIAPI interface {
+	API
+	SetInboxOnly(on bool)
+	InboxOnly() bool
+	GetMessageLazyImages(ctx context.Context, id int64, loadRemoteImages bool) (core.Message, error)
+	InlineImagesStream(ctx context.Context, id int64) (<-chan core.InlineImage, error)
+	FetchAttachmentsStream(ctx context.Context, attachmentIDs []int64) (<-chan core.FetchedAttachment, error)
+	CachedImage(ctx context.Context, src string) (core.CachedImageFile, error)
+	CachedImageDims(src string) core.ImageDims
+	ForgetImageFailure(urls []string)
+	SystemTranslatorLanguages() []string
+	SenderAvatar(ctx context.Context, messageID int64, allowRemote bool) (core.Avatar, error)
+	ModelServiceAvatar(ctx context.Context, id int64) (core.Avatar, error)
+	PluginReadme(ctx context.Context, name, lang string) (string, error)
+	InstallPluginFromRegistryStream(ctx context.Context, name string) (<-chan core.PluginInstallEvent, error)
+	PrepareModelStream(ctx context.Context, ref string) (<-chan core.PrepareModelEvent, error)
+	DownloadRecognitionModelStream(ctx context.Context) (<-chan core.RecognitionModelProgress, error)
+}
+
+var (
+	_ API   = (*core.Service)(nil)
+	_ UIAPI = (*core.Service)(nil)
+)
 
 // Remote implements API over a Local API connection (full role). Streams
 // that end abnormally, or carry an event that does not decode, are recorded
@@ -70,7 +95,10 @@ type Remote struct {
 	errs []error
 }
 
-var _ API = (*Remote)(nil)
+var (
+	_ API   = (*Remote)(nil)
+	_ UIAPI = (*Remote)(nil)
+)
 
 // StreamErrs returns every abnormal stream end so far.
 func (r *Remote) StreamErrs() []error {
@@ -185,6 +213,10 @@ func (r *Remote) CheckAccount(ctx context.Context, in core.AccountInput) (core.C
 
 func (r *Remote) DetectProvider(ctx context.Context, email string) (auth.Provider, auth.Source, error) {
 	return call2[auth.Provider, auth.Source](r, ctx, "DetectProvider", email)
+}
+
+func (r *Remote) ExportAccounts(ctx context.Context) ([]byte, error) {
+	return call[[]byte](r, ctx, "ExportAccounts")
 }
 
 func (r *Remote) ListAccounts(ctx context.Context) ([]core.Account, error) {
@@ -328,4 +360,107 @@ func (r *Remote) CancelOAuth(flowID string) {
 	if err := r.C.Call(context.Background(), "CancelOAuth", nil, flowID); err != nil {
 		r.fail(fmt.Errorf("CancelOAuth: %w", err))
 	}
+}
+
+func callVal[T any](r *Remote, method string, args ...any) T {
+	var v T
+	if err := r.C.Call(context.Background(), method, &v, args...); err != nil {
+		r.fail(fmt.Errorf("%s: %w", method, err))
+	}
+	return v
+}
+
+// streamFallible decodes a fallible stream whose application end error crosses
+// via $/stream.end and is yielded as wrapErr(err) on the returned channel.
+func streamFallible[T any](r *Remote, ctx context.Context, wrapErr func(error) T, method string, args ...any) (<-chan T, error) {
+	raw, cancel, err := r.C.Stream(ctx, method, args...)
+	if err != nil {
+		return nil, err
+	}
+	out := make(chan T, rpc.StreamBuffer)
+	go func() {
+		defer close(out)
+		for b := range raw {
+			var v T
+			if err := json.Unmarshal(b, &v); err != nil {
+				r.fail(fmt.Errorf("%s: event %s: %w", method, b, err))
+				continue
+			}
+			out <- v
+		}
+		serr := r.C.StreamErr(raw)
+		cancel()
+		if serr != nil {
+			if errors.Is(serr, rpc.ErrClosed) || errors.Is(serr, rpc.ErrStreamOverflow) || errors.Is(serr, rpc.ErrBadErrorData) {
+				r.fail(fmt.Errorf("%s: %w", method, serr))
+				return
+			}
+			out <- wrapErr(serr)
+		}
+	}()
+	return out, nil
+}
+
+func (r *Remote) SetInboxOnly(on bool) {
+	if err := r.C.Call(context.Background(), "SetInboxOnly", nil, on); err != nil {
+		r.fail(fmt.Errorf("SetInboxOnly: %w", err))
+	}
+}
+
+func (r *Remote) InboxOnly() bool {
+	return callVal[bool](r, "InboxOnly")
+}
+
+func (r *Remote) GetMessageLazyImages(ctx context.Context, id int64, loadRemoteImages bool) (core.Message, error) {
+	return call[core.Message](r, ctx, "GetMessageLazyImages", id, loadRemoteImages)
+}
+
+func (r *Remote) InlineImagesStream(ctx context.Context, id int64) (<-chan core.InlineImage, error) {
+	return streamFallible(r, ctx, func(err error) core.InlineImage { return core.InlineImage{Err: err} }, "InlineImagesStream", id)
+}
+
+func (r *Remote) FetchAttachmentsStream(ctx context.Context, attachmentIDs []int64) (<-chan core.FetchedAttachment, error) {
+	return streamFallible(r, ctx, func(err error) core.FetchedAttachment { return core.FetchedAttachment{Err: err} }, "FetchAttachmentsStream", attachmentIDs)
+}
+
+func (r *Remote) CachedImage(ctx context.Context, src string) (core.CachedImageFile, error) {
+	return call[core.CachedImageFile](r, ctx, "CachedImage", src)
+}
+
+func (r *Remote) CachedImageDims(src string) core.ImageDims {
+	return callVal[core.ImageDims](r, "CachedImageDims", src)
+}
+
+func (r *Remote) ForgetImageFailure(urls []string) {
+	if err := r.C.Call(context.Background(), "ForgetImageFailure", nil, urls); err != nil {
+		r.fail(fmt.Errorf("ForgetImageFailure: %w", err))
+	}
+}
+
+func (r *Remote) SystemTranslatorLanguages() []string {
+	return callVal[[]string](r, "SystemTranslatorLanguages")
+}
+
+func (r *Remote) SenderAvatar(ctx context.Context, messageID int64, allowRemote bool) (core.Avatar, error) {
+	return call[core.Avatar](r, ctx, "SenderAvatar", messageID, allowRemote)
+}
+
+func (r *Remote) ModelServiceAvatar(ctx context.Context, id int64) (core.Avatar, error) {
+	return call[core.Avatar](r, ctx, "ModelServiceAvatar", id)
+}
+
+func (r *Remote) PluginReadme(ctx context.Context, name, lang string) (string, error) {
+	return call[string](r, ctx, "PluginReadme", name, lang)
+}
+
+func (r *Remote) InstallPluginFromRegistryStream(ctx context.Context, name string) (<-chan core.PluginInstallEvent, error) {
+	return streamFallible(r, ctx, func(err error) core.PluginInstallEvent { return core.PluginInstallEvent{Err: err} }, "InstallPluginFromRegistryStream", name)
+}
+
+func (r *Remote) PrepareModelStream(ctx context.Context, ref string) (<-chan core.PrepareModelEvent, error) {
+	return streamFallible(r, ctx, func(err error) core.PrepareModelEvent { return core.PrepareModelEvent{Err: err} }, "PrepareModelStream", ref)
+}
+
+func (r *Remote) DownloadRecognitionModelStream(ctx context.Context) (<-chan core.RecognitionModelProgress, error) {
+	return streamFallible(r, ctx, func(err error) core.RecognitionModelProgress { return core.RecognitionModelProgress{Err: err} }, "DownloadRecognitionModelStream")
 }

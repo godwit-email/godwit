@@ -152,6 +152,28 @@ func TestFollowConversation(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// A run that ends while GetConversation reads is not half in what it returns:
+// once ActiveRunID is gone, the run's saved turn is there.
+func TestGetConversationSettlingRun(t *testing.T) {
+	e := newSkillEnv(t)
+	conv := e.askConv(t)
+	e.srv.Script(testllm.Turn{Text: []string{"settled"}, Hang: true})
+	ch, err := e.s.Ask(t.Context(), conv.ID, "hi")
+	require.NoError(t, err)
+	waitKind(t, ch, "text")
+	beforeFollowRead = func() {
+		beforeFollowRead = nil
+		e.srv.Release()
+		waitTerminal(t, ch)
+	}
+	t.Cleanup(func() { beforeFollowRead = nil })
+	c, err := e.s.GetConversation(t.Context(), conv.ID)
+	require.NoError(t, err)
+	assert.Zero(t, c.ActiveRunID)
+	require.Len(t, c.Turns, 1)
+	assert.Equal(t, "settled", c.Turns[0].Text)
+}
+
 // A run that ends while FollowConversation reads shows as ended, and its end
 // is not sent again; one that starts meanwhile goes on being sent.
 func TestFollowConversationRaces(t *testing.T) {

@@ -28,10 +28,10 @@ import (
 // Local API; the first row an error is wins.
 var table = []Error{
 	// A native plugin's failures: its stderr is the plugin's text, not the user's.
-	{Err: plugins.ErrNativeExited, Key: "error.plugin_exited"},
-	{Err: plugins.ErrTimeout, Key: "error.plugin_timeout"},
-	{Err: plugins.ErrNativeABI, Key: "error.plugin_abi"},
-	{Err: auth.ErrRedirectPortBusy, Key: "settings.models.login.port_busy"},
+	{Code: "plugin_exited", Err: plugins.ErrNativeExited, Key: "error.plugin_exited"},
+	{Code: "plugin_timeout", Err: plugins.ErrTimeout, Key: "error.plugin_timeout"},
+	{Code: "plugin_abi", Err: plugins.ErrNativeABI, Key: "error.plugin_abi"},
+	{Code: "redirect_port_busy", Err: auth.ErrRedirectPortBusy, Key: "settings.models.login.port_busy"},
 	{Code: "use_assist", Err: core.ErrUseAssist},
 	{Code: "stale_approval", Err: core.ErrStaleApproval},
 	{Code: "too_large", Err: core.ErrTooLarge},
@@ -199,49 +199,73 @@ func NewCodec() *rpc.Codec {
 	return c
 }
 
-// hidden are the exported *core.Service methods kept off the Local API, each
-// for its reason. full (ADR 0002) gets every other exported method, so a new
-// one is exposed by default: testdata/full_methods.txt pins the result, and a
-// method that must not reach the user's programs goes here instead.
+// hidden are the exported *core.Service methods kept off the Local API for
+// every role, each for its reason.
 var hidden = map[string]bool{
 	"Close":         true, // the owner's lifetime, not a client's
 	"Redact":        true, // a client could test guesses of the owner's secrets against it
 	"AuditExternal": true, // writes audit rows; only the owner records what clients did
 	"Proxy":         true, // a custom proxy's URL carries its password
-	// They fetch from remote hosts for the native UI.
-	"SenderAvatar": true, "ModelServiceAvatar": true, "PluginReadme": true,
 	// A channel and a stop func; RPC clients have SubscribeConversation.
 	"FollowConversation": true,
-	// A progress callback cannot cross the wire; the first two have forms without one.
+	// In-process callback forms; RoleUI has the *Stream counterparts in uiOnly.
 	"InstallPluginFromRegistryWithProgress": true, "PrepareModelWithProgress": true, "DownloadRecognitionModel": true,
-	// The native reader's two steps of GetMessage, which clients have whole; callbacks too.
-	"GetMessageLazyImages": true, "InlineImages": true, "FetchAttachments": true,
-	// The GUI's window state, not a client's; a sync a client asks for is SyncNow, whole.
+	"InlineImages": true, "FetchAttachments": true,
+}
+
+// uiOnly are the exported *core.Service methods exposed only to RoleUI
+// (Godwit's own interface, ADR 0038), never to RoleFull or RoleMCP, pinned in
+// testdata/ui_methods.txt. Every other non-hidden exported method reaches full
+// by default (testdata/full_methods.txt).
+var uiOnly = map[string]bool{
+	// Remote fetches for the interface's avatars and directory dialog.
+	"SenderAvatar": true, "ModelServiceAvatar": true, "PluginReadme": true,
+	// Progress streams for the interface's downloads and directory installs.
+	"InstallPluginFromRegistryStream": true, "PrepareModelStream": true, "DownloadRecognitionModelStream": true,
+	// The reader's two-step body load, disk-cached image helpers, and multi-attachment save stream.
+	"GetMessageLazyImages": true, "InlineImagesStream": true, "FetchAttachmentsStream": true,
+	"CachedImage": true, "CachedImageDims": true, "ForgetImageFailure": true,
+	// Wire helper for the operating system's installed translation languages.
+	"SystemTranslatorLanguages": true,
+	// Window background state narrowing background rounds; external clients use SyncNow.
 	"SetInboxOnly": true, "InboxOnly": true,
 }
 
-// Expose picks the *core.Service methods callable over RPC: every exported
-// one but hidden and the test hooks (…ForTest).
+// Expose picks the *core.Service methods callable by the full role: every
+// exported one except hidden, uiOnly, and the test hooks (…ForTest).
 func Expose(method string) bool {
-	return !hidden[method] && !strings.HasSuffix(method, "ForTest")
+	return !hidden[method] && !uiOnly[method] && !strings.HasSuffix(method, "ForTest")
+}
+
+// ExposeUI picks the *core.Service methods callable by the ui role: everything
+// Expose allows plus uiOnly.
+func ExposeUI(method string) bool {
+	return Expose(method) || uiOnly[method]
 }
 
 // Listen serves svc's exposed methods on <dataDir>/godwit.sock (see
 // rpc.Listen; the caller holds the owner lock). Errors go out through
 // NewCodec; the API token and svc's secrets are redacted from them and from
 // the log. Sends, forwarding rules and grants by the full role and drafts by
-// the mcp role are audited before they are dispatched; SetSettings widening
-// MCPSend is audited atomically with the save under settingsMu.
+// the mcp role are audited before they are dispatched; RoleUI is Godwit's own
+// interface and is not audited as external; SetSettings widening MCPSend is
+// audited atomically with the save under settingsMu.
 func Listen(dataDir string, svc *core.Service, version string) (*rpc.Server, error) {
 	d, err := rpc.NewDispatcher(svc, Expose)
 	if err != nil {
 		return nil, err
 	}
+	ui, err := rpc.NewDispatcher(svc, ExposeUI)
+	if err != nil {
+		return nil, err
+	}
 	return rpc.Listen(dataDir, d, rpc.ServerOptions{
-		Version: version,
-		Codec:   NewCodec(),
-		Redact:  svc.Redact,
-		Audit:   func(role, method string, params []json.RawMessage) error { return audit(svc, role, method, params) },
+		Conn:         rpc.ConnOptions{MaxActive: 256},
+		Version:      version,
+		Codec:        NewCodec(),
+		Redact:       svc.Redact,
+		UIDispatcher: ui,
+		Audit:        func(role, method string, params []json.RawMessage) error { return audit(svc, role, method, params) },
 		Context: func(ctx context.Context, role string) context.Context {
 			if role == rpc.RoleFull {
 				return core.WithExternalSource(ctx, core.AuditLocalAPI)

@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"image"
 	"image/color"
 	"image/draw"
 	"image/png"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -227,5 +229,31 @@ func TestSnapSignInCode(t *testing.T) {
 				t.Fatalf("snap %+v = %+v, want %+v", tc.in, got, tc.out)
 			}
 		})
+	}
+}
+
+type fakePlatformSvc struct {
+	avatar func(ctx context.Context, id int64, allowRemote bool) (core.Avatar, error)
+}
+
+func (f fakePlatformSvc) SenderAvatar(ctx context.Context, id int64, allowRemote bool) (core.Avatar, error) {
+	return f.avatar(ctx, id, allowRemote)
+}
+func (fakePlatformSvc) Proxy(*url.URL) *url.URL { return nil }
+func (fakePlatformSvc) Redact(s string) string  { return s }
+
+func TestSignInAvatarUsesInterface(t *testing.T) {
+	var gotID int64
+	var gotRemote bool
+	svc := fakePlatformSvc{avatar: func(_ context.Context, id int64, allowRemote bool) (core.Avatar, error) {
+		gotID, gotRemote = id, allowRemote
+		return core.Avatar{Format: "svg", Data: []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><rect width="8" height="8" fill="#f00"/></svg>`)}, nil
+	}}
+	p := &platform{svc: svc}
+	if img := signInAvatar(context.Background(), p.svc, 42); img == nil {
+		t.Fatal("expected decoded SVG avatar")
+	}
+	if gotID != 42 || gotRemote {
+		t.Fatalf("SenderAvatar(%d, %v), want (42, false)", gotID, gotRemote)
 	}
 }

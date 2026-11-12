@@ -509,7 +509,8 @@ func (s session) Fetch(w *imapserver.FetchWriter, set imap.NumSet, o *imap.Fetch
 type quietLog struct{}
 
 func (quietLog) Printf(format string, args ...any) {
-	if msg := fmt.Sprintf(format, args...); !strings.Contains(msg, net.ErrClosed.Error()) {
+	msg := fmt.Sprintf(format, args...)
+	if !strings.Contains(msg, net.ErrClosed.Error()) && !strings.Contains(msg, "connection reset by peer") {
 		log.Print(msg)
 	}
 }

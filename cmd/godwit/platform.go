@@ -26,9 +26,22 @@ import (
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/theme"
 	"github.com/godwit-email/godwit/rpc"
-	"github.com/godwit-email/godwit/rpcbind"
 	"github.com/godwit-email/godwit/webui"
 )
+
+// avatarService reads a message's sender avatar for notifications and sign-in banners.
+type avatarService interface {
+	SenderAvatar(ctx context.Context, messageID int64, allowRemote bool) (core.Avatar, error)
+}
+
+// platformService is the subset of the mail engine the platform layer uses.
+type platformService interface {
+	avatarService
+	Proxy(*url.URL) *url.URL
+	Redact(string) string
+}
+
+var _ platformService = (*core.Service)(nil)
 
 // platform is app.Platform on mygo. win and tray are set once they exist;
 // tray stays nil where the system has none. The Local API serves svc on
@@ -49,7 +62,7 @@ type platform struct {
 	setTrayVisible func(visible bool)
 
 	dataDir      string
-	svc          *core.Service
+	svc          platformService
 	saveMu       sync.Mutex
 	saveDir      string                 // last directory chosen in SaveFile or OpenDirectory
 	downloadsDir func() (string, error) // mygo.App.Path(PathDownloads); tests swap it
@@ -58,6 +71,7 @@ type platform struct {
 	apiGen       uint64      // the newest request that asked for api
 
 	onAPIStop func(gen uint64, err error)              // told when the server ends by itself
+	listenAPI func() (*rpc.Server, error)              // opens the Local API server
 	serve     func(context.Context, *rpc.Server) error // Server.Serve; tests swap it
 	closeAPI  func(*rpc.Server) error                  // Server.Close; tests swap it
 }
@@ -76,7 +90,10 @@ func (p *platform) SetLocalAPI(gen uint64, on bool) (string, error) {
 		return "", err
 	}
 	if p.api == nil {
-		srv, err := rpcbind.Listen(p.dataDir, p.svc, app.Version)
+		if p.listenAPI == nil {
+			return "", errors.New("the Local API server is unavailable")
+		}
+		srv, err := p.listenAPI()
 		if err != nil {
 			return "", err
 		}

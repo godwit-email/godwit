@@ -11,7 +11,6 @@ import (
 	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
 	"github.com/godwit-email/godwit/app"
-	"github.com/godwit-email/godwit/core"
 )
 
 // MyGo checks before donation; check here too before reading an avatar.
@@ -19,7 +18,7 @@ func (p *platform) notificationAvatar(n app.Notification) []byte {
 	return notificationAvatar(p.svc, n)
 }
 
-func notificationAvatar(svc *core.Service, n app.Notification) []byte {
+func notificationAvatar(svc avatarService, n app.Notification) []byte {
 	if svc == nil || n.Sender == "" || n.MessageID == 0 || n.ThreadID == 0 || !communicationAuthorized() {
 		return nil
 	}

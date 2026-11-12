@@ -208,8 +208,8 @@ const (
 	msgUncertain = "the result is uncertain: it may have run"
 )
 
-// Test hook, nil in production: beforeFollowRead runs in FollowConversation
-// once it subscribed and before it reads the conversation.
+// Test hook, nil in production: beforeFollowRead runs in GetConversation's
+// first read after reading history, to exercise runs moving mid-read.
 var beforeFollowRead func()
 
 // approvalRow is an approval with the columns only the Service uses.

@@ -25,16 +25,18 @@ import (
 type api struct {
 	sent     atomic.Int64
 	stopped  chan struct{}
+	stopOnce sync.Once
 	slowStop time.Duration // the stream's stop takes this long
 }
 
 func (a *api) ListAccounts() []string { return []string{"a@example.com"} }
 func (a *api) Send(id int64) error    { a.sent.Add(1); return nil }
 func (a *api) Fail(mode string) error { return fmt.Errorf("bad mode %q", mode) }
+func (a *api) InboxOnly() bool        { return true }
 func (a *api) Watch(ctx context.Context) (<-chan int, func()) {
 	ch := make(chan int)
 	go func() { <-ctx.Done(); close(ch) }()
-	return ch, func() { time.Sleep(a.slowStop); close(a.stopped) }
+	return ch, func() { time.Sleep(a.slowStop); a.stopOnce.Do(func() { close(a.stopped) }) }
 }
 
 // shortDir is a data directory short enough for a Unix socket path.
@@ -473,4 +475,69 @@ func TestConcurrentClose(t *testing.T) {
 		t.Fatal(err)
 	}
 	check("Serve")
+}
+
+func TestRoleUIDispatcherAndMaxActive(t *testing.T) {
+	dir := shortDir(t)
+	a := &api{stopped: make(chan struct{})}
+	fullD, err := rpc.NewDispatcher(a, func(m string) bool { return m != "InboxOnly" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	uiD, err := rpc.NewDispatcher(a, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := rpc.Listen(dir, fullD, rpc.ServerOptions{Version: "test", UIDispatcher: uiD})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go s.Serve(context.Background())
+	t.Cleanup(func() { s.Close() })
+
+	ui, err := rpc.Dial(dir, rpc.RoleUI, "ui-test", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ui.Close()
+	var on bool
+	if err := ui.Call(context.Background(), "InboxOnly", &on); err != nil || !on {
+		t.Fatalf("ui InboxOnly = %v, %v", on, err)
+	}
+	var accs []string
+	if err := ui.Call(context.Background(), "ListAccounts", &accs); err != nil || len(accs) != 1 {
+		t.Fatalf("ui ListAccounts = %v, %v", accs, err)
+	}
+
+	// RoleUI allows more than the default 32 active streams/requests.
+	cancels := make([]func(), 40)
+	for i := range cancels {
+		_, cancel, err := ui.Stream(context.Background(), "Watch")
+		if err != nil {
+			t.Fatalf("stream %d = %v", i, err)
+		}
+		cancels[i] = cancel
+	}
+	for _, cancel := range cancels {
+		cancel()
+	}
+
+	full, err := rpc.Dial(dir, rpc.RoleFull, "full-test", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer full.Close()
+	var we *rpc.WireError
+	if err := full.Call(context.Background(), "InboxOnly", &on); !errors.As(err, &we) || we.Code != rpc.CodeMethodNotFound {
+		t.Fatalf("full InboxOnly = %v, want CodeMethodNotFound", err)
+	}
+
+	mcp, err := rpc.Dial(dir, rpc.RoleMCP, "mcp-test", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mcp.Close()
+	if err := mcp.Call(context.Background(), "InboxOnly", &on); !errors.As(err, &we) || we.Code != rpc.CodeForbidden {
+		t.Fatalf("mcp InboxOnly = %v, want CodeForbidden", err)
+	}
 }

@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path"
@@ -110,6 +111,52 @@ func (s *Service) DownloadRecognitionModel(ctx context.Context, progress func(go
 		done += f.Size
 	}
 	return nil
+}
+
+// RecognitionModelProgress is one update of DownloadRecognitionModelStream.
+type RecognitionModelProgress struct {
+	Got, Total int64
+	Err        error `json:"-"`
+}
+
+// StreamError returns the mid-stream failure, if any.
+func (p RecognitionModelProgress) StreamError() error { return p.Err }
+
+// DownloadRecognitionModelStream downloads 识别模型's files into
+// recognitionModelDir, streaming byte progress across all files.
+func (s *Service) DownloadRecognitionModelStream(ctx context.Context) (<-chan RecognitionModelProgress, error) {
+	rctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	ch := make(chan RecognitionModelProgress, 16)
+	go func() {
+		defer close(ch)
+		defer end()
+		err := s.DownloadRecognitionModel(rctx, func(got, total int64) {
+			sendStream(rctx, ch, RecognitionModelProgress{Got: got, Total: total})
+		})
+		if err != nil {
+			sendStreamFinal(rctx, ch, RecognitionModelProgress{Err: err})
+		}
+	}()
+	return ch, nil
+}
+
+// SetRecognitionModelFilesForTest replaces recognitionModelFiles with files
+// (keyed by guard.Files names) until t ends. Tests only.
+func SetRecognitionModelFilesForTest(t interface{ Cleanup(func()) }, files map[string][]byte) {
+	old := recognitionModelFiles
+	t.Cleanup(func() { recognitionModelFiles = old })
+	recognitionModelFiles = nil
+	for _, name := range guard.Files {
+		sum := sha256.Sum256(files[name])
+		recognitionModelFiles = append(recognitionModelFiles, remoteFile{
+			URL:    "int8/" + name,
+			Size:   int64(len(files[name])),
+			SHA256: hex.EncodeToString(sum[:]),
+		})
+	}
 }
 
 // recognizes says 识别模型 reads what goes out: it and masking are on.

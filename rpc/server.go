@@ -38,6 +38,8 @@ type ServerOptions struct {
 	// connection's role. An error stops the call and is answered and logged
 	// like any error the call could have returned.
 	Audit func(role, method string, params []json.RawMessage) error
+	// UIDispatcher, if set, is the Dispatcher for RoleUI connections; nil uses d.
+	UIDispatcher *Dispatcher
 	// Context, if set, wraps an authenticated connection's request context for
 	// its role.
 	Context func(ctx context.Context, role string) context.Context
@@ -244,7 +246,7 @@ func (s *Server) connOptions() ConnOptions {
 }
 
 // hello takes [token, role, client].
-func (s *Server) hello(ctx context.Context, params []json.RawMessage) (func(string, []json.RawMessage) error, context.Context, any, error) {
+func (s *Server) hello(ctx context.Context, c *conn, params []json.RawMessage) (func(string, []json.RawMessage) error, context.Context, any, error) {
 	var token, role, client string
 	if len(params) != 3 || json.Unmarshal(params[0], &token) != nil || json.Unmarshal(params[1], &role) != nil ||
 		json.Unmarshal(params[2], &client) != nil {
@@ -255,12 +257,20 @@ func (s *Server) hello(ctx context.Context, params []json.RawMessage) (func(stri
 	}
 	var roleOK func(string, []json.RawMessage) bool
 	switch role {
+	case RoleUI:
+		roleOK = func(string, []json.RawMessage) bool { return true }
+		if s.opts.UIDispatcher != nil {
+			c.d = s.opts.UIDispatcher
+		}
+		if s.opts.Conn.MaxActive <= 0 {
+			c.opts.MaxActive = 256
+		}
 	case RoleFull:
 		roleOK = func(string, []json.RawMessage) bool { return true }
 	case RoleMCP:
 		roleOK = MCPAllowed
 	default:
-		return nil, nil, nil, unauthenticated("role must be full or mcp")
+		return nil, nil, nil, unauthenticated("role must be ui, full or mcp")
 	}
 	if s.opts.Context != nil {
 		if w := s.opts.Context(ctx, role); w != nil {

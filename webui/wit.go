@@ -126,7 +126,7 @@ var startHook, followHook func()
 // it followed. Every event goes to emit. A session gone (Release, Detach)
 // gets ErrNoDraft: those end the subscription after removing the session,
 // both under c.mu, so none is left behind.
-func (c *Compose) follow(win int, s *session, svc *core.Service, conv int64, emit func(Target, WitEvent)) (*follow, error) {
+func (c *Compose) follow(win int, s *session, svc Service, conv int64, emit func(Target, WitEvent)) (*follow, error) {
 	c.mu.Lock()
 	if c.sessions[win] != s {
 		c.mu.Unlock()
@@ -149,7 +149,7 @@ func (c *Compose) follow(win int, s *session, svc *core.Service, conv int64, emi
 }
 
 // followWith makes window win follow conversation conv on ch, a
-// subscription stop ends (core FollowConversation), in place of what it
+// subscription stop ends (followConversation), in place of what it
 // followed.
 func (c *Compose) followWith(win int, s *session, conv int64, ch <-chan core.WitEvent, stop func(), emit func(Target, WitEvent)) error {
 	c.mu.Lock()
@@ -218,7 +218,7 @@ func (p *ComposePage) WitInfo(ctx context.Context) (WitInfo, error) {
 // witInfo is as compose_wit.go's menus and chips: the email replied to, the
 // attachments, and how much mail with the recipients the draft's
 // conversation read.
-func witInfo(ctx context.Context, svc *core.Service, d core.Draft) (WitInfo, error) {
+func witInfo(ctx context.Context, svc Service, d core.Draft) (WitInfo, error) {
 	st, err := svc.GetSettings(ctx)
 	if err != nil {
 		return WitInfo{}, err
@@ -287,7 +287,7 @@ func witInfo(ctx context.Context, svc *core.Service, d core.Draft) (WitInfo, err
 
 // draftConversations are the draft's assist conversations, oldest first.
 // The Assist one has no title; RewriteSelection titles its own.
-func draftConversations(ctx context.Context, svc *core.Service, draftID int64) ([]core.Conversation, error) {
+func draftConversations(ctx context.Context, svc Service, draftID int64) ([]core.Conversation, error) {
 	cs, err := svc.ListConversations(ctx, "assist")
 	cs = slices.DeleteFunc(cs, func(c core.Conversation) bool { return c.DraftID != draftID })
 	slices.SortFunc(cs, func(a, b core.Conversation) int { return cmp.Compare(a.ID, b.ID) })
@@ -297,7 +297,7 @@ func draftConversations(ctx context.Context, svc *core.Service, draftID int64) (
 // openConversation is the draft's conversation to show: the newest with a
 // run going on (a ⌘K run outlives its window), else the newest with an edit
 // waiting, else its Assist conversation (core AssistConversation), else 0.
-func openConversation(ctx context.Context, svc *core.Service, draftID int64) (int64, error) {
+func openConversation(ctx context.Context, svc Service, draftID int64) (int64, error) {
 	cs, err := draftConversations(ctx, svc, draftID)
 	if err != nil {
 		return 0, err
@@ -328,9 +328,9 @@ func openConversation(ctx context.Context, svc *core.Service, draftID int64) (in
 // events go to the window on WitStream. zone is the window's IANA time zone
 // (core WithTimeZone).
 func (p *ComposePage) Ask(ctx context.Context, input string, quoted []int64, model, effort, zone string) (RunStart, error) {
-	return p.start(ctx, func(ctx context.Context, svc *core.Service, conv int64) error {
+	return p.start(ctx, func(ctx context.Context, svc Service, conv int64) error {
 		return svc.SetConversationModel(ctx, conv, model, effort)
-	}, func(ctx context.Context, svc *core.Service, id int64) (<-chan core.WitEvent, error) {
+	}, func(ctx context.Context, svc Service, id int64) (<-chan core.WitEvent, error) {
 		return svc.AssistWith(core.WithTimeZone(ctx, zone), id, input, quoted)
 	})
 }
@@ -397,7 +397,7 @@ type MailHit struct {
 // quoteHits caps the quote picker's results, and the address fields' contacts.
 const quoteHits = 8
 
-func searchMail(ctx context.Context, svc *core.Service, query string) ([]MailHit, error) {
+func searchMail(ctx context.Context, svc Service, query string) ([]MailHit, error) {
 	q := core.SearchQuery{Text: query}
 	if strings.TrimSpace(query) == "" { // nothing typed yet: the latest mail, newest first
 		q.Until = time.Now().Add(time.Hour)
@@ -447,7 +447,7 @@ type ContactHit struct {
 // the window's IANA time zone (core WithTimeZone). It returns the run it
 // started; its events go to the window on WitStream.
 func (p *ComposePage) Skill(ctx context.Context, id, language, zone string) (RunStart, error) {
-	return p.start(ctx, nil, func(ctx context.Context, svc *core.Service, draftID int64) (<-chan core.WitEvent, error) {
+	return p.start(ctx, nil, func(ctx context.Context, svc Service, draftID int64) (<-chan core.WitEvent, error) {
 		return svc.AssistSkill(core.WithTimeZone(ctx, zone), draftID, id, core.SkillOptions{TargetLanguage: language})
 	})
 }
@@ -456,8 +456,8 @@ func (p *ComposePage) Skill(ctx context.Context, id, language, zone string) (Run
 // AssistConversation), after setup (nil: none) on it, which the window
 // follows from before the run starts: a first generation is applied at once
 // and the run resumes. Only Stop cancels the run.
-func (p *ComposePage) start(ctx context.Context, setup func(context.Context, *core.Service, int64) error,
-	run func(context.Context, *core.Service, int64) (<-chan core.WitEvent, error)) (RunStart, error) {
+func (p *ComposePage) start(ctx context.Context, setup func(context.Context, Service, int64) error,
+	run func(context.Context, Service, int64) (<-chan core.WitEvent, error)) (RunStart, error) {
 	win, svc, s, err := p.open(ctx)
 	if err != nil {
 		return RunStart{}, keyed(err)
@@ -514,7 +514,7 @@ func (p *ComposePage) Stop(ctx context.Context, run int64) error {
 
 // Follow makes the calling window follow its draft's conversation (a run
 // going on, else an edit waiting, else the Assist one) and returns its
-// history (core FollowConversation): the events after it go to the window,
+// history (followConversation): the events after it go to the window,
 // none of them in it already.
 func (p *ComposePage) Follow(ctx context.Context) (WitHistory, error) {
 	win, svc, s, err := p.open(ctx)
@@ -527,7 +527,7 @@ func (p *ComposePage) Follow(ctx context.Context) (WitHistory, error) {
 		p.c.unfollow(win)
 		return noHistory(), keyed(err)
 	}
-	c, ch, stop, err := svc.FollowConversation(ctx, conv)
+	c, ch, stop, err := followConversation(ctx, svc, conv)
 	if err != nil {
 		return WitHistory{}, keyed(err)
 	}
@@ -574,13 +574,13 @@ var (
 
 // pendingApproval is approval id of the draft's conversations, waiting for
 // a decision; else core.ErrInvalidState.
-func pendingApproval(ctx context.Context, svc *core.Service, draftID, id int64) (core.Approval, error) {
+func pendingApproval(ctx context.Context, svc Service, draftID, id int64) (core.Approval, error) {
 	return pendingWhere(ctx, svc, draftID, func(a core.Approval) bool { return a.ID == id })
 }
 
 // pendingWhere is the first approval of the draft's conversations waiting
 // for a decision that is; else core.ErrInvalidState.
-func pendingWhere(ctx context.Context, svc *core.Service, draftID int64, is func(core.Approval) bool) (core.Approval, error) {
+func pendingWhere(ctx context.Context, svc Service, draftID int64, is func(core.Approval) bool) (core.Approval, error) {
 	cs, err := draftConversations(ctx, svc, draftID)
 	if err != nil {
 		return core.Approval{}, err
@@ -600,7 +600,7 @@ func pendingWhere(ctx context.Context, svc *core.Service, draftID int64, is func
 }
 
 // pendingEdit is pendingApproval for a draft edit only.
-func pendingEdit(ctx context.Context, svc *core.Service, draftID, id int64) (core.Approval, error) {
+func pendingEdit(ctx context.Context, svc Service, draftID, id int64) (core.Approval, error) {
 	a, err := pendingApproval(ctx, svc, draftID, id)
 	if err == nil && !a.DraftEdit {
 		err = core.ErrInvalidState
@@ -628,14 +628,14 @@ func (p *ComposePage) Review(ctx context.Context, approval int64) (Review, error
 // conversation first, so the run it resumes streams on WitStream. A draft
 // changed since the edit was proposed is Conflict.
 func (p *ComposePage) Decide(ctx context.Context, approval int64, accept bool) (BodyChange, error) {
-	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc *core.Service, a core.Approval) error {
+	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc Service, a core.Approval) error {
 		return svc.ResolveApproval(context.WithoutCancel(ctx), a.ID, accept)
 	})
 }
 
 // DecideWithArgs accepts or rejects approval with edited arguments args.
 func (p *ComposePage) DecideWithArgs(ctx context.Context, approval int64, accept bool, args string) (BodyChange, error) {
-	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc *core.Service, a core.Approval) error {
+	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc Service, a core.Approval) error {
 		var raw json.RawMessage
 		if strings.TrimSpace(args) != "" {
 			raw = json.RawMessage(args)
@@ -647,7 +647,7 @@ func (p *ComposePage) DecideWithArgs(ctx context.Context, approval int64, accept
 // DecideAll accepts or rejects every pending approval of run, one of the
 // calling window's draft (core ResolveAll; 全部允许). As Decide.
 func (p *ComposePage) DecideAll(ctx context.Context, run int64, accept bool) (BodyChange, error) {
-	return p.decide(ctx, func(a core.Approval) bool { return a.RunID == run }, func(svc *core.Service, a core.Approval) error {
+	return p.decide(ctx, func(a core.Approval) bool { return a.RunID == run }, func(svc Service, a core.Approval) error {
 		return svc.ResolveAll(context.WithoutCancel(ctx), a.RunID, accept)
 	})
 }
@@ -656,7 +656,7 @@ func (p *ComposePage) DecideAll(ctx context.Context, run int64, accept bool) (Bo
 // one list of answers per question, for the round of its form the user saw
 // (core AnswerQuestion). As Decide.
 func (p *ComposePage) Answer(ctx context.Context, approval int64, round int, answers [][]string) (BodyChange, error) {
-	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc *core.Service, a core.Approval) error {
+	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc Service, a core.Approval) error {
 		return svc.AnswerQuestion(context.WithoutCancel(ctx), a.ID, round, answers)
 	})
 }
@@ -665,7 +665,7 @@ func (p *ComposePage) Answer(ctx context.Context, approval int64, round int, ans
 // (Review.Changes; 1 accepts, -1 rejects): all accepted or all rejected
 // decides it; a mix applies the text the decisions make. As Decide.
 func (p *ComposePage) Finish(ctx context.Context, approval int64, decisions []int) (BodyChange, error) {
-	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc *core.Service, a core.Approval) error {
+	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc Service, a core.Approval) error {
 		r := newProposal(a)
 		if !r.inline() || len(decisions) != len(r.changes) || slices.ContainsFunc(decisions, func(d int) bool { return d != 1 && d != -1 }) {
 			return ErrBadDecisions
@@ -681,7 +681,7 @@ func (p *ComposePage) Finish(ctx context.Context, approval int64, decisions []in
 // decide runs act on the pending approval of the calling window's draft
 // that is, the window following its conversation first, and reads the
 // draft after.
-func (p *ComposePage) decide(ctx context.Context, is func(core.Approval) bool, act func(*core.Service, core.Approval) error) (BodyChange, error) {
+func (p *ComposePage) decide(ctx context.Context, is func(core.Approval) bool, act func(Service, core.Approval) error) (BodyChange, error) {
 	win, svc, s, err := p.open(ctx)
 	if err != nil {
 		return BodyChange{}, keyed(err)
@@ -699,7 +699,7 @@ func (p *ComposePage) decide(ctx context.Context, is func(core.Approval) bool, a
 
 // bodyChange is the draft as stored after an action that ended in err:
 // ErrStaleDraft is a Conflict.
-func bodyChange(ctx context.Context, svc *core.Service, s *session, err error) (BodyChange, error) {
+func bodyChange(ctx context.Context, svc Service, s *session, err error) (BodyChange, error) {
 	if errors.Is(err, core.ErrStaleDraft) {
 		return BodyChange{Change: conflict}, nil
 	}
@@ -801,7 +801,7 @@ func (p *ComposePage) OpenLink(ctx context.Context, link string) error {
 }
 
 // openLink opens link as OpenLink does, a mailto one from account's account.
-func openLink(ctx context.Context, svc *core.Service, link string, account func() (int64, error),
+func openLink(ctx context.Context, svc Service, link string, account func() (int64, error),
 	openURL func(string) error, openCompose func(int64)) error {
 	u, err := url.Parse(link)
 	if err != nil {

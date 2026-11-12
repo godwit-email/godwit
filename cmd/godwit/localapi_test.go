@@ -11,11 +11,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/godwit-email/godwit/app"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/ownerlock"
 	"github.com/godwit-email/godwit/rpc"
+	"github.com/godwit-email/godwit/rpcbind"
 )
+
+func listenIn(dir string, svc *core.Service) func() (*rpc.Server, error) {
+	return func() (*rpc.Server, error) { return rpcbind.Listen(dir, svc, app.Version) }
+}
 
 // The GUI's switch serves the Local API in-process: on, a client can dial
 // it; off, the socket and token are gone.
@@ -26,7 +32,7 @@ func TestLocalAPIStartsServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { svc.Close() })
-	p := &platform{dataDir: dir, svc: svc}
+	p := &platform{dataDir: dir, svc: svc, listenAPI: listenIn(dir, svc)}
 	path, err := p.SetLocalAPI(1, true)
 	if err != nil || path != filepath.Join(dir, rpc.SocketName) {
 		t.Fatalf("SetLocalAPI(true) = %q, %v", path, err)
@@ -61,7 +67,7 @@ func TestLocalAPIServeFailure(t *testing.T) {
 	}
 	t.Cleanup(func() { svc.Close() })
 	stopped := make(chan error, 1)
-	p := &platform{dataDir: dir, svc: svc, onAPIStop: func(gen uint64, err error) {
+	p := &platform{dataDir: dir, svc: svc, listenAPI: listenIn(dir, svc), onAPIStop: func(gen uint64, err error) {
 		if gen != 1 {
 			t.Errorf("stopped for request %d, want 1", gen)
 		}
@@ -197,7 +203,7 @@ func TestLocalAPICleanupRace(t *testing.T) {
 	closing, release := make(chan struct{}), make(chan struct{})
 	var dead *rpc.Server
 	cleaned := make(chan struct{})
-	p := &platform{dataDir: dir, svc: svc, onAPIStop: func(uint64, error) { close(cleaned) }}
+	p := &platform{dataDir: dir, svc: svc, listenAPI: listenIn(dir, svc), onAPIStop: func(uint64, error) { close(cleaned) }}
 	p.serve = func(_ context.Context, s *rpc.Server) error { dead = s; return errors.New("accept failed") }
 	p.closeAPI = func(s *rpc.Server) error {
 		if s == dead {
