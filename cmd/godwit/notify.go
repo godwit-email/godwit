@@ -9,7 +9,7 @@ import (
 	"github.com/godwit-email/godwit/app"
 )
 
-func showNotification(svc avatarService, n app.Notification) error {
+func showNotification(svc backendService, n app.Notification) error {
 	return mygo.NewNotification(notificationOptions(n, notificationAvatar(svc, n))).Show()
 }
 

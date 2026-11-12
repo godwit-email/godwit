@@ -18,7 +18,7 @@ func (p *platform) notificationAvatar(n app.Notification) []byte {
 	return notificationAvatar(p.svc, n)
 }
 
-func notificationAvatar(svc avatarService, n app.Notification) []byte {
+func notificationAvatar(svc backendService, n app.Notification) []byte {
 	if svc == nil || n.Sender == "" || n.MessageID == 0 || n.ThreadID == 0 || !communicationAuthorized() {
 		return nil
 	}

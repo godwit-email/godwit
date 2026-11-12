@@ -234,6 +234,8 @@ var uiOnly = map[string]bool{
 	"CachedImage": true, "CachedImageDims": true, "ForgetImageFailure": true,
 	// Wire helper for the operating system's installed translation languages.
 	"SystemTranslatorLanguages": true,
+	// The Store package's About check: egress to the Store's catalog, through the user's proxy.
+	"StoreLatestVersion": true,
 	// Redacted recent log lines for bug reports, and the interface's IANA time zone for Wit runs.
 	"RecentLog": true, "SetTimeZone": true,
 	// Window foreground, open compose drafts, and background-round narrowing; external clients use SyncNow.

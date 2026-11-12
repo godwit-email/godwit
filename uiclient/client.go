@@ -52,6 +52,12 @@ func (c *Client) Done() <-chan struct{} { return c.rpc.Done() }
 // Close closes the underlying connection; pending calls and streams end with rpc.ErrClosed.
 func (c *Client) Close() error { return c.rpc.Close() }
 
+// StoreLatestVersion is core.Service's, for the platform's About check (app
+// does not call it, so it is not generated from app.Service).
+func (c *Client) StoreLatestVersion(ctx context.Context) (string, error) {
+	return call[string](c, ctx, "StoreLatestVersion")
+}
+
 // StreamErr reports why a typed stream channel returned by Client closed: nil
 // for a normal end or a caller cancel, rpc.ErrClosed on disconnect,
 // rpc.ErrStreamOverflow if the reader fell behind, or a decoded wire error.

@@ -239,7 +239,8 @@ type fakePlatformSvc struct {
 func (f fakePlatformSvc) SenderAvatar(ctx context.Context, id int64, allowRemote bool) (core.Avatar, error) {
 	return f.avatar(ctx, id, allowRemote)
 }
-func (fakePlatformSvc) Proxy(*url.URL) *url.URL { return nil }
+func (fakePlatformSvc) StoreLatestVersion(context.Context) (string, error) { return "", nil }
+func (fakePlatformSvc) Proxy(*url.URL) *url.URL                          { return nil }
 func (fakePlatformSvc) Redact(s string) string  { return s }
 
 func TestSignInAvatarUsesInterface(t *testing.T) {
