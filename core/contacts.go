@@ -15,18 +15,29 @@ import (
 	"github.com/godwit-email/godwit/core/store"
 )
 
-// Contact is someone the user exchanged synced mail with, by address
-// (gomail.AddrKey) across accounts; the user's own accounts are none. Name is
-// the display name their mail used most (a notifier's own, not whoever
-// triggered its latest), else the one the user wrote to them.
+// ContactAddress is one normalized email address belonging to a Contact.
+type ContactAddress struct {
+	Address string
+	Pref    bool
+	Blocked bool
+}
+
+// Contact is someone the user exchanged synced mail with or keeps in an
+// enabled CardDAV address book, merged across shared addresses (gomail.AddrKey);
+// the user's own accounts are excluded. Name comes from the highest-priority
+// card when non-empty, else the display name their mail used most, else the one
+// the user wrote to them. Subtitle joins the highest-priority card's ORG and
+// TITLE with " · ". Addresses lists every address of the contact, preferred and
+// recent-mail first, with Address equal to Addresses[0].Address.
 // Received counts their mail outside Sent, Drafts, Trash and Junk, Sent the
-// user's mail in Sent to or copying them, Messages both. Unread and Inbox
-// count within Received; Latest is their newest received message (0 none,
-// whose sender avatar is theirs), ListMessage the newest with a
-// List-Unsubscribe header (0 none); Blocked is whether they are a blocked
-// sender.
+// user's mail in Sent to or copying them (once per message), Messages both.
+// Unread and Inbox count within Received; Latest is their newest received
+// message (0 none), ListMessage the newest with a List-Unsubscribe header (0
+// none); Blocked is whether all of their addresses are blocked senders.
 type Contact struct {
-	Name, Address                 string
+	Name, Subtitle, Address       string
+	Addresses                     []ContactAddress
+	FromAddressBook               bool
 	Messages                      int
 	Last                          time.Time
 	Received, Sent, Unread, Inbox int
@@ -73,34 +84,276 @@ func (s *Service) roleFolderIDs(ctx context.Context, roles ...string) ([]any, er
 	return ids, nil
 }
 
-// Contacts lists everyone the user exchanged mail with, most mail first.
+// Contacts lists everyone the user exchanged mail with and enabled address-book
+// contacts, contacts with mail first (most mail first) followed by zero-mail contacts.
 func (s *Service) Contacts(ctx context.Context) ([]Contact, error) {
-	all, _, err := s.contacts(ctx, 0)
+	all, _, _, err := s.contacts(ctx, 0)
 	return all, err
 }
 
-// contacts gathers the contacts of accountID's mail (0: every account's),
-// most mail first, with every name each used, oldest first.
-func (s *Service) contacts(ctx context.Context, accountID int64) ([]Contact, map[string][]string, error) {
+// ContactMatch is a lightweight, read-only contact summary without binary avatars.
+type ContactMatch struct {
+	Name, Subtitle, Address string
+	Addresses               []string
+}
+
+// SearchContacts searches local mail-derived and cached address-book contacts
+// without touching the network or returning binary avatars.
+func (s *Service) SearchContacts(ctx context.Context, query string, limit int) ([]ContactMatch, error) {
+	g, err := s.findContacts(ctx, FindQuery{
+		SearchQuery: SearchQuery{Text: query},
+		Kind:        "contact",
+		Limit:       limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ContactMatch, len(g.Items))
+	for i, c := range g.Items {
+		addrs := make([]string, len(c.Addresses))
+		for j, ea := range c.Addresses {
+			addrs[j] = ea.Address
+		}
+		out[i] = ContactMatch{
+			Name:      c.Name,
+			Subtitle:  c.Subtitle,
+			Address:   c.Address,
+			Addresses: addrs,
+		}
+	}
+	return out, nil
+}
+
+// ContactCompletion is one single-address recipient completion candidate.
+type ContactCompletion struct {
+	Name, Subtitle, Address string
+}
+
+// CompleteContacts expands matching contacts into single-address candidates for
+// recipient completion, with preferred and recent-mail addresses first. A blank
+// query returns no candidates.
+func (s *Service) CompleteContacts(ctx context.Context, query string, limit int) ([]ContactCompletion, error) {
+	text := strings.ToLower(strings.TrimSpace(query))
+	if text == "" {
+		return []ContactCompletion{}, nil
+	}
+	all, terms, _, err := s.contacts(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	all = slices.DeleteFunc(all, func(c Contact) bool {
+		return !contactMatchesPerson(c, terms[c.Address], text) &&
+			!slices.ContainsFunc(c.Addresses, func(ea ContactAddress) bool { return strings.Contains(ea.Address, text) })
+	})
+	slices.SortStableFunc(all, compareSearchedContacts)
+	capN := clampLimit(limit)
+	out := make([]ContactCompletion, 0, min(len(all), capN))
+	for _, c := range all {
+		personHit := contactMatchesPerson(c, terms[c.Address], text)
+		for _, ea := range c.Addresses {
+			if !personHit && !strings.Contains(ea.Address, text) {
+				continue
+			}
+			out = append(out, ContactCompletion{
+				Name:     c.Name,
+				Subtitle: c.Subtitle,
+				Address:  ea.Address,
+			})
+			if len(out) >= capN {
+				return out, nil
+			}
+		}
+	}
+	return out, nil
+}
+
+type cardEmailRow struct {
+	addrKey string
+	pref    bool
+}
+
+type cardComponent struct {
+	name     string
+	subtitle string
+	addrs    []string
+	prefs    map[string]bool
+	terms    []string
+}
+
+func formatCardSubtitle(org, title string) string {
+	if org != "" && title != "" {
+		return org + " · " + title
+	}
+	return cmp.Or(org, title)
+}
+
+func addUniqueTerm(dst *[]string, s string) {
+	if s != "" && !slices.Contains(*dst, s) {
+		*dst = append(*dst, s)
+	}
+}
+
+func (s *Service) ownAddrSet(ctx context.Context) (map[string]bool, error) {
 	own, err := s.db.Query(ctx, "SELECT email FROM accounts")
+	if err != nil {
+		return nil, err
+	}
+	skip := make(map[string]bool, len(own.Values))
+	for _, r := range own.Values {
+		if k := gomail.AddrKey(store.Str(r[0])); k != "" {
+			skip[k] = true
+		}
+	}
+	return skip, nil
+}
+
+// enabledCardComponents loads enabled address-book cards in priority order,
+// strips own-account addresses (ignoring cards with zero non-own addresses),
+// and merges cards sharing any non-own AddrKey into connected components.
+func (s *Service) enabledCardComponents(ctx context.Context, skip map[string]bool) ([]cardComponent, map[string]int, error) {
+	cardRows, err := s.db.Query(ctx, `SELECT c.id, c.fn, c.org, c.title
+		FROM address_book_cards c
+		JOIN address_book_collections col ON col.id = c.collection_id AND col.enabled = 1
+		JOIN address_books ab ON ab.id = col.address_book_id
+		ORDER BY ab.sort_order ASC, ab.id ASC, c.collection_id ASC, c.href ASC`)
+	if err != nil || len(cardRows.Values) == 0 {
+		return nil, nil, err
+	}
+	emailRows, err := s.db.Query(ctx, `SELECT e.card_id, e.addr_key, e.pref
+		FROM address_book_emails e
+		JOIN address_book_cards c ON c.id = e.card_id
+		JOIN address_book_collections col ON col.id = c.collection_id AND col.enabled = 1
+		ORDER BY e.card_id ASC, e.pos ASC`)
 	if err != nil {
 		return nil, nil, err
 	}
-	skip := map[string]bool{}
-	for _, r := range own.Values {
-		skip[gomail.AddrKey(store.Str(r[0]))] = true
+	byCard := map[int64][]cardEmailRow{}
+	for _, r := range emailRows.Values {
+		key := store.Str(r[1])
+		if key == "" || skip[key] {
+			continue
+		}
+		cid := store.Int(r[0])
+		byCard[cid] = append(byCard[cid], cardEmailRow{addrKey: key, pref: store.Int(r[2]) != 0})
+	}
+
+	type cardEntry struct {
+		fn, org, title string
+		emails         []cardEmailRow
+	}
+	var valid []cardEntry
+	parent := map[string]string{}
+	var find func(string) string
+	find = func(x string) string {
+		if p := parent[x]; p != "" && p != x {
+			parent[x] = find(p)
+			return parent[x]
+		}
+		return x
+	}
+	union := func(a, b string) {
+		ra, rb := find(a), find(b)
+		if ra != rb {
+			parent[rb] = ra
+		}
+	}
+
+	for _, r := range cardRows.Values {
+		ems := byCard[store.Int(r[0])]
+		if len(ems) == 0 {
+			continue
+		}
+		for _, em := range ems {
+			if parent[em.addrKey] == "" {
+				parent[em.addrKey] = em.addrKey
+			}
+		}
+		first := ems[0].addrKey
+		for _, em := range ems[1:] {
+			union(first, em.addrKey)
+		}
+		valid = append(valid, cardEntry{
+			fn:     store.Str(r[1]),
+			org:    store.Str(r[2]),
+			title:  store.Str(r[3]),
+			emails: ems,
+		})
+	}
+	if len(valid) == 0 {
+		return nil, nil, nil
+	}
+
+	rootIdx := map[string]int{}
+	var comps []cardComponent
+	addrToComp := map[string]int{}
+	hasPref := map[int]bool{}
+
+	for _, ce := range valid {
+		root := find(ce.emails[0].addrKey)
+		idx, ok := rootIdx[root]
+		if !ok {
+			idx = len(comps)
+			rootIdx[root] = idx
+			comps = append(comps, cardComponent{prefs: map[string]bool{}})
+		}
+		comp := &comps[idx]
+		if comp.name == "" && ce.fn != "" {
+			comp.name = ce.fn
+		}
+		sub := formatCardSubtitle(ce.org, ce.title)
+		if comp.subtitle == "" && sub != "" {
+			comp.subtitle = sub
+		}
+		addUniqueTerm(&comp.terms, ce.fn)
+		addUniqueTerm(&comp.terms, ce.org)
+		addUniqueTerm(&comp.terms, ce.title)
+		addUniqueTerm(&comp.terms, sub)
+
+		cardHasPref := slices.ContainsFunc(ce.emails, func(e cardEmailRow) bool { return e.pref })
+		takePref := !hasPref[idx] && cardHasPref
+		if takePref {
+			hasPref[idx] = true
+		}
+		for _, em := range ce.emails {
+			if _, seen := addrToComp[em.addrKey]; !seen {
+				addrToComp[em.addrKey] = idx
+				comp.addrs = append(comp.addrs, em.addrKey)
+			}
+			if takePref && em.pref {
+				comp.prefs[em.addrKey] = true
+			}
+		}
+	}
+	return comps, addrToComp, nil
+}
+
+// contacts gathers the contacts of accountID's mail (0: every account's plus
+// zero-mail enabled address-book contacts), with searchable person terms and
+// per-address newest mail timestamps.
+func (s *Service) contacts(ctx context.Context, accountID int64) ([]Contact, map[string][]string, map[string]time.Time, error) {
+	skip, err := s.ownAddrSet(ctx)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	blocked, err := s.BlockedSenders(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+	blockedSet := make(map[string]bool, len(blocked))
+	for _, b := range blocked {
+		blockedSet[b] = true
+	}
+	comps, _, err := s.enabledCardComponents(ctx, skip)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	left, err := s.roleFolderIDs(ctx, "sent", "drafts", "trash", "junk")
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	sent, err := s.roleFolderIDs(ctx, "sent")
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	acc, accArgs := "", []any(nil)
 	if accountID != 0 {
@@ -113,109 +366,303 @@ func (s *Service) contacts(ctx context.Context, accountID int64) ([]Contact, map
 	rows, err := s.db.Query(ctx, `SELECT m.from_addr, count(*), sum(instr(m.flags, '\Seen') = 0), sum(`+shownIn("(SELECT id FROM folders WHERE role = 'inbox')")+`), max(m.date), m.id`+
 		from+" GROUP BY m.from_addr ORDER BY 5, 1", args...)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	lists, err := s.db.Query(ctx, "SELECT m.from_addr, max(m.date), m.id"+from+" AND m.list_unsubscribe <> '' GROUP BY m.from_addr", args...)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	out, err := s.db.Query(ctx, "SELECT m.to_addrs, m.cc_addrs, m.date FROM messages m WHERE "+shownIn("("+placeholders(len(sent))+")")+acc+" ORDER BY m.date",
 		append(slices.Clone(sent), accArgs...)...)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	byAddr, names := map[string]*Contact{}, map[string][]string{}
-	// how often and how lately each name came, by address: in their mail, and in the user's to them
+
+	// how often and how lately each name came, by contact: in their mail, and in the user's to them
 	type use struct{ n, last int64 }
-	theirs, ours := map[string]map[string]use{}, map[string]map[string]use{}
-	tally := func(m map[string]map[string]use, addr, h string, n, date int64) {
+	type contactBuild struct {
+		cardName, subtitle            string
+		fromBook                      bool
+		addrs                         []string
+		prefs                         map[string]bool
+		terms                         []string
+		theirs, ours                  map[string]use
+		Received, Sent, Unread, Inbox int
+		Last                          time.Time
+		Latest, ListMessage           int64
+		latestDate, listDate          int64
+		hasLatest, hasList            bool
+	}
+
+	var builds []*contactBuild
+	byAddr := map[string]*contactBuild{}
+	for _, comp := range comps {
+		cb := &contactBuild{
+			cardName: comp.name,
+			subtitle: comp.subtitle,
+			fromBook: true,
+			addrs:    slices.Clone(comp.addrs),
+			prefs:    comp.prefs,
+			terms:    slices.Clone(comp.terms),
+			theirs:   map[string]use{},
+			ours:     map[string]use{},
+		}
+		builds = append(builds, cb)
+		for _, a := range comp.addrs {
+			byAddr[a] = cb
+		}
+	}
+
+	tally := func(m map[string]use, h string, n, date int64) {
 		a, err := mail.ParseAddress(h)
 		if err != nil || a.Name == "" {
 			return
 		}
-		if m[addr] == nil {
-			m[addr] = map[string]use{}
-		}
-		u := m[addr][a.Name]
-		m[addr][a.Name] = use{u.n + n, max(u.last, date)}
+		u := m[a.Name]
+		m[a.Name] = use{u.n + n, max(u.last, date)}
 	}
-	get := func(h string) *Contact {
+	get := func(h string) (string, *contactBuild) {
 		addr := gomail.AddrKey(h)
 		if addr == "" || skip[addr] {
-			return nil
+			return "", nil
 		}
-		c := byAddr[addr]
-		if c == nil {
-			c = &Contact{Address: addr, Blocked: slices.Contains(blocked, addr)}
-			byAddr[addr] = c
+		cb := byAddr[addr]
+		if cb == nil {
+			cb = &contactBuild{
+				addrs:  []string{addr},
+				theirs: map[string]use{},
+				ours:   map[string]use{},
+			}
+			builds = append(builds, cb)
+			byAddr[addr] = cb
 		}
 		if a, err := mail.ParseAddress(h); err == nil && a.Name != "" {
-			if !slices.Contains(names[addr], a.Name) {
-				names[addr] = append(names[addr], a.Name)
-			}
+			addUniqueTerm(&cb.terms, a.Name)
 		}
-		return c
+		return addr, cb
 	}
+
+	addrLast := map[string]time.Time{}
+	touchAddr := func(addr string, d time.Time) {
+		if d.After(addrLast[addr]) {
+			addrLast[addr] = d
+		}
+	}
+
 	for _, r := range rows.Values {
 		h := store.Str(r[0])
-		c := get(h)
-		if c == nil {
+		addr, cb := get(h)
+		if cb == nil {
 			continue
 		}
-		tally(theirs, c.Address, h, store.Int(r[1]), store.Int(r[4]))
-		c.Received += int(store.Int(r[1]))
-		c.Unread += int(store.Int(r[2]))
-		c.Inbox += int(store.Int(r[3]))
-		c.Last, c.Latest = time.Unix(store.Int(r[4]), 0), store.Int(r[5]) // rows come oldest first
+		ts := store.Int(r[4])
+		d := time.Unix(ts, 0)
+		touchAddr(addr, d)
+		tally(cb.theirs, h, store.Int(r[1]), ts)
+		cb.Received += int(store.Int(r[1]))
+		cb.Unread += int(store.Int(r[2]))
+		cb.Inbox += int(store.Int(r[3]))
+		if d.After(cb.Last) {
+			cb.Last = d
+		}
+		msgID := store.Int(r[5])
+		if !cb.hasLatest || ts > cb.latestDate || (ts == cb.latestDate && msgID > cb.Latest) {
+			cb.hasLatest, cb.latestDate, cb.Latest = true, ts, msgID
+		}
 	}
-	listDate := map[string]int64{}
 	for _, r := range lists.Values {
 		addr := gomail.AddrKey(store.Str(r[0]))
-		if c := byAddr[addr]; c != nil && store.Int(r[1]) >= listDate[addr] {
-			listDate[addr], c.ListMessage = store.Int(r[1]), store.Int(r[2])
+		cb := byAddr[addr]
+		if cb == nil {
+			continue
+		}
+		ts, msgID := store.Int(r[1]), store.Int(r[2])
+		if !cb.hasList || ts > cb.listDate || (ts == cb.listDate && msgID > cb.ListMessage) {
+			cb.hasList, cb.listDate, cb.ListMessage = true, ts, msgID
 		}
 	}
 	for _, r := range out.Values {
-		seen := map[*Contact]bool{}
+		seenAddr := map[string]bool{}
+		seenCB := map[*contactBuild]bool{}
+		ts := store.Int(r[2])
+		d := time.Unix(ts, 0)
 		for _, h := range slices.Concat(jsonList(store.Str(r[0])), jsonList(store.Str(r[1]))) {
-			c := get(h)
-			if c == nil || seen[c] {
+			addr, cb := get(h)
+			if cb == nil {
 				continue
 			}
-			seen[c] = true
-			c.Sent++
-			tally(ours, c.Address, h, 1, store.Int(r[2]))
-			if d := time.Unix(store.Int(r[2]), 0); d.After(c.Last) {
-				c.Last = d
+			if !seenAddr[addr] {
+				seenAddr[addr] = true
+				touchAddr(addr, d)
+				tally(cb.ours, h, 1, ts)
+			}
+			if !seenCB[cb] {
+				seenCB[cb] = true
+				cb.Sent++
+				if d.After(cb.Last) {
+					cb.Last = d
+				}
 			}
 		}
 	}
-	all := make([]Contact, 0, len(byAddr))
-	for _, c := range byAddr {
-		c.Messages = c.Received + c.Sent
-		// the name used most, the latest of a tie; one never heard from goes by the name the user wrote
-		var best use
-		used := theirs[c.Address]
-		if len(used) == 0 {
-			used = ours[c.Address]
+
+	all := make([]Contact, 0, len(builds))
+	terms := make(map[string][]string, len(builds))
+	for _, cb := range builds {
+		msgs := cb.Received + cb.Sent
+		if accountID != 0 && msgs == 0 {
+			continue
 		}
-		for name, u := range used {
-			if u.n > best.n || u.n == best.n && (u.last > best.last || u.last == best.last && name < c.Name) {
-				c.Name, best = name, u
+		addrs := make([]ContactAddress, len(cb.addrs))
+		allBlocked := len(cb.addrs) > 0
+		for i, a := range cb.addrs {
+			blk := blockedSet[a]
+			if !blk {
+				allBlocked = false
+			}
+			addrs[i] = ContactAddress{Address: a, Pref: cb.prefs[a], Blocked: blk}
+		}
+		slices.SortFunc(addrs, func(a, b ContactAddress) int {
+			if a.Pref != b.Pref {
+				if a.Pref {
+					return -1
+				}
+				return 1
+			}
+			al, bl := addrLast[a.Address], addrLast[b.Address]
+			if al.IsZero() != bl.IsZero() {
+				if !al.IsZero() {
+					return -1
+				}
+				return 1
+			}
+			return cmp.Or(bl.Compare(al), strings.Compare(a.Address, b.Address))
+		})
+
+		name := cb.cardName
+		if name == "" {
+			var best use
+			used := cb.theirs
+			if len(used) == 0 {
+				used = cb.ours
+			}
+			for n, u := range used {
+				if u.n > best.n || u.n == best.n && (u.last > best.last || u.last == best.last && n < name) {
+					name, best = n, u
+				}
 			}
 		}
-		all = append(all, *c)
+		addUniqueTerm(&cb.terms, name)
+
+		primary := addrs[0].Address
+		terms[primary] = cb.terms
+		all = append(all, Contact{
+			Name:            name,
+			Subtitle:        cb.subtitle,
+			Address:         primary,
+			Addresses:       addrs,
+			FromAddressBook: cb.fromBook,
+			Messages:        msgs,
+			Last:            cb.Last,
+			Received:        cb.Received,
+			Sent:            cb.Sent,
+			Unread:          cb.Unread,
+			Inbox:           cb.Inbox,
+			Latest:          cb.Latest,
+			ListMessage:     cb.ListMessage,
+			Blocked:         allBlocked,
+		})
 	}
 	slices.SortFunc(all, func(a, b Contact) int {
+		if (a.Messages > 0) != (b.Messages > 0) {
+			if a.Messages > 0 {
+				return -1
+			}
+			return 1
+		}
+		if a.Messages == 0 {
+			ak := cmp.Or(strings.ToLower(a.Name), a.Address)
+			bk := cmp.Or(strings.ToLower(b.Name), b.Address)
+			return cmp.Or(strings.Compare(ak, bk), strings.Compare(a.Address, b.Address))
+		}
 		return cmp.Or(cmp.Compare(b.Messages, a.Messages), b.Last.Compare(a.Last), strings.Compare(a.Address, b.Address))
 	})
-	return all, names, nil
+	return all, terms, addrLast, nil
+}
+
+// contactAddrKeys resolves addr to every AddrKey in its merged Contact
+// component (or just addr's own AddrKey when not in an enabled card component).
+func (s *Service) contactAddrKeys(ctx context.Context, addr string) ([]string, error) {
+	key := gomail.AddrKey(addr)
+	if key == "" {
+		return nil, nil
+	}
+	skip, err := s.ownAddrSet(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !skip[key] {
+		comps, addrToComp, err := s.enabledCardComponents(ctx, skip)
+		if err != nil {
+			return nil, err
+		}
+		if idx, ok := addrToComp[key]; ok {
+			return comps[idx].addrs, nil
+		}
+	}
+	return []string{key}, nil
+}
+
+func asciiDomains(keys []string) ([]string, bool) {
+	var domains []string
+	for _, k := range keys {
+		at := strings.LastIndexByte(k, '@')
+		if at < 0 || strings.IndexFunc(k[at:], func(r rune) bool { return r >= utf8.RuneSelf }) >= 0 {
+			return nil, false
+		}
+		dom := k[at:]
+		if !slices.Contains(domains, dom) {
+			domains = append(domains, dom)
+		}
+	}
+	return domains, len(domains) > 0
+}
+
+func (s *Service) fromHeadersForAddrs(ctx context.Context, keys []string) ([]string, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	keySet := make(map[string]bool, len(keys))
+	for _, k := range keys {
+		keySet[k] = true
+	}
+	cond, args := "1", []any(nil)
+	if doms, ok := asciiDomains(keys); ok {
+		parts := make([]string, len(doms))
+		args = make([]any, len(doms))
+		for i, d := range doms {
+			parts[i] = `from_addr LIKE ? ESCAPE '\'`
+			args[i] = likeArg(d)
+		}
+		cond = "(" + strings.Join(parts, " OR ") + ")"
+	}
+	rows, err := s.db.Query(ctx, "SELECT DISTINCT from_addr FROM messages WHERE "+cond, args...)
+	if err != nil {
+		return nil, err
+	}
+	out := []string{}
+	for _, r := range rows.Values {
+		if h := store.Str(r[0]); keySet[gomail.AddrKey(h)] {
+			out = append(out, h)
+		}
+	}
+	return out, nil
 }
 
 // ContactDetail is what ArchiveSender would do with addr's inbox mail now.
 func (s *Service) ContactDetail(ctx context.Context, addr string) (ContactDetail, error) {
 	var d ContactDetail
-	plan, err := s.archivePlan(ctx, gomail.AddrKey(addr))
+	plan, err := s.archivePlan(ctx, addr)
 	if err != nil {
 		return d, err
 	}
@@ -226,15 +673,22 @@ func (s *Service) ContactDetail(ctx context.Context, addr string) (ContactDetail
 	return d, nil
 }
 
-// ContactMail is a page of the mail between the user and addr, newest
-// first: theirs as Contact.Received counts it and the user's to them as
-// Contact.Sent does, so a contact's pages hold Contact.Messages in all.
-// cursor "" starts; NextCursor is "" past the last page. A page may hold
-// fewer than limit with more to come.
+// ContactMail is a page of the mail between the user and addr (covering all
+// addresses of addr's merged contact), newest first: theirs as Contact.Received
+// counts it and the user's to them as Contact.Sent does, so a contact's pages
+// hold Contact.Messages in all. cursor "" starts; NextCursor is "" past the
+// last page. A page may hold fewer than limit with more to come.
 func (s *Service) ContactMail(ctx context.Context, addr, cursor string, limit int) (MessagePage, error) {
 	var page MessagePage
-	key := gomail.AddrKey(addr)
-	q, err := s.withSenders(ctx, SearchQuery{FromAddr: key})
+	keys, err := s.contactAddrKeys(ctx, addr)
+	if err != nil || len(keys) == 0 {
+		return page, err
+	}
+	keySet := make(map[string]bool, len(keys))
+	for _, k := range keys {
+		keySet[k] = true
+	}
+	fromHeaders, err := s.fromHeadersForAddrs(ctx, keys)
 	if err != nil {
 		return page, err
 	}
@@ -246,14 +700,18 @@ func (s *Service) ContactMail(ctx context.Context, addr, cursor string, limit in
 	if err != nil {
 		return page, err
 	}
-	headers, _ := json.Marshal(append([]string{}, q.fromHeaders...)) // [] when none: theirs is no mail
+	headers, _ := json.Marshal(append([]string{}, fromHeaders...)) // [] when none: theirs is no mail
 	cond := "(m.from_addr IN (SELECT value FROM json_each(?)) AND NOT " + shownIn("("+placeholders(len(left))+")") + ") OR (" + shownIn("("+placeholders(len(sent))+")")
 	args := slices.Concat([]any{string(headers)}, left, sent)
-	// Narrowed by an ASCII domain, which LIKE folds and JSON never escapes
-	// (a local part's & is \u0026 in the stored list); AddrKey decides below.
-	if at := strings.LastIndexByte(key, '@'); at >= 0 && strings.IndexFunc(key[at:], func(r rune) bool { return r >= utf8.RuneSelf }) < 0 {
-		cond += ` AND (m.to_addrs LIKE ? ESCAPE '\' OR m.cc_addrs LIKE ? ESCAPE '\')`
-		args = append(args, likeArg(key[at:]), likeArg(key[at:]))
+	// Narrowed by ASCII domains, which LIKE folds and JSON never escapes
+	// (a local part's ampersand is & in the stored list); AddrKey decides below.
+	if doms, ok := asciiDomains(keys); ok {
+		parts := make([]string, 0, len(doms)*2)
+		for _, dom := range doms {
+			parts = append(parts, `m.to_addrs LIKE ? ESCAPE '\'`, `m.cc_addrs LIKE ? ESCAPE '\'`)
+			args = append(args, likeArg(dom), likeArg(dom))
+		}
+		cond += " AND (" + strings.Join(parts, " OR ") + ")"
 	}
 	cond = "(" + cond + "))"
 	isSent := func(m MessageSummary) bool { return slices.Contains(sent, any(m.FolderID)) }
@@ -273,7 +731,7 @@ func (s *Service) ContactMail(ctx context.Context, addr, cursor string, limit in
 		}
 		for i, r := range rows.Values[:min(len(rows.Values), limit)] {
 			m := scanSummary(r)
-			if !isSent(m) || slices.ContainsFunc(slices.Concat(m.To, m.Cc), func(h string) bool { return gomail.AddrKey(h) == key }) {
+			if !isSent(m) || slices.ContainsFunc(slices.Concat(m.To, m.Cc), func(h string) bool { return keySet[gomail.AddrKey(h)] }) {
 				page.Items = append(page.Items, m)
 			}
 			if i == limit-1 {
@@ -282,9 +740,12 @@ func (s *Service) ContactMail(ctx context.Context, addr, cursor string, limit in
 		}
 		if len(rows.Values) <= limit {
 			page.NextCursor = "" // a batch of near misses before may have set it
-			return page, nil
+			break
 		}
 		page.NextCursor = cursor
+	}
+	if err := s.fillFromNames(ctx, page.Items); err != nil {
+		return MessagePage{}, err
 	}
 	return page, nil
 }
@@ -298,22 +759,26 @@ type archiving struct {
 	headers []string
 }
 
-// archivePlan is what archiving addr's inbox mail would move: all of it but
-// mail in a thread the user starred or replied to (a message \Flagged,
-// \Answered or in Sent).
+// archivePlan is what archiving addr's inbox mail would move: all of it across
+// addr's merged contact but mail in a thread the user starred or replied to (a
+// message \Flagged, \Answered or in Sent).
 func (s *Service) archivePlan(ctx context.Context, addr string) (archiving, error) {
 	p := archiving{byAcc: map[int64][]ArchivedMessage{}}
-	q, err := s.withSenders(ctx, SearchQuery{FromAddr: addr})
-	if err != nil || len(q.fromHeaders) == 0 {
+	keys, err := s.contactAddrKeys(ctx, addr)
+	if err != nil || len(keys) == 0 {
 		return p, err
 	}
-	p.headers = q.fromHeaders
+	fromHeaders, err := s.fromHeadersForAddrs(ctx, keys)
+	if err != nil || len(fromHeaders) == 0 {
+		return p, err
+	}
+	p.headers = fromHeaders
 	sent, err := s.roleFolderIDs(ctx, "sent")
 	if err != nil {
 		return p, err
 	}
 	args := append(sent, KindLocalArchive)
-	for _, h := range q.fromHeaders {
+	for _, h := range fromHeaders {
 		args = append(args, h)
 	}
 	kept := `instr(t.flags, '\Flagged') > 0 OR instr(t.flags, '\Answered') > 0
@@ -321,7 +786,7 @@ func (s *Service) archivePlan(ctx context.Context, addr string) (archiving, erro
 	rows, err := s.db.Query(ctx, `SELECT m.id, m.account_id, `+shownFolder+`, EXISTS (SELECT 1 FROM messages t WHERE (t.id = m.id OR t.thread_id = m.thread_id) AND (`+kept+`))
 		FROM messages m WHERE `+shownIn("(SELECT id FROM folders WHERE role = 'inbox')")+`
 		AND m.account_id NOT IN (SELECT id FROM accounts WHERE kind = ?) AND m.from_addr IN (`+
-		placeholders(len(q.fromHeaders))+") ORDER BY m.id", args...)
+		placeholders(len(fromHeaders))+") ORDER BY m.id", args...)
 	if err != nil {
 		return p, err
 	}
@@ -336,15 +801,15 @@ func (s *Service) archivePlan(ctx context.Context, addr string) (archiving, erro
 	return p, nil
 }
 
-// ArchiveSender moves the inbox mail from addr (a From header or its
-// address) to each account's archive, as archivePlan says. An account
-// without an archive folder fails before anything moves. The plan and the
-// moves hold the edit lock together, so a change meanwhile is planned with.
+// ArchiveSender moves the inbox mail from addr (covering all addresses of
+// addr's merged contact) to each account's archive, as archivePlan says. An
+// account without an archive folder fails before anything moves. The plan and
+// the moves hold the edit lock together, so a change meanwhile is planned with.
 func (s *Service) ArchiveSender(ctx context.Context, addr string) (SenderArchive, error) {
 	var res SenderArchive
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
-	p, err := s.archivePlan(ctx, gomail.AddrKey(addr))
+	p, err := s.archivePlan(ctx, addr)
 	if err != nil {
 		return res, err
 	}

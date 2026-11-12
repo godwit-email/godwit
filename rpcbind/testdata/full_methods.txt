@@ -42,6 +42,7 @@ ClearAttachmentCache
 ClearImageCache
 ClearMaskingLog
 CompactConversation
+CompleteContacts
 ContactDetail
 ContactMail
 Contacts
@@ -188,6 +189,7 @@ SaveRule
 SaveView
 SavedViews
 Search
+SearchContacts
 SearchWith
 SecurityProgress
 Send

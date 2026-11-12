@@ -124,19 +124,44 @@ func (s *Service) findAttachments(ctx context.Context, q FindQuery) (FindGroup[F
 	return g, nil
 }
 
-// findContacts matches the contacts of the query's account (every
-// account's for 0) by any name they used or their address.
+func contactMatchesPerson(c Contact, terms []string, text string) bool {
+	if strings.Contains(strings.ToLower(c.Name), text) || strings.Contains(strings.ToLower(c.Subtitle), text) {
+		return true
+	}
+	return slices.ContainsFunc(terms, func(n string) bool { return strings.Contains(strings.ToLower(n), text) })
+}
+
+func compareSearchedContacts(a, b Contact) int {
+	if a.Last.IsZero() != b.Last.IsZero() {
+		if !a.Last.IsZero() {
+			return -1
+		}
+		return 1
+	}
+	if a.Last.IsZero() {
+		ak := cmp.Or(strings.ToLower(a.Name), a.Address)
+		bk := cmp.Or(strings.ToLower(b.Name), b.Address)
+		return cmp.Or(strings.Compare(ak, bk), strings.Compare(a.Address, b.Address))
+	}
+	return cmp.Or(b.Last.Compare(a.Last), strings.Compare(a.Address, b.Address))
+}
+
+// findContacts matches the contacts of the query's account (every account's and
+// zero-mail address-book contacts for 0) by any address, name, historical name,
+// or organization/title.
 func (s *Service) findContacts(ctx context.Context, q FindQuery) (FindGroup[Contact], error) {
-	all, names, err := s.contacts(ctx, q.AccountID)
+	all, names, _, err := s.contacts(ctx, q.AccountID)
 	if err != nil {
 		return FindGroup[Contact]{}, err
 	}
 	text := strings.ToLower(strings.TrimSpace(q.Text))
-	all = slices.DeleteFunc(all, func(c Contact) bool {
-		return !strings.Contains(c.Address, text) && !slices.ContainsFunc(names[c.Address], func(n string) bool { return strings.Contains(strings.ToLower(n), text) })
-	})
-	if text != "" { // something typed: the latest first; else the people mailed most, as contacts come
-		slices.SortStableFunc(all, func(a, b Contact) int { return cmp.Or(b.Last.Compare(a.Last), strings.Compare(a.Address, b.Address)) })
+	if text != "" {
+		all = slices.DeleteFunc(all, func(c Contact) bool {
+			return !contactMatchesPerson(c, names[c.Address], text) &&
+				!slices.ContainsFunc(c.Addresses, func(ea ContactAddress) bool { return strings.Contains(ea.Address, text) })
+		})
+		// something typed: the latest mail first, zero-mail contacts after; else the people mailed most, as contacts come
+		slices.SortStableFunc(all, compareSearchedContacts)
 	}
 	return firstOf(all, q.Limit), nil
 }

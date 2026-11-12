@@ -71,7 +71,7 @@ func cacheFiles(dataDir string) int {
 // The mcp role's whole surface, compared with every method of *core.Service.
 func TestMCPAllowlistContents(t *testing.T) {
 	want := []string{"GetDraft", "GetMessageText", "GetThread", "ListAccounts", "ListDrafts", "ListFolders",
-		"ListMessages", "ListThreads", "NewDraft", "RequestMCPSend", "SaveDraft", "Search"}
+		"ListMessages", "ListThreads", "NewDraft", "RequestMCPSend", "SaveDraft", "Search", "SearchContacts"}
 	newMode := []json.RawMessage{json.RawMessage(`1`), json.RawMessage(`"new"`), json.RawMessage(`0`)}
 	var got []string
 	for m := range reflect.TypeFor[*core.Service]().Methods() {
@@ -191,6 +191,10 @@ func TestMCPRoleAllowlist(t *testing.T) {
 		{"Unsubscribe", []any{msg.ID}},
 		{"UnsubscribeMethod", []any{msg.ID}},
 		{"NewMailtoDraft", []any{acc.ID, "mailto:eve@example.com"}},
+		{"AddAddressBook", []any{core.AddressBookInput{URL: "https://127.0.0.1:1"}}},
+		{"RemoveAddressBook", []any{int64(1)}},
+		{"SyncAddressBook", []any{int64(0)}},
+		{"CompleteContacts", []any{"bob", 10}},
 	} {
 		before := state()
 		err := c.Call(ctx, call.method, nil, call.args...)
@@ -205,6 +209,10 @@ func TestMCPRoleAllowlist(t *testing.T) {
 	var got core.MessageText
 	require.NoError(t, c.Call(ctx, "GetMessageText", &got, msg.ID))
 	assert.Contains(t, got.Text, "Meet on Friday.")
+	var contacts []core.ContactMatch
+	require.NoError(t, c.Call(ctx, "SearchContacts", &contacts, "bob", 10))
+	require.Len(t, contacts, 1)
+	assert.Equal(t, "bob@example.com", contacts[0].Address)
 	assert.Zero(t, cacheFiles(e.DataDir))
 }
 
