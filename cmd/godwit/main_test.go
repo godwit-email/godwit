@@ -73,8 +73,8 @@ func TestCloseMinimizes(t *testing.T) {
 }
 
 // Closing the main window while Godwit keeps running in the background exits
-// the interface, but not while a compose window is open; with 后台常驻 off it
-// quits as ever. Without closeExitsUI (#738) it hides as before.
+// the interface, but not while a compose window is open; with 后台收信 at
+// 关窗后停止 it quits, stopping the backend. Without closeExitsUI (#738) it hides as before.
 func TestMainCloseAction(t *testing.T) {
 	for _, tc := range []struct {
 		keep, exits bool

@@ -578,10 +578,14 @@ func (s *Service) Publish(ev events.Event) { s.bus.Publish(ev) }
 
 // StopUIBackend shuts down a backend the interface started (Options.StopUIBackend),
 // as quitting Godwit does; it returns before the shutdown runs. A backend the
-// user started (--headless) refuses and keeps running.
-func (s *Service) StopUIBackend(context.Context) error {
+// user started (--headless), or one whose 后台收信 is BackgroundReceiveAlways,
+// refuses and keeps running.
+func (s *Service) StopUIBackend(ctx context.Context) error {
 	if s.opts.StopUIBackend == nil {
 		return errors.New("the user started this backend; it keeps running")
+	}
+	if st, err := s.GetSettings(ctx); err == nil && st.BackgroundReceive == BackgroundReceiveAlways {
+		return errors.New("background receiving is always on; the backend keeps running")
 	}
 	s.opts.StopUIBackend()
 	return nil

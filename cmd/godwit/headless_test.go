@@ -20,9 +20,11 @@ import (
 	"github.com/godwit-email/godwit/app"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/syslang"
 	"github.com/godwit-email/godwit/rpc"
 	"github.com/godwit-email/godwit/rpcbind"
+	"github.com/godwit-email/godwit/uiclient"
 )
 
 type recordingSink struct {
@@ -35,7 +37,20 @@ type recordingSink struct {
 	codesHistory    [][]core.SignInCode
 	banners         []*core.SignInCode
 	actions         trayActions
+	quitStop        bool
 	notes           []app.Notification
+}
+
+func (s *recordingSink) SetTrayQuitStop(on bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.quitStop = on
+}
+
+func (s *recordingSink) QuitStop() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.quitStop
 }
 
 func (s *recordingSink) NotificationsSupported() bool { return s.supported }
@@ -940,6 +955,85 @@ func TestHeadlessTrayActions(t *testing.T) {
 	}
 	if strings.Contains(stderr.String(), "tray:") || strings.Contains(stderr.String(), "level=ERROR") {
 		t.Fatalf("unexpected tray warning/error in stderr: %q", stderr.String())
+	}
+}
+
+// Under 一直继续 the tray offers 退出并停止收信 and its plain Quit asks the
+// interface to quit, the backend staying; the setting takes effect at once.
+func TestHeadlessTrayQuitUnderAlways(t *testing.T) {
+	sink := &recordingSink{supported: true}
+	withHeadlessDesktop(t, func() *headlessDesktop {
+		return &headlessDesktop{
+			newPlatform: func(string, *core.Service) headlessPlatform { return sink },
+			run: func(ctx context.Context, ready func(stop func())) (bool, error) {
+				loopCtx, stop := context.WithCancel(ctx)
+				defer stop()
+				ready(stop)
+				<-loopCtx.Done()
+				return true, nil
+			},
+		}
+	})
+	dir := shortDir(t)
+	runCtx, cancelRun := context.WithCancel(context.Background())
+	defer cancelRun()
+	stderr := &syncBuf{}
+	done := make(chan int, 1)
+	go func() { done <- run(runCtx, []string{"--headless", "--data-dir", dir}, nil, &syncBuf{}, stderr) }()
+	c := dialWait(t, dir)
+	ctx := context.Background()
+	if sink.QuitStop() {
+		t.Fatal("退出并停止收信 shown under the default")
+	}
+	setReceive := func(mode string) {
+		t.Helper()
+		var st core.Settings
+		if err := c.Call(ctx, "GetSettings", &st); err != nil {
+			t.Fatal(err)
+		}
+		st.BackgroundReceive = mode
+		if err := c.Call(ctx, "SetSettings", nil, st); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setReceive(core.BackgroundReceiveAlways)
+	waitCond(t, "退出并停止收信 shown", sink.QuitStop)
+
+	ui, err := uiclient.Dial(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs, unsub := ui.Subscribe()
+	defer unsub()
+	sink.Actions().quit()
+	for ev := range evs {
+		if ev.Type == events.QuitRequested {
+			break
+		}
+	}
+	ui.Close()
+	time.Sleep(200 * time.Millisecond)
+	select {
+	case code := <-done:
+		t.Fatalf("Quit stopped the backend under 一直继续 (code %d)", code)
+	default:
+	}
+	if err := c.Call(ctx, "GetSettings", new(core.Settings)); err != nil {
+		t.Fatalf("backend gone after Quit: %v", err)
+	}
+
+	setReceive(core.BackgroundReceiveUntilQuit)
+	waitCond(t, "退出并停止收信 hidden", func() bool { return !sink.QuitStop() })
+	setReceive(core.BackgroundReceiveAlways)
+	waitCond(t, "退出并停止收信 shown again", sink.QuitStop)
+	sink.Actions().quitStop()
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Fatalf("exit code %d; stderr %q", code, stderr.String())
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("退出并停止收信 left the backend running")
 	}
 }
 

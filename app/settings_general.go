@@ -286,7 +286,18 @@ func (p *settingsPage) generalView(c *ui.Context) {
 		}))
 	startup := []func(){
 		sw(&st.LaunchAtLogin, i18n.T("settings.launch_at_login"), i18n.T("settings.launch_at_login.help")),
-		sw(&st.KeepInBackground, i18n.T("settings.keep_in_background"), i18n.T("settings.keep_in_background.help")),
+		sel(i18n.T("settings.background_receive"), i18n.T("settings.background_receive.help"), func() ui.Element {
+			cur := cmp.Or(st.BackgroundReceive, core.BackgroundReceiveUntilQuit)
+			el := settingSelect(c, i18n.T("settings.background_receive"), &cur, []kit.Option[string]{
+				{Value: core.BackgroundReceiveStopOnClose, Label: i18n.T("settings.background_receive.stop_on_close")},
+				{Value: core.BackgroundReceiveUntilQuit, Label: i18n.T("settings.background_receive.until_quit")},
+				{Value: core.BackgroundReceiveAlways, Label: i18n.T("settings.background_receive.always")},
+			})
+			if cur != cmp.Or(st.BackgroundReceive, core.BackgroundReceiveUntilQuit) {
+				st.BackgroundReceive = cur
+			}
+			return el
+		}),
 		sel(i18n.T("settings.background_sync"), i18n.T("settings.background_sync.help"), func() ui.Element {
 			cur := cmp.Or(st.BackgroundSync, core.BackgroundSyncInbox)
 			el := settingSelect(c, i18n.T("settings.background_sync"), &cur, []kit.Option[string]{
