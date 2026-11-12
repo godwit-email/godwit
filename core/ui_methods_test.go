@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -136,6 +137,25 @@ func TestUIInlineImagesAndFetchAttachmentsStreams(t *testing.T) {
 		got = append(got, a.Info.Filename+":"+string(b))
 	}
 	assert.Equal(t, []string{"a.txt:alpha", "b.txt:beta"}, got)
+
+	// A failure after the buffer filled still reaches the reader: ending the
+	// fetcher's call must not cancel the send of its error.
+	ids := slices.Repeat([]int64{txt.Attachments[1].ID}, 16)
+	fullCh, err := e.Svc.FetchAttachmentsStream(tctx, append(ids, 999999))
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { return len(fullCh) == cap(fullCh) }, 5*time.Second, time.Millisecond)
+	time.Sleep(200 * time.Millisecond) // the producer meets 999999 with the buffer full
+	var fullErr error
+	n := 0
+	for a := range fullCh {
+		if a.StreamError() != nil {
+			fullErr = a.StreamError()
+			continue
+		}
+		n++
+	}
+	assert.Equal(t, 16, n)
+	require.Error(t, fullErr, "the failed attachment's error was lost behind a full buffer")
 
 	badCh, err := e.Svc.FetchAttachmentsStream(tctx, []int64{txt.Attachments[1].ID, 999999})
 	require.NoError(t, err)

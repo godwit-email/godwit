@@ -157,8 +157,9 @@ func (s *Service) FetchAttachmentsStream(ctx context.Context, attachmentIDs []in
 		for _, id := range ids {
 			path, info, gerr := f.get(id)
 			if gerr != nil {
-				_ = f.close()
+				// Before close: it ends fctx, and a full buffer would then drop the error.
 				sendStreamFinal(fctx, ch, FetchedAttachment{Err: gerr})
+				_ = f.close()
 				return
 			}
 			if !sendStream(fctx, ch, FetchedAttachment{Path: path, Info: info}) {
@@ -167,7 +168,7 @@ func (s *Service) FetchAttachmentsStream(ctx context.Context, attachmentIDs []in
 			}
 		}
 		if cerr := f.close(); cerr != nil {
-			sendStreamFinal(fctx, ch, FetchedAttachment{Err: cerr})
+			sendStreamFinal(ctx, ch, FetchedAttachment{Err: cerr}) // fctx has ended with close
 		}
 	}()
 	return ch, nil
