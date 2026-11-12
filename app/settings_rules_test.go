@@ -171,11 +171,11 @@ func TestSettingsRulesConditionGroupNeedsRoom(t *testing.T) {
 }
 
 // A rule set to 后台运行 is tagged in the list and, while enabled, keeps
-// Godwit running when the window closes with 后台常驻 off.
+// Godwit receiving when the window closes with 后台收信 at 关窗后停止.
 func TestSettingsRulesBackground(t *testing.T) {
-	h, _ := notifyHarness(t, func(st *core.Settings) { st.KeepInBackground = false })
+	h, _ := notifyHarness(t, func(st *core.Settings) { st.BackgroundReceive = core.BackgroundReceiveStopOnClose })
 	if h.app.KeepInBackground() {
-		t.Fatal("后台常驻 on")
+		t.Fatal("后台收信 keeps receiving")
 	}
 	h.openSettings("rules")
 	h.click("新建规则")
