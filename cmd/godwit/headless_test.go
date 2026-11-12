@@ -347,6 +347,17 @@ func TestHeadlessGraphicalEngineOptions(t *testing.T) {
 	dir := shortDir(t)
 	c, stderr, stop := startHeadless(t, dir)
 	ctx := context.Background()
+	// Auto-labeling off before any mail arrives: else the labeler, woken by a
+	// sync, may judge the invoice once step 5 sets a model, taking the Wit
+	// run's scripted turn (no approval follows).
+	var st core.Settings
+	if err := c.Call(ctx, "GetSettings", &st); err != nil {
+		t.Fatalf("GetSettings: %v", err)
+	}
+	st.AutoLabel = false
+	if err := c.Call(ctx, "SetSettings", &st, st); err != nil {
+		t.Fatalf("SetSettings: %v", err)
+	}
 
 	// 1. SystemLanguage matches syslang.Detect().
 	var gotLang string
@@ -440,11 +451,9 @@ func TestHeadlessGraphicalEngineOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddModelService: %v", err)
 	}
-	var st core.Settings
 	if err := c.Call(ctx, "GetSettings", &st); err != nil {
 		t.Fatalf("GetSettings: %v", err)
 	}
-	st.AutoLabel = false
 	st.DefaultModel = "local/m1"
 	if err := c.Call(ctx, "SetSettings", nil, st); err != nil {
 		t.Fatalf("SetSettings: %v", err)
@@ -471,7 +480,7 @@ func TestHeadlessGraphicalEngineOptions(t *testing.T) {
 	cancelStream()
 	var approvals []core.Approval
 	if err := c.Call(ctx, "ListApprovals", &approvals, conv.ID); err != nil || len(approvals) != 1 {
-		t.Fatalf("ListApprovals = %+v, %v; events = %v", approvals, err, rawEvents)
+		t.Fatalf("ListApprovals = %+v, %v; events = %v; model requests = %d", approvals, err, rawEvents, llm.Requests())
 	}
 	if err := c.Call(ctx, "ResolveApproval", nil, approvals[0].ID, true); err != nil {
 		t.Fatalf("ResolveApproval: %v", err)
