@@ -499,6 +499,7 @@
     }
   },
   "mcp_send_title": "Send this email?",
+  "mcp_send_waiting": "An AI tool asks to send an email. Confirm it in Godwit.",
   "notify_new_mail": "New mail",
   "notify_new_mails": "{arg1, number, ::group-off} new messages",
   "@notify_new_mails": {

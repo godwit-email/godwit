@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -129,6 +130,39 @@ func TestActionNeedsEgressApproval(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "pong", res.Text)
 	assert.Equal(t, int64(1), hits.Load())
+}
+
+// An action asked over the Local API that needs the user's egress approval
+// does not run while no interface is connected to give it, approved or not;
+// one needing none runs, and with an interface connected the approval is asked.
+func TestExternalActionApprovalNeedsUI(t *testing.T) {
+	s := newMailContextService(t)
+	id := addMessage(t, s, "Hi", "Bob <bob@x>", "hello", "", 1_700_000_000)
+	api, hits := netServer(t, s)
+	startTestPlugin(t, s, "shipper", `{"net":["`+api+`"]}`, `export default function (ctx: any) {
+  ctx.actions.register({ id: "ship", label: "Ship", on: ["message", "selection"], run: async () => {
+    await ctx.net.fetch("http://`+api+`/up")
+    return "ok"
+  } })
+}`)
+	ext := WithExternalSource(t.Context(), AuditLocalAPI)
+	sel := Target{Kind: "selection", ID: id, Text: "secret mail text"}
+	for _, approve := range []bool{false, true} {
+		_, err := s.RunAction(ext, "shipper/ship", sel, RunActionOptions{ApproveEgress: approve})
+		require.ErrorIs(t, err, ErrNoUI)
+	}
+	assert.Zero(t, hits.Load(), "nothing ran")
+
+	_, err := s.RunAction(ext, "shipper/ship", Target{Kind: "message", ID: id}, RunActionOptions{})
+	require.NoError(t, err, "no approval needed")
+	assert.Equal(t, int64(1), hits.Load())
+
+	ui, disconnect := context.WithCancel(t.Context())
+	defer disconnect()
+	WithUISession(ui, s)
+	_, err = s.RunAction(ext, "shipper/ship", sel, RunActionOptions{})
+	var ea *EgressApprovalRequired
+	require.ErrorAs(t, err, &ea)
 }
 
 // A net plugin without mail:read gets mail content only in a selection

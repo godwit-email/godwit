@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -317,6 +318,7 @@ func TestHeadlessGraphicalEngineOptions(t *testing.T) {
 
 	var pdfCalls atomic.Int32
 	var openedURL atomic.Pointer[string]
+	sink := &recordingSink{supported: true}
 	withHeadlessDesktop(t, func() *headlessDesktop {
 		return &headlessDesktop{
 			translator: func() core.SystemTranslator { return fakeTranslator{} },
@@ -331,7 +333,7 @@ func TestHeadlessGraphicalEngineOptions(t *testing.T) {
 				pdfCalls.Add(1)
 				return []byte("%PDF-1.4\nfake\n"), nil
 			},
-			newPlatform: func(string, *core.Service) headlessPlatform { return &recordingSink{supported: true} },
+			newPlatform: func(string, *core.Service) headlessPlatform { return sink },
 			run: func(ctx context.Context, ready func(stop func())) (bool, error) {
 				loopCtx, stop := context.WithCancel(ctx)
 				defer stop()
@@ -398,7 +400,39 @@ func TestHeadlessGraphicalEngineOptions(t *testing.T) {
 		t.Fatalf("written PDF = %q, %v", data, err)
 	}
 
-	// 4. OpenURL opens approved Wit links.
+	// 4. RequestMCPSend under 每次确认 (default) with no interface connected
+	// waits for the user behind a notification that names no mail content.
+	var draft core.Draft
+	if err := c.Call(ctx, "NewDraft", &draft, acc.ID, "new", int64(0)); err != nil {
+		t.Fatalf("NewDraft: %v", err)
+	}
+	draft.To = []string{"bob@example.com"}
+	draft.Subject = "Quarterly plan"
+	draft.HTML = "<p>the plan body</p>"
+	if err := c.Call(ctx, "SaveDraft", &draft, draft); err != nil {
+		t.Fatalf("SaveDraft: %v", err)
+	}
+	var sent bool
+	if err := c.Call(ctx, "RequestMCPSend", &sent, draft.ID, draft.Revision); err != nil || sent {
+		t.Fatalf("RequestMCPSend = (%v, %v), want waiting", sent, err)
+	}
+	var pending []core.MCPSend
+	if err := c.Call(ctx, "PendingMCPSends", &pending); err != nil || len(pending) != 1 {
+		t.Fatalf("PendingMCPSends = %+v, %v", pending, err)
+	}
+	notes := slices.DeleteFunc(sink.Notes(), func(n app.Notification) bool { return !strings.HasPrefix(n.ID, "mcp_send:") })
+	if len(notes) != 1 || notes[0].ID != "mcp_send:"+strconv.FormatInt(pending[0].ID, 10) || notes[0].Body == "" ||
+		strings.Contains(notes[0].Body+notes[0].Title+notes[0].Subtitle, "plan") {
+		t.Fatalf("notifications %+v", notes)
+	}
+
+	// 5. OpenURL opens approved Wit links; a Wit run waits on approvals, so it
+	// needs an interface connected.
+	uic, err := rpc.Dial(dir, rpc.RoleUI, "ui-test", rpcbind.NewCodec())
+	if err != nil {
+		t.Fatalf("Dial RoleUI: %v", err)
+	}
+	defer uic.Close()
 	var ms core.ModelService
 	err = c.Call(ctx, "AddModelService", &ms, core.ModelServiceInput{
 		Name: "local", Kind: "openai", BaseURL: llmURL, APIKey: "test-key", Models: []string{"m1"},
@@ -444,23 +478,6 @@ func TestHeadlessGraphicalEngineOptions(t *testing.T) {
 	}
 	if got := openedURL.Load(); got == nil || *got != "https://example.com/hello" {
 		t.Fatalf("OpenURL got %v", got)
-	}
-
-	// 5. RequestMCPSend under 每次确认 (default) still rejects with ErrMCPSendOff.
-	var draft core.Draft
-	if err := c.Call(ctx, "NewDraft", &draft, acc.ID, "new", int64(0)); err != nil {
-		t.Fatalf("NewDraft: %v", err)
-	}
-	draft.To = []string{"bob@example.com"}
-	draft.Subject = "Hello"
-	draft.HTML = "<p>Hi</p>"
-	if err := c.Call(ctx, "SaveDraft", &draft, draft); err != nil {
-		t.Fatalf("SaveDraft: %v", err)
-	}
-	var sent bool
-	err = c.Call(ctx, "RequestMCPSend", &sent, draft.ID, draft.Revision)
-	if !errors.Is(err, core.ErrMCPSendOff) || sent {
-		t.Fatalf("RequestMCPSend = (%v, %v), want ErrMCPSendOff", sent, err)
 	}
 
 	if code := stop(); code != 0 {

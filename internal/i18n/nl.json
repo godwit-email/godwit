@@ -264,6 +264,7 @@
   "mcp_send_first": "Eerste keer",
   "mcp_send_notify": "Een AI-tool vraagt ‘{arg1}’ te versturen. Bevestig het in Godwit.",
   "mcp_send_title": "Deze e-mail versturen?",
+  "mcp_send_waiting": "Een AI-tool vraagt een e-mail te versturen. Bevestig het in Godwit.",
   "notify_new_mail": "Nieuwe e-mail",
   "notify_new_mails": "{arg1, number, ::group-off} nieuwe berichten",
   "oauth_page_fail_body": "Ga terug naar Godwit en probeer het opnieuw.",
