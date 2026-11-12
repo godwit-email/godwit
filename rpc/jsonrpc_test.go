@@ -296,6 +296,25 @@ func TestClientStreamBackpressure(t *testing.T) {
 	}
 }
 
+// A request over the server's line limit is refused before it is sent, and
+// the connection stays up: the server would have dropped it, and the
+// interface takes a dropped connection for the backend's loss.
+func TestClientRefusesTooLarge(t *testing.T) {
+	c, _ := client(t, newDispatcher(t, newTarget()))
+	var s string
+	err := c.Call(context.Background(), "Echo", &s, strings.Repeat("x", rpc.MaxMessage), 1)
+	if !errors.Is(err, rpc.ErrTooLarge) {
+		t.Fatalf("oversized Echo = %v, want ErrTooLarge", err)
+	}
+	if err := c.Call(context.Background(), "Echo", &s, "a", 1); err != nil || s != "a1" {
+		t.Fatalf("Echo after = %q, %v", s, err)
+	}
+	big := strings.Repeat("x", rpc.MaxMessage-1024) // just under: still delivered
+	if err := c.Call(context.Background(), "Echo", &s, big, 1); err != nil || len(s) != len(big)+1 {
+		t.Fatalf("Echo under the limit = %d bytes, %v", len(s), err)
+	}
+}
+
 // A StreamDropping reader far behind loses the oldest droppable events, the
 // newest kept, and the stream does not overflow.
 func TestClientStreamDropping(t *testing.T) {

@@ -87,7 +87,7 @@ func (o ConnOptions) withDefaults() ConnOptions {
 			*v = d
 		}
 	}
-	def(&o.MaxMessage, 16<<20)
+	def(&o.MaxMessage, MaxMessage)
 	def(&o.MaxActive, 32)
 	def(&o.QueueMessages, 1024)
 	def(&o.QueueBytes, 32<<20)

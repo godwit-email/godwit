@@ -19,7 +19,13 @@ var (
 	ErrClosed = errors.New("rpc: connection closed")
 	// ErrStreamOverflow ends a stream whose reader fell StreamBuffer behind.
 	ErrStreamOverflow = errors.New("rpc: stream reader too slow")
+	// ErrTooLarge refuses a request over MaxMessage before it is sent: the
+	// server would drop the whole connection for it.
+	ErrTooLarge = errors.New("rpc: request too large for the Local API")
 )
+
+// MaxMessage is the largest line a server reads by default (ConnOptions).
+const MaxMessage = 16 << 20
 
 // Client is a JSON-RPC client. One read loop handles messages in order, so a
 // stream is registered before any of its events are dispatched.
@@ -151,6 +157,12 @@ func (c *Client) request(ctx context.Context, method string, args []any, stream 
 	c.pending[id] = p
 	c.mu.Unlock()
 	b, _ := json.Marshal(message{JSONRPC: "2.0", ID: json.RawMessage(strconv.FormatUint(id, 10)), Method: method, Params: params})
+	if len(b) >= MaxMessage { // the line and its newline must fit
+		c.mu.Lock()
+		delete(c.pending, id)
+		c.mu.Unlock()
+		return message{}, nil, ErrTooLarge
+	}
 	select {
 	case c.wq <- append(b, '\n'):
 	case <-ctx.Done():
