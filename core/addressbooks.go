@@ -680,9 +680,10 @@ func (s *Service) SetAddressBookCollectionEnabled(ctx context.Context, collectio
 			Args: []any{collectionID},
 		}}
 	} else {
+		// Odd sync_gen marks a reset collection awaiting a fresh full sync; commits advance to even.
 		stmts = []sqlite.Statement{
 			{SQL: "DELETE FROM address_book_cards WHERE collection_id = ?", Args: []any{collectionID}},
-			{SQL: "UPDATE address_book_collections SET enabled = 0, sync_token = '', sync_gen = sync_gen + 1, card_count = 0 WHERE id = ?", Args: []any{collectionID}},
+			{SQL: "UPDATE address_book_collections SET enabled = 0, sync_token = '', sync_gen = CASE WHEN sync_gen % 2 = 0 THEN sync_gen + 1 ELSE sync_gen + 2 END, card_count = 0 WHERE id = ?", Args: []any{collectionID}},
 		}
 	}
 	_, err = s.db.Transaction(ctx, stmts)
@@ -1319,8 +1320,11 @@ func (s *Service) syncOneCollectionOnce(ctx context.Context, client *carddav.Cli
 	if err != nil || len(still.Values) == 0 || store.Int(still.Values[0][0]) == 0 {
 		return false, err
 	}
-	if store.Int(still.Values[0][2]) != snapSyncGen || store.Str(still.Values[0][1]) != snapSyncToken {
-		return store.Int(still.Values[0][2]) != snapSyncGen, nil
+	curToken, curGen := store.Str(still.Values[0][1]), store.Int(still.Values[0][2])
+	if curGen != snapSyncGen || curToken != snapSyncToken {
+		// Retry only when the collection was reset (odd sync_gen); when a newer sync
+		// already committed (even sync_gen), drop this stale snapshot without overwriting.
+		return curGen%2 == 1, nil
 	}
 
 	var stmts []sqlite.Statement
@@ -1392,7 +1396,9 @@ func (s *Service) syncOneCollectionOnce(ctx context.Context, client *carddav.Cli
 	}
 	stmts = append(stmts, sqlite.Statement{
 		SQL: `UPDATE address_book_collections
-			SET sync_token = ?, card_count = (SELECT COUNT(*) FROM address_book_cards WHERE collection_id = ?)
+			SET sync_token = ?,
+				sync_gen = CASE WHEN sync_gen % 2 = 0 THEN sync_gen + 2 ELSE sync_gen + 1 END,
+				card_count = (SELECT COUNT(*) FROM address_book_cards WHERE collection_id = ?)
 			WHERE id = ? AND enabled = 1 AND sync_gen = ? AND sync_token = ?`,
 		Args: []any{nextSyncToken, colID, colID, snapSyncGen, snapSyncToken},
 	})

@@ -327,6 +327,13 @@ func (s *CardDAV) ResetRequests() {
 	s.requests = nil
 }
 
+func (s *CardDAV) syncTokenLocked(c *cardCollection) string {
+	if s.disableSyncCollection {
+		return ""
+	}
+	return syncTokenFor(c)
+}
+
 func syncTokenFor(c *cardCollection) string {
 	return fmt.Sprintf("http://godwit.test/ns/sync/%s/%d", c.slug, c.rev)
 }
@@ -487,7 +494,7 @@ func (s *CardDAV) serve(w http.ResponseWriter, r *http.Request) {
 					`<D:displayname>%s</D:displayname>`+
 					`<D:sync-token>%s</D:sync-token>`+
 					`</D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>`,
-					xmlEsc(colHref), xmlEsc(c.displayName), xmlEsc(syncTokenFor(c)))
+					xmlEsc(colHref), xmlEsc(c.displayName), xmlEsc(s.syncTokenLocked(c)))
 			}
 		}
 		b.WriteString(`</D:multistatus>`)
@@ -514,7 +521,7 @@ func (s *CardDAV) serve(w http.ResponseWriter, r *http.Request) {
 				`<D:displayname>%s</D:displayname>`+
 				`<D:sync-token>%s</D:sync-token>`+
 				`</D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>`,
-				xmlEsc(colHref), xmlEsc(col.displayName), xmlEsc(syncTokenFor(col)))
+				xmlEsc(colHref), xmlEsc(col.displayName), xmlEsc(s.syncTokenLocked(col)))
 			if r.Header.Get("Depth") != "0" {
 				hrefs := make([]string, 0, len(col.cards))
 				for h, ce := range col.cards {
@@ -590,6 +597,14 @@ func (s *CardDAV) serve(w http.ResponseWriter, r *http.Request) {
 				if u, err := url.Parse(rawHref); err == nil && u.Path != "" {
 					h = u.Path
 				}
+				// Snapshot the card before running multigetHook so a paused request delivers
+				// the payload observed when the request arrived, simulating out-of-order responses.
+				orig := col.cards[h]
+				var snap cardEntry
+				hasSnap := orig != nil && !orig.deleted
+				if hasSnap {
+					snap = *orig
+				}
 				hook := s.multigetHook
 				if hook != nil {
 					s.mu.Unlock()
@@ -601,8 +616,7 @@ func (s *CardDAV) serve(w http.ResponseWriter, r *http.Request) {
 						continue
 					}
 				}
-				ce := col.cards[h]
-				if ce == nil || ce.deleted {
+				if !hasSnap {
 					fmt.Fprintf(&b, `<D:response><D:href>%s</D:href><D:status>HTTP/1.1 404 Not Found</D:status></D:response>`, xmlEsc(h))
 					continue
 				}
@@ -610,7 +624,7 @@ func (s *CardDAV) serve(w http.ResponseWriter, r *http.Request) {
 					`<D:getetag>%s</D:getetag>`+
 					`<C:address-data>%s</C:address-data>`+
 					`</D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>`,
-					xmlEsc(ce.href), xmlEsc(ce.etag), xmlEsc(ce.vcard))
+					xmlEsc(snap.href), xmlEsc(snap.etag), xmlEsc(snap.vcard))
 			}
 			b.WriteString(`</D:multistatus>`)
 			w.Write([]byte(b.String()))

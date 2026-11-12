@@ -821,3 +821,62 @@ func TestTransientPhotoDownloadFailurePreservesExistingAndRetries(t *testing.T) 
 	}
 	assert.Equal(t, hits404Before, hits404After, "deterministic 404 miss is not retried on subsequent syncs")
 }
+
+func TestConcurrentTokenlessSyncRejectsOutOfOrderStaleSnapshot(t *testing.T) {
+	s := newCardDAVService(t, t.TempDir(), false)
+	defer s.Close()
+
+	srv := testmail.StartCardDAV(t)
+	srv.DisableSyncCollection(true) // tokenless server: sync_token stays "" on every PROPFIND
+
+	photoOld := srv.ServePhoto("old.png", "image/png", makePNGBytes(t, 18, 18))
+	photoNew := srv.ServePhoto("new.png", "image/png", makePNGBytes(t, 30, 30))
+	srv.PutCard("contacts", "c0", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Init\r\nEMAIL:init@example.com\r\nEND:VCARD\r\n")
+
+	ab, err := s.AddAddressBook(bg, AddressBookInput{
+		Preset: PresetCustom, Name: "Tokenless", URL: srv.URL(), Username: "alice", Password: "secret",
+	})
+	require.NoError(t, err)
+
+	// Card updates to v1; Sync 1 starts and stalls inside multiget holding v1.
+	// Meanwhile the card updates to v2 and Sync 2 finishes and commits v2 first.
+	srv.PutCard("contacts", "c0", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Stale V1\r\nEMAIL:stale@example.com\r\nPHOTO;VALUE=URI:"+photoOld+"\r\nEND:VCARD\r\n")
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var released sync.Once
+	unblock := func() { released.Do(func() { close(release) }) }
+	defer unblock()
+
+	var paused atomic.Bool
+	srv.SetMultigetHook(func(href string) int {
+		if strings.HasSuffix(href, "/c0.vcf") && paused.CompareAndSwap(false, true) {
+			close(entered)
+			<-release
+		}
+		return http.StatusOK
+	})
+
+	sync1Done := make(chan error, 1)
+	go func() {
+		sync1Done <- s.SyncAddressBook(bg, ab.ID)
+	}()
+	<-entered
+
+	srv.PutCard("contacts", "c0", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Fresh V2\r\nEMAIL:fresh@example.com\r\nPHOTO;VALUE=URI:"+photoNew+"\r\nEND:VCARD\r\n")
+	require.NoError(t, s.SyncAddressBook(bg, ab.ID))
+
+	unblock()
+	require.NoError(t, <-sync1Done)
+	srv.SetMultigetHook(nil)
+
+	contacts, err := s.Contacts(bg)
+	require.NoError(t, err)
+	require.Len(t, contacts, 1)
+	assert.Equal(t, "Fresh V2", contacts[0].Name, "stale out-of-order multiget must not overwrite newer name")
+	assert.Equal(t, "fresh@example.com", contacts[0].Address, "stale out-of-order multiget must not overwrite newer email")
+
+	av, err := s.ContactAvatar(bg, "fresh@example.com")
+	require.NoError(t, err)
+	assert.Equal(t, 30, av.Width, "stale out-of-order multiget must not overwrite newer photo")
+}
