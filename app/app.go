@@ -232,9 +232,9 @@ type App struct {
 	localAPIPath string // the Local API's socket while it serves
 	localAPIErr  error  // why the Local API last failed; the privacy page shows it
 
-	foreground                           bool
-	vibrancy                             bool                // Deps.Vibrancy
-	newMail                              map[int64]*arrivals // per account, what arrived for its pending notifications
+	foreground bool
+	vibrancy   bool // Deps.Vibrancy
+	*MailNotifier
 	logf                                 func(format string, args ...any)
 	noteRoute                            func(ctx context.Context, id string) (Route, bool, error) // where a notification leads; tests wrap it
 	noteGen                              uint64                                                    // bumped per notification click; only the newest navigates
@@ -340,6 +340,15 @@ func New(d Deps) *App {
 	a.syncing, a.syncErr, a.syncedAtBy = map[int64]bool{}, map[int64]syncFail{}, map[int64]time.Time{}
 	a.undoToasts = map[int64]bool{}
 	a.ctx, a.cancel = context.WithCancel(context.Background())
+	a.MailNotifier = NewMailNotifier(MailNotifierDeps{
+		Svc:        a.svc,
+		Sink:       a.plat,
+		Clock:      a.clock,
+		Foreground: func() bool { return a.foreground },
+		Language:   i18n.Language,
+		Post:       a.onUI,
+		Logf:       a.logf,
+	})
 	a.pumpDone = make(chan struct{})
 	return a
 }
@@ -533,6 +542,7 @@ func (a *App) load() {
 // attachments. UI thread.
 func (a *App) Close() {
 	a.cancel() // the event pump unsubscribes as it stops
+	a.MailNotifier.Close()
 	if a.codesStop != nil {
 		a.codesStop()
 	}
