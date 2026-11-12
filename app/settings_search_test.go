@@ -106,7 +106,7 @@ func TestSettingsSearchOpensTab(t *testing.T) {
 	h, _ := withAccount(t)
 	p := h.openSettings("models") // the page open already: its tab changes still
 	p.query = "本机 API"
-	h.see("启用本机 API")
+	h.see("允许外部应用和脚本接入")
 	p.query = "屏蔽"
 	h.click(i18n.T("settings.privacy"))
 	h.see("没有已屏蔽的发件人。")

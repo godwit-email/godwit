@@ -292,6 +292,9 @@ func gui(ctx context.Context, dataDir string) int {
 			SystemLanguage: lang, SetLanguage: setLanguage,
 			Vibrancy: opts.Vibrancy != mygo.VibrancyNone, Dev: mygo.IsDev()})
 		plat.onAPIStop = a.LocalAPIStopped
+		if err := plat.startLocalAPI(st.LocalAPI); err != nil {
+			log.Print(svc.Redact("local API: " + err.Error()))
+		}
 		windows.OnChange = func() { a.OnUI(a.ComposeWindowsChanged) } // no window is open yet
 		opts.Content = ui.View(a.View)
 		win = mygo.NewWindow(opts)
@@ -434,7 +437,7 @@ func gui(ctx context.Context, dataDir string) int {
 	// Before a relaunch starts the next Godwit, which needs dataDir's lock.
 	mygo.App.OnQuit(func() {
 		if plat != nil {
-			plat.SetLocalAPI(0, false) // after BeforeClose, before the Service closes
+			plat.closeLocalAPI() // after BeforeClose, before the Service closes
 		}
 		if svc != nil {
 			svc.Close()
