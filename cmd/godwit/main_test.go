@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo"
+	"github.com/godwit-email/godwit/app"
 )
 
 func TestWindowOptionsPerOS(t *testing.T) {
@@ -67,6 +68,54 @@ func TestCloseMinimizes(t *testing.T) {
 	} {
 		if got := closeMinimizes(tc.goos, tc.hasTray); got != tc.minimize {
 			t.Errorf("closeMinimizes(%q, %v) = %v", tc.goos, tc.hasTray, got)
+		}
+	}
+}
+
+// Closing the main window while Godwit keeps running in the background exits
+// the interface, but not while a compose window is open; with 后台常驻 off it
+// quits as ever. Without closeExitsUI (#738) it hides as before.
+func TestMainCloseAction(t *testing.T) {
+	for _, tc := range []struct {
+		keep, exits bool
+		compose     int
+		goos        string
+		hasTray     bool
+		want        closeAction
+	}{
+		{false, true, 0, "darwin", true, closeQuit},
+		{false, true, 2, "windows", true, closeQuit}, // the quit closes the compose windows, each saving
+		{true, true, 0, "darwin", true, closeExit},
+		{true, true, 0, "windows", false, closeExit}, // relaunching it is the way back, as with the tray
+		{true, true, 1, "darwin", true, closeHide},   // decided again once the last one closes
+		{true, false, 0, "darwin", true, closeHide},
+		{true, false, 0, "windows", false, closeMinimize},
+		{false, false, 0, "darwin", true, closeQuit},
+	} {
+		if got := mainCloseAction(tc.keep, tc.exits, tc.compose, tc.goos, tc.hasTray); got != tc.want {
+			t.Errorf("mainCloseAction(%v, %v, %d, %q, %v) = %d, want %d", tc.keep, tc.exits, tc.compose, tc.goos, tc.hasTray, got, tc.want)
+		}
+	}
+	if !closeExitsUI {
+		t.Error("closing the window hides the interface; #733 exits it")
+	}
+}
+
+// A second launch's arguments, handed to the running interface, say what it opens.
+func TestOpenArg(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{nil, app.OpenWindow}, // the user launching it again
+		{[]string{"-psn_0_123"}, app.OpenWindow},
+		{[]string{"--data-dir", "/d", "--open", "message:3"}, "message:3"},
+		{[]string{"--open=compose"}, app.OpenCompose},
+		{[]string{"-open", "account:2"}, "account:2"},
+		{[]string{"--open"}, app.OpenWindow},
+	} {
+		if got := openArg(tc.args); got != tc.want {
+			t.Errorf("openArg(%q) = %q, want %q", tc.args, got, tc.want)
 		}
 	}
 }
