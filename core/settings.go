@@ -118,6 +118,9 @@ type Settings struct {
 	// LabelDisplay is how label chips show: LabelDisplayBoth (the default;
 	// "" too), LabelDisplayIcon or LabelDisplayText.
 	LabelDisplay string
+	// CollapseQuotes folds the quoted text of a mail (what it replies to or forwards)
+	// behind a button in the reader, leaving what its sender wrote.
+	CollapseQuotes bool
 	// ImageRetentionDays deletes a cached remote image that has gone unread this
 	// many days: 0 keeps it until the cache is full, then evicts the least
 	// recently used (MaxBytes). Attachments are not in that cache.

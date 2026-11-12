@@ -51,6 +51,8 @@ type ReaderBody struct {
 	Cut    bool   `json:"cut"`
 	Theme  Theme  `json:"theme"`
 	Locale string `json:"locale"`
+	// CollapseQuotes is Settings.CollapseQuotes: the frame folds quoted text.
+	CollapseQuotes bool `json:"collapseQuotes"`
 }
 
 // ReaderReload tells a reader page its body changed (加载图片, a retry).
@@ -107,7 +109,7 @@ type ReaderDeps struct {
 
 // Reader keeps the reader pages (role "reader"), each bound to a message:
 // its body, version and images. It is not bound: the pages reach it only
-// through ReaderPage; native calls Bind, Unbind and Allow.
+// through ReaderPage; native calls Bind, Unbind, Allow and SettingsChanged.
 type Reader struct {
 	pages *Pages
 	d     ReaderDeps
@@ -117,11 +119,12 @@ type Reader struct {
 	getAvatar  func(ctx context.Context, svc Service, id int64) (core.Avatar, error)
 	getInline  func(ctx context.Context, svc Service, id int64, each func(cid string, a mail.Attachment)) error
 
-	mu      sync.Mutex
-	svc     Service
-	version int64             // the last version given out
-	bound   map[any]int64     // page key → its message
-	msgs    map[int64]*bodyOf // per message with a page bound
+	mu       sync.Mutex
+	svc      Service
+	version  int64             // the last version given out
+	settings *core.Settings    // latest in-memory SettingsChanged snapshot (ahead of async DB saves)
+	bound    map[any]int64     // page key → its message
+	msgs     map[int64]*bodyOf // per message with a page bound
 }
 
 // bodyOf is a bound message's state.
@@ -266,6 +269,40 @@ func (r *Reader) Translate(message int64, texts map[string]string) {
 	r.emitTranslation(message, st)
 }
 
+// SettingsChanged updates cached reader bodies for st and re-emits bound pages
+// when CollapseQuotes changes so open messages fold or unfold immediately.
+func (r *Reader) SettingsChanged(st core.Settings) {
+	theme := ThemeOf(st)
+	locale := i18n.Language()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cp := st
+	r.settings = &cp
+	for message, s := range r.msgs {
+		// The original too while a reload is in flight: a failed reload re-emits it.
+		if s.original != nil {
+			s.original.Theme, s.original.Locale, s.original.CollapseQuotes = theme, locale, st.CollapseQuotes
+		}
+		if s.body == nil {
+			continue
+		}
+		s.body.Theme, s.body.Locale = theme, locale
+		if s.body.CollapseQuotes == st.CollapseQuotes {
+			continue
+		}
+		r.version++
+		b := *s.body
+		b.Version = r.version
+		b.CollapseQuotes = st.CollapseQuotes
+		s.body = &b
+		for k, m := range r.bound {
+			if m == message {
+				r.d.Emit(k, b)
+			}
+		}
+	}
+}
+
 // emitTranslation applies the current choice to the cached original, with r.mu held.
 func (r *Reader) emitTranslation(message int64, st *bodyOf) {
 	b := translateBody(*st.original, st.translations)
@@ -357,7 +394,7 @@ func (r *Reader) build(ctx context.Context, svc Service, message, v int64, allow
 		return ReaderBody{}, err
 	}
 	b := ReaderBody{Message: message, Version: v, Remote: allowed, Blocked: m.RemoteImagesBlocked, Cut: m.Truncated,
-		Theme: ThemeOf(st), Locale: i18n.Language()}
+		Theme: ThemeOf(st), Locale: i18n.Language(), CollapseQuotes: st.CollapseQuotes}
 	var tokens map[string]string
 	budget := imagefetch.NewBudget() // the message's images, inline and remote
 	if m.HTML != "" {
@@ -370,6 +407,11 @@ func (r *Reader) build(ctx context.Context, svc Service, message, v int64, allow
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.settings != nil {
+		b.Theme = ThemeOf(*r.settings)
+		b.Locale = i18n.Language()
+		b.CollapseQuotes = r.settings.CollapseQuotes
+	}
 	if s := r.msgs[message]; s != nil && s.generation == v {
 		if s.body == nil {
 			r.version++

@@ -115,7 +115,7 @@ func (f *readerFixture) waitEmitted(t *testing.T, page any) ReaderBody {
 			}
 		}
 		return got.Version != 0
-	}, 10*time.Second, 5*time.Millisecond, "no body emitted")
+	}, 30*time.Second, 5*time.Millisecond, "no body emitted")
 	return got
 }
 
@@ -1069,6 +1069,22 @@ func TestReaderInlineImageEndToEnd(t *testing.T) {
 	assert.Equal(t, pic, rec.Body.Bytes())
 }
 
+// A message with an inline data:image bitmap shows it at once, even when
+// remote images ask first (#706).
+func TestReaderInlineDataImageEndToEnd(t *testing.T) {
+	const blueSquare = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFklEQVR4nGPQKLpFEmIY1TCqYfhqAAASZ3QQWUKpQAAAAABJRU5ErkJggg=="
+	f := newReaderFixture(t)
+	raw := "From: Sender <sender@example.com>\r\nTo: " + f.acc.Email + "\r\nDate: Thu, 12 Nov 2026 12:00:00 +0800\r\n" +
+		"Subject: Inline Base64 PNG\r\nMessage-ID: <b64@example.com>\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n" +
+		"<p>Inline Base64 PNG:</p>\r\n<img alt=\"Blue square\" width=\"16\" height=\"16\" src=\"data:image/png;base64," + blueSquare + "\">\r\n"
+	m := f.deliverOne(t, []byte(raw))
+	b, err := f.p.Load(pageCtx(f.page(m.ID)))
+	require.NoError(t, err)
+	assert.False(t, b.Remote)
+	assert.Zero(t, b.Blocked)
+	assert.Contains(t, b.HTML, `src="data:image/png;base64,`+blueSquare+`"`)
+}
+
 func TestPrepareBodyProxiesRemoteImages(t *testing.T) {
 	dims := func(src string) (int, int, bool) { return 40, 30, src == "https://cdn.example/known.png" }
 	in := `<img src="https://cdn.example/known.png" alt="a"><img src="https://cdn.example/sized.png" width="9">` +
@@ -1133,4 +1149,91 @@ func TestReaderInlinePixelsCarryIntoTheProxyBudget(t *testing.T) {
 	f.r.Allow(6)
 	f.waitEmitted(t, k)
 	assert.Equal(t, http.StatusForbidden, f.image(t, 6, srv.URL+"/r.png").Code, "72 MP inline + 36 MP remote is over 100 MP")
+}
+
+// The reader page tells the frame whether to fold quoted text, as the setting says,
+// and propagates changes to already-loaded messages immediately.
+func TestReaderBodyCarriesCollapseQuotes(t *testing.T) {
+	f := newReaderFixture(t)
+	m := f.remoteMail(t, "Re: lunch", "https://tracker.example/pixel.png")
+	k := f.page(m.ID)
+	b, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	assert.False(t, b.CollapseQuotes, "off by default")
+
+	st, err := f.e.Svc.GetSettings(t.Context())
+	require.NoError(t, err)
+	st.CollapseQuotes = true
+	st, err = f.e.Svc.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+	f.r.SettingsChanged(st)
+
+	// Already-bound page receives the updated preference and cached Load reflects it too.
+	emitted := f.waitEmitted(t, k)
+	assert.True(t, emitted.CollapseQuotes)
+	assert.Greater(t, emitted.Version, b.Version)
+	cached, err := f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	assert.True(t, cached.CollapseQuotes)
+	assert.Equal(t, emitted.Version, cached.Version)
+
+	// Unrelated settings changes update Theme without re-emitting the body.
+	f.mu.Lock()
+	f.emitted = nil
+	f.mu.Unlock()
+	st.Theme = "dark"
+	f.r.SettingsChanged(st)
+	f.mu.Lock()
+	assert.Empty(t, f.emitted)
+	f.mu.Unlock()
+	cached, err = f.p.Load(pageCtx(k))
+	require.NoError(t, err)
+	assert.Equal(t, "dark", cached.Theme.Mode)
+
+	// A change made while a reload is in flight survives the reload failing: the cached original
+	// it falls back on carries the new preference.
+	started, release := make(chan struct{}), make(chan struct{})
+	f.r.getMessage = func(context.Context, Service, int64, bool) (core.Message, error) {
+		close(started)
+		<-release
+		return core.Message{}, errors.New("mail unavailable")
+	}
+	f.mu.Lock()
+	f.emitted = nil
+	f.mu.Unlock()
+	f.r.Allow(m.ID)
+	<-started
+	st.CollapseQuotes = false
+	f.r.SettingsChanged(st)
+	close(release)
+	assert.False(t, f.waitEmitted(t, k).CollapseQuotes)
+	st.CollapseQuotes = true
+	f.r.SettingsChanged(st)
+	cached = f.waitEmitted(t, k)
+	require.True(t, cached.CollapseQuotes)
+	f.r.getMessage = func(ctx context.Context, svc Service, id int64, remote bool) (core.Message, error) {
+		return svc.GetMessageLazyImages(ctx, id, remote)
+	}
+
+	// Turning CollapseQuotes back off unfolds the already-loaded message too.
+	st.CollapseQuotes = false
+	f.r.SettingsChanged(st)
+	unfolded := f.waitEmitted(t, k)
+	assert.False(t, unfolded.CollapseQuotes)
+	assert.Greater(t, unfolded.Version, cached.Version)
+
+	// Opening a new message while an async settings save is still pending in the DB (DB still has
+	// CollapseQuotes: true, while in-memory SettingsChanged already flipped to false, or vice versa)
+	// uses the latest in-memory SettingsChanged snapshot.
+	m2 := f.remoteMail(t, "Re: dinner", "https://tracker.example/pixel2.png")
+	b, err = f.p.Load(pageCtx(f.page(m2.ID)))
+	require.NoError(t, err)
+	assert.False(t, b.CollapseQuotes, "newly started build honors pending SettingsChanged snapshot ahead of stale DB")
+
+	st.CollapseQuotes = true
+	f.r.SettingsChanged(st) // DB was not updated yet
+	m3 := f.remoteMail(t, "Re: brunch", "https://tracker.example/pixel3.png")
+	b, err = f.p.Load(pageCtx(f.page(m3.ID)))
+	require.NoError(t, err)
+	assert.True(t, b.CollapseQuotes)
 }

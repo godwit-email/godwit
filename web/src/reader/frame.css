@@ -41,6 +41,14 @@ html {
   opacity: 0.6;
 }
 
+/* Bare blockquotes inside a folded quote get the reader's 2 px bar (theme.QuoteBar) unless the mail
+   styles its own; outside a fold, mail keeps its browser defaults. */
+:where(#godwit-body .godwit-quote-body blockquote) {
+  margin: 8px 0;
+  padding-left: 12px;
+  border-left: 2px solid rgba(127, 127, 127, 0.28);
+}
+
 /* Keep theme defaults weaker than the email's own text colours. */
 :where(#godwit-body.godwit-light) {
   color: var(--godwit-fg-light, #0a0a0a);
@@ -87,4 +95,154 @@ html {
 
 #godwit-body table {
   max-width: 100%;
+}
+
+/* A folded quote: a pill with a hairline rule across the column, and a left rail when open.
+   Bottom padding gives the 18 px pill room inside the tight-fitted native WebView for its focus
+   ring and right-hand tooltip without clipping at the bottom edge. */
+#godwit-body .godwit-quote-fold {
+  display: block;
+  margin-top: 12px;
+  padding-bottom: 6px;
+}
+
+#godwit-body .godwit-quote-fold[open] {
+  padding-bottom: 2px;
+}
+
+#godwit-body .godwit-quote-fold > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  list-style: none;
+  outline: none;
+  user-select: none;
+  pointer-events: none;
+  white-space: normal;
+}
+
+#godwit-body .godwit-quote-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+#godwit-body .godwit-quote-pill {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  background: color-mix(in srgb, currentColor 5%, transparent);
+  color: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+#godwit-body .godwit-quote-pill > svg {
+  opacity: 0.62;
+  transition: opacity 120ms ease;
+}
+
+#godwit-body .godwit-quote-pill:hover {
+  background: color-mix(in srgb, currentColor 11%, transparent);
+  border-color: color-mix(in srgb, currentColor 30%, transparent);
+}
+
+#godwit-body .godwit-quote-pill:hover > svg {
+  opacity: 0.95;
+}
+
+#godwit-body .godwit-quote-fold > summary:focus-visible .godwit-quote-pill {
+  border-color: color-mix(in srgb, currentColor 32%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 25%, transparent);
+}
+
+#godwit-body .godwit-quote-line {
+  flex: 1;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.12;
+  transition: opacity 120ms ease;
+}
+
+#godwit-body .godwit-quote-pill:hover + .godwit-quote-line {
+  opacity: 0.22;
+}
+
+#godwit-body .godwit-quote-up {
+  display: none;
+}
+
+#godwit-body .godwit-quote-fold[open] > summary {
+  margin-bottom: 10px;
+}
+
+#godwit-body .godwit-quote-fold[open] > summary .godwit-quote-pill {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+#godwit-body .godwit-quote-fold[open] > summary .godwit-quote-pill:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+#godwit-body .godwit-quote-fold[open] > summary .godwit-quote-dots {
+  display: none;
+}
+
+#godwit-body .godwit-quote-fold[open] > summary .godwit-quote-up {
+  display: block;
+}
+
+#godwit-body .godwit-quote-body {
+  position: relative;
+  padding-left: 14px;
+}
+
+/* The outer quote rail already marks the first quote level; keep deeper nested quotes indented. */
+#godwit-body .godwit-quote-body [data-quote-root] {
+  /* biome-ignore lint/complexity/noImportantStyles: Collapse the outer quote wrapper's own left bar and indent into the single left rail. */
+  margin-left: 0 !important;
+  /* biome-ignore lint/complexity/noImportantStyles: Reset UA 40 px right blockquote margin so quote lines use the full reading column. */
+  margin-right: 0 !important;
+  /* biome-ignore lint/complexity/noImportantStyles: Paired with margin-left reset above. */
+  padding-left: 0 !important;
+  /* biome-ignore lint/complexity/noImportantStyles: Paired with margin-left reset above. */
+  border-left: 0 !important;
+}
+
+#godwit-body .godwit-quote-rail {
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  width: 12px;
+  cursor: pointer;
+  white-space: normal;
+}
+
+#godwit-body .godwit-quote-rail-line {
+  display: block;
+  width: 2px;
+  height: 100%;
+  margin-left: 1px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.16;
+  transition: opacity 120ms ease;
+}
+
+#godwit-body .godwit-quote-rail:hover .godwit-quote-rail-line {
+  opacity: 0.55;
+}
+
+@media print {
+  #godwit-body .godwit-quote-fold > summary {
+    display: none;
+  }
 }

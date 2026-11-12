@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.35.0](https://github.com/godwit-email/godwit/compare/v1.34.0...v1.35.0) (2026-11-12)
+
+
+### Features
+
+* **ews:** add an EWS backend for on-premises Exchange (experimental) ([#666](https://github.com/godwit-email/godwit/issues/666)) ([08cbfb6](https://github.com/godwit-email/godwit/commit/08cbfb6f81257186e017c488043c94af77357ff0))
+* **gmailapi:** add an experimental Gmail REST API backend ([#677](https://github.com/godwit-email/godwit/issues/677)) ([0bdd3d4](https://github.com/godwit-email/godwit/commit/0bdd3d4fef570a1c4c3fa6e8c5acaff5464360b8))
+* **graph:** add a Microsoft Graph receiving backend for Outlook (experimental) ([#676](https://github.com/godwit-email/godwit/issues/676)) ([6c176a9](https://github.com/godwit-email/godwit/commit/6c176a9643b9fcaaf0cd53bcb5400631c360e820))
+* **images:** delete cached images that go unread for a number of days ([#679](https://github.com/godwit-email/godwit/issues/679)) ([0cfedfc](https://github.com/godwit-email/godwit/commit/0cfedfc20abb1d665fb18301e341e12a2a6cf556))
+* **jmap:** send mail over JMAP EmailSubmission instead of SMTP ([#673](https://github.com/godwit-email/godwit/issues/673)) ([59b48f0](https://github.com/godwit-email/godwit/commit/59b48f057d0a73f4e0326d376850fcb9a1042a3c))
+* **reader:** an option to fold the quoted text of a mail behind a button ([#683](https://github.com/godwit-email/godwit/issues/683)) ([7d732a5](https://github.com/godwit-email/godwit/commit/7d732a5a27a2633e0ffc7998b44628f27a30d3eb))
+* **settings:** choose the sidebar's section order, what leads a list row, and the reading width ([#678](https://github.com/godwit-email/godwit/issues/678)) ([6dd4ac7](https://github.com/godwit-email/godwit/commit/6dd4ac77114e3d6b13546625f536062108867afb))
+* **settings:** replace Light background with a Background sync choice ([#703](https://github.com/godwit-email/godwit/issues/703)) ([2bf0b05](https://github.com/godwit-email/godwit/commit/2bf0b05e2e085889abb88bdf5e6368b037f1b675))
+
+
+### Bug Fixes
+
+* **avatar:** draw a sender's logo on the mark tile ([#674](https://github.com/godwit-email/godwit/issues/674)) ([d9db210](https://github.com/godwit-email/godwit/commit/d9db210d7ceb3f02b771062f8c34426f7cab6d1e))
+* **backend:** decouple mailsync move cursor and make IMAP COPY fallback idempotent ([#689](https://github.com/godwit-email/godwit/issues/689)) ([e78eb30](https://github.com/godwit-email/godwit/commit/e78eb309b9b69597ace00b727cc0eedfdde62132))
+* **graph:** a 5xx other than throttling leaves a send uncertain ([#681](https://github.com/godwit-email/godwit/issues/681)) ([47e4b30](https://github.com/godwit-email/godwit/commit/47e4b30b9ff2fe4805709cb6b472e7717b5cb319))
+* handle compose load errors, reader save/temp cleanup, and missing rules ([#693](https://github.com/godwit-email/godwit/issues/693)) ([8020649](https://github.com/godwit-email/godwit/commit/80206490ce41b37fa5e0833e7a31708998e769a8))
+* **jmap,gmailapi:** bound receiving HTTP requests so a silent server can't hold the sync lock ([#690](https://github.com/godwit-email/godwit/issues/690)) ([88f7ef0](https://github.com/godwit-email/godwit/commit/88f7ef056172375d549cd5036297bc1355ef3ecd))
+* **mailsync:** count only server refusals toward MaxAttempts ([#694](https://github.com/godwit-email/godwit/issues/694)) ([a8e885f](https://github.com/godwit-email/godwit/commit/a8e885f4eb0cfe9f874c3936dce9b85678465a70))
+* **reader:** keep the shown thread until the next body is sized, and time body loads ([#682](https://github.com/godwit-email/godwit/issues/682)) ([d61170c](https://github.com/godwit-email/godwit/commit/d61170c514e4dc96f1e584d9c90ba66789d4942c))
+* **reader:** reload avatars after the trusted list or settings invalidate them ([#701](https://github.com/godwit-email/godwit/issues/701)) ([def4a67](https://github.com/godwit-email/godwit/commit/def4a679e6c90c9418689c3fc6646d86dd681053))
+* resolve Wit approval deadlock, crash recovery, and sync stalls ([#684](https://github.com/godwit-email/godwit/issues/684)) ([08d23ed](https://github.com/godwit-email/godwit/commit/08d23eda32ca6f015a1cb3cb1800287f82ee959d))
+* **rpcbind:** audit send settings and extension grants on the full role ([#691](https://github.com/godwit-email/godwit/issues/691)) ([18f22ce](https://github.com/godwit-email/godwit/commit/18f22ce3c74c8e251a1437737cbcf76170704cf4))
+
+
+### Performance Improvements
+
+* **store:** index messages(account_id, date DESC, id DESC) and set WAL synchronous=NORMAL ([#692](https://github.com/godwit-email/godwit/issues/692)) ([ef4248c](https://github.com/godwit-email/godwit/commit/ef4248c2d845ccbffbcdcc7c1178a41ea9c4065a))
+
 ## [1.34.0](https://github.com/godwit-email/godwit/compare/v1.33.0...v1.34.0) (2026-11-10)
 
 

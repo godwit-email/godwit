@@ -1,5 +1,9 @@
 {
   "@@locale": "zh-Hant",
+  "settings_collapse_quotes": "摺疊引用的文字",
+  "settings_collapse_quotes_help": "把回覆引用的內容收在一個按鈕後面，只顯示寄件者自己寫的部分",
+  "reader_quote_expand": "展開引用的文字",
+  "reader_quote_collapse": "摺疊引用的文字",
   "settings_remote_images_keep": "保留未使用的圖片",
   "settings_remote_images_keep_help": "快取的圖片超過這段時間沒有開啟就會刪除。附件不會被動。舊郵件在寄件者那裡還有圖片時會重新載入。",
   "settings_remote_images_keep_forever": "直到快取已滿",
