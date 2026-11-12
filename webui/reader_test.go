@@ -28,6 +28,31 @@ import (
 	"golang.org/x/net/html"
 )
 
+type countingImageDims struct {
+	Service
+	calls map[string]int
+}
+
+func (s *countingImageDims) CachedImageDims(src string) core.ImageDims {
+	s.calls[src]++
+	if strings.HasSuffix(src, "/cached.png") {
+		return core.ImageDims{Width: 20, Height: 10, OK: true}
+	}
+	return core.ImageDims{}
+}
+
+func TestReaderBuildLooksUpEachImageSizeOnce(t *testing.T) {
+	f := newReaderFixture(t)
+	svc := &countingImageDims{Service: f.r.svc, calls: map[string]int{}}
+	f.r.getMessage = func(context.Context, Service, int64, bool) (core.Message, error) {
+		return core.Message{HTML: strings.Repeat(`<img src="https://example.com/cached.png"><img src="https://example.com/missing.png">`, 100)}, nil
+	}
+	body, err := f.r.build(t.Context(), svc, 1, 1, false)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]int{"https://example.com/cached.png": 1, "https://example.com/missing.png": 1}, svc.calls)
+	assert.Equal(t, 100, strings.Count(body.HTML, `width="20"`))
+}
+
 // readerFixture is a Reader on an Env with one account; every native
 // callback and emitted body is recorded.
 type readerFixture struct {

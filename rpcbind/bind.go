@@ -286,7 +286,8 @@ func ListenWith(dataDir string, svc *core.Service, opts ListenOptions) (*rpc.Ser
 		return nil, err
 	}
 	return rpc.Listen(dataDir, d, rpc.ServerOptions{
-		Conn:            rpc.ConnOptions{MaxActive: 256},
+		// A 16 MiB account import crosses as base64, plus the JSON envelope.
+		Conn:            rpc.ConnOptions{MaxActive: 256, MaxMessage: 32 << 20},
 		Version:         opts.Version,
 		DisableExternal: !opts.External,
 		UIStarted:       opts.UIStarted,

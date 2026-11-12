@@ -181,8 +181,13 @@ func stream[T any](c *Client, ctx context.Context, method string, args ...any) (
 	go func() {
 		defer close(exited)
 		defer close(out)
+		defer cancel()
+		defer record()
 		var q []T
 		for in := raw; in != nil || len(q) > 0; {
+			if ctx.Err() != nil {
+				return
+			}
 			var send chan<- T
 			var next T
 			if len(q) > 0 {
@@ -210,10 +215,10 @@ func stream[T any](c *Client, ctx context.Context, method string, args ...any) (
 				q = q[1:]
 			case <-done:
 				return
+			case <-ctx.Done():
+				return
 			}
 		}
-		record()
-		cancel()
 	}()
 	// Record StreamErr before cancel() forgets it, and wait for the forwarder to exit.
 	var stopOnce sync.Once

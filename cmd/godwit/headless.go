@@ -220,6 +220,11 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 		slog.SetDefault(old)
 	}
 
+	if err := svc.SetUIForeground(ctx, false); err != nil {
+		slog.Error("initializing background sync", "err", err)
+		closeSvc()
+		return nil, 1
+	}
 	external := true
 	if uiStarted {
 		st, err := svc.GetSettings(ctx)
@@ -348,7 +353,7 @@ const quitWait = 10 * time.Second
 
 // quitFromTray is the tray's Quit: with an interface connected, it asks it to
 // quit first (QuitRequested), so it saves what it holds, then stops once it has
-// gone or quitWait passed; stop is the backend's usual close path.
+// gone; a timeout leaves the backend available for unsaved drafts.
 func quitFromTray(svc *core.Service, stop func()) {
 	if stop == nil {
 		return
@@ -362,7 +367,9 @@ func quitFromTray(svc *core.Service, stop func()) {
 		for end := time.Now().Add(quitWait); svc.UIConnected() && time.Now().Before(end); {
 			time.Sleep(50 * time.Millisecond)
 		}
-		stop()
+		if !svc.UIConnected() {
+			stop()
+		}
 	}()
 }
 

@@ -494,6 +494,61 @@ func TestHeadlessGraphicalEngineOptions(t *testing.T) {
 	}
 }
 
+func TestTrayQuitTimeoutPreservesBackend(t *testing.T) {
+	env := coretest.New(t, coretest.WithoutAutoSync())
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	core.WithUISession(ctx, env.Svc)
+	stopped := make(chan struct{}, 1)
+	quitFromTray(env.Svc, func() { stopped <- struct{}{} })
+	select {
+	case <-stopped:
+		t.Fatal("stopped while the interface could still have unsaved drafts")
+	case <-time.After(quitWait + 250*time.Millisecond):
+	}
+	if _, err := env.Svc.GetSettings(t.Context()); err != nil {
+		t.Fatalf("backend unavailable after the interface canceled quitting: %v", err)
+	}
+}
+
+func TestHeadlessInitialBackgroundSync(t *testing.T) {
+	t.Setenv("GODWIT_HEADLESS_DESKTOP", "0")
+	for _, scope := range []string{core.BackgroundSyncInbox, core.BackgroundSyncAll} {
+		t.Run(scope, func(t *testing.T) {
+			dir := shortDir(t)
+			svc, err := core.New(t.Context(), core.Options{DataDir: dir})
+			if err != nil {
+				t.Fatal(err)
+			}
+			st, err := svc.GetSettings(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			st.BackgroundSync = scope
+			if _, err := svc.SetSettings(t.Context(), st); err != nil {
+				t.Fatal(err)
+			}
+			if err := svc.Close(); err != nil {
+				t.Fatal(err)
+			}
+			_, _, stop := startHeadless(t, dir)
+			defer stop()
+			ui, err := uiclient.Dial(dir, "initial-sync-test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ui.Close()
+			var got bool
+			if err := ui.RPC().Call(t.Context(), "InboxOnly", &got); err != nil {
+				t.Fatal(err)
+			}
+			if want := scope == core.BackgroundSyncInbox; got != want {
+				t.Fatalf("InboxOnly before any foreground report = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
 func TestHeadlessWithoutGraphicalSession(t *testing.T) {
 	t.Setenv("DISPLAY", "")
 	t.Setenv("WAYLAND_DISPLAY", "")

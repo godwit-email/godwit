@@ -435,6 +435,62 @@ func TestWitStreamDropsTextKeepsEnd(t *testing.T) {
 	assert.NoError(t, cl.StreamErr(ch))
 }
 
+func TestCanceledWitStreamDiscardsPendingEvents(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() { _ = clientConn.Close(); _ = serverConn.Close() })
+	sent := make(chan struct{})
+	go func() {
+		r := bufio.NewReader(serverConn)
+		line, _ := r.ReadBytes('\n')
+		var m struct{ ID json.RawMessage }
+		_ = json.Unmarshal(line, &m)
+		send := func(v any) { b, _ := json.Marshal(v); _, _ = serverConn.Write(append(b, '\n')) }
+		send(map[string]any{"jsonrpc": "2.0", "id": m.ID, "result": map[string]any{"stream": 7}})
+		for range 64 {
+			send(map[string]any{"jsonrpc": "2.0", "method": "$/stream", "params": []any{7, core.WitEvent{Kind: "text", Text: "queued"}}})
+		}
+		close(sent)
+		_, _ = io.Copy(io.Discard, r)
+	}()
+	cl := uiclient.New(rpc.NewClient(clientConn))
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	ch, err := cl.AskWith(ctx, 1, "hi", nil)
+	require.NoError(t, err)
+	<-sent
+	<-ch // the forwarder has started, with more events waiting
+	cancel()
+	got := 0
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case _, ok := <-ch:
+			if !ok {
+				assert.LessOrEqual(t, got, 1, "only an event already being delivered may survive cancellation")
+				return
+			}
+			got++
+		case <-deadline:
+			t.Fatal("canceled stream did not close")
+		}
+	}
+}
+
+func TestAccountImportAtFileLimitOverSocket(t *testing.T) {
+	env := coretest.New(t, coretest.WithoutAutoSync())
+	_, cl, _ := startUIServer(t, env.Svc)
+	const doc = `{"version":1,"accounts":[]}`
+	data := []byte(doc + strings.Repeat(" ", (16<<20)-len(doc)))
+	preview, err := cl.PreviewAccountImport(t.Context(), data)
+	require.NoError(t, err)
+	assert.Empty(t, preview.Accounts)
+	result, err := cl.ImportAccounts(t.Context(), data)
+	require.NoError(t, err)
+	assert.Empty(t, result.Imported)
+	_, err = cl.GetSettings(t.Context())
+	require.NoError(t, err, "the UI connection remains usable")
+}
+
 type countingConn struct {
 	net.Conn
 	readBytes atomic.Int64
