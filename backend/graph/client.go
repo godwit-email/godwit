@@ -62,22 +62,8 @@ func isDeltaReset(err error) bool {
 		strings.Contains(strings.ToLower(re.Code), "syncstatenotfound")
 }
 
-// Throttling: 429 and 503 answers are waited out (Retry-After) and retried,
-// at most maxRetries times, one call per account at a time.
-const (
-	maxRetries     = 3
-	maxBackOff     = time.Minute
-	defaultBackOff = 5 * time.Second
-)
-
 // deltaPageSize is the odata.maxpagesize a delta request asks for.
 const deltaPageSize = 200
-
-type busyError struct{ backOff time.Duration }
-
-func (e *busyError) Error() string {
-	return "graph: the server is busy, try again later"
-}
 
 type client struct {
 	cfg  Config
@@ -88,34 +74,12 @@ type client struct {
 	signedIn bool
 }
 
-var errOtherHost = errors.New("graph: refused a redirect to another host")
-
 func newClient(cfg Config) *client {
 	base := strings.TrimRight(cfg.URL, "/")
 	if base == "" {
 		base = BaseURL
 	}
-	t := conn.HTTPTransport()
-	t.ResponseHeaderTimeout = time.Minute
-	return &client{
-		cfg:  cfg,
-		base: base,
-		http: &http.Client{
-			Timeout:   5 * time.Minute,
-			Transport: t,
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				switch {
-				case len(via) >= 10:
-					return errors.New("graph: too many redirects")
-				case req.URL.Host != via[0].URL.Host:
-					return errOtherHost
-				case via[0].URL.Scheme == "https" && req.URL.Scheme != "https":
-					return errors.New("graph: refused a redirect from HTTPS to HTTP")
-				}
-				return nil
-			},
-		},
-	}
+	return &client{cfg: cfg, base: base, http: conn.NewHTTPClient(conn.HTTPTransport(), nil)}
 }
 
 func (c *client) host() string {
@@ -130,85 +94,23 @@ func (c *client) account(cr backend.Credentials) string {
 	return c.base + "\x00" + cr.Username
 }
 
-var accounts = struct {
-	sync.Mutex
-	m map[string]*slot
-}{m: map[string]*slot{}}
-
-type slot struct {
-	ch    chan struct{}
-	users int
-}
-
-func acquire(ctx context.Context, account string) (release func(), err error) {
-	accounts.Lock()
-	s := accounts.m[account]
-	if s == nil {
-		s = &slot{ch: make(chan struct{}, 1)}
-		accounts.m[account] = s
-	}
-	s.users++
-	accounts.Unlock()
-	done := func() {
-		accounts.Lock()
-		if s.users--; s.users == 0 {
-			delete(accounts.m, account)
-		}
-		accounts.Unlock()
-	}
-	select {
-	case s.ch <- struct{}{}:
-		return func() { <-s.ch; done() }, nil
-	case <-ctx.Done():
-		done()
-		return nil, ctx.Err()
-	}
-}
-
 func (c *client) wait(ctx context.Context, d time.Duration) error {
 	if c.cfg.Wait != nil {
 		return c.cfg.Wait(ctx, d)
 	}
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-t.C:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-func retryAfter(h http.Header) time.Duration {
-	v := strings.TrimSpace(h.Get("Retry-After"))
-	if v == "" {
-		return defaultBackOff
-	}
-	if sec, err := strconv.Atoi(v); err == nil {
-		if sec <= 0 {
-			return 0
-		}
-		return min(time.Duration(sec)*time.Second, maxBackOff)
-	}
-	if t, err := http.ParseTime(v); err == nil {
-		if d := time.Until(t); d > 0 {
-			return min(d, maxBackOff)
-		}
-		return 0
-	}
-	return defaultBackOff
+	return conn.Sleep(ctx, d)
 }
 
 // do runs one HTTP request against pathOrURL (relative to base unless it has a
 // scheme), serialized per account, with Prefer: IdType="ImmutableId" on every
 // request and odata.maxpagesize on delta requests.
 func (c *client) do(ctx context.Context, method, pathOrURL, contentType string, body []byte) ([]byte, error) {
-	return c.doRetrying(ctx, method, pathOrURL, contentType, body, maxRetries)
+	return c.doRetrying(ctx, method, pathOrURL, contentType, body, true)
 }
 
-// doRetrying is do with at most retries retries after a back-off; past them
-// a throttled request returns a *busyError.
-func (c *client) doRetrying(ctx context.Context, method, pathOrURL, contentType string, body []byte, retries int) ([]byte, error) {
+// doRetrying is do, sending a throttled request again only when retry is
+// set; past the retries it returns a *conn.BusyError.
+func (c *client) doRetrying(ctx context.Context, method, pathOrURL, contentType string, body []byte, retry bool) ([]byte, error) {
 	cr, err := c.cfg.Credentials(ctx)
 	if err != nil {
 		return nil, err
@@ -220,7 +122,7 @@ func (c *client) doRetrying(ctx context.Context, method, pathOrURL, contentType 
 			return nil, err
 		}
 		if u.Host != c.host() {
-			return nil, errOtherHost
+			return nil, fmt.Errorf("graph: %w", conn.ErrOtherHost)
 		}
 		if strings.HasPrefix(c.base, "https://") && u.Scheme != "https" {
 			return nil, errors.New("graph: refused a link from HTTPS to HTTP")
@@ -228,21 +130,20 @@ func (c *client) doRetrying(ctx context.Context, method, pathOrURL, contentType 
 	} else {
 		target = c.base + pathOrURL
 	}
-	release, err := acquire(ctx, c.account(cr))
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	for try := 0; ; try++ {
-		raw, err := c.sendOnce(ctx, method, target, contentType, body, cr)
-		var busy *busyError
-		if !errors.As(err, &busy) || try == retries {
-			return raw, err
-		}
-		if err := c.wait(ctx, busy.backOff); err != nil {
+	if !retry {
+		release, err := conn.Acquire(ctx, c.account(cr))
+		if err != nil {
 			return nil, err
 		}
+		defer release()
+		return c.sendOnce(ctx, method, target, contentType, body, cr)
 	}
+	var raw []byte
+	err = conn.Serial(ctx, c.account(cr), c.cfg.Wait, func() (err error) {
+		raw, err = c.sendOnce(ctx, method, target, contentType, body, cr)
+		return err
+	})
+	return raw, err
 }
 
 func (c *client) sendOnce(ctx context.Context, method, target, contentType string, body []byte, cr backend.Credentials) ([]byte, error) {
@@ -272,16 +173,19 @@ func (c *client) sendOnce(ctx context.Context, method, target, contentType strin
 	if err != nil {
 		return nil, err
 	}
+	if err := conn.HTTPStatusErr(resp); err != nil {
+		return nil, fmt.Errorf("graph: %w", err)
+	}
 	switch sc := resp.StatusCode; {
 	case sc >= 200 && sc < 300:
 		c.mu.Lock()
 		c.signedIn = true
 		c.mu.Unlock()
 		return raw, nil
-	case sc == http.StatusUnauthorized || sc == http.StatusForbidden:
+	case sc == http.StatusForbidden:
 		return nil, fmt.Errorf("graph: %w", backend.ErrAuthFailed)
-	case sc == http.StatusTooManyRequests || sc == http.StatusServiceUnavailable:
-		return nil, &busyError{backOff: retryAfter(resp.Header)}
+	case sc == http.StatusServiceUnavailable:
+		return nil, fmt.Errorf("graph: %w", &conn.BusyError{BackOff: conn.RetryAfter(resp.Header)})
 	case sc >= 400 && sc < 500:
 		var ge struct {
 			Error struct {

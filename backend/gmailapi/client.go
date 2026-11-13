@@ -15,7 +15,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/godwit-email/godwit/backend"
@@ -51,14 +50,6 @@ type Config struct {
 	Wait func(ctx context.Context, d time.Duration) error
 }
 
-const (
-	maxRetries     = 3
-	maxBackOff     = time.Minute
-	defaultBackOff = time.Second
-)
-
-var errOtherHost = errors.New("gmailapi: refused a redirect to another host")
-
 type client struct {
 	cfg     Config
 	baseURL string
@@ -68,41 +59,9 @@ type client struct {
 	stream *http.Client
 }
 
-// Timeouts of one HTTP request, so a server that stops answering cannot hold
-// the account's sync forever; vars so tests can shorten them.
-var (
-	headerTimeout  = time.Minute     // until the response headers arrive
-	requestTimeout = 5 * time.Minute // a whole receiving request, except a whole message
-	stallTimeout   = time.Minute     // a response body with no byte arriving
-)
-
-func newClient(cfg Config, timeout time.Duration) *client {
-	base := strings.TrimRight(cmp.Or(cfg.BaseURL, DefaultBaseURL), "/")
-	tr := conn.HTTPTransport()
-	tr.ResponseHeaderTimeout = headerTimeout
-	c := &client{
-		cfg:     cfg,
-		baseURL: base,
-		http: &http.Client{
-			Timeout:   timeout,
-			Transport: tr,
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				switch {
-				case len(via) >= 10:
-					return errors.New("gmailapi: too many redirects")
-				case req.URL.Host != via[0].URL.Host:
-					return errOtherHost
-				case via[0].URL.Scheme == "https" && req.URL.Scheme != "https":
-					return errors.New("gmailapi: refused a redirect from HTTPS to HTTP")
-				}
-				return nil
-			},
-		},
-	}
-	stream := *c.http
-	stream.Timeout = 0
-	c.stream = &stream
-	return c
+func newClient(cfg Config) *client {
+	hc := conn.NewHTTPClient(conn.HTTPTransport(), nil)
+	return &client{cfg: cfg, baseURL: strings.TrimRight(cmp.Or(cfg.BaseURL, DefaultBaseURL), "/"), http: hc, stream: conn.Streaming(hc)}
 }
 
 func (c *client) host() string {
@@ -115,57 +74,6 @@ func (c *client) host() string {
 
 func (c *client) accountKey(cr backend.Credentials) string {
 	return c.baseURL + "\x00" + cmp.Or(cr.Username, cr.Token)
-}
-
-func (c *client) wait(ctx context.Context, d time.Duration) error {
-	if c.cfg.Wait != nil {
-		return c.cfg.Wait(ctx, d)
-	}
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-t.C:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-// accounts holds a one-slot channel per account (API origin + user), taken for
-// the length of a call including rate-limit back-off waits (modeled on EWS #664).
-var accounts = struct {
-	sync.Mutex
-	m map[string]*slot
-}{m: map[string]*slot{}}
-
-type slot struct {
-	ch    chan struct{}
-	users int
-}
-
-func acquire(ctx context.Context, account string) (release func(), err error) {
-	accounts.Lock()
-	s := accounts.m[account]
-	if s == nil {
-		s = &slot{ch: make(chan struct{}, 1)}
-		accounts.m[account] = s
-	}
-	s.users++
-	accounts.Unlock()
-	done := func() {
-		accounts.Lock()
-		if s.users--; s.users == 0 {
-			delete(accounts.m, account)
-		}
-		accounts.Unlock()
-	}
-	select {
-	case s.ch <- struct{}{}:
-		return func() { <-s.ch; done() }, nil
-	case <-ctx.Done():
-		done()
-		return nil, ctx.Err()
-	}
 }
 
 type apiError struct {
@@ -181,14 +89,6 @@ func (e *apiError) Error() string {
 	}
 	return fmt.Sprintf("gmailapi: HTTP %s", e.Status)
 }
-
-type rateLimitError struct {
-	backOff time.Duration
-	err     error
-}
-
-func (e *rateLimitError) Error() string { return e.err.Error() }
-func (e *rateLimitError) Unwrap() error { return e.err }
 
 func parseError(resp *http.Response, body []byte) error {
 	var env struct {
@@ -220,14 +120,18 @@ func parseError(resp *http.Response, body []byte) error {
 		Reason:     reason,
 		Message:    env.Error.Message,
 	}
+	if err := conn.HTTPStatusErr(resp); err != nil {
+		if busy, ok := err.(*conn.BusyError); ok {
+			busy.Err = ae
+			return busy
+		}
+		return fmt.Errorf("gmailapi: %w", err)
+	}
 	switch {
-	case resp.StatusCode == http.StatusUnauthorized:
-		return fmt.Errorf("gmailapi: %w", backend.ErrAuthFailed)
 	case resp.StatusCode == http.StatusNotFound:
 		return fmt.Errorf("gmailapi: %w", backend.ErrNotFound)
-	case resp.StatusCode == http.StatusTooManyRequests ||
-		resp.StatusCode == http.StatusForbidden && isRateLimitReason(reason):
-		return &rateLimitError{backOff: retryAfter(resp.Header.Get("Retry-After")), err: ae}
+	case resp.StatusCode == http.StatusForbidden && isRateLimitReason(reason):
+		return &conn.BusyError{BackOff: conn.RetryAfter(resp.Header), Err: ae}
 	case resp.StatusCode == http.StatusForbidden && (reason == "accessNotConfigured" || env.Error.Details != nil && hasServiceDisabled(env.Error.Details)):
 		return ErrAPIDisabled
 	case resp.StatusCode == http.StatusForbidden && (reason == "insufficientPermissions" || reason == "authError"):
@@ -251,26 +155,10 @@ func isRateLimitReason(r string) bool {
 	return r == "rateLimitExceeded" || r == "userRateLimitExceeded" || r == "quotaExceeded"
 }
 
-func retryAfter(hdr string) time.Duration {
-	hdr = strings.TrimSpace(hdr)
-	if hdr == "" {
-		return 0
-	}
-	if secs, err := strconv.Atoi(hdr); err == nil && secs > 0 {
-		return min(time.Duration(secs)*time.Second, maxBackOff)
-	}
-	if t, err := http.ParseTime(hdr); err == nil {
-		if d := time.Until(t); d > 0 {
-			return min(d, maxBackOff)
-		}
-	}
-	return 0
-}
-
 var errPurgeCancelled = errors.New("gmailapi: purge cancelled")
 
 // doJSON performs one authenticated Gmail REST API call under the account's
-// serialization lock, backing off on 429 / 403 rateLimitExceeded.
+// conn.Serial, backing off on 429 / 403 rateLimitExceeded.
 func (c *client) doJSON(ctx context.Context, method, path string, query url.Values, reqBody, out any) error {
 	_, err := c.doRaw(ctx, method, path, query, reqBody, out, nil)
 	return err
@@ -290,12 +178,6 @@ func (c *client) doRaw(ctx context.Context, method, path string, query url.Value
 	if cr.Token == "" {
 		return 0, fmt.Errorf("gmailapi: %w", backend.ErrAuthFailed)
 	}
-	release, err := acquire(ctx, c.accountKey(cr))
-	if err != nil {
-		return 0, err
-	}
-	defer release()
-
 	var payload []byte
 	if reqBody != nil {
 		if payload, err = json.Marshal(reqBody); err != nil {
@@ -308,12 +190,13 @@ func (c *client) doRaw(ctx context.Context, method, path string, query url.Value
 	}
 
 	hc := c.http
-	if query.Get("format") == "raw" { // a whole message may outlast requestTimeout
+	if query.Get("format") == "raw" { // a whole message may outlast conn.RequestTimeout
 		hc = c.stream
 	}
-	for try := 0; ; try++ {
+	var status int
+	err = conn.Serial(ctx, c.accountKey(cr), c.cfg.Wait, func() error {
 		if confirm != nil && !confirm() {
-			return 0, errPurgeCancelled
+			return errPurgeCancelled
 		}
 		var body io.Reader
 		if payload != nil {
@@ -323,7 +206,7 @@ func (c *client) doRaw(ctx context.Context, method, path string, query url.Value
 		req, err := http.NewRequestWithContext(rctx, method, u, body)
 		if err != nil {
 			cancel()
-			return 0, err
+			return err
 		}
 		req.Header.Set("Authorization", "Bearer "+cr.Token)
 		if payload != nil {
@@ -332,35 +215,26 @@ func (c *client) doRaw(ctx context.Context, method, path string, query url.Value
 		resp, err := hc.Do(req)
 		if err != nil {
 			cancel()
-			return 0, err
+			return err
 		}
-		rbody := conn.StallBody(resp.Body, stallTimeout, cancel)
-		raw, rerr := io.ReadAll(rbody)
+		status = resp.StatusCode
+		rbody := conn.StallBody(resp.Body, conn.StallTimeout, cancel)
+		raw, err := io.ReadAll(rbody)
 		rbody.Close()
-		if rerr != nil {
-			return resp.StatusCode, rerr
+		if err != nil {
+			return err
 		}
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			if out != nil && len(raw) > 0 {
-				if err := json.Unmarshal(raw, out); err != nil {
-					return resp.StatusCode, fmt.Errorf("gmailapi: %s: %w", path, err)
-				}
+		if status < 200 || status >= 300 {
+			return parseError(resp, raw)
+		}
+		if out != nil && len(raw) > 0 {
+			if err := json.Unmarshal(raw, out); err != nil {
+				return fmt.Errorf("gmailapi: %s: %w", path, err)
 			}
-			return resp.StatusCode, nil
 		}
-		perr := parseError(resp, raw)
-		var rl *rateLimitError
-		if !errors.As(perr, &rl) || try == maxRetries {
-			return resp.StatusCode, perr
-		}
-		d := rl.backOff
-		if d <= 0 {
-			d = min(defaultBackOff<<try, maxBackOff)
-		}
-		if err := c.wait(ctx, d); err != nil {
-			return resp.StatusCode, err
-		}
-	}
+		return nil
+	})
+	return status, err
 }
 
 type profileResponse struct {

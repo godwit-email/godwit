@@ -6,14 +6,12 @@ import (
 	"encoding/base64"
 	"encoding/xml"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
 	"github.com/Azure/go-ntlmssp"
 
-	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/conn"
 )
 
@@ -26,8 +24,6 @@ const ReasonExtendedProtection = "ews.extended_protection"
 // over Basic: NTLM without channel binding is what it refuses. Its message
 // is ReasonExtendedProtection.
 var ErrExtendedProtection = errors.New(ReasonExtendedProtection)
-
-var errAuthFailed = fmt.Errorf("ews: %w", backend.ErrAuthFailed)
 
 // transport is the HTTP backends' transport kept to HTTP/1.1: NTLM signs in
 // a TCP connection, not a request, so it needs keep-alive, and IIS refuses
