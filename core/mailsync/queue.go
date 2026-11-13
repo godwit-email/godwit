@@ -364,3 +364,45 @@ func MarkSent(ctx context.Context, db *store.DB, id int64, before *backend.MoveB
 	}
 	return saveBaseline(ctx, db, id, *before)
 }
+
+// The queue as core reads it.
+
+// Op is a change the push has not completed, as the user sees it.
+type Op struct {
+	ID          int64
+	Kind, State string // Kind: flags, move or purge. State: pending, awaiting_claim, conflict or failed
+	Attempts    int
+	LastError   string
+}
+
+// ListOps lists the account's ops that are not done (or cancelled), oldest first.
+func ListOps(ctx context.Context, db *store.DB, accountID int64) ([]Op, error) {
+	rows, err := db.Query(ctx, "SELECT id, kind, state, attempts, last_error FROM ops WHERE account_id = ? AND state NOT IN ('done', 'cancelled') ORDER BY id", accountID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Op, 0, len(rows.Values))
+	for _, r := range rows.Values {
+		out = append(out, Op{ID: store.Int(r[0]), Kind: store.Str(r[1]), State: store.Str(r[2]),
+			Attempts: int(store.Int(r[3])), LastError: store.Str(r[4])})
+	}
+	return out, nil
+}
+
+// NeedsFullFetch reports whether the account's next fetch must cover every
+// folder, also after a restart: an op is unfinished (a move awaits its claim,
+// a change may need the server's state), or a purge is done and its message's
+// row is left for the fetch to drop.
+func NeedsFullFetch(ctx context.Context, db *store.DB, accountID int64) (bool, error) {
+	rows, err := db.Query(ctx, `SELECT 1 FROM ops WHERE account_id = ? AND
+		(state IN `+unfinished+` OR (kind = 'purge' AND state = 'done' AND message_id IS NOT NULL)) LIMIT 1`, accountID)
+	return err == nil && len(rows.Values) > 0, err
+}
+
+// PurgeWaits is the condition on messages alias m that a permanent delete of
+// it waits to be pushed: until then CancelPurges can take it back.
+const PurgeWaits = "EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.kind = 'purge' AND o.state = 'pending')"
+
+// Purged is the condition on messages alias m that it was deleted for good;
+// the fetch drops its row.
+const Purged = "EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.kind = 'purge' AND o.state = 'done')"

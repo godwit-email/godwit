@@ -216,7 +216,7 @@ func decodeCursor(c string) (date, id int64, err error) {
 // notPurgedCond is the condition on messages alias m that no permanent delete
 // of it waits (in its undo window or for the push): lists, searches and counts
 // leave those out at once, before the server expunges them.
-const notPurgedCond = "NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.kind = 'purge' AND o.state = 'pending')"
+const notPurgedCond = "NOT " + mailsync.PurgeWaits
 
 // shownFolder is the one folder message alias m is reported in (ADR 0034) of
 // those it shows in: the inbox, else another (lowest id), else All Mail. A
@@ -746,14 +746,13 @@ type Op struct {
 
 // PendingOps lists the account's ops that are not done (or cancelled), oldest first.
 func (s *Service) PendingOps(ctx context.Context, accountID int64) ([]Op, error) {
-	rows, err := s.db.Query(ctx, "SELECT id, kind, state, attempts, last_error FROM ops WHERE account_id = ? AND state NOT IN ('done', 'cancelled') ORDER BY id", accountID)
+	ops, err := mailsync.ListOps(ctx, s.db, accountID)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]Op, 0, len(rows.Values))
-	for _, r := range rows.Values {
-		out = append(out, Op{ID: store.Int(r[0]), Kind: store.Str(r[1]), State: store.Str(r[2]),
-			Attempts: int(store.Int(r[3])), LastError: store.Str(r[4])})
+	out := make([]Op, len(ops))
+	for i, o := range ops {
+		out[i] = Op(o)
 	}
 	return out, nil
 }
@@ -1151,7 +1150,7 @@ func (s *Service) UndoPurge(ctx context.Context, ids []int64) (gone int, err err
 	}
 	// What is left: rows the fetch has not dropped, of messages not expunged.
 	rows, err := s.db.Query(ctx, `SELECT m.id, m.account_id, m.thread_id FROM messages m WHERE m.id IN (`+marks+`)
-		AND NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.kind = 'purge' AND o.state = 'done')`, args...)
+		AND NOT `+mailsync.Purged, args...)
 	if err != nil {
 		return 0, err
 	}
