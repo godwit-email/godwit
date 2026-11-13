@@ -20,7 +20,7 @@ import (
 )
 
 // addressBooksView is the read-only CardDAV address books in Settings'
-// accounts (ADR 0038): a mail account page's 通讯录 section, and the page of
+// accounts (ADR 0040): a mail account page's 通讯录 section, and the page of
 // an address book with no mail account (addressbook:<id>).
 type addressBooksView struct {
 	a *App

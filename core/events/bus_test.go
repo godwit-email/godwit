@@ -1,6 +1,7 @@
 package events
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -51,15 +52,61 @@ func TestSlowSubscriberDoesNotBlock(t *testing.T) {
 		t.Fatal("Publish blocked on a slow subscriber")
 	}
 
-	// The fast subscriber keeps only the most recent 64 events, the last one included.
+	// The fast subscriber keeps a bounded number (its buffer, one in hand and
+	// a full queue), the last one included.
 	var last Event
 	n := 0
-	for len(fast) > 0 {
-		last = <-fast
+	for ev := range drain(fast) {
+		last = ev
 		n++
 	}
-	require.Equal(t, 64, n)
+	require.LessOrEqual(t, n, 2*subscriberBuffer+1)
 	assert.Equal(t, int64(999), last.FolderID)
+}
+
+// drain is what ch delivers until it stays quiet for 100 ms.
+func drain(ch <-chan Event) <-chan Event {
+	out := make(chan Event)
+	go func() {
+		defer close(out)
+		for {
+			select {
+			case ev := <-ch:
+				out <- ev
+			case <-time.After(100 * time.Millisecond):
+				return
+			}
+		}
+	}()
+	return out
+}
+
+// A command (the tray's Quit) survives a burst of updates behind a slow
+// reader, in its place: only updates are dropped.
+func TestCommandSurvivesBurst(t *testing.T) {
+	b := New()
+	ch, cancel := b.Subscribe()
+	defer cancel()
+	for range subscriberBuffer { // fills the channel: what follows queues
+		b.Publish(Event{Type: MessagesChanged, FolderID: -1})
+	}
+	b.Publish(Event{Type: QuitRequested})
+	for i := range 3 * subscriberBuffer {
+		b.Publish(Event{Type: MessagesChanged, FolderID: int64(i)})
+	}
+	var got []Event
+	for ev := range drain(ch) {
+		got = append(got, ev)
+	}
+	q := slices.IndexFunc(got, func(e Event) bool { return e.Type == QuitRequested })
+	require.GreaterOrEqual(t, q, 0, "the command was dropped")
+	for _, e := range got[:q] { // the channel's, then at most one the forwarder held
+		assert.Equal(t, int64(-1), e.FolderID)
+	}
+	assert.Equal(t, int64(3*subscriberBuffer-1), got[len(got)-1].FolderID)
+	for i := q + 2; i < len(got); i++ {
+		assert.Less(t, got[i-1].FolderID, got[i].FolderID, "order kept")
+	}
 }
 
 func TestUnsubscribeClosesChannel(t *testing.T) {

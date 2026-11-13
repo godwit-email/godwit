@@ -787,7 +787,7 @@ var Migrations = [][]string{{
 	// reached the server, and only MaxAttempts refusals give the op up.
 	`ALTER TABLE ops ADD COLUMN refusals INTEGER NOT NULL DEFAULT 0`,
 }, {
-	// Read-only CardDAV address books (ADR 0038): collections cascade from
+	// Read-only CardDAV address books (ADR 0040): collections cascade from
 	// address_books, cards from collections, and emails from cards.
 	`CREATE TABLE IF NOT EXISTS address_books (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -839,7 +839,7 @@ var Migrations = [][]string{{
 	`CREATE INDEX IF NOT EXISTS address_book_emails_addr ON address_book_emails(addr_key)`,
 }, {
 	// An address book linked to a mail account goes with it and takes its
-	// place in the accounts list (ADR 0038); NULL is a standalone one.
+	// place in the accounts list (ADR 0040); NULL is a standalone one.
 	`ALTER TABLE address_books ADD COLUMN account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE`,
 	`CREATE UNIQUE INDEX address_books_account ON address_books(account_id) WHERE account_id IS NOT NULL`,
 }}

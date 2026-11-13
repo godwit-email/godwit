@@ -4,19 +4,26 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/internal/mcpclients"
+	"github.com/godwit-email/godwit/ownerlock"
+	"github.com/godwit-email/godwit/rpcbind"
+	"github.com/godwit-email/godwit/uiclient"
 )
 
-// harness runs an App on a real coretest Service in a headless Tester. Posted
+// harness runs an App in a headless Tester as the ui client of a backend
+// serving a real coretest Service. Posted
 // callbacks queue up and run only on the test goroutine (until, advance, click,
 // typeText), as they would on the UI thread.
 type harness struct {
@@ -29,6 +36,13 @@ type harness struct {
 	stop  context.CancelFunc // cancels the ctx the App was started with
 	size  [2]int             // the window's, once resize set it; else 1280×820
 	home  string             // where 接入 AI 应用 looks for the AI apps: never this computer's
+	dev   bool
+
+	sock     string           // the backend's data directory
+	ui       *uiclient.Client // the App's connection
+	notifier *MailNotifier    // the backend's
+	received atomic.Int64     // MessageReceived events the backend's notifier took
+	quits    atomic.Int32     // Deps.Quit calls
 
 	mu    sync.Mutex
 	queue []func()
@@ -55,23 +69,90 @@ func newDevHarness(t *testing.T, setup ...func(*coretest.Env)) *harness {
 
 func newHarnessDev(t *testing.T, dev bool, opts []coretest.Option, setup ...func(*coretest.Env)) *harness {
 	t.Helper()
-	h := &harness{t: t, env: coretest.New(t, opts...), plat: &fakePlatform{}, clock: newFakeClock()}
+	h := &harness{t: t, env: coretest.New(t, opts...), plat: &fakePlatform{}, clock: newFakeClock(), dev: dev}
 	h.plat.svc = h.env.Svc
 	for _, s := range setup {
 		s(h.env)
 	}
-	h.app = New(Deps{Svc: h.env.Svc, Platform: h.plat, Post: h.post, Clock: h.clock, SystemLanguage: "zh-CN", Logf: h.logf, Dev: dev})
 	h.home = t.TempDir()
+	h.serve()
+	h.connectUI()
+	t.Cleanup(func() { // before the Env's cleanup closes the Service
+		h.app.Close()
+		h.stop()
+		h.ui.Close()
+	})
+	return h
+}
+
+// connectUI makes and starts the App, over a new ui connection.
+func (h *harness) connectUI() {
+	h.t.Helper()
+	cl, err := uiclient.Dial(h.sock, "")
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	h.ui = cl
+	h.app = New(Deps{Svc: cl, Platform: h.plat, Post: h.post, Clock: h.clock, SystemLanguage: "zh-CN", Logf: h.logf, Dev: h.dev,
+		Quit: func() { h.quits.Add(1) }})
 	h.app.mcpEnv = func() (mcpclients.Env, error) {
 		return mcpclients.Env{Home: h.home, OS: "darwin", Temp: h.home, Run: func(string, ...string) error { return nil }}, nil
 	}
 	h.tt = ui.NewTester(h.app.View, 1280, 820)
 	ctx, stop := context.WithCancel(context.Background())
 	h.stop = stop
-	t.Cleanup(stop)
 	h.app.Start(ctx)
-	t.Cleanup(h.app.Close) // before the Env's cleanup closes the Service
-	return h
+}
+
+// dropUI closes the App and its ui connection, as the UI process exiting;
+// connectUI brings a new one.
+func (h *harness) dropUI() {
+	h.app.Close()
+	h.stop()
+	h.ui.Close()
+}
+
+// serve runs a backend on the Env: the Local API socket, in a short
+// directory for the Unix socket path limit, and the backend's notifier,
+// showing notifications on the fake platform.
+func (h *harness) serve() {
+	t := h.t
+	dir, err := os.MkdirTemp("", "gw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	release, err := ownerlock.Acquire(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { release() })
+	srv, err := rpcbind.ListenWith(dir, h.env.Svc, rpcbind.ListenOptions{Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve(context.Background())
+	t.Cleanup(func() { srv.Close() })
+
+	n := NewMailNotifier(MailNotifierDeps{Svc: h.env.Svc, Sink: h.plat, Clock: h.clock, Foreground: h.env.Svc.UIForeground, Logf: h.logf})
+	h.notifier = n
+	ch, unsub := h.env.Svc.Subscribe()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for ev := range ch {
+			n.HandleEvent(ev)
+			if ev.Type == events.MessageReceived {
+				h.received.Add(1)
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		unsub()
+		<-done
+		n.Close()
+	})
+	h.sock = dir
 }
 
 func (h *harness) logf(format string, args ...any) {
@@ -192,9 +273,10 @@ func (h *harness) typeText(s string) {
 
 // fakeClock fires AfterFunc callbacks only from advance, in due order.
 type fakeClock struct {
-	mu     sync.Mutex
-	now    time.Time
-	timers []*fakeTimer
+	mu      sync.Mutex
+	now     time.Time
+	timers  []*fakeTimer
+	onAfter func(time.Duration)
 }
 
 type fakeTimer struct {
@@ -215,9 +297,13 @@ func (c *fakeClock) Now() time.Time {
 
 func (c *fakeClock) AfterFunc(d time.Duration, f func()) func() bool {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	tm := &fakeTimer{at: c.now.Add(d), f: f}
 	c.timers = append(c.timers, tm)
+	on := c.onAfter
+	c.mu.Unlock()
+	if on != nil {
+		on(d)
+	}
 	return func() bool {
 		c.mu.Lock()
 		defer c.mu.Unlock()
@@ -259,11 +345,14 @@ type fakePlatform struct {
 	autoUpdates  bool   // UpdatesInstallThemselves' answer
 	gh           bool   // the GitHub CLI is signed in
 	starred      bool
+	login        bool     // SetOpenAtLogin's last request
+	loginOff     bool     // the user turned the login item off in the system
 	files        []string // OpenFiles
 	dir          string   // OpenDirectory
 	savePath     string   // SaveFile
 	supported    bool     // NotificationsSupported
 	notifyErr    error    // Notify
+	onNotify     func(Notification)
 	tempDir      string
 
 	localAPIPath string // SetLocalAPI(true)'s answer
@@ -506,9 +595,13 @@ func (p *fakePlatform) SaveFile(defaultName string) (string, error) {
 func (p *fakePlatform) Notify(n Notification) error {
 	p.record("Notify", n.ID)
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.notes = append(p.notes, n)
-	return p.notifyErr
+	err, on := p.notifyErr, p.onNotify
+	p.mu.Unlock()
+	if on != nil {
+		on(n)
+	}
+	return err
 }
 func (p *fakePlatform) SetSignInCodes(codes []core.SignInCode) { p.codes = slices.Clone(codes) }
 func (p *fakePlatform) SignInCodeBannerSupported() bool        { return !p.noCodeBanner }
@@ -555,7 +648,18 @@ func (p *fakePlatform) NotificationsSupported() bool {
 	defer p.mu.Unlock()
 	return p.supported
 }
-func (p *fakePlatform) SetOpenAtLogin(on bool) error { p.record("SetOpenAtLogin", on); return nil }
+func (p *fakePlatform) SetOpenAtLogin(on bool) error {
+	p.record("SetOpenAtLogin", on)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.login = on
+	return nil
+}
+func (p *fakePlatform) OpenAtLogin() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.login && !p.loginOff
+}
 func (p *fakePlatform) SetLocalAPI(_ uint64, on bool) (string, error) {
 	p.record("SetLocalAPI", on)
 	p.mu.Lock()

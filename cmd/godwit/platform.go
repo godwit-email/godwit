@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/plugins/updater"
@@ -23,16 +25,23 @@ import (
 	"github.com/godwit-email/godwit/app"
 	"github.com/godwit-email/godwit/assets"
 	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/theme"
 	"github.com/godwit-email/godwit/rpc"
-	"github.com/godwit-email/godwit/rpcbind"
 	"github.com/godwit-email/godwit/webui"
 )
 
+// backendService is what the platform asks the backend: a message's sender
+// avatar for notifications and sign-in banners, and the Store's latest version.
+type backendService interface {
+	SenderAvatar(ctx context.Context, messageID int64, allowRemote bool) (core.Avatar, error)
+	StoreLatestVersion(ctx context.Context) (string, error)
+}
+
 // platform is app.Platform on mygo. win and tray are set once they exist;
-// tray stays nil where the system has none. The Local API serves svc on
-// dataDir, whose owner lock the GUI holds.
+// tray stays nil where the system has none, and in the interface, whose
+// tray is the backend's.
 type platform struct {
 	win            *mygo.Window
 	tray           *mygo.Tray
@@ -47,55 +56,26 @@ type platform struct {
 	codeBanner     *signInBanner
 	updateTray     func()
 	setTrayVisible func(visible bool)
+	trayQuitStop   bool        // 退出并停止收信 shows; UI thread
+	trayUp         atomic.Bool // tray is set: read off the UI thread (TrayShown)
 
 	dataDir      string
-	svc          *core.Service
+	svc          backendService
 	saveMu       sync.Mutex
 	saveDir      string                 // last directory chosen in SaveFile or OpenDirectory
 	downloadsDir func() (string, error) // mygo.App.Path(PathDownloads); tests swap it
-	apiMu        sync.Mutex
-	api          *rpc.Server // nil while the Local API is off
-	apiGen       uint64      // the newest request that asked for api
-
-	onAPIStop func(gen uint64, err error)              // told when the server ends by itself
-	serve     func(context.Context, *rpc.Server) error // Server.Serve; tests swap it
-	closeAPI  func(*rpc.Server) error                  // Server.Close; tests swap it
 }
 
 func (p *platform) DataDir() (string, bool) { return p.dataDir, !singleInstance(p.dataDir) }
 
-func (p *platform) SetLocalAPI(gen uint64, on bool) (string, error) {
-	p.apiMu.Lock()
-	defer p.apiMu.Unlock()
+// SetLocalAPI reports the socket external clients reach while on: the
+// backend the interface started turns their access on and off itself as
+// Settings.LocalAPI changes (followLocalAPI).
+func (p *platform) SetLocalAPI(_ uint64, on bool) (string, error) {
 	if !on {
-		if p.api == nil {
-			return "", nil
-		}
-		err := p.close(p.api)
-		p.api = nil
-		return "", err
+		return "", nil
 	}
-	if p.api == nil {
-		srv, err := rpcbind.Listen(p.dataDir, p.svc, app.Version)
-		if err != nil {
-			return "", err
-		}
-		p.api = srv
-		serve := p.serve
-		if serve == nil {
-			serve = func(ctx context.Context, s *rpc.Server) error { return s.Serve(ctx) }
-		}
-		go p.serveAPI(srv, serve)
-	}
-	p.apiGen = gen
-	return p.api.Path(), nil
-}
-
-func (p *platform) close(srv *rpc.Server) error {
-	if p.closeAPI != nil {
-		return p.closeAPI(srv)
-	}
-	return srv.Close()
+	return filepath.Join(p.dataDir, rpc.SocketName), nil
 }
 
 func (*platform) OpenURL(url string) error   { return mygo.Shell.OpenExternal(url) }
@@ -214,11 +194,86 @@ func (p *platform) SaveFile(defaultName string) (string, error) {
 	}
 	return path, err
 }
-func (p *platform) Notify(n app.Notification) error {
-	return mygo.NewNotification(notificationOptions(n, p.notificationAvatar(n))).Show()
+func (p *platform) Notify(n app.Notification) error { return showNotification(p.svc, n) }
+func (*platform) NotificationsSupported() bool      { return mygo.NotificationsSupported() }
+func (*platform) SetOpenAtLogin(on bool) error      { return setOpenAtLogin(on) }
+func (*platform) OpenAtLogin() bool                 { return openAtLogin() }
+
+type trayActions struct {
+	open    func()
+	compose func()
+	syncAll func()
+	hide    func()
+	quit    func()
+	// quitStop is 退出并停止收信, shown while SetTrayQuitStop is on.
+	quitStop func()
 }
-func (*platform) NotificationsSupported() bool { return mygo.NotificationsSupported() }
-func (*platform) SetOpenAtLogin(on bool) error { return mygo.App.SetOpenAtLogin(on) }
+
+func (p *platform) trayMenuItems(act trayActions, now time.Time) []*mygo.MenuItem {
+	var items []*mygo.MenuItem
+	if act.open != nil {
+		items = append(items, &mygo.MenuItem{Label: i18n.T("tray.open"), Click: func(*mygo.MenuItem, *mygo.Window) { act.open() }})
+	}
+	if act.compose != nil {
+		items = append(items, &mygo.MenuItem{Label: i18n.T("mail.compose"), Click: func(*mygo.MenuItem, *mygo.Window) { act.compose() }})
+	}
+	items = append(items, &mygo.MenuItem{Label: i18n.T("tray.sync_all"), Click: func(*mygo.MenuItem, *mygo.Window) { act.syncAll() }})
+	items = append(items, recentCodeMenu(p.signInCodes, now, p.signInCodeIcon, p.useSignInCode)...)
+	items = append(items,
+		mygo.Separator(),
+		&mygo.MenuItem{Label: i18n.T("tray.hide"), Click: func(*mygo.MenuItem, *mygo.Window) { act.hide() }},
+		mygo.Separator(),
+		&mygo.MenuItem{Label: i18n.T("tray.quit"), Click: func(*mygo.MenuItem, *mygo.Window) { act.quit() }},
+	)
+	if p.trayQuitStop && act.quitStop != nil {
+		items = append(items, &mygo.MenuItem{Label: i18n.T("tray.quit_stop"), Click: func(*mygo.MenuItem, *mygo.Window) { act.quitStop() }})
+	}
+	return items
+}
+
+// TrayShown reports whether the tray shows Godwit's icon: on, and the system
+// has a tray (Linux may have no indicator host). Any goroutine.
+func (p *platform) TrayShown() bool { return p.trayUp.Load() }
+
+// SetTrayQuitStop shows or hides 退出并停止收信 (BackgroundReceiveAlways).
+func (p *platform) SetTrayQuitStop(on bool) {
+	if p.trayQuitStop != on {
+		p.trayQuitStop = on
+		if p.updateTray != nil {
+			p.updateTray()
+		}
+	}
+}
+
+func (p *platform) BindTray(act trayActions) {
+	menu := func() *mygo.Menu { return mygo.NewMenu(p.trayMenuItems(act, time.Now())) }
+	p.updateTray = func() {
+		if p.tray != nil {
+			p.tray.SetMenu(menu())
+		}
+	}
+	p.setTrayVisible = func(visible bool) {
+		if visible == (p.tray != nil) {
+			return
+		}
+		if !visible {
+			p.ShowSignInCode(nil) // the banner is a flyout of the tray
+			p.tray.Destroy()
+			p.tray = nil
+			p.trayUp.Store(false)
+			return
+		}
+		if icon, err := trayIcon(trayBoxFor(runtime.GOOS)); err != nil {
+			log.Print(err)
+		} else if p.tray, err = mygo.NewTray(mygo.TrayOptions{Icon: icon, IconIsTemplate: true, ToolTip: "Godwit",
+			Menu: menu()}); err != nil {
+			log.Print(err) // no tray here (Linux without an indicator host)
+		} else if p.trayUp.Store(true); runtime.GOOS == "windows" && act.open != nil {
+			p.tray.OnClick(act.open) // Windows opens the app on a left click; the menu stays on the right
+		}
+	}
+}
+
 func (p *platform) SetTrayVisible(visible bool) {
 	if p.setTrayVisible != nil {
 		p.setTrayVisible(visible)
@@ -233,6 +288,9 @@ func (p *platform) SetTrayUnread(n int) {
 		p.tray.SetTitle(title) // shown on macOS only
 	}
 }
+
+// SetAppUnread badges the app icon; the badge goes with the interface process,
+// leaving only the backend's tray count while no interface runs (ADR 0038).
 func (*platform) SetAppUnread(n int) { mygo.App.SetBadgeCount(n) }
 func (p *platform) ShowWindow() {
 	if p.win.IsMinimized() {
@@ -242,6 +300,15 @@ func (p *platform) ShowWindow() {
 	p.win.Focus()
 }
 func (*platform) SetThemeSource(theme string) { mygo.Theme.SetSource(mygo.ThemeSource(theme)) }
+func (p *platform) SetLanguage(uiLang, sysLang string) {
+	if os.Getenv("MYGO_LOCALE") == "" {
+		mygo.App.SetLocale(uiLocale(uiLang, sysLang))
+	}
+	i18n.SetLanguage(mygo.App.Locale())
+	if p.updateTray != nil {
+		p.updateTray()
+	}
+}
 func (p *platform) OpenCompose(draftID int64) { p.windows.Open(draftID) }
 func (p *platform) DraftDeleted(id int64)     { p.windows.CloseDraft(id) }
 func (p *platform) ComposeOpen(id int64) bool { return p.windows.IsOpen(id) }
@@ -361,13 +428,17 @@ func (p *platform) CheckForUpdates() {
 		return
 	}
 	// The Store updates the MSIX: its page shows and installs a newer version.
-	if err := p.OpenURL("ms-windows-store://pdp/?ProductId=" + storeProduct); err != nil {
+	if err := p.OpenURL("ms-windows-store://pdp/?ProductId=" + core.StoreProduct); err != nil {
 		log.Printf("open the Store: %v", err)
 	}
 }
 func (p *platform) LatestVersion(ctx context.Context) (string, error) {
 	if packaged() {
-		return storeLatest(ctx, p.svc.Proxy)
+		v, err := p.svc.StoreLatestVersion(ctx) // the backend's, so it goes through the proxy set in Godwit
+		if err != nil || plugins.CompareVersions(v, app.Version) <= 0 {
+			return "", err
+		}
+		return v, nil
 	}
 	u, err := mygo.Updater.Check(ctx)
 	if err != nil || u == nil {
@@ -458,30 +529,6 @@ func (*platform) TempDir() string {
 	return dir
 }
 
-// serveAPI serves srv until it closes. If it ends while still the current
-// server, which no SetLocalAPI(false) asked for, it closes srv and forgets
-// it under apiMu, so a newer server cannot start before srv's files are
-// gone, then tells the App which request the server was for.
-func (p *platform) serveAPI(srv *rpc.Server, serve func(context.Context, *rpc.Server) error) {
-	err := serve(context.Background(), srv)
-	p.apiMu.Lock()
-	if p.api != srv {
-		p.apiMu.Unlock()
-		return // closed on request
-	}
-	p.api = nil
-	err = errors.Join(err, p.close(srv))
-	gen := p.apiGen
-	p.apiMu.Unlock()
-	if err == nil {
-		err = errors.New("the Local API server stopped")
-	}
-	log.Print(p.svc.Redact("local API: " + err.Error()))
-	if p.onAPIStop != nil {
-		p.onAPIStop(gen, err)
-	}
-}
-
 // trayBox is the tray icon's picture, w by h pixels at 2x, with the mark
 // inkW wide. macOS shows it 18 points tall at its own aspect, so the wide,
 // flat bird gets a wide picture, about 23 by 11 points where a square
@@ -492,6 +539,93 @@ type trayBox struct{ w, h, inkW float32 }
 // minimizes it rather than hiding it: without a tray icon, only macOS's Dock
 // can bring back a hidden window, and a minimized one keeps its taskbar entry.
 func closeMinimizes(goos string, hasTray bool) bool { return !hasTray && goos != "darwin" }
+
+// hiddenExitAfter is how long the main window stays hidden after its close
+// before the interface exits, the backend and its tray staying: reopening
+// sooner is instant, later a cold start, but the interface's memory is freed
+// (ADR 0038, #738).
+const hiddenExitAfter = 5 * time.Minute
+
+// closeAction is what closing the main window does (mainCloseAction).
+type closeAction int
+
+const (
+	closeQuit     closeAction = iota // the quit, which stops a backend the interface started
+	closeExit                        // the interface quits; the backend stays
+	closeHide                        // the window hides
+	closeMinimize                    // the window minimizes
+)
+
+// mainCloseAction is what closing the main window does: with keep
+// (App.KeepInBackground) off, the quit; on, the window hides or minimizes
+// (closeMinimizes) until it stayed so for hiddenExitAfter (expired), then the
+// interface exits once none of its compose windows is open.
+func mainCloseAction(keep, expired bool, compose int, goos string, hasTray bool) closeAction {
+	switch {
+	case !keep:
+		return closeQuit
+	case expired && compose == 0:
+		return closeExit
+	case expired:
+		return closeHide // already hidden; decided again once the last compose window closes
+	case closeMinimizes(goos, hasTray):
+		return closeMinimize
+	}
+	return closeHide
+}
+
+// mainClose is closing the main window over time: close hides it and starts
+// the hiddenExitAfter timer, whose firing closes again, expired, if the
+// window is still hidden; shown cancels it. Used on the UI thread: after's f
+// must run there.
+type mainClose struct {
+	action  func(expired bool) closeAction // mainCloseAction now
+	do      func(closeAction)
+	hidden  func() bool                                        // the main window is hidden or minimized
+	busy    func() bool                                        // work runs that the exit would end (App.Busy); nil: none
+	after   func(d time.Duration, f func()) (stop func() bool) // app.Clock.AfterFunc
+	closed  bool                                               // the window closed and has not shown since
+	expired bool
+	stop    func() bool
+	gen     int // voids a timer that fired after shown stopped it
+}
+
+// close is the window's close, or deciding it again while closed (a compose
+// window went, the timer fired).
+func (m *mainClose) close() {
+	m.closed = true
+	act := m.action(m.expired)
+	if (act == closeHide || act == closeMinimize) && !m.expired && m.stop == nil {
+		gen := m.gen
+		m.stop = m.after(hiddenExitAfter, func() {
+			if gen != m.gen {
+				return
+			}
+			m.stop = nil
+			if !m.hidden() { // shown without telling us
+				m.shown()
+				return
+			}
+			if m.busy != nil && m.busy() {
+				m.close() // a download or import would end with the interface: hidden another round
+				return
+			}
+			m.expired = true
+			m.close()
+		})
+	}
+	m.do(act)
+}
+
+// shown is the window showing again: the interface stays.
+func (m *mainClose) shown() {
+	if m.stop != nil {
+		m.stop()
+		m.stop = nil
+	}
+	m.closed, m.expired = false, false
+	m.gen++
+}
 
 func trayBoxFor(goos string) trayBox {
 	if goos == "darwin" {

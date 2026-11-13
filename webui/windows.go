@@ -2,6 +2,8 @@ package webui
 
 import (
 	"log"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -83,6 +85,10 @@ type Windows struct {
 	// registers and after a closed window's release, the empty-draft delete
 	// included: IsOpen has changed. Never under mu.
 	OnChange func()
+	// OnOpening, when set, is called once Open has reserved a draft and
+	// before its window is made, never under mu: IsOpen is already true. It
+	// may block, so whoever must know (the backend's 直接发送) knows first.
+	OnOpening func()
 }
 
 // IsOpen reports whether draftID's window is open or being made.
@@ -91,6 +97,19 @@ func (ws *Windows) IsOpen(draftID int64) bool {
 	defer ws.mu.Unlock()
 	_, making := ws.opening[draftID]
 	return making || ws.byDraft[draftID] != nil
+}
+
+// OpenDrafts is every draft IsOpen reports, for the backend (SetComposeOpen).
+func (ws *Windows) OpenDrafts() []int64 {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	ids := slices.Collect(maps.Keys(ws.byDraft))
+	for id := range ws.opening {
+		if ws.byDraft[id] == nil {
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }
 
 func (ws *Windows) changed() {
@@ -134,6 +153,9 @@ func (ws *Windows) Open(draftID int64) {
 	}
 	ws.opening[draftID] = false
 	ws.mu.Unlock()
+	if ws.OnOpening != nil {
+		ws.OnOpening()
+	}
 	ws.make(draftID)
 }
 
@@ -266,6 +288,9 @@ func (ws *Windows) Closed(winID int) {
 			ws.mu.Unlock()
 			if reopen {
 				if ws.c.exists(x.draft) {
+					if ws.OnOpening != nil { // as Open does: whoever must know, first
+						ws.OnOpening()
+					}
 					ws.make(x.draft)
 				} else {
 					ws.mu.Lock()

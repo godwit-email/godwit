@@ -105,6 +105,23 @@ func TestWindowsOpenFocusesExisting(t *testing.T) {
 	assert.Equal(t, 1, f.ws.Count())
 }
 
+// The draft is reported as being edited before its window is made, so the
+// backend's 直接发送 cannot take it while the editor opens.
+func TestWindowsOpeningReportedBeforeMade(t *testing.T) {
+	f := newWinFixture(t)
+	var seen []int64
+	f.ws.OnOpening = func() {
+		f.mu.Lock()
+		made := len(f.made)
+		f.mu.Unlock()
+		assert.Zero(t, made, "OnOpening after the window was made")
+		seen = f.ws.OpenDrafts()
+	}
+	f.ws.Open(7)
+	assert.Equal(t, []int64{7}, seen)
+	require.Len(t, f.made, 1)
+}
+
 func TestWindowsCloseWaitsForSave(t *testing.T) {
 	f := newWinFixture(t)
 	d := f.draft(t, "new", 0)
@@ -514,11 +531,14 @@ func TestWindowsIsOpenWhileOpening(t *testing.T) {
 	go f.ws.Open(7)
 	<-entered
 	assert.True(t, f.ws.IsOpen(7), "being made")
+	assert.Equal(t, []int64{7}, f.ws.OpenDrafts(), "being made")
 	release()
 	require.Eventually(t, func() bool { return f.ws.Count() == 1 }, time.Second, time.Millisecond)
 	assert.True(t, f.ws.IsOpen(7))
+	assert.Equal(t, []int64{7}, f.ws.OpenDrafts())
 	f.ws.Closed(f.made[0].id)
 	assert.False(t, f.ws.IsOpen(7), "gone")
+	assert.Empty(t, f.ws.OpenDrafts(), "gone")
 }
 
 // OnChange fires when a window registers and after its release has deleted

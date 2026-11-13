@@ -87,12 +87,11 @@ type Options struct {
 	// ModelsDev is models.dev's catalog (ai.ModelsDevURL), where models'
 	// display names and context windows come from; "" fetches none (the apps set it).
 	ModelsDev string
-	// ConfirmWindow: a window can confirm godwit mcp's sends (每次确认); the
-	// GUI sets it. Without one (--headless) 每次确认 refuses them, as 不允许.
-	ConfirmWindow bool
-	// ComposeOpen reports whether draftID's compose window is open or
-	// opening; the GUI sets it, and 直接发送 leaves such a draft alone. nil: none is.
-	ComposeOpen func(draftID int64) bool
+	// NotifyMCPSend posts a notification, with no mail content, pointing to
+	// send request id that waits for the user (每次确认) while no ui client is
+	// connected to show it; false: it cannot post one, and 每次确认 refuses the
+	// send. nil: none is posted, as false.
+	NotifyMCPSend func(id int64) bool
 	// OpenURL opens an external URL in the user's default browser.
 	OpenURL func(url string) error
 	// Recognizer reads for 识别模型 while it is on; nil is AstrLink Guard
@@ -112,6 +111,16 @@ type Options struct {
 	// PrintPDF lays out an HTML document as a PDF, for rules that export
 	// one; the GUI sets it. nil fails those actions (RuleFailNoPDF).
 	PrintPDF func(ctx context.Context, html string) ([]byte, error)
+	// RecentLog reads the process's recent log lines for RecentLog(); nil reads
+	// package-level RecentLog.
+	RecentLog func() string
+	// TrayShown reports whether the backend's tray shows Godwit's icon; nil:
+	// it has none (no graphical session).
+	TrayShown func() bool
+	// StopUIBackend shuts this backend down through its usual close path; set
+	// when the interface started it (ADR 0038). nil: the user started it, and
+	// the ui role's StopUIBackend is refused.
+	StopUIBackend func()
 }
 
 // Service owns the database and event bus of one Godwit data directory.
@@ -137,7 +146,12 @@ type Service struct {
 	workersMu   sync.Mutex
 	workers     map[int64]*worker
 	closed      bool
-	inboxRounds atomic.Bool // background rounds cover the inbox only; the window's state (SetInboxOnly)
+	inboxRounds atomic.Bool                   // background rounds cover the inbox only; the window's state (SetInboxOnly)
+	timeZone    atomic.Pointer[time.Location] // the UI's current IANA time zone (SetTimeZone); nil is time.Local
+
+	uiMu       sync.Mutex              // connected RoleUI sessions and in-process UI state
+	uiSessions map[*uiSession]struct{} // live RoleUI connections (WithUISession)
+	quitStop   func()                  // the tray's 退出并停止收信 waiting for the interface to quit (StopWhenUIQuits)
 
 	callsMu     sync.Mutex
 	modelMu     sync.RWMutex // writers: a model service's row and key change together; readers see both or neither (ponytail: global, per-id if contended)
@@ -284,6 +298,7 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 	s.labelJudge = s.defaultLabelJudge
 	s.securityJudge = s.defaultSecurityJudge
 	s.securityRaw = s.GetRawMessage
+	_ = os.RemoveAll(s.rawOutDir()) // RawMessageFile's left by an interface that died
 	s.assets = newModelAssets(s)
 	if exe, err := os.Executable(); err == nil {
 		s.nativeCmd = []string{exe, "plugin-host"}
@@ -570,6 +585,55 @@ func (s *Service) cleanOrphans(ctx context.Context) error {
 
 // Subscribe returns UI notifications and a func that unsubscribes.
 func (s *Service) Subscribe() (<-chan events.Event, func()) { return s.bus.Subscribe() }
+
+// Publish announces ev to every Subscribe stream, the ui client's among them:
+// the owner process's own events (a notification clicked, a quit from its
+// tray). Not exposed over RPC.
+func (s *Service) Publish(ev events.Event) { s.bus.Publish(ev) }
+
+// StopUIBackend shuts down a backend the interface started (Options.StopUIBackend),
+// as quitting Godwit does; it returns before the shutdown runs. A backend the
+// user started (--headless), or one whose 后台收信 is BackgroundReceiveAlways,
+// refuses and keeps running, unless the tray's 退出并停止收信 asked for it
+// (StopWhenUIQuits). So does one another interface is still connected to.
+func (s *Service) StopUIBackend(ctx context.Context) error {
+	if stop := s.takeQuitStop(); stop != nil {
+		stop()
+		return nil
+	}
+	if s.opts.StopUIBackend == nil {
+		return errors.New("the user started this backend; it keeps running")
+	}
+	if st, err := s.GetSettings(ctx); err == nil && st.BackgroundReceive == BackgroundReceiveAlways {
+		return errors.New("background receiving is always on; the backend keeps running")
+	}
+	s.uiMu.Lock()
+	others := len(s.uiSessions) > 1 // the caller's own session is one
+	s.uiMu.Unlock()
+	if others {
+		return errors.New("another interface is connected; the backend keeps running")
+	}
+	s.opts.StopUIBackend()
+	return nil
+}
+
+// TrayShown reports whether this backend's tray shows Godwit's icon, for the
+// interface: closing its window hides it only where the tray can bring it back.
+func (s *Service) TrayShown(ctx context.Context) (bool, error) {
+	return s.opts.TrayShown != nil && s.opts.TrayShown(), nil
+}
+
+// ReplaceUIBackend shuts down a backend the interface started so that an
+// interface of another version can start its own: like StopUIBackend, but
+// even when 后台收信 is BackgroundReceiveAlways, since the new backend goes on
+// receiving. A backend the user started (--headless) still refuses.
+func (s *Service) ReplaceUIBackend(ctx context.Context) error {
+	if s.opts.StopUIBackend == nil {
+		return errors.New("the user started this backend; it keeps running")
+	}
+	s.opts.StopUIBackend()
+	return nil
+}
 
 // lockAccount takes the account's sync lock, or gives up when ctx ends. It closes
 // a connection kept for the next file, so the holder's is the account's only one.

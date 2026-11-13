@@ -28,13 +28,15 @@ import (
 // Local API; the first row an error is wins.
 var table = []Error{
 	// A native plugin's failures: its stderr is the plugin's text, not the user's.
-	{Err: plugins.ErrNativeExited, Key: "error.plugin_exited"},
-	{Err: plugins.ErrTimeout, Key: "error.plugin_timeout"},
-	{Err: plugins.ErrNativeABI, Key: "error.plugin_abi"},
-	{Err: auth.ErrRedirectPortBusy, Key: "settings.models.login.port_busy"},
+	{Code: "plugin_exited", Err: plugins.ErrNativeExited, Key: "error.plugin_exited"},
+	{Code: "plugin_timeout", Err: plugins.ErrTimeout, Key: "error.plugin_timeout"},
+	{Code: "plugin_abi", Err: plugins.ErrNativeABI, Key: "error.plugin_abi"},
+	{Code: "redirect_port_busy", Err: auth.ErrRedirectPortBusy, Key: "settings.models.login.port_busy"},
 	{Code: "use_assist", Err: core.ErrUseAssist},
 	{Code: "stale_approval", Err: core.ErrStaleApproval},
 	{Code: "too_large", Err: core.ErrTooLarge},
+	// The Local API's own: a request, result or stream event over one message's budget.
+	{Code: "message_too_large", Err: rpc.ErrTooLarge},
 	{Code: "link_ref", Err: core.ErrLinkRef},
 	{Code: "placeholder", Err: core.ErrPlaceholder},
 	{Code: "mask_kind", Err: core.ErrMaskKind},
@@ -55,6 +57,8 @@ var table = []Error{
 	{Code: "secret_not_found", Err: core.ErrSecretNotFound},
 	{Code: "wrong_account", Err: core.ErrWrongAccount},
 	{Code: "account_not_found", Err: core.ErrAccountNotFound},
+	{Code: "bad_account_export", Err: core.ErrBadAccountExport},
+	{Code: "unsupported_export_version", Err: core.ErrUnsupportedExportVersion},
 	{Code: "address_book_not_found", Err: core.ErrAddressBookNotFound},
 	{Code: "no_address_books", Err: core.ErrNoAddressBooks},
 	{Code: "local_archive", Err: core.ErrLocalArchive},
@@ -109,8 +113,10 @@ var table = []Error{
 	{Code: "not_grantable", Err: core.ErrNotGrantable},
 	{Code: "needs_answer", Err: core.ErrNeedsAnswer},
 	{Code: "mcp_send_off", Err: core.ErrMCPSendOff},
+	{Code: "mcp_send_no_ui", Err: core.ErrMCPSendNoUI},
 	{Code: "mcp_send_composing", Err: core.ErrMCPSendComposing},
 	{Code: "mcp_send_busy", Err: core.ErrMCPSendBusy},
+	{Code: "no_ui", Err: core.ErrNoUI},
 	{Code: "no_outbox_draft", Err: core.ErrNoOutboxDraft},
 	{Code: "no_unsubscribe", Err: core.ErrNoUnsubscribe},
 	{Code: "unsubscribe_web", Err: core.ErrUnsubscribeWeb},
@@ -201,84 +207,148 @@ func NewCodec() *rpc.Codec {
 	return c
 }
 
-// hidden are the exported *core.Service methods kept off the Local API, each
-// for its reason. full (ADR 0002) gets every other exported method, so a new
-// one is exposed by default: testdata/full_methods.txt pins the result, and a
-// method that must not reach the user's programs goes here instead.
+// hidden are the exported *core.Service methods kept off the Local API for
+// every role, each for its reason.
 var hidden = map[string]bool{
 	"Close":         true, // the owner's lifetime, not a client's
+	"Publish":       true, // the owner's own events; a client could forge a click or a quit
 	"Redact":        true, // a client could test guesses of the owner's secrets against it
 	"AuditExternal": true, // writes audit rows; only the owner records what clients did
 	"Proxy":         true, // a custom proxy's URL carries its password
-	// They fetch from remote hosts for the native UI.
-	"SenderAvatar": true, "ContactAvatar": true, "ModelServiceAvatar": true, "PluginReadme": true,
+	// Owner-side UI presence queries; RoleUI reports state via SetUIForeground and SetComposeOpen.
+	"UIConnected": true, "UIForeground": true, "UIReady": true, "IsComposeOpen": true,
+	// The owner tray's 退出并停止收信 (a stop func).
+	"StopWhenUIQuits": true,
 	// A channel and a stop func; RPC clients have SubscribeConversation.
 	"FollowConversation": true,
-	// A progress callback cannot cross the wire; the first two have forms without one.
+	// In-process callback forms; RoleUI has the *Stream counterparts in uiOnly.
 	"InstallPluginFromRegistryWithProgress": true, "PrepareModelWithProgress": true, "DownloadRecognitionModel": true,
-	// The native reader's two steps of GetMessage, which clients have whole; callbacks too.
-	"GetMessageLazyImages": true, "InlineImages": true, "FetchAttachments": true,
-	// The GUI's window state, not a client's; a sync a client asks for is SyncNow, whole.
-	"SetInboxOnly": true, "InboxOnly": true,
+	"InlineImages": true, "FetchAttachments": true,
 }
 
-// Expose picks the *core.Service methods callable over RPC: every exported
-// one but hidden and the test hooks (…ForTest).
+// uiOnly are the exported *core.Service methods exposed only to RoleUI
+// (Godwit's own interface, ADR 0038), never to RoleFull or RoleMCP, pinned in
+// testdata/ui_methods.txt. Every other non-hidden exported method reaches full
+// by default (testdata/full_methods.txt).
+var uiOnly = map[string]bool{
+	// Remote fetches for the interface's avatars and directory dialog.
+	"SenderAvatar": true, "ContactAvatar": true, "ModelServiceAvatar": true, "PluginReadme": true,
+	// Progress streams for the interface's downloads and directory installs.
+	"InstallPluginFromRegistryStream": true, "PrepareModelStream": true, "DownloadRecognitionModelStream": true,
+	// The reader's two-step body load, remote images downloaded into the disk cache and read
+	// from it (CachedImage fetches a caller-given URL), and the multi-attachment save stream.
+	"GetMessageLazyImages": true, "InlineImagesStream": true, "FetchAttachmentsStream": true,
+	"CachedImage": true, "CachedImageDims": true, "ForgetImageFailure": true,
+	// Results too large for one response, written as 0600 files in the data directory: a
+	// message's original (up to MaxMessageBytes) and the account export.
+	"RawMessageFile": true, "ExportAccountsFile": true,
+	// Account import from the file the interface's user picked, read by the backend: an export
+	// can outgrow one request. The preview's digest binds the import to the bytes shown.
+	"PreviewAccountImportFile": true, "ImportAccountsFile": true,
+	// Wire helper for the operating system's installed translation languages.
+	"SystemTranslatorLanguages": true,
+	// The Store package's About check: egress to the Store's catalog, through the user's proxy.
+	"StoreLatestVersion": true,
+	// Redacted recent log lines for bug reports, and the interface's IANA time zone for Wit runs.
+	"RecentLog": true, "SetTimeZone": true,
+	// Window foreground, open compose drafts, and background-round narrowing; external clients use SyncNow.
+	"SetUIForeground": true, "SetUIReady": true, "SetComposeOpen": true, "SetInboxOnly": true, "InboxOnly": true,
+	// Quitting Godwit stops the backend its interface started; a user-started one refuses.
+	// Replace stops it for an interface of another version, even under 一直继续.
+	"StopUIBackend": true, "ReplaceUIBackend": true,
+	// The interface's user cancelled a quit the tray's 退出并停止收信 began.
+	"CancelTrayQuit": true,
+	// Whether the backend's tray shows its icon: the interface's window hides only where it can come back.
+	"TrayShown": true,
+}
+
+// Expose picks the *core.Service methods callable by the full role: every
+// exported one except hidden, uiOnly, and the test hooks (…ForTest).
 func Expose(method string) bool {
-	return !hidden[method] && !strings.HasSuffix(method, "ForTest")
+	return !hidden[method] && !uiOnly[method] && !strings.HasSuffix(method, "ForTest")
 }
 
-// Listen serves svc's exposed methods on <dataDir>/godwit.sock (see
-// rpc.Listen; the caller holds the owner lock). Errors go out through
-// NewCodec; the API token and svc's secrets are redacted from them and from
-// the log. Sends, forwarding rules and grants by the full role and drafts by
-// the mcp role are audited before they are dispatched; SetSettings widening
-// MCPSend is audited atomically with the save under settingsMu.
+// ExposeUI picks the *core.Service methods callable by the ui role: everything
+// Expose allows plus uiOnly.
+func ExposeUI(method string) bool {
+	return Expose(method) || uiOnly[method]
+}
+
+// ListenOptions configures ListenWith.
+type ListenOptions struct {
+	Version   string
+	External  bool // allow RoleFull and RoleMCP connections and write api-token
+	UIStarted bool // see rpc.ServerOptions
+}
+
+// Listen serves svc's exposed methods on <dataDir>/godwit.sock with external
+// access enabled (see ListenWith).
 func Listen(dataDir string, svc *core.Service, version string) (*rpc.Server, error) {
+	return ListenWith(dataDir, svc, ListenOptions{Version: version, External: true})
+}
+
+// ListenWith serves svc's exposed methods on <dataDir>/godwit.sock (see
+// rpc.Listen; the caller holds the owner lock). Errors go out through
+// NewCodec; the UI and API tokens and svc's secrets are redacted from them and
+// from the log. Sends, forwarding rules and grants by the full and ui roles and
+// drafts by the mcp role are audited before they are dispatched (ui's under its
+// own source, with no external-source gating); SetSettings widening MCPSend is
+// audited atomically with the save under settingsMu.
+func ListenWith(dataDir string, svc *core.Service, opts ListenOptions) (*rpc.Server, error) {
 	d, err := rpc.NewDispatcher(svc, Expose)
 	if err != nil {
 		return nil, err
 	}
+	ui, err := rpc.NewDispatcher(svc, ExposeUI)
+	if err != nil {
+		return nil, err
+	}
 	return rpc.Listen(dataDir, d, rpc.ServerOptions{
-		Version: version,
-		Codec:   NewCodec(),
-		Redact:  svc.Redact,
-		Audit:   func(role, method string, params []json.RawMessage) error { return audit(svc, role, method, params) },
+		Version:         opts.Version,
+		DisableExternal: !opts.External,
+		UIStarted:       opts.UIStarted,
+		Codec:           NewCodec(),
+		Redact:          svc.Redact,
+		UIDispatcher:    ui,
+		Audit:           func(role, method string, params []json.RawMessage) error { return audit(svc, role, method, params) },
 		Context: func(ctx context.Context, role string) context.Context {
-			if role == rpc.RoleFull {
+			switch role {
+			case rpc.RoleFull:
 				return core.WithExternalSource(ctx, core.AuditLocalAPI)
+			case rpc.RoleUI:
+				return core.WithUISession(ctx, svc)
 			}
 			return ctx
 		},
 	})
 }
 
-// audit records full's Send, SendAcknowledged and their Revision forms (by draft), ResolveOutbox
-// "resend" (by outbox item), Unsubscribe (by message), BeginPluginLogin, the rule calls that
-// make a rule forward (ruleForward), the extension grants (egressGrant: GrantMCPServer,
-// SetMCPToolTrusted turning trust on, GrantPermission), and the CardDAV calls that reach or
-// schedule polling of an address-book host (addressBookEgress), and mcp's NewDraft (by source message)
-// and SaveDraft (by draft); SetSettings widening MCPSend is audited inside SetSettings in the
-// same transaction as the write, and nothing else is audited. A row it cannot write stops the call.
+// audit records full's and ui's Send, SendAcknowledged and their Revision forms (by draft),
+// ResolveOutbox "resend" (by outbox item), Unsubscribe (by message), BeginPluginLogin, the rule
+// calls that make a rule forward (ruleForward), the extension grants (egressGrant:
+// GrantMCPServer, SetMCPToolTrusted turning trust on, GrantPermission), and the CardDAV calls that
+// reach or schedule polling of an address-book host (addressBookEgress); and mcp's NewDraft (by
+// source message) and SaveDraft (by draft); SetSettings widening MCPSend is audited inside
+// SetSettings in the same transaction as the write, and nothing else is audited. full's rows are
+// local_api, ui's are ui: a same-user program can present ui-token (ADR 0002). A row it cannot
+// write stops the call.
 func audit(svc *core.Service, role, method string, params []json.RawMessage) error {
-	if role == rpc.RoleFull {
+	source := map[string]string{rpc.RoleFull: core.AuditLocalAPI, rpc.RoleUI: core.AuditUI, rpc.RoleMCP: core.AuditMCP}[role]
+	if role == rpc.RoleFull || role == rpc.RoleUI {
 		for _, check := range []func(*core.Service, string, []json.RawMessage) (int64, []string, bool, error){ruleForward, egressGrant, addressBookEgress} {
 			target, dests, ok, err := check(svc, method, params)
 			if err != nil {
 				return err
 			}
 			if ok {
-				return svc.AuditExternal(context.Background(), core.AuditLocalAPI, method, target, dests...)
+				return svc.AuditExternal(context.Background(), source, method, target, dests...)
 			}
 		}
 	}
-	source := ""
 	switch {
-	case role == rpc.RoleFull && (method == "Send" || method == "SendAcknowledged" || method == "SendRevision" || method == "SendAcknowledgedRevision" ||
+	case (role == rpc.RoleFull || role == rpc.RoleUI) && (method == "Send" || method == "SendAcknowledged" || method == "SendRevision" || method == "SendAcknowledgedRevision" ||
 		method == "ResolveOutbox" && isResend(params) || method == "Unsubscribe" || method == "BeginPluginLogin"):
-		source = core.AuditLocalAPI
 	case role == rpc.RoleMCP && (method == "NewDraft" || method == "SaveDraft"):
-		source = core.AuditMCP
 	default:
 		return nil
 	}

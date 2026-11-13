@@ -23,12 +23,17 @@ import (
 // Settings are the app-wide preferences, stored as one JSON row.
 // ReplyLanguage is "match" (the mail's language) or "reading".
 type Settings struct {
-	Theme, Density                                                 string
-	FontSize, BodyFontSize                                         int // BodyFontSize 0 follows FontSize
-	UILanguage, ReadingLanguage, ReplyLanguage                     string
-	NoTranslate                                                    []string
-	LaunchAtLogin, KeepInBackground, ShowTrayIcon, UnreadInMenuBar bool
-	UnreadOnAppIcon                                                bool
+	Theme, Density                               string
+	FontSize, BodyFontSize                       int // BodyFontSize 0 follows FontSize
+	UILanguage, ReadingLanguage, ReplyLanguage   string
+	NoTranslate                                  []string
+	LaunchAtLogin, ShowTrayIcon, UnreadInMenuBar bool
+	UnreadOnAppIcon                              bool
+	// BackgroundReceive is 后台收信, how long the backend keeps receiving
+	// once the interface goes: BackgroundReceiveStopOnClose,
+	// BackgroundReceiveUntilQuit (the default) or BackgroundReceiveAlways.
+	// Enabled background rules raise it to at least BackgroundReceiveUntilQuit.
+	BackgroundReceive string
 	// BackgroundSync is what syncs while the window is behind another app:
 	// BackgroundSyncInbox (the default; "" too), whose other folders catch up
 	// when the window comes back, or BackgroundSyncAll.
@@ -165,11 +170,12 @@ type Settings struct {
 	// stored FontSize was raised by one to keep its sizes; 3 once a stored
 	// BodyFontSize of 14, the old default, became 0 (follow FontSize); 4 once
 	// Chinese language tags name the script (zh-CN → zh-Hans, zh-TW → zh-Hant);
-	// 5 once the LightBackground switch became BackgroundSync.
+	// 5 once the LightBackground switch became BackgroundSync; 6 once the
+	// KeepInBackground switch became BackgroundReceive.
 	SettingsVersion int
 }
 
-const settingsVersion = 5
+const settingsVersion = 6
 
 // chineseScriptTag is the script tag a region-tagged Chinese setting became
 // in settings version 4.
@@ -229,6 +235,15 @@ const (
 	BackgroundSyncAll   = "all"
 )
 
+// How long the backend keeps receiving mail (Settings.BackgroundReceive):
+// it stops as the window closes; it stays after the window closes and stops
+// as Godwit quits; it stays even then, quitting closing only the interface.
+const (
+	BackgroundReceiveStopOnClose = "stop_on_close"
+	BackgroundReceiveUntilQuit   = "until_quit"
+	BackgroundReceiveAlways      = "always"
+)
+
 // How wide the reading column may grow (Settings.ReaderWidth).
 const (
 	ReaderWidthNormal = "normal"
@@ -245,7 +260,7 @@ const (
 
 func defaultSettings() Settings {
 	return Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: settingsVersion, ReplyLanguage: "match", RemoteImages: "auto",
-		KeepInBackground: true, ShowTrayIcon: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, BackgroundSync: BackgroundSyncInbox,
+		BackgroundReceive: BackgroundReceiveUntilQuit, ShowTrayIcon: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, BackgroundSync: BackgroundSyncInbox,
 		ThreadCollapse: true, ThreadCollapseThreshold: DefaultThreadCollapse, AutoLabel: true, LabelDisplay: LabelDisplayBoth, JudgeThreshold: 0.8,
 		MCPSend: MCPSendConfirm, Masking: true, MaskCategories: defaultMaskCategories(),
 		SecurityWarnings: true, VerifiedBadge: true, SecurityAI: false, ProxyMode: ProxySystem}
@@ -298,6 +313,8 @@ func (st Settings) validate(kept []mask.Rule) error {
 		return fmt.Errorf("invalid list row order %q", st.ListRowOrder)
 	case !in(st.BackgroundSync, "", BackgroundSyncInbox, BackgroundSyncAll):
 		return fmt.Errorf("invalid background sync %q", st.BackgroundSync)
+	case !in(st.BackgroundReceive, "", BackgroundReceiveStopOnClose, BackgroundReceiveUntilQuit, BackgroundReceiveAlways):
+		return fmt.Errorf("invalid background receive %q", st.BackgroundReceive)
 	case !in(st.ReaderWidth, "", ReaderWidthNormal, ReaderWidthWide, ReaderWidthFull):
 		return fmt.Errorf("invalid reader width %q", st.ReaderWidth)
 	case st.FontSize < 10 || st.FontSize > 32, st.BodyFontSize != 0 && (st.BodyFontSize < 10 || st.BodyFontSize > 32):
@@ -362,6 +379,7 @@ func (s *Service) loadSettings(ctx context.Context) (Settings, error) {
 	var stored struct {
 		FontSize, SettingsVersion int
 		LightBackground           *bool // version 4's switch; off kept every folder syncing
+		KeepInBackground          *bool // version 5's switch; off quit as the window closed
 	} // the defaults must not stand in for the stored version
 	if err := json.Unmarshal(raw, &stored); err != nil {
 		return Settings{}, fmt.Errorf("stored settings: %w", err)
@@ -383,6 +401,9 @@ func (s *Service) loadSettings(ctx context.Context) (Settings, error) {
 	}
 	if stored.SettingsVersion < 5 && stored.LightBackground != nil && !*stored.LightBackground {
 		st.BackgroundSync = BackgroundSyncAll
+	}
+	if stored.SettingsVersion < 6 && stored.KeepInBackground != nil && !*stored.KeepInBackground {
+		st.BackgroundReceive = BackgroundReceiveStopOnClose
 	}
 	st.JudgeThreshold = max(MinJudgeThreshold, min(MaxJudgeThreshold, st.JudgeThreshold)) // older builds allowed 0..1
 	st.ThreadCollapseThreshold = max(MinThreadCollapse, min(MaxThreadCollapse, st.ThreadCollapseThreshold))
@@ -425,7 +446,11 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 		return Settings{}, err
 	}
 	stmts := []sqlite.Statement{stmt}
-	if src, _ := ctx.Value(externalSourceKey{}).(string); src == AuditLocalAPI && mcpSendRank(st.MCPSend) > mcpSendRank(stored.MCPSend) {
+	src, _ := ctx.Value(externalSourceKey{}).(string)
+	if uiSessionFromContext(ctx) != nil {
+		src = AuditUI
+	}
+	if (src == AuditLocalAPI || src == AuditUI) && mcpSendRank(st.MCPSend) > mcpSendRank(stored.MCPSend) {
 		stmts = append(stmts, gateway.Audit(gateway.Entry{Source: src, Tool: "SetSettings", Decision: "allow"}, s.secrets.Redact))
 	}
 	if _, err := s.db.Transaction(ctx, stmts); err != nil {
@@ -445,6 +470,9 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 	}
 	s.setProxy(st, password)
 	s.maskingChanged(st)
+	if (st.BackgroundSync == BackgroundSyncAll) != (stored.BackgroundSync == BackgroundSyncAll) {
+		s.applyUIBackgroundSync(st)
+	}
 	if securityOn(st) && (!securityOn(stored) || st.SecurityAI && !stored.SecurityAI) {
 		s.wakeSecurityScanner()
 	}

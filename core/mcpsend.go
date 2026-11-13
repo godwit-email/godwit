@@ -27,11 +27,15 @@ const mcpSendTTL = 10 * time.Minute
 const maxMCPSends = 5
 
 var (
-	// ErrMCPSendOff: 通过 MCP 发送 is 不允许, or 每次确认 with no window to confirm in (--headless).
+	// ErrMCPSendOff: 通过 MCP 发送 is 不允许.
 	ErrMCPSendOff = errors.New("sending through MCP is off; the user can turn it on in Godwit under Settings › Intelligence › AI apps › Send through MCP")
 	// ErrMCPSendComposing: 直接发送 of a draft open in a compose window,
 	// which may hold edits not saved yet.
 	ErrMCPSendComposing = errors.New("the draft is open in a compose window in Godwit; the user can send it there")
+	// ErrMCPSendNoUI: 每次确认 with no window to confirm in and no
+	// notification to open one (no interface, no graphical session): the
+	// setting is on, so the agent must not tell the user to turn it on.
+	ErrMCPSendNoUI = errors.New("Godwit cannot ask the user to confirm right now: no Godwit window is open and it cannot post a notification; ask again once the user has opened Godwit")
 	// ErrMCPSendBusy: maxMCPSends requests wait for the user already.
 	ErrMCPSendBusy = errors.New("too many sends are waiting for the user in Godwit; ask again once the user has answered them")
 )
@@ -63,11 +67,12 @@ type mcpSend struct {
 func (r *mcpSend) expired() bool { return time.Since(r.created) >= mcpSendTTL }
 
 // RequestMCPSend is godwit mcp's send_draft: what it does follows
-// Settings.MCPSend. 不允许 (or 每次确认 headless) is ErrMCPSendOff. 每次确认
-// records a request bound to the draft's revision, one per draft (a newer
-// revision's replaces the older), at most maxMCPSends (ErrMCPSendBusy), for
-// the user to confirm (PendingMCPSends, ResolveMCPSend), and announces
-// mcp_sends.changed; sent is false. 直接发送 queues the draft as Send does,
+// Settings.MCPSend. 不允许 (or 每次确认 with no way to confirm it: neither a
+// connected ui client nor a notification NotifyMCPSend posts) is ErrMCPSendNoUI. 每次确认 records a request bound to the draft's
+// revision, one per draft (a newer revision's replaces the older), at most
+// maxMCPSends (ErrMCPSendBusy), for the user to confirm (PendingMCPSends,
+// ResolveMCPSend), notifies it while no ui client is connected, and
+// announces mcp_sends.changed; sent is false. 直接发送 queues the draft as Send does,
 // audited as an MCP send, unless a compose window has it
 // (ErrMCPSendComposing); sent is true. A revision other than the draft's is
 // ErrStaleDraft.
@@ -84,7 +89,7 @@ func (s *Service) RequestMCPSend(ctx context.Context, draftID, revision int64) (
 	revision = max(revision, 0) // a negative one would mean any
 	switch level := cmp.Or(st.MCPSend, MCPSendConfirm); {
 	case level == MCPSendDirect:
-		if s.opts.ComposeOpen != nil && s.opts.ComposeOpen(draftID) {
+		if s.IsComposeOpen(draftID) {
 			return false, ErrMCPSendComposing
 		}
 		if err := s.send(ctx, draftID, revision, nil); err != nil {
@@ -94,8 +99,10 @@ func (s *Service) RequestMCPSend(ctx context.Context, draftID, revision int64) (
 			slog.Default().Warn("could not audit an MCP send", "draft", draftID, "err", err)
 		}
 		return true, nil
-	case level == MCPSendOff || !s.opts.ConfirmWindow:
+	case level == MCPSendOff:
 		return false, ErrMCPSendOff
+	case !s.UIConnected() && s.opts.NotifyMCPSend == nil:
+		return false, ErrMCPSendNoUI
 	}
 	s.editMu.Lock()
 	d, err := s.GetDraft(ctx, draftID)
@@ -154,8 +161,15 @@ func (s *Service) RequestMCPSend(ctx context.Context, draftID, revision int64) (
 		s.sendReqs = map[int64]*mcpSend{}
 	}
 	s.sendReqID++
-	s.sendReqs[s.sendReqID] = &mcpSend{draftID: draftID, revision: revision, created: time.Now(), from: acc.Email, firstTime: first}
+	id := s.sendReqID
+	s.sendReqs[id] = &mcpSend{draftID: draftID, revision: revision, created: time.Now(), from: acc.Email, firstTime: first}
 	s.sendReqMu.Unlock()
+	if !s.UIConnected() && (s.opts.NotifyMCPSend == nil || !s.opts.NotifyMCPSend(id)) {
+		s.sendReqMu.Lock()
+		delete(s.sendReqs, id) // never offered to the user: the older ones stay
+		s.sendReqMu.Unlock()
+		return false, ErrMCPSendNoUI
+	}
 	endOlder()
 	s.bus.Publish(events.Event{Type: events.MCPSendsChanged})
 	return false, nil

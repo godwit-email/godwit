@@ -755,20 +755,32 @@ func (s *Service) updatePassword(ctx context.Context, id int64, password string,
 		return err
 	}
 	r, err := s.check(ctx, in, "")
+	// An imported account never signed in has no sending password of its own
+	// yet: one SMTP refuses is asked for apart (smtp_reauth, UpdateSendPassword),
+	// receiving signing in with this one now.
+	sendApart := err != nil && !send && acc.StatusDetail == "credentials_missing" && in.SendPassword == "" && r.OnlySendingFailed()
 	// A receive-only account needs receiving only; so does a JMAP sign-in that may not send.
-	if err != nil && !((acc.ReceiveOnly || acc.Receiving.Protocol == auth.JMAP) && r.OnlySendingFailed()) {
+	if err != nil && !sendApart && !((acc.ReceiveOnly || acc.Receiving.Protocol == auth.JMAP) && r.OnlySendingFailed()) {
 		return &CheckError{Report: r, err: err}
 	}
 	// A refusal of the old password still in flight is stale after credentialsUpdated.
 	if err := keychainSet(user, password); err != nil {
 		return fmt.Errorf("save credentials to keychain: %w", err)
 	}
-	if acc.ReceiveOnly != (err != nil) { // sending takes the new password, or (JMAP) refuses it
+	if !send {
+		if _, err := s.db.Execute(ctx, "UPDATE accounts SET receive_only = ?, features = COALESCE(?, features) WHERE id = ?", b2i(err != nil && !sendApart), encodeFeatures(r.desc), id); err != nil {
+			return err
+		}
+	} else if acc.ReceiveOnly != (err != nil) {
 		if _, err := s.db.Execute(ctx, "UPDATE accounts SET receive_only = ? WHERE id = ?", b2i(err != nil), id); err != nil {
 			return err
 		}
 	}
-	return s.credentialsUpdated(ctx, id, nil)
+	if err := s.credentialsUpdated(ctx, id, nil); err != nil || !sendApart {
+		return err
+	}
+	_, err = s.db.Execute(context.WithoutCancel(ctx), "UPDATE accounts SET smtp_reauth = 1 WHERE id = ?", id)
+	return err
 }
 
 // Reauthorize gives an OAuth account the tokens of a finished flow, which must

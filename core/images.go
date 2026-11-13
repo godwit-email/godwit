@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"sync"
 	"time"
@@ -18,9 +19,58 @@ const (
 	prefetchBytes  = 15 << 20
 )
 
+// CachedImageFile is a remote mail image cached on disk.
+type CachedImageFile struct {
+	Path          string
+	Format        string
+	Width, Height int
+}
+
+// ImageDims is the cached pixel size of a remote mail image, when on disk.
+type ImageDims struct {
+	Width, Height int
+	OK            bool
+}
+
 // ImageCache is the shared disk cache of remote mail images, which the
 // reader's image proxy serves from and prefetch fills.
 func (s *Service) ImageCache() *imagecache.Cache { return s.images }
+
+// CachedImage returns src's cached image file on disk, downloading it first if needed.
+func (s *Service) CachedImage(ctx context.Context, src string) (CachedImageFile, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return CachedImageFile{}, err
+	}
+	defer end()
+	path, format, w, h, err := s.images.GetFile(ctx, src)
+	var ns *imagecache.NotStoredError
+	if errors.As(err, &ns) { // shown all the same, as in process
+		// shortcut: the file stays in raw-out until the next start; serve the bytes over the wire if disk-full turns out common.
+		img := ns.Image
+		if path, err = s.outFile(img.Data, "*.img"); err == nil {
+			return CachedImageFile{Path: path, Format: img.Format, Width: img.Width, Height: img.Height}, nil
+		}
+	}
+	if err != nil {
+		return CachedImageFile{}, err
+	}
+	return CachedImageFile{Path: path, Format: format, Width: w, Height: h}, nil
+}
+
+// CachedImageDims returns src's pixel size when src is already cached on disk.
+func (s *Service) CachedImageDims(src string) ImageDims {
+	w, h, ok := s.images.Dims(src)
+	return ImageDims{Width: w, Height: h, OK: ok}
+}
+
+// ForgetImageFailure clears cached download failures for urls so the next
+// CachedImage call retries them at once.
+func (s *Service) ForgetImageFailure(urls []string) {
+	for _, u := range urls {
+		s.images.ForgetFailure(u)
+	}
+}
 
 // ImageCacheSize is the bytes the cached remote images take on disk.
 func (s *Service) ImageCacheSize() int64 { return s.images.Size() }

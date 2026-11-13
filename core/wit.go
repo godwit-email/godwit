@@ -99,7 +99,7 @@ func (s *Service) askAt(ctx context.Context, conversationID int64, input string,
 	if strings.TrimSpace(input) == "" {
 		return nil, errors.New("the question is empty")
 	}
-	ctx, end, err := s.begin(ctx, 0)
+	ctx, end, err := s.begin(runCaller(ctx), 0)
 	if err != nil {
 		return nil, err
 	}

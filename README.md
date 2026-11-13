@@ -73,6 +73,32 @@ godwit dev-sync-db                                    replace the dev database f
 godwit --version
 ```
 
+### Receive mail from login on Linux
+
+On macOS and Windows, 后台收信 › 一直继续 starts Godwit's backend when you log in. Linux leaves that to you: run `godwit --headless` as a systemd user service, and the desktop app connects to it when you open it. Save this as `~/.config/systemd/user/godwit.service` (adjust the path to `godwit`):
+
+```ini
+[Unit]
+Description=Godwit backend
+# After the desktop session has exported DISPLAY or WAYLAND_DISPLAY: the
+# backend decides at start whether it can show notifications and a tray.
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/godwit --headless
+Restart=on-failure
+
+[Install]
+WantedBy=graphical-session.target
+```
+
+```sh
+systemctl --user enable --now godwit
+```
+
+A backend you start this way keeps running when the app quits and always serves the Local API to other programs of your user.
+
 ## Development
 
 Godwit is written in Go on [MyGo](https://github.com/egoist/mygo): the main window is native UI, while compose, the Wit page and the message reader are React pages in `web/`. [mise](https://mise.jdx.dev) installs the pinned Go and Bun:

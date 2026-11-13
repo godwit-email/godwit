@@ -1,0 +1,172 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"os/exec"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"github.com/godwit-email/godwit/app"
+	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/ownerlock"
+	"github.com/godwit-email/godwit/uiclient"
+)
+
+// uiStartedFlag marks the backend the interface starts (headless's uiStarted).
+const uiStartedFlag = "ui-started"
+
+// The exit codes of a backend that could not start, by which the interface
+// that started it says why (startupFailure); any other failure exits 1.
+const (
+	exitAnotherOwner = 2 // another process owns the data directory
+	exitLockFailed   = 3 // the owner lock could not be taken
+	exitOpenDenied   = 4 // opening the data directory was not permitted
+)
+
+// backendWait bounds how long the interface waits for its backend to answer:
+// opening the database may migrate it. ownerWait bounds it once a started
+// backend found another owner, which is quitting (a slow disk, a send in
+// flight) or about to answer; each started backend waits ownerRetry for it.
+const backendWait, ownerWait, ownerRetry = time.Minute, 30 * time.Second, time.Second
+
+// backendCmd is the backend the interface starts on dataDir: this
+// executable, headless and marked as the interface's, outliving it
+// (detachBackend). Tests swap it.
+var backendCmd = func(dataDir string) (*exec.Cmd, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(exe, "--headless", "--data-dir", dataDir, "--"+uiStartedFlag)
+	detachBackend(cmd)
+	return cmd, nil
+}
+
+// startupError is a backend that exited with its code before it answered.
+type startupError int
+
+func (e startupError) Error() string { return fmt.Sprintf("the backend exited with code %d", int(e)) }
+
+// versionError is a backend of another version the interface will not
+// replace: the user's --headless, or one it started itself. It is the
+// backend's version.
+type versionError string
+
+func (e versionError) Error() string { return "the backend runs version " + string(e) }
+
+// connectBackend dials dataDir's backend as the ui role: one already
+// running, the user's --headless included, or else one it starts
+// (backendCmd), waiting up to wait for it to answer. A started backend that
+// finds another owner (one still quitting, or another interface's starting)
+// is started again for up to ownerWait more; one that fails otherwise is its
+// startupError at once. A backend of another version that an interface
+// started is stopped (stopBackend) and replaced; the user's is a versionError.
+func connectBackend(dataDir string, wait time.Duration) (*uiclient.Client, error) {
+	deadline := time.Now().Add(wait)
+	var exited chan error // the started backend's Wait; nil while none runs
+	var last error = errors.New("the backend did not answer")
+	started := false
+	for {
+		c, err := uiclient.Dial(dataDir, "")
+		if err == nil {
+			h := c.RPC().Hello()
+			if h.Server == "godwit/"+app.Version {
+				return c, nil
+			}
+			if !h.UIStarted || started {
+				c.Close()
+				return nil, versionError(strings.TrimPrefix(h.Server, "godwit/"))
+			}
+			replaceBackend(c) // ours, started next, waits for its exit (exitAnotherOwner)
+		}
+		if time.Now().After(deadline) {
+			return nil, last
+		}
+		if exited == nil {
+			cmd, err := backendCmd(dataDir)
+			if err == nil {
+				err = cmd.Start()
+			}
+			if err != nil {
+				return nil, err
+			}
+			started = true
+			exited = make(chan error, 1)
+			go func() { exited <- cmd.Wait() }()
+		}
+		select {
+		case err := <-exited:
+			exited = nil
+			code := 0
+			if ee := (*exec.ExitError)(nil); errors.As(err, &ee) {
+				code = ee.ExitCode()
+			}
+			if last = startupError(code); code != exitAnotherOwner {
+				return nil, last
+			}
+			if d := time.Now().Add(ownerWait); d.Before(deadline) {
+				deadline = d
+			}
+			time.Sleep(200 * time.Millisecond) // let the other owner finish starting or quitting
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
+// startupFailure is what the interface tells the user when connectBackend
+// fails, as the GUI did when it opened the data directory itself, and its
+// exit code. The message never carries err's text.
+func startupFailure(err error) (msg string, code int) {
+	var ve versionError
+	if errors.As(err, &ve) {
+		return i18n.Tf("app.backend_version", string(ve), app.Version), 1
+	}
+	var se startupError
+	errors.As(err, &se)
+	switch se {
+	case exitAnotherOwner:
+		return lockFailure(ownerlock.ErrAnotherOwner)
+	case exitLockFailed:
+		return lockFailure(err)
+	case exitOpenDenied:
+		return openFailure(fs.ErrPermission), 1
+	}
+	return openFailure(err), 1
+}
+
+// watchBackend calls lost once c's connection drops while the interface is
+// not quitting: the backend went away under it.
+func watchBackend(c *uiclient.Client, quitting *atomic.Bool, lost func()) {
+	go func() {
+		<-c.Done()
+		if !quitting.Load() {
+			lost()
+		}
+	}()
+}
+
+// stopBackend asks c's backend to stop as the interface quits, and waits a
+// little for it to go so a relaunch finds it gone. A backend the user started,
+// or one whose 后台收信 is 一直继续, refuses and keeps running.
+func stopBackend(c *uiclient.Client) { endBackend(c, c.StopUIBackend) }
+
+// replaceBackend is stopBackend for an interface of another version: the
+// backend stops even under 一直继续 (ReplaceUIBackend).
+func replaceBackend(c *uiclient.Client) { endBackend(c, c.ReplaceUIBackend) }
+
+func endBackend(c *uiclient.Client, stop func(context.Context) error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := stop(ctx); err == nil {
+		select {
+		case <-c.Done():
+		case <-ctx.Done():
+		}
+	}
+	c.Close()
+}

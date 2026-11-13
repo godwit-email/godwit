@@ -11,7 +11,9 @@ import (
 // refreshSignInCodes also polls the durable arrival log: UI events are only
 // wakeups and can be dropped. All displayed codes share this one list.
 func (a *App) refreshSignInCodes() {
-	if !a.loaded {
+	// The tray and its banner are the backend's (ADR 0038): an interface
+	// with none of its own reads no codes.
+	if !a.loaded || !a.plat.SignInCodeBannerSupported() {
 		return
 	}
 	if a.codesLoading {

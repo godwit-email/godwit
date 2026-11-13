@@ -15,12 +15,16 @@ import (
 
 // MyGo checks before donation; check here too before reading an avatar.
 func (p *platform) notificationAvatar(n app.Notification) []byte {
-	if n.Sender == "" || n.MessageID == 0 || n.ThreadID == 0 || !communicationAuthorized() {
+	return notificationAvatar(p.svc, n)
+}
+
+func notificationAvatar(svc backendService, n app.Notification) []byte {
+	if svc == nil || n.Sender == "" || n.MessageID == 0 || n.ThreadID == 0 || !communicationAuthorized() {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 750*time.Millisecond)
 	defer cancel()
-	avatar, err := p.svc.SenderAvatar(ctx, n.MessageID, false)
+	avatar, err := svc.SenderAvatar(ctx, n.MessageID, false)
 	if err != nil {
 		return nil
 	}

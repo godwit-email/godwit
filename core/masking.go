@@ -333,5 +333,9 @@ func (s *Service) PreviewMasking(ctx context.Context, st Settings, text string) 
 		}
 		m.SetKnownNames(names)
 	}
-	return m.Text(text)
+	out, err := m.Text(text)
+	if b := ai.Blocked(err); b != nil {
+		return "", b // *ai.Error crosses the Local API; *mask.BlockedError does not
+	}
+	return out, err
 }

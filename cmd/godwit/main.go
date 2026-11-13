@@ -17,6 +17,7 @@ import (
 
 // main turns SIGINT and SIGTERM (Ctrl-C on Windows) into cancelling run's ctx.
 func main() {
+	inMain = true
 	if v := mygo.App.Version(); v != "" {
 		app.Version = v
 	}

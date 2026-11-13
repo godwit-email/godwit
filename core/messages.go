@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -543,52 +544,113 @@ func (s *Service) GetMessageLazyImages(ctx context.Context, id int64, loadRemote
 	return s.readMessage(ctx, id, loadRemoteImages, true)
 }
 
-// InlineImages calls each with the inline images message id's body shows,
-// downloading the missing ones in turn over one connection. One that cannot be
-// had is left out, so its image stays blocked; the error is for the database or
-// an ended ctx.
-func (s *Service) InlineImages(ctx context.Context, id int64, each func(cid string, a gomail.Attachment)) error {
+// InlineImage is a message body's inline image cached on disk.
+type InlineImage struct {
+	CID         string
+	Path        string
+	ContentType string
+	Err         error `json:"-"`
+}
+
+// StreamError returns the mid-stream failure, if any.
+func (i InlineImage) StreamError() error { return i.Err }
+
+type inlineImageRef struct {
+	attID       int64
+	cid         string
+	contentType string
+}
+
+func (s *Service) inlineImageRefs(ctx context.Context, id int64) ([]inlineImageRef, error) {
 	id, err := s.resolveID(ctx, id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	rows, err := s.db.Query(ctx, "SELECT body_html FROM messages WHERE id = ?", id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(rows.Values) == 0 {
-		return fmt.Errorf("message %d not found", id)
+		return nil, fmt.Errorf("message %d not found", id)
 	}
 	raw := store.Str(rows.Values[0][0])
 	ar, err := s.db.Query(ctx, "SELECT id, content_type, content_id FROM attachments WHERE message_id = ? ORDER BY id", id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	ids := map[string]bool{}
 	for _, a := range ar.Values {
 		ids[store.Str(a[2])] = true
 	}
 	refs := sync.OnceValue(func() []string { return gomail.CIDs(raw) })
-	fetcher := s.newAttachmentFetcher(ctx)
-	defer fetcher.close()
+	var out []inlineImageRef
 	for _, a := range ar.Values {
 		contentType := store.Str(a[1])
-		cid := inlineCID(raw, store.Str(a[2]), contentType, refs, ids)
-		if cid == "" {
-			continue
+		if cid := inlineCID(raw, store.Str(a[2]), contentType, refs, ids); cid != "" {
+			out = append(out, inlineImageRef{attID: store.Int(a[0]), cid: cid, contentType: contentType})
 		}
-		path, _, err := fetcher.get(store.Int(a[0]))
-		if err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			continue // image stays blocked; the message is still readable
+	}
+	return out, nil
+}
+
+// InlineImages calls each with the inline images message id's body shows,
+// downloading the missing ones in turn over one connection: the
+// InlineImagesStream the interface reads over the Local API, its files read
+// in process. One that cannot be had is left out, so its image stays
+// blocked; the error is for the database or an ended ctx.
+func (s *Service) InlineImages(ctx context.Context, id int64, each func(cid string, a gomail.Attachment)) error {
+	ch, err := s.InlineImagesStream(ctx, id)
+	if err != nil {
+		return err
+	}
+	for it := range ch {
+		if it.Err != nil {
+			return it.Err
 		}
-		if data, err := readFile(path); err == nil {
-			each(cid, gomail.Attachment{Data: data, ContentType: contentType})
+		if data, err := readFile(it.Path); err == nil {
+			each(it.CID, gomail.Attachment{Data: data, ContentType: it.ContentType})
 		}
 	}
 	return ctx.Err()
+}
+
+// InlineImagesStream streams the cached disk paths of message id's inline body
+// images over one connection. Images that cannot be downloaded are skipped;
+// database or context failures fail the call or stream.
+func (s *Service) InlineImagesStream(ctx context.Context, id int64) (<-chan InlineImage, error) {
+	fctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	items, err := s.inlineImageRefs(fctx, id)
+	if err != nil {
+		end()
+		return nil, err
+	}
+	ch := make(chan InlineImage, 16)
+	fetcher := &attachmentFetcher{s: s, ctx: fctx, end: end}
+	go func() {
+		defer close(ch)
+		defer fetcher.close()
+		for _, it := range items {
+			path, _, err := fetcher.get(it.attID)
+			if err != nil {
+				if fctx.Err() != nil {
+					if ctx.Err() != nil {
+						sendStreamFinal(fctx, ch, InlineImage{Err: ctx.Err()})
+					}
+					return
+				}
+				continue
+			}
+			if _, err := os.Stat(path); err == nil {
+				if !sendStream(fctx, ch, InlineImage{CID: it.cid, Path: path, ContentType: it.contentType}) {
+					return
+				}
+			}
+		}
+	}()
+	return ch, nil
 }
 
 // inlineCID returns cid as the body raw spells it when raw shows that attachment

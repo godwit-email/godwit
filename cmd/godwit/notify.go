@@ -9,6 +9,16 @@ import (
 	"github.com/godwit-email/godwit/app"
 )
 
+func showNotification(svc backendService, n app.Notification) error {
+	return mygo.NewNotification(notificationOptions(n, notificationAvatar(svc, n))).Show()
+}
+
+type noNotifySink struct{}
+
+func (noNotifySink) NotificationsSupported() bool    { return false }
+func (noNotifySink) SignInCodeBannerSupported() bool { return false }
+func (noNotifySink) Notify(app.Notification) error   { return nil }
+
 func notificationOptions(n app.Notification, avatar []byte) mygo.NotificationOptions {
 	opts := mygo.NotificationOptions{ID: n.ID, Title: n.Title, Subtitle: n.Subtitle, Body: n.Body}
 	if n.MessageID == 0 || n.ThreadID == 0 || len(avatar) == 0 {

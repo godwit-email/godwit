@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/godwit-email/godwit/core"
@@ -104,7 +105,7 @@ type Wit struct {
 	askMu sync.Mutex
 
 	mu      sync.Mutex
-	svc     *core.Service
+	svc     Service
 	conv    int64          // the snapshot: the route's conversation
 	own     map[int64]bool // the runs the page's Ask started: Stop takes them wherever it is
 	version int64          // bumped per SetConversation
@@ -118,7 +119,7 @@ type Wit struct {
 func NewWit(pages *Pages, d WitPageDeps) *Wit { return &Wit{pages: pages, d: d} }
 
 // SetService gives the page the service, once the data is open.
-func (w *Wit) SetService(svc *core.Service) {
+func (w *Wit) SetService(svc Service) {
 	w.mu.Lock()
 	w.svc = svc
 	w.mu.Unlock()
@@ -132,7 +133,7 @@ type WitPage struct{ w *Wit }
 func NewWitPage(w *Wit) *WitPage { return &WitPage{w: w} }
 
 // caller is the calling page, if it is the Wit page, and the service.
-func (w *Wit) caller(ctx context.Context) (Target, *core.Service, error) {
+func (w *Wit) caller(ctx context.Context) (Target, Service, error) {
 	id, err := w.pages.Caller(ctx, "wit")
 	if err != nil {
 		return Target{}, nil, err
@@ -215,13 +216,17 @@ func (w *Wit) SettingsChanged(st core.Settings) { w.d.State(w.state(st)) }
 
 func (w *Wit) state(st core.Settings) WitPageState {
 	w.mu.Lock()
-	defer w.mu.Unlock()
-	return WitPageState{Conversation: w.conv, Version: w.version, Model: modelLabel(context.Background(), w.svc, st.DefaultModel), Locale: i18n.Language(), Theme: ThemeOf(st)}
+	svc, conv, version := w.svc, w.conv, w.version
+	w.mu.Unlock()
+	// A call to the backend, maybe from the UI thread: not under w.mu, and bounded.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return WitPageState{Conversation: conv, Version: version, Model: modelLabel(ctx, svc, st.DefaultModel), Locale: i18n.Language(), Theme: ThemeOf(st)}
 }
 
 // modelLabel is a default model's label: its display name (svc nil: none),
 // else its ID without the provider.
-func modelLabel(ctx context.Context, svc *core.Service, model string) string {
+func modelLabel(ctx context.Context, svc Service, model string) string {
 	if strings.HasPrefix(model, "plugin/"+core.AppleIntelligencePlugin+"/") {
 		return "Apple Intelligence"
 	}
@@ -260,24 +265,34 @@ func (w *Wit) selection() uint64 {
 // followConv makes the page follow conv for selection sel: its
 // subscription if it follows conv, else a new one in place of it. A newer
 // selection since gets errSuperseded.
-func (w *Wit) followConv(t Target, svc *core.Service, conv int64, sel uint64) (*follow, error) {
+func (w *Wit) followConv(t Target, svc Service, conv int64, sel uint64) (*follow, error) {
 	w.mu.Lock()
 	if sel != w.sel {
 		w.mu.Unlock()
 		return nil, errSuperseded
 	}
 	old := w.f
-	if old != nil && old.conv == conv {
+	if old != nil && old.conv == conv && old.live() {
 		w.mu.Unlock()
 		return old, nil
 	}
+	w.mu.Unlock()
 	var f *follow
 	var ch <-chan core.WitEvent
-	if conv != 0 {
+	if conv != 0 { // a call to the backend: not under w.mu, which the page's calls take
 		var stop func()
 		ch, stop = svc.SubscribeConversation(conv)
 		f = &follow{conv: conv, stop: stop}
 	}
+	w.mu.Lock()
+	if sel != w.sel {
+		w.mu.Unlock()
+		if f != nil {
+			f.stop()
+		}
+		return nil, errSuperseded
+	}
+	old = w.f
 	w.f = f
 	w.mu.Unlock()
 	if old != nil {
@@ -290,7 +305,7 @@ func (w *Wit) followConv(t Target, svc *core.Service, conv int64, sel uint64) (*
 }
 
 // followWith makes the page follow conv on ch, a subscription stop ends
-// (core FollowConversation), for selection sel, in place of what it
+// (followConversation), for selection sel, in place of what it
 // followed. A newer selection since gets errSuperseded.
 func (w *Wit) followWith(t Target, conv int64, ch <-chan core.WitEvent, stop func(), sel uint64) error {
 	w.mu.Lock()
@@ -321,7 +336,7 @@ func (w *Wit) followed() int64 {
 }
 
 // askConv checks conv is an ask conversation.
-func askConv(ctx context.Context, svc *core.Service, conv int64) error {
+func askConv(ctx context.Context, svc Service, conv int64) error {
 	c, err := svc.GetConversation(ctx, conv)
 	if err == nil && c.Kind != "ask" {
 		err = ErrNotAsk
@@ -330,7 +345,7 @@ func askConv(ctx context.Context, svc *core.Service, conv int64) error {
 }
 
 // Follow makes the page follow conv, an ask conversation (0: none), and
-// returns its history (core FollowConversation): the events after it go to
+// returns its history (followConversation): the events after it go to
 // the page, none of them in it already. The newest selection wins: an older
 // Follow or Ask no longer subscribes.
 func (p *WitPage) Follow(ctx context.Context, conv int64) (WitHistory, error) {
@@ -343,12 +358,13 @@ func (p *WitPage) Follow(ctx context.Context, conv int64) (WitHistory, error) {
 		_, err := p.w.followConv(t, svc, 0, sel)
 		return noHistory(), keyed(err)
 	}
-	if err := askConv(ctx, svc, conv); err != nil {
-		return WitHistory{}, keyed(err)
-	}
-	c, ch, stop, err := svc.FollowConversation(ctx, conv)
+	c, ch, stop, err := followConversation(ctx, svc, conv)
 	if err != nil {
 		return WitHistory{}, keyed(err)
+	}
+	if c.Kind != "ask" {
+		stop()
+		return WitHistory{}, keyed(ErrNotAsk)
 	}
 	if followHook != nil {
 		followHook()
@@ -503,14 +519,14 @@ func (p *WitPage) Stop(ctx context.Context, run int64) error {
 // Decide accepts or rejects approval, one of the conversation the page
 // follows: the run it resumes streams on that subscription.
 func (p *WitPage) Decide(ctx context.Context, approval int64, accept bool) error {
-	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc *core.Service) error {
+	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc Service) error {
 		return svc.ResolveApproval(context.WithoutCancel(ctx), approval, accept)
 	})
 }
 
 // DecideWithArgs accepts or rejects approval with edited arguments args.
 func (p *WitPage) DecideWithArgs(ctx context.Context, approval int64, accept bool, args string) error {
-	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc *core.Service) error {
+	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc Service) error {
 		var raw json.RawMessage
 		if strings.TrimSpace(args) != "" {
 			raw = json.RawMessage(args)
@@ -522,7 +538,7 @@ func (p *WitPage) DecideWithArgs(ctx context.Context, approval int64, accept boo
 // DecideAll accepts or rejects every pending approval of run, one of the
 // conversation the page follows (全部允许). As Decide.
 func (p *WitPage) DecideAll(ctx context.Context, run int64, accept bool) error {
-	return p.decide(ctx, func(a core.Approval) bool { return a.RunID == run }, func(svc *core.Service) error {
+	return p.decide(ctx, func(a core.Approval) bool { return a.RunID == run }, func(svc Service) error {
 		return svc.ResolveAll(context.WithoutCancel(ctx), run, accept)
 	})
 }
@@ -530,7 +546,7 @@ func (p *WitPage) DecideAll(ctx context.Context, run int64, accept bool) error {
 // DecideSession accepts approval and allows its tool for the rest of the
 // conversation (本次对话都允许; core ResolveApprovalForConversation). As Decide.
 func (p *WitPage) DecideSession(ctx context.Context, approval int64) error {
-	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc *core.Service) error {
+	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc Service) error {
 		return svc.ResolveApprovalForConversation(context.WithoutCancel(ctx), approval)
 	})
 }
@@ -540,7 +556,7 @@ func (p *WitPage) DecideSession(ctx context.Context, approval int64) error {
 // EditProposedRule): its card stays pending until the user saves it, there
 // or from the card. As Decide.
 func (p *WitPage) EditRule(ctx context.Context, approval int64) error {
-	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc *core.Service) error {
+	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc Service) error {
 		r, err := svc.EditProposedRule(context.WithoutCancel(ctx), approval)
 		if err == nil {
 			conv := p.w.followed()
@@ -552,7 +568,7 @@ func (p *WitPage) EditRule(ctx context.Context, approval int64) error {
 
 // proposalAsk is the question of conv whose turn holds approval, for the
 // editor's banner; "" when it cannot be read.
-func proposalAsk(ctx context.Context, svc *core.Service, conv, approval int64) string {
+func proposalAsk(ctx context.Context, svc Service, conv, approval int64) string {
 	c, err := svc.GetConversation(ctx, conv)
 	if err != nil {
 		return ""
@@ -569,7 +585,7 @@ func proposalAsk(ctx context.Context, svc *core.Service, conv, approval int64) s
 // with one list of answers per question, for the round of its form the user
 // saw (core AnswerQuestion). As Decide.
 func (p *WitPage) Answer(ctx context.Context, approval int64, round int, answers [][]string) error {
-	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc *core.Service) error {
+	return p.decide(ctx, func(a core.Approval) bool { return a.ID == approval }, func(svc Service) error {
 		return svc.AnswerQuestion(context.WithoutCancel(ctx), approval, round, answers)
 	})
 }
@@ -585,7 +601,7 @@ func (p *WitPage) SearchMail(ctx context.Context, query string) ([]MailHit, erro
 
 // decide runs act once an approval of the followed conversation is, one
 // decision at a time.
-func (p *WitPage) decide(ctx context.Context, is func(core.Approval) bool, act func(*core.Service) error) error {
+func (p *WitPage) decide(ctx context.Context, is func(core.Approval) bool, act func(Service) error) error {
 	_, svc, err := p.w.caller(ctx)
 	if err != nil {
 		return keyed(err)
@@ -627,7 +643,7 @@ func (p *WitPage) CheckCited(ctx context.Context, message int64) error {
 }
 
 // checkCited is ErrMailGone for message deleted since it was cited.
-func checkCited(ctx context.Context, svc *core.Service, message int64) error {
+func checkCited(ctx context.Context, svc Service, message int64) error {
 	// a row lookup: loading the message could fetch its inline images over IMAP
 	ok, err := svc.MessageExists(ctx, message)
 	if err != nil {
@@ -699,7 +715,7 @@ func (p *WitPage) Models(ctx context.Context) ([]ModelChoice, error) {
 // modelChoices are the models a conversation can use: every generating
 // service's, then the running plugins' (judges aside), as the settings'
 // default model offers; the default one says so.
-func modelChoices(ctx context.Context, svc *core.Service) ([]ModelChoice, error) {
+func modelChoices(ctx context.Context, svc Service) ([]ModelChoice, error) {
 	services, err := svc.ListModelServices(ctx)
 	if err != nil {
 		return nil, keyed(err)

@@ -296,6 +296,82 @@ func TestClientStreamBackpressure(t *testing.T) {
 	}
 }
 
+// A request over the server's line limit is refused before it is sent, and
+// the connection stays up: the server would have dropped it, and the
+// interface takes a dropped connection for the backend's loss.
+func TestClientRefusesTooLarge(t *testing.T) {
+	c, _ := client(t, newDispatcher(t, newTarget()))
+	var s string
+	err := c.Call(context.Background(), "Echo", &s, strings.Repeat("x", rpc.MaxMessage), 1)
+	if !errors.Is(err, rpc.ErrTooLarge) {
+		t.Fatalf("oversized Echo = %v, want ErrTooLarge", err)
+	}
+	if err := c.Call(context.Background(), "Echo", &s, "a", 1); err != nil || s != "a1" {
+		t.Fatalf("Echo after = %q, %v", s, err)
+	}
+	big := strings.Repeat("x", rpc.MaxMessage-1024) // just under: still delivered
+	if err := c.Call(context.Background(), "Echo", &s, big, 1); err != nil || len(s) != len(big)+1 {
+		t.Fatalf("Echo under the limit = %d bytes, %v", len(s), err)
+	}
+}
+
+// A StreamDropping reader far behind loses the oldest droppable events, the
+// newest kept, and the stream does not overflow.
+func TestClientStreamDropping(t *testing.T) {
+	tg := newTarget()
+	c, _ := client(t, newDispatcher(t, tg))
+	flood, cancel, err := c.StreamDropping(context.Background(), "Flood", func(ev json.RawMessage) bool { return string(ev) != "999" }, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	wait(t, tg.floodDone, "the flood pump to finish")
+	var s string // answered after every flood event: the client has read them all
+	if err := c.Call(context.Background(), "Echo", &s, "a", 1); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for ev := range flood {
+		got = append(got, string(ev))
+	}
+	// The tail may still be in flight when Echo answers, so the reader can
+	// free a slot first: only "some dropped, the newest kept" is certain.
+	if len(got) == 0 || len(got) >= 1000 || got[len(got)-1] != "999" {
+		t.Errorf("flood delivered %d events ending %v, want fewer than 1000 ending 999", len(got), got[max(0, len(got)-3):])
+	}
+	if err := c.StreamErr(flood); err != nil {
+		t.Errorf("StreamErr = %v, want nil", err)
+	}
+}
+
+// An event that may not go at the head of a full buffer (a run's end) stays,
+// in order, while a later droppable one makes room: the stream goes on.
+func TestClientStreamDroppingKeepsHead(t *testing.T) {
+	tg := newTarget()
+	c, _ := client(t, newDispatcher(t, tg))
+	keep := func(ev json.RawMessage) bool { return string(ev) != "0" && string(ev) != "999" }
+	flood, cancel, err := c.StreamDropping(context.Background(), "Flood", keep, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	wait(t, tg.floodDone, "the flood pump to finish")
+	var s string
+	if err := c.Call(context.Background(), "Echo", &s, "a", 1); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for ev := range flood {
+		got = append(got, string(ev))
+	}
+	if len(got) == 0 || got[0] != "0" || got[len(got)-1] != "999" || len(got) >= 1000 {
+		t.Errorf("flood delivered %d events, first %v last %v; want 0 first, 999 last, some dropped", len(got), got[:min(1, len(got))], got[max(0, len(got)-1):])
+	}
+	if err := c.StreamErr(flood); err != nil {
+		t.Errorf("StreamErr = %v, want nil", err)
+	}
+}
+
 func TestTargetErrorsAlwaysEncoded(t *testing.T) {
 	c, _ := client(t, newDispatcher(t, newTarget()))
 	err := c.Call(context.Background(), "Leak", nil)
@@ -549,5 +625,75 @@ func TestClientNeverDropsStreamCancel(t *testing.T) {
 		if bytes.Contains(line, []byte(`"$/stream.cancel","params":[7]`)) {
 			return
 		}
+	}
+}
+
+type progressItem struct {
+	N   int
+	Err error `json:"-"`
+}
+
+func (p progressItem) StreamError() error { return p.Err }
+
+type streamErrTarget struct{ end error }
+
+func (s *streamErrTarget) Run() (<-chan progressItem, error) {
+	ch := make(chan progressItem, 3)
+	ch <- progressItem{N: 1}
+	ch <- progressItem{N: 2}
+	if s.end != nil {
+		ch <- progressItem{Err: s.end}
+	}
+	close(ch)
+	return ch, nil
+}
+
+func TestStreamApplicationError(t *testing.T) {
+	errBadSum := errors.New("checksum mismatch")
+	codec := &rpc.Codec{}
+	codec.RegisterSentinel("bad_sum", errBadSum, errBadSum.Error())
+
+	d, err := rpc.NewDispatcher(&streamErrTarget{end: errBadSum}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, _ := serve(t, d, rpc.ConnOptions{EncodeError: func(e error) *rpc.WireError { return codec.Encode(e, nil) }})
+	c := rpc.NewClient(conn)
+	c.DecodeError = codec.Decode
+	defer c.Close()
+
+	events, cancel, err := c.Stream(context.Background(), "Run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	var got []int
+	for raw := range events {
+		var p progressItem
+		if err := json.Unmarshal(raw, &p); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, p.N)
+	}
+	if len(got) != 2 || got[0] != 1 || got[1] != 2 {
+		t.Fatalf("events = %v, want [1 2]", got)
+	}
+	if serr := c.StreamErr(events); !errors.Is(serr, errBadSum) {
+		t.Fatalf("StreamErr = %v, want errBadSum", serr)
+	}
+}
+
+// A result too large for the send queue fails its call alone: queued, it
+// would drop the connection, and the interface takes that for the backend's loss.
+func TestResultTooLargeKeepsConnection(t *testing.T) {
+	conn, _ := serve(t, newDispatcher(t, newTarget()), rpc.ConnOptions{QueueBytes: 4 << 10})
+	c := rpc.NewClient(conn)
+	t.Cleanup(func() { c.Close() })
+	var s string
+	if err := c.Call(context.Background(), "Echo", &s, strings.Repeat("x", 3<<10), 1); err == nil {
+		t.Fatal("a result over half the send queue was sent")
+	}
+	if err := c.Call(context.Background(), "Echo", &s, "a", 1); err != nil || s != "a1" {
+		t.Fatalf("Echo after = %q, %v; want the connection kept", s, err)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -114,12 +115,12 @@ type Reader struct {
 	d     ReaderDeps
 
 	// Test seams.
-	getMessage func(ctx context.Context, svc *core.Service, id int64, remote bool) (core.Message, error)
-	getAvatar  func(ctx context.Context, svc *core.Service, id int64) (core.Avatar, error)
-	getInline  func(ctx context.Context, svc *core.Service, id int64, each func(cid string, a mail.Attachment)) error
+	getMessage func(ctx context.Context, svc Service, id int64, remote bool) (core.Message, error)
+	getAvatar  func(ctx context.Context, svc Service, id int64) (core.Avatar, error)
+	getInline  func(ctx context.Context, svc Service, id int64, each func(cid string, a mail.Attachment)) error
 
 	mu       sync.Mutex
-	svc      *core.Service
+	svc      Service
 	version  int64             // the last version given out
 	settings *core.Settings    // latest in-memory SettingsChanged snapshot (ahead of async DB saves)
 	bound    map[any]int64     // page key → its message
@@ -164,19 +165,19 @@ func (i *inlineImage) finish(data []byte) {
 // NewReader keeps the reader pages of pages; SetService opens it up.
 func NewReader(pages *Pages, d ReaderDeps) *Reader {
 	return &Reader{pages: pages, d: d, bound: map[any]int64{}, msgs: map[int64]*bodyOf{},
-		getMessage: func(ctx context.Context, svc *core.Service, id int64, remote bool) (core.Message, error) {
+		getMessage: func(ctx context.Context, svc Service, id int64, remote bool) (core.Message, error) {
 			return svc.GetMessageLazyImages(ctx, id, remote)
 		},
-		getInline: func(ctx context.Context, svc *core.Service, id int64, each func(cid string, a mail.Attachment)) error {
+		getInline: func(ctx context.Context, svc Service, id int64, each func(cid string, a mail.Attachment)) error {
 			return svc.InlineImages(ctx, id, each)
 		},
-		getAvatar: func(ctx context.Context, svc *core.Service, id int64) (core.Avatar, error) {
+		getAvatar: func(ctx context.Context, svc Service, id int64) (core.Avatar, error) {
 			return svc.SenderAvatar(ctx, id, false)
 		}}
 }
 
 // SetService gives the pages the service, once the data is open.
-func (r *Reader) SetService(svc *core.Service) {
+func (r *Reader) SetService(svc Service) {
 	r.mu.Lock()
 	r.svc = svc
 	r.mu.Unlock()
@@ -234,9 +235,12 @@ func (r *Reader) unbind(key any) {
 // message no page shows is left alone. It returns at once: the body is
 // read on a goroutine.
 func (r *Reader) Allow(message int64) {
+	var urls []string
 	r.reload(message, func(st *bodyOf) {
 		for token := range st.failed { // a retry: try them again now
-			r.svc.ImageCache().ForgetFailure(st.tokens[token])
+			if u := st.tokens[token]; u != "" {
+				urls = append(urls, u)
+			}
 		}
 		st.allowed, st.failed = true, nil
 		// Inline images missed are tried again; those had come from the attachment cache.
@@ -244,6 +248,10 @@ func (r *Reader) Allow(message int64) {
 			st.stopInline()
 		}
 		st.inline, st.stopInline = nil, nil
+	}, func(svc Service) { // a call to the backend: off the UI thread and r.mu, before the new body's images load
+		if len(urls) > 0 {
+			svc.ForgetImageFailure(urls)
+		}
 	})
 }
 
@@ -327,7 +335,7 @@ func translateBody(b ReaderBody, texts map[string]string) ReaderBody {
 	return b
 }
 
-func (r *Reader) reload(message int64, change func(*bodyOf)) {
+func (r *Reader) reload(message int64, change func(*bodyOf), prep func(Service)) {
 	r.mu.Lock()
 	st := r.msgs[message]
 	svc := r.svc
@@ -342,6 +350,9 @@ func (r *Reader) reload(message int64, change func(*bodyOf)) {
 	st.generation, st.body = v, nil
 	r.mu.Unlock()
 	go func() {
+		if prep != nil {
+			prep(svc)
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
 		b, err := r.build(ctx, svc, message, v, allowed)
@@ -377,7 +388,7 @@ func (r *Reader) reload(message int64, change func(*bodyOf)) {
 }
 
 // build keeps the body only while its build generation v is current.
-func (r *Reader) build(ctx context.Context, svc *core.Service, message, v int64, allowed bool) (ReaderBody, error) {
+func (r *Reader) build(ctx context.Context, svc Service, message, v int64, allowed bool) (ReaderBody, error) {
 	m, err := r.getMessage(ctx, svc, message, allowed)
 	if err != nil {
 		return ReaderBody{}, err
@@ -391,7 +402,15 @@ func (r *Reader) build(ctx context.Context, svc *core.Service, message, v int64,
 	var tokens map[string]string
 	budget := imagefetch.NewBudget() // the message's images, inline and remote
 	if m.HTML != "" {
-		b.HTML, tokens = prepareBody(m.HTML, budget, message, svc.ImageCache().Dims)
+		dims := map[string]core.ImageDims{}
+		b.HTML, tokens = prepareBody(m.HTML, budget, message, func(src string) (int, int, bool) {
+			d, ok := dims[src]
+			if !ok {
+				d = svc.CachedImageDims(src)
+				dims[src] = d
+			}
+			return d.Width, d.Height, d.OK
+		})
 	} else {
 		b.Plain = m.Text
 	}
@@ -432,13 +451,13 @@ func NewReaderPage(r *Reader) *ReaderPage { return &ReaderPage{r: r} }
 
 // caller is the calling page's message, if it is a reader page bound to
 // one, and the service.
-func (r *Reader) caller(ctx context.Context) (message int64, svc *core.Service, err error) {
+func (r *Reader) caller(ctx context.Context) (message int64, svc Service, err error) {
 	_, message, svc, err = r.callerKey(ctx)
 	return message, svc, err
 }
 
 // callerKey is caller with the page's key.
-func (r *Reader) callerKey(ctx context.Context) (key any, message int64, svc *core.Service, err error) {
+func (r *Reader) callerKey(ctx context.Context) (key any, message int64, svc Service, err error) {
 	id, err := r.pages.Caller(ctx, "reader")
 	if err != nil {
 		return nil, 0, nil, err
@@ -624,7 +643,11 @@ func (r *Reader) ImageHandler() http.Handler {
 			http.NotFound(w, req)
 			return
 		}
-		img, err := svc.ImageCache().Get(req.Context(), src)
+		img, err := svc.CachedImage(req.Context(), src)
+		var data []byte
+		if err == nil {
+			data, err = os.ReadFile(img.Path)
+		}
 		if err != nil {
 			if req.Context().Err() == nil { // not the page going away
 				log.Printf("image proxy: message %d: %v", message, err)
@@ -633,17 +656,17 @@ func (r *Reader) ImageHandler() http.Handler {
 			http.Error(w, "image unavailable", http.StatusBadGateway)
 			return
 		}
-		if !r.chargePixels(message, token, img) {
+		if !r.chargePixels(message, token, img.Width, img.Height) {
 			http.Error(w, "the message's images have too many pixels", http.StatusForbidden)
 			return
 		}
-		writeImage(w, img.Format, img.Data)
+		writeImage(w, img.Format, data)
 	})
 }
 
 // inlineImage is st's inline image src, the download of them all begun at the
 // first asked for. It runs with r.mu held.
-func (r *Reader) inlineImage(st *bodyOf, message int64, svc *core.Service, src string) *inlineImage {
+func (r *Reader) inlineImage(st *bodyOf, message int64, svc Service, src string) *inlineImage {
 	if st.inline == nil {
 		st.inline = map[string]*inlineImage{}
 		for _, s := range st.tokens {
@@ -788,7 +811,7 @@ func (r *Reader) imageFailedLocked(message int64, token string) {
 
 // chargePixels takes img's pixels from message's budget, once per token; false
 // when the message is gone or has none left.
-func (r *Reader) chargePixels(message int64, token string, img imagecache.Image) bool {
+func (r *Reader) chargePixels(message int64, token string, width, height int) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	st := r.msgs[message]
@@ -798,7 +821,7 @@ func (r *Reader) chargePixels(message int64, token string, img imagecache.Image)
 	if st.charged[token] {
 		return true
 	}
-	if st.pixels.TakePixels(int64(img.Width)*int64(img.Height)) != nil {
+	if st.pixels.TakePixels(int64(width)*int64(height)) != nil {
 		return false
 	}
 	st.charged[token] = true

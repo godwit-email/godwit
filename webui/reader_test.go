@@ -28,6 +28,31 @@ import (
 	"golang.org/x/net/html"
 )
 
+type countingImageDims struct {
+	Service
+	calls map[string]int
+}
+
+func (s *countingImageDims) CachedImageDims(src string) core.ImageDims {
+	s.calls[src]++
+	if strings.HasSuffix(src, "/cached.png") {
+		return core.ImageDims{Width: 20, Height: 10, OK: true}
+	}
+	return core.ImageDims{}
+}
+
+func TestReaderBuildLooksUpEachImageSizeOnce(t *testing.T) {
+	f := newReaderFixture(t)
+	svc := &countingImageDims{Service: f.r.svc, calls: map[string]int{}}
+	f.r.getMessage = func(context.Context, Service, int64, bool) (core.Message, error) {
+		return core.Message{HTML: strings.Repeat(`<img src="https://example.com/cached.png"><img src="https://example.com/missing.png">`, 100)}, nil
+	}
+	body, err := f.r.build(t.Context(), svc, 1, 1, false)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]int{"https://example.com/cached.png": 1, "https://example.com/missing.png": 1}, svc.calls)
+	assert.Equal(t, 100, strings.Count(body.HTML, `width="20"`))
+}
+
 // readerFixture is a Reader on an Env with one account; every native
 // callback and emitted body is recorded.
 type readerFixture struct {
@@ -83,7 +108,7 @@ func newReaderFixture(t *testing.T) *readerFixture {
 	st.RemoteImages = "ask" // the tests of the policy say otherwise
 	_, err = f.e.Svc.SetSettings(t.Context(), st)
 	require.NoError(t, err)
-	f.r.SetService(f.e.Svc)
+	f.r.SetService(uiService(t, f.e))
 	f.p = NewReaderPage(f.r)
 	return f
 }
@@ -262,7 +287,7 @@ func TestReaderTranslationNeedsNoReread(t *testing.T) {
 	k := f.page(m.ID)
 	original, err := f.p.Load(pageCtx(k))
 	require.NoError(t, err)
-	f.r.getMessage = func(context.Context, *core.Service, int64, bool) (core.Message, error) {
+	f.r.getMessage = func(context.Context, Service, int64, bool) (core.Message, error) {
 		return core.Message{}, errors.New("mail unavailable")
 	}
 	f.r.Translate(m.ID, map[string]string{"Hello reader": "你好"})
@@ -330,7 +355,7 @@ func TestReaderTranslationDuringImageReload(t *testing.T) {
 			require.NoError(t, err)
 			started, release := make(chan struct{}), make(chan struct{})
 			real := f.r.getMessage
-			f.r.getMessage = func(ctx context.Context, svc *core.Service, id int64, remote bool) (core.Message, error) {
+			f.r.getMessage = func(ctx context.Context, svc Service, id int64, remote bool) (core.Message, error) {
 				close(started)
 				<-release
 				if tc.fail {
@@ -364,7 +389,7 @@ func TestReaderTranslationDuringImageReload(t *testing.T) {
 				assert.Contains(t, body.HTML, "你好")
 			}
 			if tc.fail {
-				f.r.getMessage = func(context.Context, *core.Service, int64, bool) (core.Message, error) {
+				f.r.getMessage = func(context.Context, Service, int64, bool) (core.Message, error) {
 					t.Error("switching after a failed reload must use the cached original")
 					return core.Message{}, errors.New("mail unavailable")
 				}
@@ -471,7 +496,7 @@ func TestReaderBuiltAndFailed(t *testing.T) {
 	f.mu.Unlock()
 
 	real := f.r.getMessage
-	f.r.getMessage = func(ctx context.Context, svc *core.Service, id int64, remote bool) (core.Message, error) {
+	f.r.getMessage = func(ctx context.Context, svc Service, id int64, remote bool) (core.Message, error) {
 		if remote {
 			return core.Message{}, errors.New("server went away")
 		}
@@ -598,7 +623,7 @@ func TestReaderAvatar(t *testing.T) {
 		"the message's policy (ask) blocks its avatar, with no page bound")
 
 	var asked []int64
-	f.r.getAvatar = func(_ context.Context, _ *core.Service, id int64) (core.Avatar, error) {
+	f.r.getAvatar = func(_ context.Context, _ Service, id int64) (core.Avatar, error) {
 		asked = append(asked, id)
 		return core.Avatar{Data: []byte("<svg/>"), Format: "svg"}, nil
 	}
@@ -672,7 +697,7 @@ func TestReaderAllowReloads(t *testing.T) {
 
 // fakeMessage makes the reader read message bodies from fn.
 func (f *readerFixture) fakeMessage(fn func(id int64, remote bool) core.Message) {
-	f.r.getMessage = func(_ context.Context, _ *core.Service, id int64, remote bool) (core.Message, error) {
+	f.r.getMessage = func(_ context.Context, _ Service, id int64, remote bool) (core.Message, error) {
 		m := fn(id, remote)
 		m.ID = id
 		return m, nil
@@ -856,7 +881,7 @@ func TestReaderInlineImagesLoadThroughProxyOnce(t *testing.T) {
 		return core.Message{HTML: `<img src="cid:a"><img src="cid:b"><img src="cid:gone">`}
 	})
 	var calls atomic.Int32
-	f.r.getInline = func(_ context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+	f.r.getInline = func(_ context.Context, _ Service, _ int64, each func(string, mail.Attachment)) error {
 		calls.Add(1)
 		each("a", mail.Attachment{Data: pic})
 		each("b", mail.Attachment{Data: []byte("not an image")})
@@ -888,7 +913,7 @@ func TestReaderInlineImageServedBeforeTheRest(t *testing.T) {
 		return core.Message{HTML: `<img src="cid:a"><img src="cid:b">`}
 	})
 	stopped := make(chan struct{})
-	f.r.getInline = func(ctx context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+	f.r.getInline = func(ctx context.Context, _ Service, _ int64, each func(string, mail.Attachment)) error {
 		each("a", mail.Attachment{Data: pic})
 		<-ctx.Done() // b never arrives
 		close(stopped)
@@ -914,7 +939,7 @@ func TestReaderInlineImageDownloadFailureIsTold(t *testing.T) {
 		return core.Message{HTML: `<img src="cid:a"><img src="cid:b"><img src="cid:c">`}
 	})
 	pic := pngOf(t, 2, 2)
-	f.r.getInline = func(_ context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+	f.r.getInline = func(_ context.Context, _ Service, _ int64, each func(string, mail.Attachment)) error {
 		each("a", mail.Attachment{Data: pic})
 		each("b", mail.Attachment{Data: []byte("not an image")})
 		return context.DeadlineExceeded
@@ -934,7 +959,7 @@ func TestReaderInlineImageDownloadStoppedIsNotTold(t *testing.T) {
 	f.fakeMessage(func(int64, bool) core.Message { return core.Message{HTML: `<img src="cid:a">`} })
 	running := make(chan struct{})
 	var calls atomic.Int32
-	f.r.getInline = func(ctx context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+	f.r.getInline = func(ctx context.Context, _ Service, _ int64, each func(string, mail.Attachment)) error {
 		if calls.Add(1) > 1 {
 			each("a", mail.Attachment{Data: pic})
 			return nil
@@ -969,7 +994,7 @@ func TestReaderRetryRefetchesInlineImages(t *testing.T) {
 	f := newReaderFixture(t)
 	f.fakeMessage(func(int64, bool) core.Message { return core.Message{HTML: `<img src="cid:a">`} })
 	var calls atomic.Int32
-	f.r.getInline = func(_ context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+	f.r.getInline = func(_ context.Context, _ Service, _ int64, each func(string, mail.Attachment)) error {
 		if calls.Add(1) > 1 {
 			each("a", mail.Attachment{Data: pic})
 		}
@@ -998,7 +1023,7 @@ func TestReaderInlineImageOverBudgetRefused(t *testing.T) {
 	f.fakeMessage(func(int64, bool) core.Message {
 		return core.Message{HTML: `<img src="cid:huge"><img src="cid:big"><img src="cid:p0"><img src="cid:p1"><img src="cid:p2">`}
 	})
-	f.r.getInline = func(_ context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+	f.r.getInline = func(_ context.Context, _ Service, _ int64, each func(string, mail.Attachment)) error {
 		for cid, data := range images {
 			each(cid, mail.Attachment{Data: data})
 		}
@@ -1037,7 +1062,7 @@ func TestReaderInlineImageCountReservedInOrder(t *testing.T) {
 	}
 	f := newReaderFixture(t)
 	f.fakeMessage(func(int64, bool) core.Message { return core.Message{HTML: all.String()} })
-	f.r.getInline = func(_ context.Context, _ *core.Service, _ int64, each func(string, mail.Attachment)) error {
+	f.r.getInline = func(_ context.Context, _ Service, _ int64, each func(string, mail.Attachment)) error {
 		for i := range imagefetch.MaxImages + 1 {
 			each(fmt.Sprintf("n%d", i), mail.Attachment{Data: pic})
 		}
@@ -1193,7 +1218,7 @@ func TestReaderBodyCarriesCollapseQuotes(t *testing.T) {
 	// A change made while a reload is in flight survives the reload failing: the cached original
 	// it falls back on carries the new preference.
 	started, release := make(chan struct{}), make(chan struct{})
-	f.r.getMessage = func(context.Context, *core.Service, int64, bool) (core.Message, error) {
+	f.r.getMessage = func(context.Context, Service, int64, bool) (core.Message, error) {
 		close(started)
 		<-release
 		return core.Message{}, errors.New("mail unavailable")
@@ -1211,7 +1236,7 @@ func TestReaderBodyCarriesCollapseQuotes(t *testing.T) {
 	f.r.SettingsChanged(st)
 	cached = f.waitEmitted(t, k)
 	require.True(t, cached.CollapseQuotes)
-	f.r.getMessage = func(ctx context.Context, svc *core.Service, id int64, remote bool) (core.Message, error) {
+	f.r.getMessage = func(ctx context.Context, svc Service, id int64, remote bool) (core.Message, error) {
 		return svc.GetMessageLazyImages(ctx, id, remote)
 	}
 

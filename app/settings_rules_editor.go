@@ -22,6 +22,7 @@ import (
 func (v *rulesView) schedulePreview() {
 	d := v.edit.Doc
 	d.Conditions = cloneConds(d.Conditions) // the editor writes its own while the read runs
+	d.Actions = slices.Clone(d.Actions)     // so with actions: the read encodes them off the UI thread
 	b, _ := json.Marshal([]any{d.Account, d.Trigger, d.TriggerArg, d.Match, d.Conditions})
 	if string(b) == v.prevKey {
 		return

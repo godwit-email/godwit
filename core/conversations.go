@@ -272,6 +272,34 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 		return Conversation{}, err
 	}
 	defer end()
+	// A read is kept only if no run of the conversation moved meanwhile:
+	// otherwise what it saved may be half in it. Runs move a few times each,
+	// and a new one waits for the user: the reads settle.
+	for {
+		before, err := s.runStates(ctx, id)
+		if err != nil {
+			return Conversation{}, err
+		}
+		// A run saving meanwhile can also fail the read (its messages half
+		// written): that counts as a moved read, read again, not an error.
+		c, readErr := s.readConversation(ctx, id)
+		after, err := s.runStates(ctx, id)
+		if err != nil {
+			return Conversation{}, err
+		}
+		if after == before {
+			if readErr != nil {
+				return Conversation{}, readErr
+			}
+			return c, nil
+		}
+		if err := ctx.Err(); err != nil {
+			return Conversation{}, err
+		}
+	}
+}
+
+func (s *Service) readConversation(ctx context.Context, id int64) (Conversation, error) {
 	c, err := s.conversation(ctx, id)
 	if err != nil {
 		return Conversation{}, err
@@ -279,6 +307,11 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 	h, err := s.history(ctx, id)
 	if err != nil {
 		return Conversation{}, err
+	}
+	if beforeFollowRead != nil {
+		fn := beforeFollowRead
+		beforeFollowRead = nil
+		fn()
 	}
 	acts, err := s.activity(ctx, "c.id = ?", id)
 	if err != nil {
@@ -599,7 +632,12 @@ type witStream struct {
 	stopped sync.Once
 }
 
-const witBuffer = 64
+// WitBuffer is how many text-like events a Wit stream's reader may fall
+// behind before the oldest go; never a run's end (Terminal). uiclient keeps
+// the same rule on its side of the wire.
+const WitBuffer = 64
+
+const witBuffer = WitBuffer
 
 func newWitStream() *witStream { return startStream(nil, nil) }
 
@@ -624,6 +662,10 @@ func (s *Service) newStream() *witStream { return startStream(s.streamsEnd, &s.s
 func terminal(ev WitEvent) bool {
 	return ev.Kind == "done" || ev.Kind == "error" || ev.Kind == "interrupted"
 }
+
+// Terminal reports whether ev ends its run's events (done, error,
+// interrupted): a reader that falls behind never loses one.
+func (ev WitEvent) Terminal() bool { return terminal(ev) }
 
 func (w *witStream) push(ev WitEvent) {
 	w.mu.Lock()
@@ -760,33 +802,10 @@ func (s *Service) FollowConversation(ctx context.Context, id int64) (Conversatio
 	}
 	defer end()
 	w, stop := s.subscribe(id, true)
-	// A read is kept only if no run of the conversation moved meanwhile:
-	// otherwise what it saved may be half in it. Runs move a few times each,
-	// and a new one waits for the user: the reads settle.
-	var c Conversation
-	for try := 0; ; try++ {
-		before, err := s.runStates(ctx, id)
-		if err == nil && try == 0 && beforeFollowRead != nil {
-			beforeFollowRead()
-		}
-		if err == nil {
-			c, err = s.GetConversation(ctx, id)
-		}
-		var after string
-		if err == nil {
-			after, err = s.runStates(ctx, id)
-		}
-		if err != nil {
-			stop()
-			return Conversation{}, nil, nil, err
-		}
-		if after == before {
-			break
-		}
-		if err := ctx.Err(); err != nil {
-			stop()
-			return Conversation{}, nil, nil, err
-		}
+	c, err := s.GetConversation(ctx, id)
+	if err != nil {
+		stop()
+		return Conversation{}, nil, nil, err
 	}
 	read := map[int64]bool{} // runs whose saved history is in c
 	for _, t := range c.Turns {
@@ -1048,6 +1067,9 @@ func (s *Service) startRun(ctx context.Context, conv Conversation, prompt string
 // launch.
 func (s *Service) launch(ctx context.Context, end func(), conv Conversation, prompt string, tools []toolDesc,
 	quoted []int64, at int64, claimed ...sqlite.Statement) (*witStream, error) {
+	if err := s.needUI(ctx); err != nil {
+		return nil, err
+	}
 	conv, err := s.conversation(ctx, conv.ID)
 	if err != nil {
 		return nil, err

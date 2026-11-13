@@ -1,36 +1,12 @@
 package app
 
-import (
-	"strings"
-	"sync"
-)
+import "github.com/godwit-email/godwit/core"
 
 // recentLogMax is how many lines RecentLog keeps.
-const recentLogMax = 100
+const recentLogMax = core.RecentLogMax
 
 // RecentLog keeps the log's last lines in memory, never on disk, for an
-// error report to carry; the GUI tees the standard logger into it.
-var RecentLog = &logRing{}
+// error report to carry; the backend tees its log into it.
+var RecentLog = core.RecentLog
 
-type logRing struct {
-	mu    sync.Mutex
-	lines []string
-}
-
-func (r *logRing) Write(p []byte) (int, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	for l := range strings.Lines(string(p)) {
-		r.lines = append(r.lines, strings.TrimSuffix(l, "\n"))
-	}
-	if n := len(r.lines) - recentLogMax; n > 0 {
-		r.lines = r.lines[n:]
-	}
-	return len(p), nil
-}
-
-func (r *logRing) String() string {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return strings.Join(r.lines, "\n")
-}
+type logRing = core.LogRing

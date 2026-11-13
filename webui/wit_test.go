@@ -304,6 +304,38 @@ func TestComposeFollowRunningThenEnds(t *testing.T) {
 	assert.Equal(t, run, f.waitKind(t, 1, "done").Run, "the end comes after Follow's reply")
 }
 
+func TestComposeFollowInterruptedDuringRead(t *testing.T) {
+	f, d, llm := witFixture(t, "<p>Hello</p>")
+	_, err := f.e.Svc.AssistConversation(t.Context(), d.ID, true)
+	require.NoError(t, err)
+	llm.Script(proposeTurn("c1", "<p>Hi</p>"))
+	var approvalID int64
+	f.c.SetService(&hookService{Service: uiService(t, f.e), onSubscribed: func() {
+		ch, err := f.e.Svc.AssistWith(t.Context(), d.ID, "改一下", nil)
+		require.NoError(t, err)
+		for ev := range ch {
+			if ev.Kind == "interrupted" {
+				approvalID = ev.Approvals[0].ID
+			}
+			if ev.Ends {
+				break
+			}
+		}
+	}})
+	h, err := f.page.Follow(f.ctx(1))
+	require.NoError(t, err)
+	assert.Zero(t, h.Running)
+	require.Len(t, h.Turns, 1)
+	require.NotNil(t, h.Turns[0].Calls[0].Approval)
+	_, err = f.page.Decide(f.ctx(1), approvalID, true)
+	require.NoError(t, err)
+	f.waitKind(t, 1, "done")
+	for _, ev := range f.events(1) {
+		assert.NotEqual(t, "interrupted", ev.Kind)
+		assert.NotEqual(t, "start", ev.Kind)
+	}
+}
+
 func TestComposeReleaseDuringAskLeavesNoSubscription(t *testing.T) {
 	f, d, llm := witFixture(t, "<p>Hello</p>")
 	startHook = func() { // the window closes while Ask is inside

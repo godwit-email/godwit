@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"flag"
@@ -41,6 +42,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	args = slices.DeleteFunc(slices.Clone(args), func(a string) bool { return strings.HasPrefix(a, "-psn_") }) // from macOS LaunchServices
 	fs := newFlagSet("godwit", stderr)
 	isHeadless := fs.Bool("headless", false, "")
+	uiStarted := fs.Bool(uiStartedFlag, false, "") // not in usage: the interface marks the backend it starts
+	open := fs.String("open", app.OpenWindow, "")  // not in usage: what the backend starts the interface for (uiCmd)
 	version := fs.Bool("version", false, "")
 	dataDir := fs.String("data-dir", "", "")
 	if code, ok := parse(fs, args); !ok {
@@ -61,9 +64,26 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return 1
 	}
 	if *isHeadless {
-		return headless(ctx, dir, stderr)
+		return headless(ctx, dir, stderr, *uiStarted)
 	}
-	return gui(ctx, dir)
+	return gui(ctx, dir, *open)
+}
+
+// openArg is what a launch's args ask the interface to open (--open, as run
+// parses it), app.OpenWindow when nothing: a second launch hands them to the
+// running interface (OnSecondInstance).
+func openArg(args []string) string {
+	for i, a := range args {
+		name, v, eq := strings.Cut(strings.TrimLeft(a, "-"), "=")
+		if name != "open" || !strings.HasPrefix(a, "-") {
+			continue
+		}
+		if !eq && i+1 < len(args) {
+			v = args[i+1]
+		}
+		return cmp.Or(v, app.OpenWindow)
+	}
+	return app.OpenWindow
 }
 
 func newFlagSet(name string, stderr io.Writer) *flag.FlagSet {

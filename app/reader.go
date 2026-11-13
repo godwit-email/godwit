@@ -662,7 +662,7 @@ func (p *mailPage) accountOf(folderID int64) int64 {
 }
 
 // folderAccount looks up the account of a folder in the Service.
-func folderAccount(ctx context.Context, svc *core.Service, folderID int64) (int64, error) {
+func folderAccount(ctx context.Context, svc Service, folderID int64) (int64, error) {
 	accs, err := svc.ListAccounts(ctx)
 	if err != nil {
 		return 0, err
@@ -1152,7 +1152,7 @@ func (r *reader) saveMail() {
 		if err != nil || dst == "" {
 			return err
 		}
-		raw, err := a.svc.GetRawMessage(ctx, m.ID)
+		raw, err := rawMessage(ctx, a.svc, m.ID)
 		if err != nil {
 			// Offline: a simplified copy built from what is stored, its HTML
 			// body only (attachments are dropped). Build encodes the headers.
@@ -2646,4 +2646,16 @@ func secVisual(t theme.Tokens, sec gomail.SecurityReport) (iconName string, labe
 	default:
 		return "question-fill", i18n.T("reader.security.unverified_badge"), t.Muted
 	}
+}
+
+// rawMessage is the message's original, read from the file the backend writes
+// it to (RawMessageFile) and removed: a large original does not cross the
+// Local API whole.
+func rawMessage(ctx context.Context, svc Service, id int64) ([]byte, error) {
+	path, err := svc.RawMessageFile(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(path)
+	return os.ReadFile(path)
 }

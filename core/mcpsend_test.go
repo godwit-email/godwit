@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -16,7 +17,9 @@ import (
 func mcpSendEnv(t *testing.T, level string, window bool) (*syncEnv, Draft) {
 	t.Helper()
 	e := newSyncEnv(t)
-	e.s.opts.ConfirmWindow = window
+	if window {
+		WithUISession(t.Context(), e.s)
+	}
 	st, err := e.s.GetSettings(bg)
 	require.NoError(t, err)
 	st.MCPSend = level
@@ -49,15 +52,77 @@ func TestMCPSendOff(t *testing.T) {
 		name   string
 		level  string
 		window bool
-	}{{"off", MCPSendOff, true}, {"headless confirm", MCPSendConfirm, false}} {
+		want   error
+	}{{"off", MCPSendOff, true, ErrMCPSendOff}, {"headless confirm", MCPSendConfirm, false, ErrMCPSendNoUI}} {
 		t.Run(c.name, func(t *testing.T) {
 			e, d := mcpSendEnv(t, c.level, c.window)
 			_, err := e.s.RequestMCPSend(bg, d.ID, d.Revision)
-			require.ErrorIs(t, err, ErrMCPSendOff)
+			require.ErrorIs(t, err, c.want)
 			assert.Empty(t, e.pendingSends(t))
 			assert.Zero(t, e.outboxLen(t))
 		})
 	}
+}
+
+// A backend without a window of its own offers 每次确认 while a ui client
+// is connected to confirm it, and refuses again once none is (ADR 0038).
+func TestMCPSendConfirmWhileUIConnected(t *testing.T) {
+	e, d := mcpSendEnv(t, MCPSendConfirm, false)
+	ctx, disconnect := context.WithCancel(bg)
+	WithUISession(ctx, e.s)
+	sent, err := e.s.RequestMCPSend(bg, d.ID, d.Revision)
+	require.NoError(t, err)
+	assert.False(t, sent)
+	assert.Len(t, e.pendingSends(t), 1)
+
+	disconnect()
+	require.Eventually(t, func() bool { return !e.s.UIConnected() }, time.Second, time.Millisecond)
+	_, err = e.s.RequestMCPSend(bg, d.ID, d.Revision)
+	require.ErrorIs(t, err, ErrMCPSendNoUI)
+}
+
+// With no ui client connected, a backend that can post notifications keeps
+// 每次确认's request waiting and notifies the user of it (ADR 0038); one that
+// cannot post refuses it, as with no notifications at all. A connected ui
+// client shows the request itself: nothing is notified.
+func TestMCPSendConfirmNotifiesWithoutUI(t *testing.T) {
+	e, d := mcpSendEnv(t, MCPSendConfirm, false)
+	var notified []int64
+	posts := true
+	e.s.opts.NotifyMCPSend = func(id int64) bool {
+		notified = append(notified, id)
+		return posts
+	}
+	sent, err := e.s.RequestMCPSend(bg, d.ID, d.Revision)
+	require.NoError(t, err)
+	assert.False(t, sent)
+	ps := e.pendingSends(t)
+	require.Len(t, ps, 1)
+	assert.Equal(t, []int64{ps[0].ID}, notified)
+	assert.Zero(t, e.outboxLen(t))
+
+	_, err = e.s.RequestMCPSend(bg, d.ID, d.Revision) // asked already: no second notification
+	require.NoError(t, err)
+	assert.Len(t, notified, 1)
+
+	ctx, disconnect := context.WithCancel(bg)
+	defer disconnect()
+	WithUISession(ctx, e.s)
+	d.Subject = "changed"
+	d, err = e.s.SaveDraft(bg, d)
+	require.NoError(t, err)
+	_, err = e.s.RequestMCPSend(bg, d.ID, d.Revision)
+	require.NoError(t, err)
+	assert.Len(t, notified, 1, "a connected interface shows it")
+	disconnect()
+	require.Eventually(t, func() bool { return !e.s.UIConnected() }, time.Second, time.Millisecond)
+
+	require.NoError(t, e.s.ResolveMCPSend(bg, e.pendingSends(t)[0].ID, false))
+	posts = false
+	_, err = e.s.RequestMCPSend(bg, d.ID, d.Revision)
+	require.ErrorIs(t, err, ErrMCPSendNoUI)
+	assert.Empty(t, e.pendingSends(t))
+	assert.Zero(t, e.outboxLen(t))
 }
 
 func TestMCPSendConfirm(t *testing.T) {
@@ -188,11 +253,18 @@ func TestMCPSendDirect(t *testing.T) {
 // list's Send and the confirmation do: its window may hold edits not saved yet.
 func TestMCPSendDirectComposing(t *testing.T) {
 	e, d := mcpSendEnv(t, MCPSendDirect, true)
-	e.s.opts.ComposeOpen = func(id int64) bool { return id == d.ID }
+	ui, cancel := context.WithCancel(bg)
+	defer cancel()
+	ui = WithUISession(ui, e.s) // the interface's connection
+	require.NoError(t, e.s.SetComposeOpen(ui, []int64{d.ID}))
 	sent, err := e.s.RequestMCPSend(bg, d.ID, d.Revision)
 	require.ErrorIs(t, err, ErrMCPSendComposing)
 	assert.False(t, sent)
 	assert.Zero(t, e.outboxLen(t))
+
+	// The interface gone, its windows go with it.
+	cancel()
+	require.Eventually(t, func() bool { return !e.s.IsComposeOpen(d.ID) }, 5*time.Second, 10*time.Millisecond)
 }
 
 // A direct send whose audit fails is still sent: the mail is queued.

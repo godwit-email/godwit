@@ -54,13 +54,28 @@ func (h *harness) arriveIn(acc core.Account, folder string, subjects ...string) 
 	for _, s := range subjects {
 		h.env.Deliver(h.t, acc.ID, folder, coretest.Msg("Bob Stone <bob@example.com>", acc.Email, s, "body of "+s))
 	}
-	h.until("the arrivals", func() bool { got := h.app.newMail[acc.ID]; return got != nil && len(got.msgs) == len(subjects) })
+	h.until("the arrivals", func() bool { got := h.newMail(acc.ID); return got != nil && len(got.msgs) == len(subjects) })
+}
+
+// newMail is acc's arrivals waiting in the backend's notifier, or nil.
+func (h *harness) newMail(acc int64) *arrivals {
+	n := h.notifier
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if got := n.newMail[acc]; got != nil {
+		c := *got
+		return &c
+	}
+	return nil
 }
 
 // notesAfter lets the arrival window pass and returns the notifications
 // shown, waiting for want of them.
 func (h *harness) notesAfter(want int) []Notification {
 	h.t.Helper()
+	idle := false // the backend has the window's state (SetForeground) before it notifies
+	h.app.writes.Idle(func() { idle = true })
+	h.until("the App's writes", func() bool { return idle })
 	h.advance(notifyWait)
 	if want > 0 {
 		h.until("the notification", func() bool { return len(h.plat.Notes()) >= want })
@@ -99,7 +114,7 @@ func TestNotifyEachMessage(t *testing.T) {
 			h.put(acc, "INBOX", coretest.Msg("Bob Stone <bob@example.com>", acc.Email, subject, "body of "+subject))
 		}
 		h.syncNow(acc)
-		h.until("both arrivals", func() bool { return h.app.newMail[acc.ID] != nil && len(h.app.newMail[acc.ID].msgs) == 2 })
+		h.until("both arrivals", func() bool { return h.newMail(acc.ID) != nil && len(h.newMail(acc.ID).msgs) == 2 })
 		notes := h.notesAfter(2)
 		if len(notes) != 2 {
 			t.Fatalf("notes %+v", notes)
@@ -122,7 +137,7 @@ func TestNotifyEachMessage(t *testing.T) {
 		}
 		h.env.Deliver(t, acc.ID, "Archive", coretest.Msg("bob@example.com", acc.Email, "Filed", "x"))
 		h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", acc.Email, "Hello", "x"))
-		h.until("both arrivals", func() bool { return h.app.newMail[acc.ID] != nil && len(h.app.newMail[acc.ID].msgs) == 2 })
+		h.until("both arrivals", func() bool { return h.newMail(acc.ID) != nil && len(h.newMail(acc.ID).msgs) == 2 })
 		if notes := h.notesAfter(1); len(notes) != 1 || notes[0].Body != "新邮件" || !strings.HasPrefix(notes[0].ID, "message:") {
 			t.Fatalf("notes %+v, want the inbox one alone", notes)
 		}
@@ -143,7 +158,7 @@ func TestNotifyEachMessage(t *testing.T) {
 		}
 		h.advance(refreshEvery)
 		h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("Spammer <SPAMMER@example.com>", acc.Email, "Spam", "x"))
-		h.until("arrival registered", func() bool { return h.app.newMail[acc.ID] != nil && len(h.app.newMail[acc.ID].msgs) == 1 })
+		h.until("arrival registered", func() bool { return h.newMail(acc.ID) != nil && len(h.newMail(acc.ID).msgs) == 1 })
 	}
 	t.Run("blocked sender", func(t *testing.T) {
 		h, acc := notifyHarness(t, nil)
@@ -367,7 +382,11 @@ func TestTrayUnreadClearedWithIcon(t *testing.T) {
 	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", acc.Email, "One", "1"))
 	h.waitMail("tray shows 1", func() bool { return slices.Contains(h.plat.Calls(), "SetTrayUnread 1") })
 
-	h.app.HideTrayIcon()
+	st := h.app.settings
+	st.ShowTrayIcon = false // the backend tray's Hide saves this
+	if _, err := h.env.Svc.SetSettings(context.Background(), st); err != nil {
+		t.Fatal(err)
+	}
 	h.waitMail("tray cleared", func() bool { return slices.Contains(h.plat.Calls(), "SetTrayUnread 0") })
 	if !h.app.settings.UnreadInMenuBar {
 		t.Fatal("hiding the icon changed the unread setting")

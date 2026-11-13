@@ -3,146 +3,52 @@ package app
 import (
 	"context"
 	"errors"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/godwit-email/godwit/core"
-	"github.com/godwit-email/godwit/core/events"
-	"github.com/godwit-email/godwit/core/mail"
-	"github.com/godwit-email/godwit/internal/i18n"
 )
 
-// notifyWait is how long new mail gathers before reading it for notifications.
-const notifyWait = time.Second
-
-// arrivals are an account's new messages and their threads awaiting notifications.
-type arrivals struct{ msgs, threads []int64 }
-
-// mailArrived gathers ev's new messages for their notifications,
-// shown notifyWait after the first of them.
-func (a *App) mailArrived(ev events.Event) {
-	if len(ev.MessageIDs) == 0 {
-		return
-	}
-	if a.newMail == nil {
-		a.newMail = map[int64]*arrivals{}
-	}
-	acc := ev.AccountID
-	got := a.newMail[acc]
-	if got == nil {
-		got = &arrivals{}
-		a.newMail[acc] = got
-		a.after(notifyWait, func() {
-			delete(a.newMail, acc)
-			a.notify(acc, got)
-		})
-	}
-	got.msgs = append(got.msgs, ev.MessageIDs...)
-	got.threads = append(got.threads, ev.ThreadIDs...)
-}
-
-// notify moves the account's inbox arrivals from blocked senders to Junk, and
-// shows a notification for each of the others, unless disabled or the window
-// is in front. Preview shows the sender, subject and snippet; otherwise it
-// says only "Godwit" and "new mail".
-func (a *App) notify(acc int64, got *arrivals) {
-	st := a.settings
-	show := st.NotifyNewMail && !a.foreground
-	texts := i18n.In(i18n.Language())
-	plat, svc, logf := a.plat, a.svc, a.logf
-	codeBanner, now := st.NotifyPreview && plat.SignInCodeBannerSupported(), a.clock.Now()
-	a.do(func(ctx context.Context) error {
-		msgs, err := inboxArrivals(ctx, svc, acc, got)
-		if err != nil {
-			logf("notify: account %d: reading new mail: %v", acc, err)
-			return nil
-		}
-		blockedSenders, err := svc.BlockedSenders(ctx) // the stored list: a block takes effect at once
-		if err != nil {
-			logf("notify: account %d: reading blocked senders: %v", acc, err)
-		}
-		var junk []int64
-		msgs = slices.DeleteFunc(msgs, func(m core.MessageSummary) bool {
-			blocked := slices.Contains(blockedSenders, mail.AddrKey(m.From))
-			if blocked {
-				junk = append(junk, m.ID)
-			}
-			return blocked
-		})
-		if len(junk) > 0 {
-			// Never deleted instead: a failed move leaves the mail in the inbox, unnotified.
-			if err := svc.MoveToRole(ctx, junk, "junk"); err != nil {
-				logf("notify: account %d: moving blocked senders' mail to junk: %v", acc, err)
-			}
-		}
-		if !show || !plat.NotificationsSupported() {
-			return nil
-		}
-		if codeBanner {
-			// Only the newest code takes the banner; older ones in the same batch
-			// keep their ordinary notification.
-			if codes, err := svc.RecentSignInCodes(ctx, now); err == nil && len(codes) > 0 {
-				msgs = slices.DeleteFunc(msgs, func(m core.MessageSummary) bool { return m.ID == codes[0].MessageID })
-			}
-		}
-		for _, m := range msgs {
-			n := Notification{ID: "message:" + strconv.FormatInt(m.ID, 10), MessageID: m.ID, Title: "Godwit", Body: texts.NotifyNewMail()}
-			if st.NotifyPreview {
-				n.Title, n.Subtitle, n.Body = displayName(m.From), m.Subject, m.Snippet
-				n.Sender, n.ThreadID = m.From, m.ThreadID
-			}
-			if err := plat.Notify(n); err != nil {
-				logf("notify: account %d: %v", acc, err)
-			}
-		}
-		return nil
-	}, nil)
-}
-
-// inboxArrivals are the arrived messages that are in an inbox-role folder.
-func inboxArrivals(ctx context.Context, svc *core.Service, acc int64, got *arrivals) ([]core.MessageSummary, error) {
-	fs, err := svc.ListFolders(ctx, acc)
-	if err != nil {
-		return nil, err
-	}
-	inbox := map[int64]bool{}
-	for _, f := range fs {
-		if f.Role == "inbox" {
-			inbox[f.ID] = true
-		}
-	}
-	want := map[int64]bool{}
-	for _, id := range got.msgs {
-		want[id] = true
-	}
-	var out []core.MessageSummary
-	for _, tid := range slices.Compact(slices.Sorted(slices.Values(got.threads))) {
-		th, err := svc.GetThread(ctx, tid)
-		if err != nil {
-			return nil, err
-		}
-		for _, m := range th.Messages {
-			if want[m.ID] && inbox[m.FolderID] {
-				delete(want, m.ID) // a message in two gathered threads counts once
-				out = append(out, m)
-			}
-		}
-	}
-	return out, nil
-}
+// noteDedupe is how long a taken click hides the same one given again.
+const noteDedupe = 5 * time.Second
 
 // NotificationClicked shows the window with what a notification was about:
-// its message, or the account's inbox for a gathered one. Only the newest
+// its message, the account's inbox for a gathered one, or the confirmation
+// of godwit mcp's send requests (mcp_send:<id>). Only the newest
 // click navigates, and only if the route has not changed meanwhile; a click
-// before the first load waits for it.
+// before the first load waits for it. A click taken already is dropped: the
+// backend and the interface may both be given it.
 func (a *App) NotificationClicked(id string) {
+	if num, ok := strings.CutPrefix(id, "mcp_send:"); ok { // its card shows over the page, which stays
+		a.plat.ShowWindow()
+		if req, err := strconv.ParseInt(num, 10, 64); err == nil {
+			if a.mcpSend.notified == nil {
+				a.mcpSend.notified = map[int64]bool{}
+			}
+			a.mcpSend.notified[req] = true // the user came from its notification
+		}
+		a.loadMCPSends()
+		return
+	}
+	// One click may reach both processes, within moments; the same
+	// notification opened again later is the user's.
+	if at, ok := a.noteSeen[id]; ok && a.clock.Now().Sub(at) < noteDedupe {
+		return
+	}
 	a.plat.ShowWindow()
 	if !a.loaded {
 		a.noteFirst = id
 		return
 	}
+	if a.noteSeen == nil {
+		a.noteSeen = map[string]time.Time{}
+	}
+	now := a.clock.Now()
+	maps.DeleteFunc(a.noteSeen, func(_ string, at time.Time) bool { return now.Sub(at) >= noteDedupe })
+	a.noteSeen[id] = now
 	a.noteGen++
 	gen, look := a.noteGen, a.noteRoute
 	var r Route
@@ -210,23 +116,30 @@ func (a *App) showUnread(inbox int) {
 	}
 }
 
-// Compose starts a new draft in a compose window, as the sidebar's button does.
-func (a *App) Compose() { a.mail.compose() }
+// What Open opens besides a notification's subject: the main window, or a
+// new compose window.
+const OpenWindow, OpenCompose = "window", "compose"
 
-// HideTrayIcon hides the menu bar icon by updating the setting. Its menu is
-// mostly used with the window hidden, so the window comes up to show the toast.
-func (a *App) HideTrayIcon() {
-	a.onUI(func() {
-		st := a.settings
-		if !st.ShowTrayIcon {
+// Open shows what a launch (godwit --open) or the backend's tray asks for:
+// OpenWindow, OpenCompose, or else a notification id (NotificationClicked).
+func (a *App) Open(what string) {
+	switch what {
+	case OpenWindow:
+		a.plat.ShowWindow()
+	case OpenCompose:
+		if !a.loaded { // no account to write from yet: after the first load, as a click waits
+			a.plat.ShowWindow()
+			a.noteFirst = what
 			return
 		}
-		st.ShowTrayIcon = false
-		a.changeSettings(st)
-		a.plat.ShowWindow()
-		a.toast(i18n.T("tray.hidden_toast"))
-	})
+		a.Compose()
+	default:
+		a.NotificationClicked(what)
+	}
 }
+
+// Compose starts a new draft in a compose window, as the sidebar's button does.
+func (a *App) Compose() { a.mail.compose() }
 
 // SyncAll syncs every account now. The status shows syncing until the last one
 // returns; a click while that batch is in flight starts nothing more.
@@ -277,12 +190,29 @@ func (a *App) finishBatch() {
 // batchPending reports whether the Sync All in flight still waits on the account.
 func (a *App) batchPending(id int64) bool { return a.syncBatch != nil && a.syncBatch.pending[id] }
 
-// KeepInBackground reports whether closing the window only hides it: 后台常驻
-// is on, or an enabled rule runs in the background.
+// TrayIconShown reports whether the backend's tray shows Godwit's icon: the
+// setting asks for it, but the system may have no tray. Asked as the window
+// closes, on the UI thread: bounded, the setting standing in when it cannot.
+func (a *App) TrayIconShown() bool {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if shown, err := a.svc.TrayShown(ctx); err == nil {
+		return shown
+	}
+	return a.settings.ShowTrayIcon
+}
+
+// KeepInBackground reports whether the backend keeps receiving once the
+// window closes: 后台收信 is past 关窗后停止, or an enabled rule runs in the
+// background.
 func (a *App) KeepInBackground() bool {
-	if a.settings.KeepInBackground {
+	if a.settings.BackgroundReceive != core.BackgroundReceiveStopOnClose {
 		return true
 	}
-	on, _ := a.svc.RulesInBackground(context.Background()) // an error quits, as with no such rule
-	return on
+	// Asked as the window closes, on the UI thread: bounded, and a backend
+	// that cannot say keeps the window's work rather than stopping a rule.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	on, err := a.svc.RulesInBackground(ctx)
+	return on || err != nil
 }

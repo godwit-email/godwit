@@ -118,6 +118,20 @@ func (a *App) onEvent(ev events.Event) {
 	case events.ImportProgress: // only its toast shows it; MessagesChanged refreshes the rest
 		a.mail.importProgress(ev)
 		return
+	case events.NotificationClicked: // the backend's notification
+		a.NotificationClicked(ev.Notification)
+		return
+	case events.OpenRequested: // the backend's tray
+		a.Open(OpenWindow)
+		return
+	case events.ComposeRequested: // the backend's tray
+		a.Open(OpenCompose)
+		return
+	case events.QuitRequested: // the backend's tray
+		if a.quit != nil {
+			a.quit()
+		}
+		return
 	case events.SettingsChanged:
 		a.mail.reader.invalidateAvatars(false)
 		a.mail.reader.refreshAvatars() // core answers for the new settings; an unsaved local change still holds them
@@ -147,8 +161,6 @@ func (a *App) onEvent(ev events.Event) {
 		}
 		a.syncErr[ev.AccountID] = f
 		a.tick() // a failure that lasts turns red
-	case events.MessageReceived:
-		a.mailArrived(ev)
 	case events.OutboxChanged:
 		a.offerUndo()
 	case events.PluginsChanged: // a card's plugin may have been switched
@@ -212,9 +224,11 @@ func (a *App) toastErr(err error) {
 	switch {
 	case msg == "":
 	case msg == i18n.Tf("error.unknown", err.Error()):
-		u := issueURL(a.svc.Redact(err.Error()), a.svc.Redact(RecentLog.String()))
+		errText := err.Error()
 		a.toasts = append(a.toasts, ui.Toast{ID: msg, Title: msg, Type: kit.ToastError,
-			Action: i18n.T("error.report"), OnAction: func() { a.do(func(context.Context) error { return a.plat.OpenURL(u) }, a.toastErr) }})
+			Action: i18n.T("error.report"), OnAction: func() {
+				a.do(func(context.Context) error { return a.plat.OpenURL(issueURL(errText, a.svc.RecentLog())) }, a.toastErr)
+			}})
 	default:
 		a.toastAs(kit.ToastError, msg)
 	}
@@ -280,6 +294,7 @@ func (a *App) View(c *ui.Context) {
 	a.mail.reader.unsubscribeDialog(c)
 	a.mail.reader.attachmentConflictDialog(c)
 	a.mcpSendDialog(c)
+	a.pages[PageSettings].(*settingsPage).importDialog(c)
 	kit.ToastHost(c, i18n.T("toast.close"))
 	// Last, on the root, which overlays (menus, dialogs, Select lists, toasts)
 	// attach to: a c.SetTheme mid-frame resets its background to the theme's,
@@ -625,10 +640,20 @@ func (a *App) saveWidths() {
 // to close anyway and lose its last edits.
 func (a *App) closeDialog(c *ui.Context) {
 	kit.Dialog(c, &a.closeAsk, i18n.T("close.unsaved.title"), kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: humanize(a.closeErr), Close: i18n.T("common.close")}, nil, func() {
-		kit.Button(c, i18n.T("close.unsaved.back"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { a.closeAsk = false })
+		kit.Button(c, i18n.T("close.unsaved.back"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() {
+			a.closeAsk = false
+			a.QuitCancelled()
+		})
 		kit.Button(c, i18n.T("close.unsaved.quit"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
 			a.closeAsk = false
 			a.closeAnyway()
 		})
 	})
+}
+
+// QuitCancelled tells the backend the user kept the interface open at a
+// quit's prompt, so a quit the tray's 退出并停止收信 began does not stop it
+// later (CancelTrayQuit). UI thread.
+func (a *App) QuitCancelled() {
+	a.do(func(ctx context.Context) error { return a.svc.CancelTrayQuit(ctx) }, nil)
 }

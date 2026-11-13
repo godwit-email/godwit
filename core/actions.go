@@ -140,7 +140,8 @@ func (s *Service) ListActions(ctx context.Context, kind string) ([]ActionInfo, e
 // RunAction runs action id (<plugin>/<id>) on t. The plugin gets {kind, id}
 // and, for a selection, text: never other mail content (it reads that itself
 // with mail:read). A plugin holding net that may hold mail content (mail:read,
-// or a selection) returns *EgressApprovalRequired unless opts approves. A
+// or a selection) returns *EgressApprovalRequired unless opts approves, and
+// ErrNoUI over the Local API while no Godwit window is open. A
 // failed run or an invalid result counts as a plugin failure.
 func (s *Service) RunAction(ctx context.Context, id string, t Target, opts RunActionOptions) (ActionResult, error) {
 	ctx, end, err := s.begin(ctx, 0)
@@ -171,6 +172,11 @@ func (s *Service) RunAction(ctx context.Context, id string, t Target, opts RunAc
 		return ActionResult{}, err
 	}
 	hosts, needsApproval := plugins.EgressFor(plugins.KindAction, m, pc.row.granted == pc.row.permHash, held, t.Kind == "selection")
+	if needsApproval {
+		if err := s.needUI(ctx); err != nil {
+			return ActionResult{}, err
+		}
+	}
 	if needsApproval && !opts.ApproveEgress {
 		return ActionResult{}, &EgressApprovalRequired{Plugin: name, Hosts: hosts}
 	}

@@ -52,6 +52,7 @@ type (
 	CardDAV        = testmail.CardDAV
 	CardDAVRequest = testmail.CardDAVRequest
 	SMTP           = testmail.Inbox
+	Scale          = testmail.Scale
 	Turn           = testllm.Turn
 	Call           = testllm.Call
 	Request        = testllm.Request
@@ -59,9 +60,23 @@ type (
 
 // The SMTP stages SMTP.Reply answers at.
 const (
-	AtRcpt = testmail.AtRcpt
-	AtData = testmail.AtData
+	AtRcpt      = testmail.AtRcpt
+	AtData      = testmail.AtData
+	DefaultSeed = testmail.DefaultSeed
 )
+
+var (
+	ScaleSmall  = testmail.ScaleSmall
+	ScaleMedium = testmail.ScaleMedium
+	ScaleLarge  = testmail.ScaleLarge
+)
+
+// PopulateMailbox seeds im with extra project folders up to folders (>= 4)
+// and messages deterministic RFC 5322 messages driven by seed.
+func PopulateMailbox(tb testing.TB, im *IMAP, email string, seed int64, folders, messages int) {
+	tb.Helper()
+	testmail.PopulateMailbox(tb, im, email, seed, folders, messages)
+}
 
 // EgressHost is the host fixture plugins fetch from, as http://egress.godwit.test:80/
 // (the port written out, as declared); it reaches the Env's local server,
@@ -97,6 +112,7 @@ type config struct {
 	registry         *core.RegistrySource
 	sys              core.SystemTranslator
 	confirm          bool
+	notifyMCP        bool
 	unsub            *http.Client
 	model            mask.Recognizer
 	recognitionModel []string
@@ -117,9 +133,14 @@ func WithRegistry(src *core.RegistrySource) Option { return func(c *config) { c.
 // WithSystemTranslator gives the Service the system's translation.
 func WithSystemTranslator(t core.SystemTranslator) Option { return func(c *config) { c.sys = t } }
 
-// WithConfirmWindow is the GUI's Service: a window can confirm godwit mcp's
-// sends (core.Options.ConfirmWindow). Without it 每次确认 refuses them, as headless.
+// WithConfirmWindow is the GUI's Service: a ui client is connected for the
+// whole test (core.WithUISession), so a window can confirm godwit mcp's sends.
+// Without it 每次确认 refuses them, as headless with no notification.
 func WithConfirmWindow() Option { return func(c *config) { c.confirm = true } }
+
+// WithMCPSendNotify is the backend's Service: with no ui client connected, a
+// 每次确认 request posts a notification (core.Options.NotifyMCPSend) and waits.
+func WithMCPSendNotify() Option { return func(c *config) { c.notifyMCP = true } }
 
 // WithUnsubscribeClient sends one-click unsubscribes with c, as one reaching an httptest server.
 func WithUnsubscribeClient(c *http.Client) Option { return func(cfg *config) { cfg.unsub = c } }
@@ -133,11 +154,16 @@ func WithoutUIDPlus() Option {
 	return func(c *config) { c.imap = append(c.imap, testmail.WithoutUIDPlus()) }
 }
 
+// WithoutIdle gives every account an IMAP server without IDLE: the worker polls instead.
+func WithoutIdle() Option {
+	return func(c *config) { c.imap = append(c.imap, testmail.WithoutIdle()) }
+}
+
 // WithoutAutoSync starts no background sync; Deliver still syncs.
 func WithoutAutoSync() Option { return func(c *config) { c.autoSync = false } }
 
 // New starts a Service in a temporary directory, closed when the test ends.
-func New(t *testing.T, opts ...Option) *Env {
+func New(t testing.TB, opts ...Option) *Env {
 	t.Helper()
 	cfg := config{autoSync: true}
 	for _, o := range opts {
@@ -169,13 +195,20 @@ func New(t *testing.T, opts ...Option) *Env {
 			}
 			return "", nil, &net.DNSError{Err: "coretest: no Autodiscover started", Name: name, IsNotFound: true}
 		}}
-	svc, err := core.New(context.Background(), core.Options{EWSNet: ewsNet, DataDir: dir, AutoSync: cfg.autoSync, SystemLanguage: "zh-CN", ImageClient: imageClient,
-		Registry: cfg.registry, AppVersion: "1.2.0", SystemTranslator: cfg.sys, ConfirmWindow: cfg.confirm, UnsubscribeClient: cfg.unsub, Recognizer: cfg.model,
+	var notifyMCP func(int64) bool
+	if cfg.notifyMCP {
+		notifyMCP = func(int64) bool { return true }
+	}
+	svc, err := core.New(context.Background(), core.Options{NotifyMCPSend: notifyMCP, EWSNet: ewsNet, DataDir: dir, AutoSync: cfg.autoSync, SystemLanguage: "zh-CN", ImageClient: imageClient,
+		Registry: cfg.registry, AppVersion: "1.2.0", SystemTranslator: cfg.sys, UnsubscribeClient: cfg.unsub, Recognizer: cfg.model,
 		RecognitionModelSources: cfg.recognitionModel, RecognitionModelClient: &http.Client{Transport: imageClient.Transport}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { svc.Close() })
+	if cfg.confirm {
+		core.WithUISession(t.Context(), svc)
+	}
 	e := &Env{Svc: svc, DataDir: dir, servers: map[int64]*mailServers{}, started: map[string]*mailServers{}, clock: clock, imap: cfg.imap, ad: ad}
 	svc.SetClockForTest(e.clock)
 
@@ -238,7 +271,7 @@ func (loopbackDNS) LookupIPAddr(_ context.Context, host string) ([]net.IPAddr, e
 // EgressHits is how many requests reached EgressHost.
 func (e *Env) EgressHits() int { return int(e.egress.Load()) }
 
-func splitHostPort(t *testing.T, addr string) (string, int) {
+func splitHostPort(t testing.TB, addr string) (string, int) {
 	t.Helper()
 	h, p, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -254,7 +287,22 @@ func splitHostPort(t *testing.T, addr string) (string, int) {
 // AccountOption changes how AddAccount adds an account.
 type AccountOption func(*accountConfig)
 
-type accountConfig struct{ jmap, pop3 bool }
+type accountConfig struct {
+	jmap, pop3  bool
+	seed        int64
+	seedFolders int
+	seedMsgs    int
+}
+
+// Seeded pre-populates the account's IMAP server before AddAccount connects,
+// so the first sync imports the messages as existing mail rather than new arrivals.
+func Seeded(scale Scale, seed int64) AccountOption {
+	return func(c *accountConfig) {
+		c.seed = seed
+		c.seedFolders = scale.Folders
+		c.seedMsgs = scale.Messages
+	}
+}
 
 // ViaJMAP adds the account over JMAP, on a fake JMAP server (Env.JMAP), with
 // the JMAP experiment turned on. It receives and sends over JMAP, saving the
@@ -268,7 +316,7 @@ func ViaPOP3() AccountOption { return func(c *accountConfig) { c.pop3 = true } }
 
 // AddAccount adds email with its own fake IMAP and SMTP servers (the SMTP one
 // files sent mail into the IMAP Sent folder). The first account is the default.
-func (e *Env) AddAccount(t *testing.T, email string, opts ...AccountOption) core.Account {
+func (e *Env) AddAccount(t testing.TB, email string, opts ...AccountOption) core.Account {
 	t.Helper()
 	var cfg accountConfig
 	for _, o := range opts {
@@ -302,6 +350,9 @@ func (e *Env) AddAccount(t *testing.T, email string, opts ...AccountOption) core
 	} else {
 		im := testmail.StartIMAP(t, e.imap...)
 		addr, inbox := testmail.StartSMTP(t, testmail.SaveToSent(im))
+		if cfg.seedFolders > 0 {
+			PopulateMailbox(t, im, email, cfg.seed, cfg.seedFolders, cfg.seedMsgs)
+		}
 		ih, ip := splitHostPort(t, im.Addr)
 		sh, sp := splitHostPort(t, addr)
 		in = core.AccountInput{Email: email, Username: "alice", Password: "secret",
@@ -335,7 +386,7 @@ func (e *Env) StartJMAPServers(t *testing.T, email string) core.AccountInput {
 	return in
 }
 
-func (e *Env) startJMAP(t *testing.T, email string) (core.AccountInput, *mailServers) {
+func (e *Env) startJMAP(t testing.TB, email string) (core.AccountInput, *mailServers) {
 	t.Helper()
 	jm := testmail.StartJMAP(t)
 	u, err := url.Parse(jm.URL())
@@ -391,7 +442,7 @@ func (e *Env) StartPOP3Servers(t *testing.T, email string) core.AccountInput {
 	return in
 }
 
-func (e *Env) startPOP3(t *testing.T, email string) (core.AccountInput, *mailServers) {
+func (e *Env) startPOP3(t testing.TB, email string) (core.AccountInput, *mailServers) {
 	t.Helper()
 	p := testmail.StartPOP3(t)
 	addr, inbox := testmail.StartSMTP(t)
@@ -413,7 +464,7 @@ func (e *Env) StartCardDAV(t *testing.T) *CardDAV {
 // yet, as the onboarding form takes them, with the user and password they
 // accept. Once an account is added with them, Deliver, IMAP, SMTP and Sent
 // work for it as for AddAccount's.
-func (e *Env) StartServers(t *testing.T) (imapHost string, imapPort int, smtpHost string, smtpPort int, user, password string) {
+func (e *Env) StartServers(t testing.TB) (imapHost string, imapPort int, smtpHost string, smtpPort int, user, password string) {
 	t.Helper()
 	im := testmail.StartIMAP(t, e.imap...)
 	addr, in := testmail.StartSMTP(t, testmail.SaveToSent(im))
@@ -475,7 +526,7 @@ func (e *Env) Endpoints(accountID int64) (imapHost string, imapPort int, smtpHos
 // Deliver appends raw to the account's folder on its IMAP or JMAP server
 // (a POP3 server has only INBOX) and syncs: raw is new mail. (Append to
 // IMAP().User or deliver on JMAP() or POP3() for mail already there.)
-func (e *Env) Deliver(t *testing.T, accountID int64, folder string, raw []byte) {
+func (e *Env) Deliver(t testing.TB, accountID int64, folder string, raw []byte) {
 	t.Helper()
 	m := e.mail(accountID)
 	e.mu.Lock()
@@ -531,8 +582,8 @@ type msgConfig struct {
 }
 
 type attachment struct {
-	name, ctype string
-	data        []byte
+	name, ctype, cid string
+	data             []byte
 }
 
 type MsgOption func(*msgConfig)
@@ -547,7 +598,10 @@ func Date(d time.Time) MsgOption { return func(c *msgConfig) { c.date = d } }
 // Header adds a header line, as "List-Id: <news.example>".
 func Header(line string) MsgOption { return func(c *msgConfig) { c.header = append(c.header, line) } }
 func Attachment(name, ctype string, data []byte) MsgOption {
-	return func(c *msgConfig) { c.atts = append(c.atts, attachment{name, ctype, data}) }
+	return func(c *msgConfig) { c.atts = append(c.atts, attachment{name: name, ctype: ctype, data: data}) }
+}
+func Inline(cid, ctype string, data []byte) MsgOption {
+	return func(c *msgConfig) { c.atts = append(c.atts, attachment{ctype: ctype, cid: cid, data: data}) }
 }
 
 // leaf is a base64 body part: base64 never contains the "--coretest-" boundaries.
@@ -590,6 +644,10 @@ func Msg(from, to, subject, body string, opts ...MsgOption) []byte {
 	if len(c.atts) > 0 {
 		parts := []string{part}
 		for _, a := range c.atts {
+			if a.cid != "" {
+				parts = append(parts, leaf(fmt.Sprintf("Content-Type: %s\r\nContent-ID: <%s>\r\nContent-Disposition: inline\r\n", a.ctype, a.cid), a.data))
+				continue
+			}
 			parts = append(parts, leaf(fmt.Sprintf("Content-Type: %s\r\nContent-Disposition: attachment; filename=%q\r\n", a.ctype, a.name), a.data))
 		}
 		part = multipart("mixed", "coretest-mixed", parts...)

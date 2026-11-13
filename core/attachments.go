@@ -91,25 +91,88 @@ func (s *Service) GetAttachment(ctx context.Context, attachmentID int64) (string
 	return path, info, err
 }
 
-// FetchAttachments gets each attachment's cached file over one connection,
-// downloading first if needed, and calls fn for each in order.
-func (s *Service) FetchAttachments(ctx context.Context, attachmentIDs []int64, fn func(path string, info AttachmentInfo) error) (err error) {
-	f := s.newAttachmentFetcher(ctx)
-	defer func() {
-		if cerr := f.close(); err == nil {
-			err = cerr
-		}
-	}()
-	for _, id := range attachmentIDs {
-		path, info, gerr := f.get(id)
-		if gerr != nil {
-			return gerr
-		}
-		if ferr := fn(path, info); ferr != nil {
-			return ferr
+// FetchedAttachment is one attachment cached on disk by FetchAttachmentsStream.
+type FetchedAttachment struct {
+	Path string
+	Info AttachmentInfo
+	Err  error `json:"-"`
+}
+
+// StreamError returns the mid-stream failure, if any.
+func (a FetchedAttachment) StreamError() error { return a.Err }
+
+func sendStream[T any](ctx context.Context, ch chan<- T, v T) bool {
+	select {
+	case ch <- v:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func sendStreamFinal[T any](ctx context.Context, ch chan<- T, v T) {
+	select {
+	case ch <- v:
+	default:
+		select {
+		case ch <- v:
+		case <-ctx.Done():
 		}
 	}
-	return nil
+}
+
+// FetchAttachments gets each attachment's cached file over one connection,
+// downloading first if needed, and calls fn for each in order: the
+// FetchAttachmentsStream that the interface reads over the Local API, taken
+// in process.
+func (s *Service) FetchAttachments(ctx context.Context, attachmentIDs []int64, fn func(path string, info AttachmentInfo) error) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel() // ends the stream's fetcher when fn stops early
+	ch, err := s.FetchAttachmentsStream(ctx, attachmentIDs)
+	if err != nil {
+		return err
+	}
+	for a := range ch {
+		if a.Err != nil {
+			return a.Err
+		}
+		if err := fn(a.Path, a.Info); err != nil {
+			return err
+		}
+	}
+	return ctx.Err()
+}
+
+// FetchAttachmentsStream streams each attachment's cached file path and info in
+// order over one connection, downloading first if needed.
+func (s *Service) FetchAttachmentsStream(ctx context.Context, attachmentIDs []int64) (<-chan FetchedAttachment, error) {
+	fctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	ids := slices.Clone(attachmentIDs)
+	ch := make(chan FetchedAttachment, 16)
+	f := &attachmentFetcher{s: s, ctx: fctx, end: end}
+	go func() {
+		defer close(ch)
+		for _, id := range ids {
+			path, info, gerr := f.get(id)
+			if gerr != nil {
+				// Before close: it ends fctx, and a full buffer would then drop the error.
+				sendStreamFinal(fctx, ch, FetchedAttachment{Err: gerr})
+				_ = f.close()
+				return
+			}
+			if !sendStream(fctx, ch, FetchedAttachment{Path: path, Info: info}) {
+				_ = f.close()
+				return
+			}
+		}
+		if cerr := f.close(); cerr != nil {
+			sendStreamFinal(ctx, ch, FetchedAttachment{Err: cerr}) // fctx has ended with close
+		}
+	}()
+	return ch, nil
 }
 
 // attachmentFetcher gets attachments one after another over one connection: a
@@ -339,6 +402,43 @@ func (s *Service) archivePart(a attRow) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("attachment part %s not in the original", a.part)
+}
+
+// rawOutDir holds originals RawMessageFile hands to the interface; emptied at start.
+func (s *Service) rawOutDir() string { return filepath.Join(s.dataDir, "raw-out") }
+
+// RawMessageFile is GetRawMessage written to a new file (0600) in the data
+// directory, its path returned, for the interface: an original of up to
+// MaxMessageBytes would not fit one Local API response as base64. The
+// caller removes the file once read; what is left is removed at start.
+func (s *Service) RawMessageFile(ctx context.Context, messageID int64) (string, error) {
+	raw, err := s.GetRawMessage(ctx, messageID)
+	if err != nil {
+		return "", err
+	}
+	return s.outFile(raw, "*.eml")
+}
+
+// outFile writes data to a new 0600 file in rawOutDir for the interface to
+// read and remove: what would not fit one Local API response as base64.
+func (s *Service) outFile(data []byte, pattern string) (string, error) {
+	if err := os.MkdirAll(s.rawOutDir(), 0o700); err != nil {
+		return "", err
+	}
+	f, err := os.CreateTemp(s.rawOutDir(), pattern)
+	if err != nil {
+		return "", err
+	}
+	if _, err = f.Write(data); err == nil {
+		err = f.Close()
+	} else {
+		f.Close()
+	}
+	if err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
 }
 
 // GetRawMessage downloads the message's full original from the server, for a

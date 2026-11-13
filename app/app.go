@@ -33,6 +33,9 @@ type Platform interface {
 	Notify(n Notification) error
 	NotificationsSupported() bool
 	SetOpenAtLogin(on bool) error
+	// OpenAtLogin reports whether the login item runs: false once the user
+	// turned it off in the system. Blocks: call it off the UI thread.
+	OpenAtLogin() bool
 	SetTrayVisible(visible bool)
 	SetTrayUnread(n int)              // the inboxes' unread total on the tray; 0 clears it
 	SetAppUnread(n int)               // the inboxes' unread total on the app icon; 0 clears it
@@ -46,9 +49,9 @@ type Platform interface {
 	// ext (no dot), as a size by size pixel PNG. Blocks: call it off the UI
 	// thread.
 	TypeIcon(ext string, size int) ([]byte, error)
-	// SetLocalAPI starts (on) or stops the Local API server for request
-	// gen, returning its socket's path while on. Off when it fails. Blocks:
-	// call off the UI thread.
+	// SetLocalAPI enables (on) or disables external access to the Local API
+	// for request gen, returning its socket's path while on. Off when it
+	// fails. Blocks: call off the UI thread.
 	SetLocalAPI(gen uint64, on bool) (path string, err error)
 	// DataDir is the data directory; custom: it is not the default one.
 	DataDir() (dir string, custom bool)
@@ -122,7 +125,7 @@ type OAuthFlow interface {
 	Cancel(flowID string)
 }
 
-type serviceOAuth struct{ svc *core.Service }
+type serviceOAuth struct{ svc Service }
 
 func (o serviceOAuth) Begin(ctx context.Context, provider, loginHint string, client core.OAuthClient) (string, string, error) {
 	return o.svc.BeginOAuth(ctx, provider, loginHint, client)
@@ -135,7 +138,7 @@ func (o serviceOAuth) Cancel(flowID string) { o.svc.CancelOAuth(flowID) }
 // Deps are the App's collaborators. Post runs a function on the UI thread
 // (win.Update in production). Clock and OAuth default to the real ones.
 type Deps struct {
-	Svc      *core.Service
+	Svc      Service
 	Settings core.Settings
 	Platform Platform
 	Post     func(func())
@@ -158,6 +161,14 @@ type Deps struct {
 
 	// Dev: the build is a development one: the rail offers the Kit gallery.
 	Dev bool
+
+	// ExternalAlways: the backend is the user's own godwit --headless, which
+	// serves external clients whatever Settings.LocalAPI says.
+	ExternalAlways bool
+
+	// Quit quits the app as its own Quit does; the backend's tray asks for it
+	// (events.QuitRequested). nil ignores that.
+	Quit func()
 }
 
 // Page is a top-level screen.
@@ -189,7 +200,7 @@ type syncBatch struct {
 
 // App is the interface's state. Every field is read and written on the UI thread.
 type App struct {
-	svc   *core.Service
+	svc   Service
 	plat  Platform
 	post  func(func())
 	clock Clock
@@ -228,18 +239,23 @@ type App struct {
 	sysLang          string // Deps.SystemLanguage
 	accountsGen      uint64 // the load gen that read a.accounts
 
-	localAPIWant bool   // what the last SetLocalAPI asked for
-	localAPIGen  uint64 // bumped per SetLocalAPI; only the newest one's result counts
-	localAPIPath string // the Local API's socket while it serves
-	localAPIErr  error  // why the Local API last failed; the privacy page shows it
+	localAPIWant   bool   // what the last SetLocalAPI asked for
+	localAPIGen    uint64 // bumped per SetLocalAPI; only the newest one's result counts
+	localAPIPath   string // the Local API's socket while it serves
+	externalAlways bool   // Deps.ExternalAlways
+	localAPIErr    error  // why the Local API last failed; the privacy page shows it
 
-	foreground                           bool
-	vibrancy                             bool                // Deps.Vibrancy
-	newMail                              map[int64]*arrivals // per account, what arrived for its pending notifications
+	loginItemOff bool // the settings want the login item, but the user turned it off in the system (checkLoginItem)
+
+	foreground bool
+	vibrancy   bool   // Deps.Vibrancy
+	quit       func() // Deps.Quit
+
 	logf                                 func(format string, args ...any)
 	noteRoute                            func(ctx context.Context, id string) (Route, bool, error) // where a notification leads; tests wrap it
 	noteGen                              uint64                                                    // bumped per notification click; only the newest navigates
-	noteFirst                            string                                                    // a click that came before the first load
+	noteFirst                            string                                                    // a click, or OpenCompose, that came before the first load
+	noteSeen                             map[string]time.Time                                      // when each click was taken: one given to both processes counts once
 	inboxUnread                          int                                                       // the inboxes' unread total
 	trayUnread                           int                                                       // what the tray shows
 	appUnread                            int                                                       // what the app icon shows; -1 before the first update
@@ -308,7 +324,7 @@ type App struct {
 
 // New builds an App; Start brings it up.
 func New(d Deps) *App {
-	a := &App{settings: d.Settings, settingsOK: d.Settings, setLanguage: d.SetLanguage, svc: d.Svc, plat: d.Platform, post: d.Post, clock: d.Clock, oauth: d.OAuth, sysLang: d.SystemLanguage, vibrancy: d.Vibrancy, appUnread: -1, mcpEnv: mcpclients.Local}
+	a := &App{settings: d.Settings, settingsOK: d.Settings, setLanguage: d.SetLanguage, svc: d.Svc, plat: d.Platform, post: d.Post, clock: d.Clock, oauth: d.OAuth, sysLang: d.SystemLanguage, vibrancy: d.Vibrancy, externalAlways: d.ExternalAlways, appUnread: -1, mcpEnv: mcpclients.Local}
 	kit.Glass = d.Vibrancy // dialogs frost their panels over a window on a material
 	if a.setLanguage == nil {
 		a.setLanguage = func(tag string) { i18n.SetLanguage(cmp.Or(tag, a.sysLang)) }
@@ -341,6 +357,7 @@ func New(d Deps) *App {
 	a.syncing, a.syncErr, a.syncedAtBy = map[int64]bool{}, map[int64]syncFail{}, map[int64]time.Time{}
 	a.undoToasts = map[int64]bool{}
 	a.ctx, a.cancel = context.WithCancel(context.Background())
+	a.quit = d.Quit
 	a.pumpDone = make(chan struct{})
 	return a
 }
@@ -367,6 +384,7 @@ func (a *App) Start(ctx context.Context) {
 		}
 	}()
 	a.load()
+	a.checkLoginItem()
 	a.after(latestFirst, a.watchLatest)
 }
 
@@ -519,6 +537,7 @@ func (a *App) load() {
 		a.refreshSignInCodes()
 		if first {
 			a.setLanguage(st.UILanguage)
+			a.loadMCPSends() // asked while no interface was open: no event of them reached this one
 		}
 		gone := func(id int64, _ bool) bool { _, ok := unread[id]; return !ok } // a removed account
 		maps.DeleteFunc(a.syncing, gone)
@@ -532,9 +551,25 @@ func (a *App) load() {
 		}
 		if id := a.noteFirst; first && id != "" {
 			a.noteFirst = ""
-			a.NotificationClicked(id)
+			a.Open(id)
 		}
 	})
+}
+
+// Busy reports whether work the user started runs in this process and ends
+// with it: a model's or 识别模型's download, a local archive's import. UI thread.
+func (a *App) Busy() bool {
+	p := a.pages[PageSettings].(*settingsPage)
+	return len(p.models.downloads) > 0 || p.recognition.download != nil || len(a.mail.imports) > 0
+}
+
+// MailReady reports whether the initial load has settled on onboarding or a
+// loaded mail list. UI thread.
+func (a *App) MailReady() bool {
+	if !a.loaded {
+		return false
+	}
+	return a.route.Page == PageOnboarding || (a.route.Page == PageMail && !a.mail.loading)
 }
 
 // Close cancels all work in flight, whose done callbacks never run, closes
@@ -635,19 +670,15 @@ func (a *App) BeforeClose(proceed func()) {
 	})
 }
 
-// SetForeground records whether the window is in front.
+// SetForeground records whether the window is in front, and tells the
+// backend, which notifies new mail and narrows background syncs by it.
 func (a *App) SetForeground(on bool) {
 	a.foreground = on
 	if on {
 		a.plat.ShowSignInCode(nil)
+		a.checkLoginItem() // the user may come back from the system's login items
 	}
-	a.applyBackgroundSync(a.settings)
-}
-
-// applyBackgroundSync narrows the Service's syncs to the inbox while the
-// window is behind another one, unless st syncs every folder there.
-func (a *App) applyBackgroundSync(st core.Settings) {
-	a.svc.SetInboxOnly(st.BackgroundSync != core.BackgroundSyncAll && !a.foreground)
+	a.writes.Chain("ui-foreground", func(ctx context.Context) error { return a.svc.SetUIForeground(ctx, on) }, a.toastErr)
 }
 
 // OnUI posts f to the UI thread unless the App has closed by then, for

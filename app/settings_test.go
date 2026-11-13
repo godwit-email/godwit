@@ -500,19 +500,6 @@ func TestSettingsTrayIconToggle(t *testing.T) {
 	h.see(i18n.T("settings.unread_in_menu_bar"))
 }
 
-// The tray's own menu hides it: the window comes up, so the toast is seen.
-func TestHideTrayIcon(t *testing.T) {
-	h, _ := withAccount(t)
-	h.app.HideTrayIcon()
-	h.called("SetTrayVisible false")
-	h.until("tray hidden by HideTrayIcon", func() bool {
-		st, err := h.env.Svc.GetSettings(context.Background())
-		return err == nil && !st.ShowTrayIcon
-	})
-	h.called("ShowWindow")
-	h.see(i18n.T("tray.hidden_toast"))
-}
-
 func TestSettingsRapidTogglesOrdered(t *testing.T) {
 	h, _ := withAccount(t)
 	release := make(chan struct{})
@@ -570,6 +557,54 @@ func TestSettingsSaveFailureReverts(t *testing.T) {
 		t.Fatal("the failed setting stayed on")
 	}
 	h.called("SetOpenAtLogin false")
+}
+
+// loginCalls are the platform's SetOpenAtLogin calls so far.
+func (h *harness) loginCalls() []string {
+	return slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return !strings.HasPrefix(c, "SetOpenAtLogin") })
+}
+
+func TestSettingsLoginItemFollowsBothSettings(t *testing.T) {
+	old := goos
+	goos = "darwin" // Linux registers 一直继续 not at all (TestSettingsLoginItemNotForBackendOnLinux)
+	t.Cleanup(func() { goos = old })
+	h, _ := withAccount(t)
+	h.setLayout(func(st *core.Settings) { st.BackgroundReceive = core.BackgroundReceiveAlways })
+	h.until("registered for 一直继续", func() bool { return slices.Equal(h.loginCalls(), []string{"SetOpenAtLogin true"}) })
+	h.setLayout(func(st *core.Settings) { st.LaunchAtLogin = true }) // the one login item serves both
+	h.setLayout(func(st *core.Settings) { st.BackgroundReceive = core.BackgroundReceiveUntilQuit })
+	h.setLayout(func(st *core.Settings) { st.LaunchAtLogin = false })
+	h.until("unregistered once neither wants it", func() bool {
+		return slices.Equal(h.loginCalls(), []string{"SetOpenAtLogin true", "SetOpenAtLogin false"})
+	})
+}
+
+func TestSettingsLoginItemNotForBackendOnLinux(t *testing.T) {
+	old := goos
+	goos = "linux"
+	t.Cleanup(func() { goos = old })
+	h, _ := withAccount(t)
+	h.setLayout(func(st *core.Settings) { st.BackgroundReceive = core.BackgroundReceiveAlways })
+	h.setLayout(func(st *core.Settings) { st.LaunchAtLogin = true })
+	h.until("only 开机时自动启动 registers", func() bool { return slices.Equal(h.loginCalls(), []string{"SetOpenAtLogin true"}) })
+}
+
+func TestSettingsLoginItemOffInSystem(t *testing.T) {
+	h, _ := withAccount(t)
+	h.plat.mu.Lock()
+	h.plat.loginOff = true // the user turned it off in the system's login items
+	h.plat.mu.Unlock()
+	h.openSettings("general")
+	h.click("开机时自动启动")
+	h.see("系统设置里已关闭 Godwit 的登录启动")
+	h.plat.mu.Lock()
+	h.plat.loginOff = false
+	h.plat.mu.Unlock()
+	h.post(func() { h.app.SetForeground(true) }) // back from the system's settings
+	h.until("the note gone", func() bool { h.tt.Frame(); return !h.tt.HasText("系统设置里已关闭 Godwit 的登录启动") })
+	if got := h.loginCalls(); !slices.Equal(got, []string{"SetOpenAtLogin true"}) {
+		t.Fatalf("login calls %v: Godwit must not register again by itself", got)
+	}
 }
 
 func TestSettingsPrivacyAndAbout(t *testing.T) {
@@ -900,7 +935,7 @@ func TestLocalAPIDefaultOff(t *testing.T) {
 		t.Fatal("the Local API is on by default")
 	}
 	h.aiTab(aiApps)
-	h.see("启用本机 API")
+	h.see("允许外部应用和脚本接入")
 	for _, c := range h.plat.Calls() {
 		if strings.HasPrefix(c, "SetLocalAPI") {
 			t.Fatalf("called %s with the switch off", c)
@@ -914,7 +949,7 @@ func TestLocalAPIDefaultOff(t *testing.T) {
 func TestLocalAPISwitch(t *testing.T) {
 	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, nil)
 	h.aiTab(aiApps)
-	h.click("启用本机 API")
+	h.click("允许外部应用和脚本接入")
 	h.called("SetLocalAPI true")
 	h.see("/tmp/gw/godwit.sock")
 	exe, err := os.Executable()
@@ -939,7 +974,7 @@ func TestLocalAPISwitch(t *testing.T) {
 		st, err := h.env.Svc.GetSettings(context.Background())
 		return err == nil && st.LocalAPI
 	})
-	h.click("启用本机 API")
+	h.click("允许外部应用和脚本接入")
 	h.called("SetLocalAPI false")
 	h.until("the socket hides", func() bool { h.tt.Frame(); return !h.tt.HasText("/tmp/gw/godwit.sock") })
 	h.until("saved off", func() bool {
@@ -959,7 +994,7 @@ func TestLocalAPIStartsOnLoad(t *testing.T) {
 func TestLocalAPIFailureReverts(t *testing.T) {
 	h := localAPIHarness(t, "", errors.New("socket path too long"), nil)
 	h.aiTab(aiApps)
-	h.click("启用本机 API")
+	h.click("允许外部应用和脚本接入")
 	h.called("SetLocalAPI true")
 	h.see("socket path too long")
 	h.until("reverted and saved off", func() bool {
@@ -975,10 +1010,12 @@ func TestLocalAPICopyWarnsFullAccess(t *testing.T) {
 	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
 	h := localAPIHarness(t, "", nil, nil)
 	h.aiTab(aiApps)
+	h.see("允许这台电脑上的 AI 工具（godwit mcp）和脚本（godwit call）连接 Godwit")
 	h.see("完整的本机 API 能读取邮件、发送邮件、修改账户和设置")
 	h.see("只能读取邮件和写草稿，能否发信看「通过 MCP 发送」")
 	i18n.SetLanguage("en")
 	h.tt.Frame()
+	h.see("Lets AI tools (godwit mcp) and scripts (godwit call) on this computer connect to Godwit")
 	h.see("The full Local API can read mail, send mail, and change accounts and settings")
 	h.see("can only read mail and write drafts, and Send through MCP decides whether they can send")
 }
@@ -1016,10 +1053,10 @@ func localAPIRace(t *testing.T, last error) (*harness, func() bool) {
 		return "/tmp/gw/godwit.sock", nil
 	}
 	h.aiTab(aiApps)
-	h.click("启用本机 API")
+	h.click("允许外部应用和脚本接入")
 	h.called("SetLocalAPI true")
-	h.click("启用本机 API")
-	h.click("启用本机 API")
+	h.click("允许外部应用和脚本接入")
+	h.click("允许外部应用和脚本接入")
 	close(release)
 	h.until("every request done", func() bool {
 		return h.app.writes.chains["local-api"] == nil && h.app.writes.keys["settings"] == nil
@@ -1056,20 +1093,6 @@ func TestLocalAPINewestFailureReverts(t *testing.T) {
 	}
 }
 
-// The server stopping by itself turns the switch off with the reason.
-func TestLocalAPIServerStopped(t *testing.T) {
-	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, func(st *core.Settings) { st.LocalAPI = true })
-	h.aiTab(aiApps)
-	h.see("/tmp/gw/godwit.sock")
-	h.app.LocalAPIStopped(h.app.localAPIGen, errors.New("accept: too many open files"))
-	h.see("accept: too many open files")
-	h.until("saved off", func() bool {
-		st, err := h.env.Svc.GetSettings(context.Background())
-		return err == nil && !st.LocalAPI && !h.app.settings.LocalAPI
-	})
-	h.until("the socket hides", func() bool { h.tt.Frame(); return !h.tt.HasText("/tmp/gw/godwit.sock") })
-}
-
 // A data directory other than the default goes into the MCP config.
 func TestLocalAPIMCPConfigDataDir(t *testing.T) {
 	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, func(st *core.Settings) { st.LocalAPI = true })
@@ -1086,35 +1109,6 @@ func TestLocalAPIMCPConfigDataDir(t *testing.T) {
 	h.click("复制配置")
 	if got := h.tt.Clipboard(); got != config {
 		t.Fatalf("clipboard %q, want %q", got, config)
-	}
-}
-
-// A stop notice for a server the user has since replaced changes nothing.
-func TestLocalAPIStaleStopIgnored(t *testing.T) {
-	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, func(st *core.Settings) { st.LocalAPI = true })
-	h.called("SetLocalAPI true")
-	h.until("on", func() bool { return h.app.writes.chains["local-api"] == nil })
-	old := h.app.localAPIGen
-	h.aiTab(aiApps)
-	h.click("启用本机 API")
-	h.click("启用本机 API")
-	h.until("off and on again", func() bool {
-		return h.app.writes.chains["local-api"] == nil && h.app.writes.keys["settings"] == nil && h.app.localAPIGen == old+2
-	})
-	h.app.LocalAPIStopped(old, errors.New("the old server died"))
-	h.drain()
-	h.tt.Frame()
-	h.until("settled", func() bool { return h.app.writes.chains["local-api"] == nil && h.app.writes.keys["settings"] == nil })
-	st, err := h.env.Svc.GetSettings(context.Background())
-	if err != nil || !st.LocalAPI || !h.app.settings.LocalAPI {
-		t.Fatalf("saved %v (%v), switch %v; want on", st.LocalAPI, err, h.app.settings.LocalAPI)
-	}
-	if h.app.localAPIGen != old+2 {
-		t.Fatalf("a stale notice made a request (gen %d, want %d)", h.app.localAPIGen, old+2)
-	}
-	h.see("/tmp/gw/godwit.sock")
-	if h.tt.HasText("the old server died") {
-		t.Fatal("a stale notice shows")
 	}
 }
 
@@ -1929,4 +1923,365 @@ func TestImageRetentionRow(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestSettingsAccountExport(t *testing.T) {
+	var arch core.Account
+	h := newHarness(t, func(e *coretest.Env) {
+		acc := e.AddAccount(t, "alice@example.com")
+		sig := "Best,\nAlice"
+		if _, err := e.Svc.UpdateAccount(context.Background(), acc.ID, core.AccountPatch{Signature: &sig, Sync: &core.SyncRange{Months: 3}}); err != nil {
+			t.Fatal(err)
+		}
+		e.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", acc.Email, "Secret Subject", "Secret Body"))
+		var err error
+		if arch, err = e.Svc.AddLocalArchive(context.Background(), "Old Mail"); err != nil {
+			t.Fatal(err)
+		}
+	})
+	h.until("accounts loaded", func() bool { return h.app.loaded && len(h.app.accounts) == 2 })
+	h.resize(1440, 3000)
+
+	var mailAcc core.Account
+	for _, a := range h.app.accounts {
+		if a.Kind != core.KindLocalArchive {
+			mailAcc = a
+		}
+	}
+
+	// Local archive page does not offer account export.
+	h.openSettings(accountRoute(arch.ID))
+	if h.tt.HasText(i18n.T("settings.account.export.button")) {
+		t.Fatal("local archive page showed export button")
+	}
+
+	// Mail account page offers export; cancelling SaveFile writes nothing and shows no toast.
+	h.openSettings(accountRoute(mailAcc.ID))
+	h.see(i18n.T("settings.account.export"))
+	h.click(i18n.T("settings.account.export.button"))
+	h.called("SaveFile godwit-accounts.json")
+	h.drain()
+	h.tt.Frame()
+	if h.tt.HasText(i18n.T("settings.account.export.done")) {
+		t.Fatal("cancelling SaveFile toasted export done")
+	}
+
+	// Choosing a path writes the versioned JSON file without credentials, mail or local archives.
+	dst := filepath.Join(t.TempDir(), "godwit-accounts.json")
+	h.plat.mu.Lock()
+	h.plat.savePath = dst
+	h.plat.calls = nil
+	h.plat.mu.Unlock()
+
+	h.click(i18n.T("settings.account.export.button"))
+	h.called("SaveFile godwit-accounts.json")
+	h.until("export file written", func() bool {
+		b, err := os.ReadFile(dst)
+		return err == nil && len(b) > 0
+	})
+	h.see(i18n.T("settings.account.export.done"))
+
+	raw, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	for _, forbidden := range []string{"secret", "Secret Subject", "Secret Body", "Old Mail", core.KindLocalArchive} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("exported file leaked %q:\n%s", forbidden, text)
+		}
+	}
+	var exported core.AccountExport
+	if err := json.Unmarshal(raw, &exported); err != nil {
+		t.Fatalf("unmarshal export: %v", err)
+	}
+	if exported.Version != core.AccountExportVersion || len(exported.Accounts) != 1 {
+		t.Fatalf("unexpected export: %+v", exported)
+	}
+	got := exported.Accounts[0]
+	if got.Email != "alice@example.com" || got.Sync.Months != 3 || got.Signature == nil || got.Signature.HTML != "Best,\nAlice" {
+		t.Fatalf("unexpected exported account: %+v", got)
+	}
+}
+
+// An export bigger than one Local API message (signatures repeat per
+// account) is read by the backend from its path: the preview opens, and
+// the connection survives.
+func TestSettingsAccountImportBigFile(t *testing.T) {
+	h, alice := withAccount(t)
+	exp := core.AccountExport{Version: core.AccountExportVersion, Accounts: []core.ExportedAccount{{
+		Email: "carol@example.com", Username: "carol@example.com",
+		Receiving: core.ExportedServer{Protocol: "imap", Host: "imap.example.com", Port: 993, Security: core.SecurityTLS, Auth: core.AuthPassword},
+		Sending:   core.ExportedServer{Protocol: "smtp", Host: "smtp.example.com", Port: 465, Security: core.SecurityTLS, Auth: core.AuthPassword},
+	}}}
+	data, err := json.Marshal(exp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = append(data, bytes.Repeat([]byte(" "), 20<<20)...) // over the 16 MiB message as it is
+	big := filepath.Join(t.TempDir(), "big.json")
+	if err := os.WriteFile(big, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.plat.mu.Lock()
+	h.plat.files = []string{big}
+	h.plat.mu.Unlock()
+	h.openSettings(accountRoute(alice.ID))
+	h.click(i18n.T("settings.account.import.button"))
+	h.see(i18n.T("settings.account.import.desc"))
+	h.see("carol@example.com")
+	if _, err := h.ui.ListAccounts(context.Background()); err != nil {
+		t.Fatalf("the connection did not survive: %v", err)
+	}
+}
+
+func TestSettingsAccountImport(t *testing.T) {
+	h, alice := withAccount(t)
+	h.resize(1440, 3000)
+
+	ih2, ip2, sh2, sp2, user2, pass2 := h.env.StartServers(t)
+
+	// 1. Cancelling OpenFiles writes nothing and opens no dialog.
+	h.openSettings(accountRoute(alice.ID))
+	h.see(i18n.T("settings.account.import.row"))
+	h.click(i18n.T("settings.account.import.button"))
+	h.called("OpenFiles false")
+	h.drain()
+	h.tt.Frame()
+	if h.tt.HasText(i18n.T("settings.account.import.desc")) {
+		t.Fatal("cancelling OpenFiles opened import confirmation dialog")
+	}
+
+	// 2. Corrupted JSON and unsupported format version show clear errors and write nothing.
+	badFile := filepath.Join(t.TempDir(), "corrupt.json")
+	if err := os.WriteFile(badFile, []byte(`{"version": 1, broken`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.plat.mu.Lock()
+	h.plat.files = []string{badFile}
+	h.plat.mu.Unlock()
+	h.click(i18n.T("settings.account.import.button"))
+	h.see(i18n.T("error.bad_account_export"))
+
+	verFile := filepath.Join(t.TempDir(), "future.json")
+	if err := os.WriteFile(verFile, []byte(`{"version": 99, "accounts": []}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.plat.mu.Lock()
+	h.plat.files = []string{verFile}
+	h.plat.mu.Unlock()
+	h.click(i18n.T("settings.account.import.button"))
+	h.see(i18n.T("error.unsupported_export_version"))
+
+	if accs, err := h.env.Svc.ListAccounts(context.Background()); err != nil || len(accs) != 1 {
+		t.Fatalf("expected 1 account after failed imports, got %d (err=%v)", len(accs), err)
+	}
+
+	// 3. Valid file previews accounts + server hosts first; cancelling dialog writes nothing; confirming imports and skips existing.
+	exportDoc := core.AccountExport{
+		Version: core.AccountExportVersion,
+		Accounts: []core.ExportedAccount{
+			{
+				Email:     alice.Email,
+				Name:      alice.Name,
+				Username:  alice.Username,
+				Provider:  alice.Provider,
+				Receiving: core.ExportedServer{Protocol: alice.Receiving.Protocol, Host: alice.Receiving.Host, Port: alice.Receiving.Port, Security: alice.Receiving.Security, Auth: alice.Receiving.Auth},
+				Sending:   core.ExportedServer{Protocol: alice.Sending.Protocol, Host: alice.Sending.Host, Port: alice.Sending.Port, Security: alice.Sending.Security, Auth: alice.Sending.Auth},
+			},
+			{
+				Email:     "bob@example.com",
+				Name:      "Bob",
+				Username:  user2,
+				Provider:  "other",
+				Receiving: core.ExportedServer{Protocol: auth.IMAP, Host: ih2, Port: ip2, Security: core.SecurityNone, Auth: core.AuthPassword},
+				Sending:   core.ExportedServer{Protocol: auth.SMTP, Host: sh2, Port: sp2, Security: core.SecurityNone, Auth: core.AuthPassword},
+				Sync:      core.ExportedSyncRange{Limit: 2000},
+			},
+			{
+				Email:     "carol@outlook.com",
+				Name:      "Carol",
+				Username:  "carol@outlook.com",
+				Provider:  "outlook",
+				Receiving: core.ExportedServer{Protocol: auth.IMAP, Host: "outlook.office365.com", Port: 993, Security: core.SecurityTLS, Auth: "oauth"},
+				Sending:   core.ExportedServer{Protocol: auth.SMTP, Host: "smtp-mail.outlook.com", Port: 587, Security: core.SecurityStartTLS, Auth: "oauth"},
+				Sync:      core.ExportedSyncRange{Limit: 2000},
+			},
+		},
+	}
+	goodBytes, err := json.Marshal(exportDoc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	goodFile := filepath.Join(t.TempDir(), "accounts.json")
+	if err := os.WriteFile(goodFile, goodBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	h.plat.mu.Lock()
+	h.plat.files = []string{goodFile}
+	h.plat.mu.Unlock()
+	h.click(i18n.T("settings.account.import.button"))
+	h.see(i18n.T("settings.account.import.desc"))
+	h.see("bob@example.com")
+	h.see("carol@outlook.com")
+	h.see("outlook.office365.com:993")
+	h.see("smtp-mail.outlook.com:587")
+	h.see(i18n.T("settings.account.import.existing"))
+
+	// Nothing written before confirmation!
+	if accs, err := h.env.Svc.ListAccounts(context.Background()); err != nil || len(accs) != 1 {
+		t.Fatalf("accounts written before user confirmed: %d (err=%v)", len(accs), err)
+	}
+
+	// Cancel confirmation -> still nothing written.
+	h.click(i18n.T("common.cancel"))
+	h.drain()
+	if accs, err := h.env.Svc.ListAccounts(context.Background()); err != nil || len(accs) != 1 {
+		t.Fatalf("accounts written after cancelling confirmation: %d (err=%v)", len(accs), err)
+	}
+
+	// Re-open and confirm import.
+	h.click(i18n.T("settings.account.import.button"))
+	h.see(i18n.T("settings.account.import.desc"))
+	h.click(i18n.T("settings.account.import.confirm"))
+
+	h.until("imported accounts loaded", func() bool { return len(h.app.accounts) == 3 })
+	h.see(i18n.Tf("settings.account.import.done", 2))
+	h.see(i18n.Tf("settings.account.import.skipped", 1))
+
+	// Navigated to imported bob@example.com showing clear needs-reauthorization state.
+	h.see(i18n.T("settings.account.status.reauth_required"))
+	h.see(i18n.T("settings.account.reauth.imported"))
+
+	// One-click password entry reauthorizes bob@example.com!
+	p := h.app.pages[PageSettings].(*settingsPage)
+	var bob core.Account
+	for _, a := range h.app.accounts {
+		if a.Email == "bob@example.com" {
+			bob = a
+		}
+	}
+	p.openDialog("password", bob)
+	h.tt.Frame()
+	p.secret = pass2
+	h.click(i18n.T("common.save"))
+	h.until("bob reauthorized", func() bool {
+		a, ok := h.app.accountByID(bob.ID)
+		return ok && a.Status == "ok"
+	})
+
+	// 4. An address already here on another protocol is shown and skipped; the rest still imports.
+	jmap := core.ExportedServer{Protocol: auth.JMAP, Host: "127.0.0.1", Port: 8080, Security: core.SecurityNone, Auth: core.AuthAPIToken}
+	clashBytes, err := json.Marshal(core.AccountExport{Version: core.AccountExportVersion, Accounts: []core.ExportedAccount{
+		{Email: "bob@example.com", Receiving: jmap, Sending: jmap},
+		{Email: "dave@example.com", Receiving: jmap, Sending: jmap},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clashFile := filepath.Join(t.TempDir(), "clash.json")
+	if err := os.WriteFile(clashFile, clashBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.plat.mu.Lock()
+	h.plat.files = []string{clashFile}
+	h.plat.mu.Unlock()
+	h.click(i18n.T("settings.account.import.button"))
+	h.see(i18n.Tf("settings.account.import.protocol", "IMAP"))
+	h.click(i18n.T("settings.account.import.confirm"))
+	h.until("dave imported", func() bool { return len(h.app.accounts) == 4 })
+	h.see(i18n.Tf("settings.account.import.skipped_protocol", 1))
+	if a, _ := h.app.accountByID(bob.ID); a.Receiving.Protocol != auth.IMAP || a.Status != "ok" {
+		t.Fatalf("local bob changed by the clashing import: %+v", a)
+	}
+}
+
+func TestSettingsImportedOAuthOwnClientRequiresSecret(t *testing.T) {
+	h, acc := withAccount(t)
+	fo := &fakeOAuth{flows: map[string]chan flowResult{}}
+	h.app.oauth = fo
+	fetch := h.app.fetch
+	h.app.fetch = func(ctx context.Context) (core.Settings, []core.Account, error) {
+		st, accs, err := fetch(ctx)
+		for i := range accs {
+			accs[i].Provider = "gmail"
+			accs[i].AuthType = "oauth"
+			accs[i].OAuthClientID = "imported-own.apps.googleusercontent.com"
+			accs[i].Status = "reauth_required"
+			accs[i].StatusDetail = "credentials_missing"
+			accs[i].Folders = 0
+		}
+		return st, accs, err
+	}
+	h.app.load()
+	h.until("imported oauth state loaded", func() bool {
+		a, _ := h.app.accountByID(acc.ID)
+		return a.StatusDetail == "credentials_missing"
+	})
+	p := h.openSettings(accountRoute(acc.ID))
+	h.see(i18n.T("settings.account.reauth.imported"))
+
+	h.click(i18n.T("settings.account.reauth.browser"))
+	h.see("客户端 ID")
+	if h.tt.HasText(i18n.T("settings.account.client.secret_help")) {
+		t.Fatal("missing-credentials dialog claimed saved secret can be kept by leaving blank")
+	}
+	// Clicking sign-in with blank secret does nothing because client secret is missing.
+	h.click(i18n.T("onboarding.own_client.signin"))
+	h.drain()
+	if len(fo.began()) != 0 {
+		t.Fatalf("began OAuth without client secret: %+v", fo.began())
+	}
+
+	h.fill("客户端密钥", "secret-123")
+	h.click(i18n.T("onboarding.own_client.signin"))
+	h.until("sign-in started with supplied secret", func() bool { return len(fo.began()) == 1 })
+	if got, want := fo.began()[0], (core.OAuthClient{ID: "imported-own.apps.googleusercontent.com", Secret: "secret-123"}); got != want {
+		t.Fatalf("got client %+v, want %+v", got, want)
+	}
+	fo.fail("f1", context.Canceled)
+	h.until("reauth ended", func() bool { return !p.reauth[acc.ID] })
+}
+
+func TestOnboardingAccountImport(t *testing.T) {
+	h := newHarness(t)
+	h.until("onboarding shown", func() bool { return h.app.route.Page == PageOnboarding })
+	ih, ip, sh, sp, user, pass := h.env.StartServers(t)
+	_ = pass
+
+	exportBytes, err := json.Marshal(core.AccountExport{
+		Version: core.AccountExportVersion,
+		Accounts: []core.ExportedAccount{
+			{
+				Email:     "newpc@example.com",
+				Name:      "New PC",
+				Username:  user,
+				Provider:  "other",
+				IsDefault: true,
+				Receiving: core.ExportedServer{Protocol: auth.IMAP, Host: ih, Port: ip, Security: core.SecurityNone, Auth: core.AuthPassword},
+				Sending:   core.ExportedServer{Protocol: auth.SMTP, Host: sh, Port: sp, Security: core.SecurityNone, Auth: core.AuthPassword},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := filepath.Join(t.TempDir(), "godwit-accounts.json")
+	if err := os.WriteFile(f, exportBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.plat.mu.Lock()
+	h.plat.files = []string{f}
+	h.plat.mu.Unlock()
+
+	h.click(i18n.T("settings.import_accounts"))
+	h.see(i18n.T("settings.account.import.title"))
+	h.see("newpc@example.com")
+	h.click(i18n.T("settings.account.import.confirm"))
+
+	h.until("routed to imported account settings", func() bool {
+		return h.app.route.Page == PageSettings && len(h.app.accounts) == 1
+	})
+	h.see(i18n.T("settings.account.reauth.imported"))
 }

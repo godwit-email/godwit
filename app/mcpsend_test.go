@@ -5,11 +5,15 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/core/events"
 )
 
 // mcpSendHarness has an account and a draft to bob, with plan.pdf attached,
@@ -17,7 +21,7 @@ import (
 func mcpSendHarness(t *testing.T) (*harness, core.Account) {
 	t.Helper()
 	var acc core.Account
-	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync(), coretest.WithConfirmWindow()},
+	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()},
 		func(e *coretest.Env) { acc = e.AddAccount(t, "alice@example.com") })
 	h.plat.supported = true
 	h.until("initial load", func() bool { return h.app.loaded })
@@ -77,6 +81,48 @@ func TestMCPSendConfirmWindow(t *testing.T) {
 	h.until("the dialog closed", func() bool { return !h.tt.HasText("发送这封邮件？") })
 }
 
+// A request made while no interface was open waits for the one its
+// notification starts: opening the notification shows its card, with no
+// second notification (the backend posted one), and 发送 sends it.
+func TestMCPSendConfirmAfterLaunch(t *testing.T) {
+	var acc core.Account
+	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync(), coretest.WithMCPSendNotify()},
+		func(e *coretest.Env) { acc = e.AddAccount(t, "alice@example.com") })
+	h.plat.supported = true
+	h.until("initial load", func() bool { return h.app.loaded })
+	h.dropUI()
+	h.until("the UI to disconnect", func() bool { return !h.env.Svc.UIConnected() })
+	ctx := context.Background()
+	d, err := h.env.Svc.NewDraft(ctx, acc.ID, "new", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.To, d.Subject, d.HTML = []string{"bob@example.com"}, "Quarterly plan", "<p>the plan body</p>"
+	if d, err = h.env.Svc.SaveDraft(ctx, d); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.env.Svc.RequestMCPSend(ctx, d.ID, d.Revision); err != nil {
+		t.Fatal(err)
+	}
+	ps, err := h.env.Svc.PendingMCPSends(ctx)
+	if err != nil || len(ps) != 1 {
+		t.Fatalf("pending %v %v", ps, err)
+	}
+
+	n := len(h.plat.Calls())
+	h.connectUI() // the interface the click started
+	h.app.Open("mcp_send:" + strconv.FormatInt(ps[0].ID, 10))
+	h.see("发送这封邮件？")
+	h.see("Quarterly plan")
+	h.drain()
+	calls := h.plat.Calls()[n:]
+	if !slices.Contains(calls, "ShowWindow") || slices.ContainsFunc(calls, func(c string) bool { return strings.HasPrefix(c, "Notify mcp_send:") }) {
+		t.Fatalf("calls %q: want the window shown and no second notification", calls)
+	}
+	h.click("发送")
+	h.until("queued", func() bool { return h.outbox(acc) == 1 })
+}
+
 // The draft's attachments, which 发送 sends too, show with their sizes.
 func TestMCPSendConfirmAttachments(t *testing.T) {
 	h, _ := mcpSendHarness(t)
@@ -112,9 +158,19 @@ func TestMCPSendConfirmWarnsCancel(t *testing.T) {
 	h.see("发送这封邮件？")
 	h.click("发送")
 	h.see("发送前检查：check before sending: Quarterly plan")
+	evs, unsub := h.env.Svc.Subscribe()
+	defer unsub()
 	h.click("取消")
 	h.until("the dialog gone", func() bool { return !h.tt.HasText("仍然发送") })
-	h.drain()
+	// The cancel reaches the backend off the UI thread, over the socket.
+	for ended := false; !ended; {
+		select {
+		case ev := <-evs:
+			ended = ev.Type == events.MCPSendsChanged
+		case <-time.After(10 * time.Second):
+			t.Fatal("the cancel never reached the backend")
+		}
+	}
 	if err := h.env.Svc.ResolveMCPSendAcknowledged(context.Background(), h.app.mcpSend.warnID, h.app.mcpSend.warnings.Digest, true); !errors.Is(err, core.ErrInvalidState) {
 		t.Fatalf("the request was not ended: %v", err)
 	}

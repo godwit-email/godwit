@@ -28,7 +28,7 @@ type CardPhoto struct {
 	URL  string
 }
 
-// ParsedCard holds the subset of vCard 3.0 / 4.0 fields Godwit caches (ADR 0038).
+// ParsedCard holds the subset of vCard 3.0 / 4.0 fields Godwit caches (ADR 0040).
 type ParsedCard struct {
 	FN     string
 	Org    string

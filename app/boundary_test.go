@@ -1,6 +1,7 @@
 package app
 
 import (
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"io/fs"
@@ -35,7 +36,7 @@ func TestImportBoundary(t *testing.T) {
 		}
 	}
 	checked := 0
-	for _, dir := range []string{".", "../internal", "../cmd/godwit"} {
+	for _, dir := range []string{".", "../internal", "../cmd/godwit", "../uiclient", "../webui"} {
 		err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
 				return err
@@ -58,5 +59,119 @@ func TestImportBoundary(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Fatal("no source files checked")
+	}
+}
+
+// TestUIOpensNoEngine: the interface (app/, webui/, uiclient/, internal/ and
+// cmd/godwit but its backend, headless.go) is a client of the backend's
+// (ADR 0038): it neither takes a data directory's owner lock nor constructs
+// a core.Service (test files excepted).
+func TestUIOpensNoEngine(t *testing.T) {
+	backend := filepath.Join("..", "cmd", "godwit", "headless.go")
+	checked := 0
+	for _, dir := range []string{".", "../internal", "../cmd/godwit", "../uiclient", "../webui"} {
+		err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") || p == backend {
+				return err
+			}
+			f, err := parser.ParseFile(token.NewFileSet(), p, nil, 0)
+			if err != nil {
+				return err
+			}
+			checked++
+			ast.Inspect(f, func(n ast.Node) bool {
+				sel, ok := n.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				if x, ok := sel.X.(*ast.Ident); ok && (x.Name == "core" && sel.Sel.Name == "New" || x.Name == "ownerlock" && sel.Sel.Name == "Acquire") {
+					t.Errorf("%s calls %s.%s: only the backend opens the engine", p, x.Name, sel.Sel.Name)
+				}
+				return true
+			})
+			return nil
+		})
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no source files checked")
+	}
+}
+
+// TestServiceInterface verifies that App accepts any Service implementation,
+// non-test UI files do not reference concrete *core.Service outside compile-time
+// satisfaction checks, and each Service interface lists only called methods
+// (never FollowConversation).
+func TestServiceInterface(t *testing.T) {
+	h := newHarness(t)
+	type wrapped struct{ Service }
+	a := New(Deps{Svc: wrapped{h.env.Svc}, Platform: h.plat, Post: h.post, Clock: h.clock})
+	if a == nil {
+		t.Fatal("New returned nil")
+	}
+
+	fset := token.NewFileSet()
+	for _, dir := range []string{".", "../webui"} {
+		declared := map[string]bool{}
+		sf, err := parser.ParseFile(fset, filepath.Join(dir, "service.go"), nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(sf, func(n ast.Node) bool {
+			ts, ok := n.(*ast.TypeSpec)
+			if !ok || ts.Name.Name != "Service" {
+				return true
+			}
+			iface, ok := ts.Type.(*ast.InterfaceType)
+			if !ok {
+				return false
+			}
+			for _, m := range iface.Methods.List {
+				for _, name := range m.Names {
+					declared[name.Name] = true
+				}
+			}
+			return false
+		})
+		for _, bad := range []string{"FollowConversation", "Redact", "ImageCache", "SystemTranslator"} {
+			if declared[bad] {
+				t.Errorf("%s/service.go must not list non-wire method %s", dir, bad)
+			}
+		}
+
+		called := map[string]bool{}
+		err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") || filepath.Base(p) == "service.go" {
+				return err
+			}
+			src, err := os.ReadFile(p)
+			if err != nil {
+				return err
+			}
+			if strings.Contains(string(src), "*core.Service") {
+				t.Errorf("%s still references *core.Service", p)
+			}
+			f, err := parser.ParseFile(fset, p, src, 0)
+			if err != nil {
+				return err
+			}
+			ast.Inspect(f, func(n ast.Node) bool {
+				if sel, ok := n.(*ast.SelectorExpr); ok {
+					called[sel.Sel.Name] = true
+				}
+				return true
+			})
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for m := range declared {
+			if !called[m] {
+				t.Errorf("%s/service.go lists unused method %s", dir, m)
+			}
+		}
 	}
 }

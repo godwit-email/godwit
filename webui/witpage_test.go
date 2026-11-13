@@ -83,7 +83,7 @@ func newWitPageFixture(t *testing.T, setup ...func(*coretest.Env)) *witPageFixtu
 			f.record(func() { f.rules, f.ruleAsks = append(f.rules, r), append(f.ruleAsks, ask) })
 		},
 	})
-	f.w.SetService(f.e.Svc)
+	f.w.SetService(uiService(t, f.e))
 	f.p = NewWitPage(f.w)
 	return f
 }
@@ -230,7 +230,7 @@ func TestWitPageRoleRefused(t *testing.T) {
 	reader := new(int)
 	pages.Register(reader, "reader")
 	ow := NewWit(pages, f.w.d)
-	ow.SetService(f.e.Svc)
+	ow.SetService(uiService(t, f.e))
 	other := NewWitPage(ow)
 	_, err := other.Load(pageCtx(reader))
 	assert.ErrorIs(t, err, ErrWrongPage)
@@ -463,6 +463,185 @@ func TestWitPageReloadKeepsRun(t *testing.T) {
 	assert.Equal(t, rs.Run, h.Running, "the run goes on")
 	require.NoError(t, f.p.Stop(f.ctx(), rs.Run))
 	f.idle(t, rs.Conversation)
+}
+
+type hookService struct {
+	Service
+	mu           sync.Mutex
+	beforeGet    func()
+	onSubscribed func()
+}
+
+func (s *hookService) SubscribeConversation(id int64) (<-chan core.WitEvent, func()) {
+	ch, stop := s.Service.SubscribeConversation(id)
+	s.mu.Lock()
+	fn := s.onSubscribed
+	s.onSubscribed = nil
+	s.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
+	return ch, stop
+}
+
+func (s *hookService) GetConversation(ctx context.Context, id int64) (core.Conversation, error) {
+	s.mu.Lock()
+	fn := s.beforeGet
+	s.beforeGet = nil
+	s.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
+	return s.Service.GetConversation(ctx, id)
+}
+
+// A run that ends while Follow reads shows as ended and its events are not
+// sent again; a new run started meanwhile streams to completion.
+func TestWitPageFollowRaces(t *testing.T) {
+	f := newWitPageFixture(t)
+	conv := f.newAsk(t)
+	f.llm.Script(coretest.Turn{Text: []string{"thinking"}, Hang: true}, coretest.Turn{Text: []string{"again"}, Hang: true})
+	ch, err := f.e.Svc.Ask(t.Context(), conv, "hi")
+	require.NoError(t, err)
+	var first int64
+	for ev := range ch {
+		first = ev.RunID
+		if ev.Kind == "text" {
+			break
+		}
+	}
+	var second int64
+	f.w.SetService(&hookService{Service: uiService(t, f.e), beforeGet: func() {
+		f.llm.Release()
+		for ev := range ch {
+			if ev.Ends {
+				break
+			}
+		}
+		next, err := f.e.Svc.Ask(t.Context(), conv, "again")
+		require.NoError(t, err)
+		second = (<-next).RunID
+		go func() {
+			for range next {
+			}
+		}()
+	}})
+	h, err := f.p.Follow(f.ctx(), conv)
+	require.NoError(t, err)
+	require.Len(t, h.Turns, 1)
+	assert.Equal(t, "thinking", h.Turns[0].Text)
+	assert.Equal(t, second, h.Running)
+	f.llm.Release()
+	f.waitEvent(t, "second run done", func(ev WitEvent) bool { return ev.Run == second && ev.Kind == "done" })
+	for _, ev := range f.events() {
+		assert.NotEqual(t, first, ev.Run, "the ended run's events are in what was read: %+v", ev)
+	}
+}
+
+// A run that interrupts after Follow subscribes and before it reads is read
+// with its approval; resolving it streams only the resume's events.
+func TestWitPageFollowInterruptedDuringRead(t *testing.T) {
+	f := newWitPageFixture(t)
+	conv := f.newAsk(t)
+	f.llm.Script(
+		coretest.Turn{Calls: []coretest.Call{{Name: "create_draft", Args: `{"to":["a@b.c"],"subject":"Re","html":"<p>x</p>"}`}}},
+		coretest.Turn{Text: []string{"Done."}},
+	)
+	var approvalID int64
+	f.w.SetService(&hookService{Service: uiService(t, f.e), beforeGet: func() {
+		ch, err := f.e.Svc.Ask(t.Context(), conv, "draft it")
+		require.NoError(t, err)
+		for ev := range ch {
+			if ev.Kind == "interrupted" {
+				approvalID = ev.Approvals[0].ID
+			}
+			if ev.Ends {
+				break
+			}
+		}
+	}})
+	h, err := f.p.Follow(f.ctx(), conv)
+	require.NoError(t, err)
+	assert.Zero(t, h.Running)
+	require.Len(t, h.Turns, 1)
+	require.NotNil(t, h.Turns[0].Calls[0].Approval)
+	require.NoError(t, f.p.Decide(f.ctx(), approvalID, true))
+	f.waitKind(t, conv, "done")
+	ks := kinds(f.events())
+	assert.NotContains(t, ks, "interrupted")
+	assert.NotContains(t, ks, "start")
+}
+
+// A run that starts and finishes between subscribing and reading is not
+// re-emitted on the stream.
+func TestWitPageFollowRunWithinRead(t *testing.T) {
+	f := newWitPageFixture(t)
+	conv := f.newAsk(t)
+	f.llm.Script(coretest.Turn{Text: []string{"quick"}}, coretest.Turn{Text: []string{"next"}})
+	var first int64
+	f.w.SetService(&hookService{Service: uiService(t, f.e), beforeGet: func() {
+		ch, err := f.e.Svc.Ask(t.Context(), conv, "hi")
+		require.NoError(t, err)
+		for ev := range ch {
+			first = ev.RunID
+			if ev.Ends {
+				break
+			}
+		}
+	}})
+	h, err := f.p.Follow(f.ctx(), conv)
+	require.NoError(t, err)
+	require.Len(t, h.Turns, 1)
+	assert.Equal(t, "quick", h.Turns[0].Text)
+	ch, err := f.e.Svc.Ask(t.Context(), conv, "again")
+	require.NoError(t, err)
+	var second int64
+	for ev := range ch {
+		second = ev.RunID
+		if ev.Ends {
+			break
+		}
+	}
+	f.waitEvent(t, "second done", func(ev WitEvent) bool { return ev.Run == second && ev.Kind == "done" })
+	for _, ev := range f.events() {
+		assert.NotEqual(t, first, ev.Run, "the read run's events are in what was read: %+v", ev)
+	}
+}
+
+// Text chunks emitted while GetConversation is slow (> witBuffer = 64) are all
+// buffered without dropping any chunk.
+func TestWitPageFollowBuffersDuringSlowRead(t *testing.T) {
+	f := newWitPageFixture(t)
+	conv := f.newAsk(t)
+	chunks := make([]string, 80)
+	for i := range chunks {
+		chunks[i] = fmt.Sprintf("[%d]", i)
+	}
+	f.llm.Script(coretest.Turn{Text: chunks, Hang: true})
+	var run int64
+	f.w.SetService(&hookService{Service: uiService(t, f.e), beforeGet: func() {
+		ch, err := f.e.Svc.Ask(t.Context(), conv, "many chunks")
+		require.NoError(t, err)
+		// Up to the last chunk, not a count: this reader falling behind may
+		// lose older text (the stream's own buffer), never the newest.
+		last := chunks[len(chunks)-1]
+		for ev := range ch {
+			run = ev.RunID
+			if ev.Kind == "text" && strings.HasSuffix(ev.Text, last) {
+				break
+			}
+		}
+		go func() {
+			for range ch {
+			}
+		}()
+	}})
+	h, err := f.p.Follow(f.ctx(), conv)
+	require.NoError(t, err)
+	assert.Equal(t, run, h.Running)
+	f.llm.Release()
+	f.waitKind(t, conv, "done")
+	assert.Equal(t, strings.Join(chunks, ""), streamed(f.events(), conv))
 }
 
 // Ported from app/ask_test.go: the answer streams to the page, tools and

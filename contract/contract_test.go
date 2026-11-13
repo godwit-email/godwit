@@ -31,9 +31,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestMain(m *testing.M) {
+	coretest.ServeNativeIfChild()
+	coretest.ServeMCPIfChild()
+	os.Exit(m.Run())
+}
+
 // scenario drives api and returns its business results; env is the Env
 // behind api, for setup and fakes only.
 type scenario func(t *testing.T, api contract.API, env *coretest.Env) any
+
+// uiScenario drives UIAPI (RoleUI) and returns its business results.
+type uiScenario func(t *testing.T, api contract.UIAPI, env *coretest.Env) any
 
 // runContract runs s against a fresh typed *core.Service, then against a
 // fresh one behind the Local API (full role), and compares the normalized
@@ -79,6 +88,54 @@ func runContract(t *testing.T, s scenario) (rpcLog string) {
 	return rpcLog
 }
 
+// runUIContract runs s against a fresh typed *core.Service and against a fresh
+// one behind the Local API (ui role), comparing normalized results.
+func runUIContract(t *testing.T, makeOpts func(t *testing.T) []coretest.Option, s uiScenario) (rpcLog string) {
+	var got [2]string
+	optsFor := func(t *testing.T) []coretest.Option {
+		opts := []coretest.Option{coretest.WithoutAutoSync()}
+		if makeOpts != nil {
+			opts = append(opts, makeOpts(t)...)
+		}
+		return opts
+	}
+	t.Run("typed", func(t *testing.T) {
+		logged := captureLogs(t)
+		start := time.Now()
+		env := coretest.New(t, optsFor(t)...)
+		got[0] = normalize(t, s(t, env.Svc, env), start, time.Now())
+		assert.Empty(t, logged(), "typed calls log nothing")
+	})
+	t.Run("rpc", func(t *testing.T) {
+		logged := captureLogs(t)
+		start := time.Now()
+		env := coretest.New(t, optsFor(t)...)
+		r, token := serveRole(t, env.Svc, rpc.RoleUI)
+		v := s(t, r, env)
+		got[1] = normalize(t, v, start, time.Now())
+		assert.Empty(t, r.StreamErrs(), "remote streams ended abnormally")
+		b, err := json.Marshal(v)
+		require.NoError(t, err)
+		unregistered := strings.Count(string(b), `{"as":{},"is":[]}`)
+		rpcLog = logged()
+		lines := strings.FieldsFunc(rpcLog, func(r rune) bool { return r == '\n' })
+		assert.Len(t, lines, unregistered, "one log line per unregistered error:\n%s", rpcLog)
+		for _, l := range lines {
+			assert.Contains(t, l, `level=ERROR msg="rpc: internal error"`)
+		}
+		for _, secret := range []string{token, "secret", "test-key", "good-key", "bad-key"} {
+			assert.NotContains(t, rpcLog, secret)
+		}
+	})
+	if os.Getenv("CONTRACT_DUMP") != "" {
+		t.Logf("typed, normalized:\n%s", got[0])
+	}
+	if got[0] != "" && got[1] != "" {
+		assert.Equal(t, got[0], got[1], "typed (expected) vs RoleUI JSON-RPC (actual), normalized")
+	}
+	return rpcLog
+}
+
 // captureLogs sends slog output to a buffer until the test ends (tests here
 // run one at a time) and returns a func reading it.
 func captureLogs(t *testing.T) func() string {
@@ -101,6 +158,10 @@ func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
 // serve puts svc behind the Local API on a fresh short directory (Unix
 // socket paths are short) and dials it with the full role.
 func serve(t *testing.T, svc *core.Service) (r *contract.Remote, token string) {
+	return serveRole(t, svc, rpc.RoleFull)
+}
+
+func serveRole(t *testing.T, svc *core.Service, role string) (r *contract.Remote, token string) {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "gw")
 	require.NoError(t, err)
@@ -112,7 +173,7 @@ func serve(t *testing.T, svc *core.Service) (r *contract.Remote, token string) {
 	require.NoError(t, err)
 	go s.Serve(context.Background())
 	t.Cleanup(func() { s.Close() })
-	c, err := rpc.Dial(dir, rpc.RoleFull, "contract-test", rpcbind.NewCodec())
+	c, err := rpc.Dial(dir, role, "contract-test", rpcbind.NewCodec())
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 	tok, err := os.ReadFile(filepath.Join(dir, rpc.TokenName))
@@ -237,7 +298,9 @@ var sentinels = map[string]error{
 	"signature_not_found": core.ErrSignatureNotFound, "signature_name": core.ErrSignatureName,
 	"not_grantable":   core.ErrNotGrantable,
 	"needs_answer":    core.ErrNeedsAnswer,
+	"no_ui":           core.ErrNoUI,
 	"skill_not_found": core.ErrSkillNotFound, "closed": core.ErrClosed, "canceled": context.Canceled,
+	"bad_account_export": core.ErrBadAccountExport, "unsupported_export_version": core.ErrUnsupportedExportVersion,
 	"deadline": context.DeadlineExceeded, "oauth_not_configured": auth.ErrOAuthNotConfigured,
 	"auth_failed": backend.ErrAuthFailed, "flow_expired": auth.ErrFlowExpired, "invalid_grant": auth.ErrInvalidGrant, "access_denied": auth.ErrAccessDenied,
 }
@@ -254,6 +317,11 @@ func errInfo(err error) any {
 	for code, s := range sentinels {
 		if errors.Is(err, s) {
 			is = append(is, code)
+		}
+	}
+	for _, e := range rpcbind.All() {
+		if e.Code != "" && sentinels[e.Code] == nil && errors.Is(err, e.Err) {
+			is = append(is, e.Code)
 		}
 	}
 	sort.Strings(is)
@@ -273,6 +341,14 @@ func errInfo(err error) any {
 	var ea *core.EgressApprovalRequired
 	if errors.As(err, &ea) {
 		as["EgressApprovalRequired"] = *ea
+	}
+	var nf *core.ErrNoRoleFolder
+	if errors.As(err, &nf) {
+		as["ErrNoRoleFolder"] = *nf
+	}
+	var me *core.ModelError
+	if errors.As(err, &me) {
+		as["ModelError"] = *me
 	}
 	var ae *ai.Error
 	if errors.As(err, &ae) {

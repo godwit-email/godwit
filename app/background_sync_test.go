@@ -10,28 +10,6 @@ import (
 	"github.com/godwit-email/godwit/internal/i18n"
 )
 
-// The window in front is what ends the narrow sync: the setting alone does not.
-func TestSetForegroundNarrowsSync(t *testing.T) {
-	h := newHarness(t)
-	h.until("settings loaded", func() bool { return h.app.loaded })
-	h.app.settings.BackgroundSync = core.BackgroundSyncInbox
-
-	h.app.SetForeground(false)
-	if !h.env.Svc.InboxOnly() {
-		t.Fatal("the background did not narrow the sync")
-	}
-	h.app.SetForeground(true)
-	if h.env.Svc.InboxOnly() {
-		t.Fatal("the window in front kept the sync narrow")
-	}
-
-	h.app.settings.BackgroundSync = core.BackgroundSyncAll
-	h.app.SetForeground(false)
-	if h.env.Svc.InboxOnly() {
-		t.Fatal("all folders narrowed the sync")
-	}
-}
-
 // The choice has its row under Startup, and it is saved as any other.
 func TestSettingsBackgroundSyncChoice(t *testing.T) {
 	h, _ := withAccount(t)
@@ -47,25 +25,24 @@ func TestSettingsBackgroundSyncChoice(t *testing.T) {
 	})
 }
 
-// Choosing all folders while the window is behind another app widens the
-// sync at once, without waiting for a focus change.
-func TestBackgroundSyncSettingApplies(t *testing.T) {
-	h := newHarness(t)
-	h.until("settings loaded", func() bool { return h.app.loaded })
-	h.app.foreground = false
-	all := h.app.settings
-	all.BackgroundSync = core.BackgroundSyncAll
-	inbox := all
-	inbox.BackgroundSync = core.BackgroundSyncInbox
+// 后台收信 has its row under Startup; choosing 关窗后停止 is saved and makes
+// closing the window quit at once.
+func TestSettingsBackgroundReceiveChoice(t *testing.T) {
+	h, _ := withAccount(t)
+	p := h.openSettings("general")
+	h.see(i18n.T("settings.background_receive"))
+	h.see(i18n.T("settings.background_receive.until_quit"))
+	if !h.app.KeepInBackground() {
+		t.Fatal("the default stops as the window closes")
+	}
 
-	h.app.settingsEffects(all, inbox)
-	if !h.env.Svc.InboxOnly() {
-		t.Fatal("inbox only did not narrow the sync")
-	}
-	h.app.settingsEffects(inbox, all)
-	if h.env.Svc.InboxOnly() {
-		t.Fatal("all folders kept the sync narrow")
-	}
+	p.st.BackgroundReceive = core.BackgroundReceiveStopOnClose
+	h.drain()
+	h.tt.Frame()
+	h.until("the choice saved and in effect", func() bool {
+		st, err := h.env.Svc.GetSettings(context.Background())
+		return err == nil && st.BackgroundReceive == core.BackgroundReceiveStopOnClose && !h.app.KeepInBackground()
+	})
 }
 
 func TestBackgroundSyncSettingsReload(t *testing.T) {

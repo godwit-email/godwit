@@ -191,11 +191,12 @@ func (p *platform) signInCodeIcon(code core.SignInCode) *mygo.MenuIcon {
 }
 
 func (p *platform) SetSignInCodes(codes []core.SignInCode) {
+	had := len(p.signInCodes) > 0
 	p.signInCodes = slices.Clone(codes)
 	maps.DeleteFunc(p.codeIcons, func(id int64, _ *mygo.MenuIcon) bool {
 		return !slices.ContainsFunc(codes, func(c core.SignInCode) bool { return c.MessageID == id })
 	})
-	if p.updateTray != nil {
+	if p.updateTray != nil && (had || len(codes) > 0) { // the menu shows codes and their age; none twice is the same menu
 		p.updateTray()
 	}
 	if p.codeBanner != nil && !slices.ContainsFunc(codes, func(c core.SignInCode) bool { return c.MessageID == p.codeBanner.code.MessageID }) {
@@ -392,7 +393,7 @@ func (p *platform) showSnapGuide(b *signInBanner, on bool, pos mygo.Point, area 
 
 // signInAvatar is the sender's image as the reader shows it. Without the
 // user's per-message permission, the message's remote-image policy decides.
-func signInAvatar(ctx context.Context, svc *core.Service, id int64) ui.ImageSource {
+func signInAvatar(ctx context.Context, svc backendService, id int64) ui.ImageSource {
 	av, err := svc.SenderAvatar(ctx, id, false)
 	if err != nil || len(av.Data) == 0 {
 		if err != nil && ctx.Err() == nil {
@@ -413,13 +414,25 @@ func signInAvatar(ctx context.Context, svc *core.Service, id int64) ui.ImageSour
 	return img
 }
 
+func (p *platform) dismissSignInBanner(b *signInBanner, onMain func(func())) {
+	onMain(func() {
+		if p.codeBanner == b {
+			p.ShowSignInCode(nil)
+		}
+	})
+}
+
 // A tray flyout with Focusable=false keeps the target app's keyboard even
 // when Copy is clicked. A normal ShowInactive window would activate on click.
 func (p *platform) ShowSignInCode(code *core.SignInCode) {
 	if b := p.codeBanner; b != nil {
 		p.codeBanner = nil
-		b.timer.Stop()
-		b.win.Close()
+		if b.timer != nil {
+			b.timer.Stop()
+		}
+		if b.win != nil {
+			b.win.Close()
+		}
 	}
 	if code == nil || p.tray == nil || !freshSignInCode(*code, time.Now()) {
 		return
@@ -435,11 +448,7 @@ func (p *platform) ShowSignInCode(code *core.SignInCode) {
 	b.win.SetPosition(b.position.X, b.position.Y)
 	initialPosition := b.position
 	b.timer = time.AfterFunc(12*time.Second, func() {
-		p.win.Update(func() {
-			if p.codeBanner == b {
-				p.ShowSignInCode(nil)
-			}
-		})
+		p.dismissSignInBanner(b, mygo.RunOnMain)
 	})
 	p.codeBanner = b
 	ctx, stop := context.WithCancel(context.Background())

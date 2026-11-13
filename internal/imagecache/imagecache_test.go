@@ -878,3 +878,28 @@ func TestPruneUnused(t *testing.T) {
 		t.Errorf("a second pass pruned %d", n)
 	}
 }
+
+func TestGetFile(t *testing.T) {
+	pic := pngOf(t, 4, 3)
+	var hits atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Write(pic)
+	}))
+	defer srv.Close()
+	c := open(t, t.TempDir(), 0)
+	defer c.Close()
+	src := srv.URL + "/a.png"
+	path, format, w, h, err := c.GetFile(t.Context(), src)
+	if err != nil || !filepath.IsAbs(path) || format != "png" || w != 4 || h != 3 {
+		t.Fatalf("GetFile = %q %q %dx%d %v", path, format, w, h, err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(b, pic) {
+		t.Fatalf("ReadFile(%q) = %d bytes, %v", path, len(b), err)
+	}
+	path2, _, _, _, err := c.GetFile(t.Context(), src)
+	if err != nil || path2 != path || hits.Load() != 1 {
+		t.Fatalf("second GetFile = %q %v, hits=%d", path2, err, hits.Load())
+	}
+}
