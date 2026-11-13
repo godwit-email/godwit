@@ -412,12 +412,12 @@ func (m *modelsView) accountRow(c *ui.Context, f *modelForm) {
 	formRow(c, i18n.T("settings.models.account"), func() ui.Element {
 		return ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).MinHeight(th.Space(8)).Children(func() {
 			switch {
-			case f.loggingIn:
+			case f.signIn.waiting():
 				kit.Spinner(c)
 				kit.Text(c, i18n.T("settings.models.login.opened"), t.Text.Sm).TextColor(t.Muted)
-				if f.authURL != "" {
+				if u := f.signIn.url; u != "" {
 					kit.Button(c, i18n.T("settings.models.login.reopen"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-						OnClick(func() { m.openURL(f.authURL) })
+						OnClick(func() { m.openURL(u) })
 				}
 				kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 					OnClick(m.cancelForm)

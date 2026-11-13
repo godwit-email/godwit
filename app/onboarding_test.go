@@ -367,12 +367,16 @@ type fakeOAuth struct {
 	canceled []string
 	flows    map[string]chan flowResult
 	clients  []core.OAuthClient // each Begin's
+	noClient bool               // this build has no OAuth client: a Begin without the user's own fails
 }
 
 func (f *fakeOAuth) Begin(_ context.Context, provider, hint string, client core.OAuthClient) (string, string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.clients = append(f.clients, client)
+	if f.noClient && client.ID == "" {
+		return "", "", auth.ErrOAuthNotConfigured
+	}
 	n := strconv.Itoa(len(f.flows) + 1)
 	f.flows["f"+n] = make(chan flowResult, 1)
 	return "f" + n, "https://login.example/authorize?n=" + n, nil

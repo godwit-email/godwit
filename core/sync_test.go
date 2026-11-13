@@ -330,7 +330,8 @@ func TestSyncUIDValidityChange(t *testing.T) {
 	require.NoError(t, err)
 	archive := store.Int(e.rows(t, "SELECT id FROM folders WHERE name = 'Archive'")[0][0])
 	oldMsg := store.Int(e.rows(t, "SELECT id FROM messages WHERE message_id = 'old2@x'")[0][0])
-	_, err = e.s.db.Execute(bg, "INSERT INTO ops(account_id, message_id, kind, state) VALUES (?, ?, 'flags', 'pending')", e.acc.ID, oldMsg)
+	queued := mailsync.QueueFlags(e.acc.ID, oldMsg, nil, nil)
+	_, err = e.s.db.Execute(bg, queued.SQL, queued.Args...)
 	require.NoError(t, err)
 
 	require.NoError(t, e.im.User.Delete("Archive"))

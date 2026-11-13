@@ -877,12 +877,11 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 	}
 	if only != nil {
 		// 未完成操作和已清除邮件的本地收尾都需要完整拉取，重启后也一样。
-		rows, err := s.db.Query(ctx, `SELECT 1 FROM ops WHERE account_id = ? AND
-			(state IN ('pending', 'awaiting_claim') OR (kind = 'purge' AND state = 'done' AND message_id IS NOT NULL)) LIMIT 1`, accountID)
+		full, err := mailsync.NeedsFullFetch(ctx, s.db, accountID)
 		if err != nil {
 			return err
 		}
-		if len(rows.Values) > 0 {
+		if full {
 			only = nil
 		}
 	}

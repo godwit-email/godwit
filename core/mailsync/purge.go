@@ -15,40 +15,6 @@ import (
 // PurgeRoles are the roles a purge can empty.
 var PurgeRoles = []string{"junk", "trash"}
 
-// purgePayload is a purge op's payload: the role whose folder (dst_folder_id) it
-// empties. Now marks one the user asked for, which skips the policy's checks.
-// DueAt (unix milliseconds) ends the undo window of one the user asked for: the
-// push leaves it until then.
-type purgePayload struct {
-	Role  string `json:"role"`
-	Now   bool   `json:"now,omitempty"`
-	DueAt int64  `json:"due_at,omitempty"`
-}
-
-// PurgeNowRole is the payload of a purge op the user asked for: it expunges the
-// message from the role's folder (trash, junk) at due, whatever the policy.
-func PurgeNowRole(role string, due time.Time) string {
-	b, _ := json.Marshal(purgePayload{Role: role, Now: true, DueAt: due.UnixMilli()})
-	return string(b)
-}
-
-// opDue is the durable undo deadline of a purge or a last-location archive.
-const opDue = "CASE WHEN kind IN ('purge', 'move') THEN IFNULL(json_extract(payload, '$.due_at'), 0) ELSE 0 END"
-
-// opReady also releases a deferred archive once fetch finds another server location.
-const opReady = "(" + opDue + ` <= ? OR (kind = 'move' AND dst_folder_id IS NULL AND EXISTS
-	(SELECT 1 FROM message_locations l WHERE l.message_id = ops.message_id AND l.folder_id != ops.src_folder_id AND l.server_ref IS NOT NULL)))`
-
-// NextOpDue is the account's first undo deadline after t; zero for none.
-func NextOpDue(ctx context.Context, db *store.DB, accountID int64, t time.Time) (time.Time, error) {
-	rows, err := db.Query(ctx, `SELECT MIN(`+opDue+`) FROM ops
-		WHERE account_id = ? AND state = 'pending' AND `+opDue+` > ?`, accountID, t.UnixMilli())
-	if err != nil || len(rows.Values) == 0 || rows.Values[0][0] == nil {
-		return time.Time{}, err
-	}
-	return time.UnixMilli(store.Int(rows.Values[0][0])), nil
-}
-
 // onServer is the condition that location l is a server location. One of a
 // generation the backend voided is never left: a FolderReset deletes them.
 const onServer = "l.server_ref IS NOT NULL"
@@ -61,7 +27,7 @@ const onServer = "l.server_ref IS NOT NULL"
 // argument is an op id the check ignores (the purge being pushed), else 0.
 var purgeable = `EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id AND l.folder_id = p.folder_id AND l.shown
 		AND (` + onServer + ` OR f.server_ref IS NULL) AND l.entered_at > 0 AND max(l.entered_at, f.role_since, p.since) <= unixepoch() - p.days * 86400)
-	AND p.days > 0 AND NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.state IN ('pending', 'awaiting_claim') AND o.id != ?)`
+	AND p.days > 0 AND NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.state IN ` + unfinished + ` AND o.id != ?)`
 
 // QueuePurge queues the account's due junk and trash purges as purge ops, which
 // PushOps expunges after checking again. A folder is purged at most once a day,
@@ -105,12 +71,10 @@ func QueuePurge(ctx context.Context, db *store.DB, recv backend.Receiver, accoun
 			}
 			continue
 		}
-		payload, _ := json.Marshal(purgePayload{Role: role})
 		from := ` FROM messages m JOIN purge_policies p ON p.account_id = m.account_id AND p.role = ?
 			JOIN folders f ON f.id = p.folder_id WHERE m.account_id = ? AND ` + purgeable
 		if _, err := db.Transaction(ctx, []sqlite.Statement{
-			{SQL: `INSERT INTO ops(account_id, message_id, kind, src_folder_id, dst_folder_id, payload, created_at)
-				SELECT m.account_id, m.id, 'purge', p.folder_id, p.folder_id, ?, unixepoch()` + from, Args: []any{string(payload), role, accountID, 0}},
+			queuePolicyPurges(role, from, role, accountID, 0),
 			{SQL: "UPDATE folders SET purged_at = unixepoch() WHERE id = ?", Args: []any{folder}},
 		}); err != nil {
 			return err
@@ -143,7 +107,7 @@ var claimable = `state = 'pending' AND EXISTS (SELECT 1 FROM messages m JOIN pur
 var claimableNow = `state = 'pending' AND EXISTS (SELECT 1 FROM messages m JOIN folders f ON f.id = ops.dst_folder_id
 	WHERE m.id = ops.message_id AND EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id AND l.folder_id = f.id AND l.shown
 		AND (` + onServer + ` OR f.server_ref IS NULL))
-	AND NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.state IN ('pending', 'awaiting_claim') AND o.id != ops.id))`
+	AND NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.state IN ` + unfinished + ` AND o.id != ops.id))`
 
 // purgeClaim is the claimable condition of a purge op with payload p and id, and its arguments.
 func purgeClaim(p purgePayload, id int64) (string, []any) {
@@ -197,7 +161,7 @@ func (pu *pusher) pushPurge(ctx context.Context, o op, at backend.Location) (str
 			return msg, finish(ctx, db, o, "failed", msg)
 		}
 		// Recorded even if a rescue cancelled it meanwhile: the message is gone.
-		_, err = db.Execute(ctx, "UPDATE ops SET state = 'done', last_error = NULL WHERE id = ?", o.id)
+		_, err = db.Transaction(ctx, []sqlite.Statement{opsTo(opDone, []string{opPending, opCancelled}, "last_error = NULL", "id = ?", o.id)})
 		return "", err
 	}
 	cancel := func() (string, error) {
@@ -220,14 +184,13 @@ func (pu *pusher) pushPurge(ctx context.Context, o op, at backend.Location) (str
 		return cancel()
 	}
 	cond, args := purgeClaim(p, o.id)
-	res, err := db.Execute(ctx, "UPDATE ops SET attempts = attempts + 1 WHERE id = ? AND "+cond, append([]any{o.id}, args...)...)
+	claimed, err := claimPurge(ctx, db, &o, cond, args)
 	if err != nil {
 		return "", err
 	}
-	if res.Changes != 1 {
+	if !claimed {
 		return cancel()
 	}
-	o.attempts++
 	steps := []string{"selected", "stored"}
 	return apply(func() bool {
 		step := steps[0]
