@@ -588,19 +588,19 @@ func (s *Service) dropSendCheck(digest string) {
 // such check, e.g. expired) it is a plain Send, which may warn again. A block
 // has no check, so it can never be acknowledged.
 func (s *Service) SendAcknowledged(ctx context.Context, draftID int64, digest string) error {
-	return s.sendAcknowledged(ctx, draftID, -1, digest)
+	return s.sendAcknowledged(ctx, draftID, -1, digest, apiSend(ctx, "SendAcknowledged", draftID, s.secrets.Redact))
 }
 
 // sendAcknowledged is SendAcknowledged; a want >= 0 sends only that
-// revision, as send.
-func (s *Service) sendAcknowledged(ctx context.Context, draftID, want int64, digest string) error {
+// revision, and rs is written with the item, as send.
+func (s *Service) sendAcknowledged(ctx context.Context, draftID, want int64, digest string, rs *ruleSend) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return err
 	}
 	defer end()
 	if c, ok := s.sendCheck(digest); ok && c.DraftID == draftID && (want < 0 || c.Revision == want) {
-		err := s.enqueue(ctx, draftID, c.Revision, c.Plugins, nil)
+		err := s.enqueue(ctx, draftID, c.Revision, c.Plugins, rs)
 		if !errors.Is(err, errSendChanged) {
 			if err == nil {
 				s.dropSendCheck(digest)
@@ -608,5 +608,5 @@ func (s *Service) sendAcknowledged(ctx context.Context, draftID, want int64, dig
 			return err
 		}
 	}
-	return s.send(ctx, draftID, want, nil)
+	return s.send(ctx, draftID, want, rs)
 }

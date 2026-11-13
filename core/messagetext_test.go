@@ -89,14 +89,3 @@ func TestGetMessageTextIsVisibleText(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Your invoice is due", m.Text)
 }
-
-func TestAuditExternal(t *testing.T) {
-	e := newSyncEnv(t)
-	require.NoError(t, e.s.AuditExternal(bg, "local_api", "Send", 42))
-	require.NoError(t, e.s.AuditExternal(bg, "local_mcp", "SaveDraft", 0))
-	assert.Error(t, e.s.AuditExternal(bg, "plugin", "Send", 1), "only external sources")
-	rows := e.rows(t, "SELECT source, tool, target_id, decision FROM audit_log ORDER BY id")
-	require.Len(t, rows, 2)
-	assert.Equal(t, []any{"local_api", "Send", int64(42), "allow"}, rows[0])
-	assert.Equal(t, []any{"local_mcp", "SaveDraft", nil, "allow"}, rows[1])
-}

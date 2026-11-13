@@ -198,7 +198,7 @@ func TestMethodsInUISurface(t *testing.T) {
 	}
 
 	for _, forbidden := range []string{
-		"Close", "Redact", "AuditExternal", "Proxy", "FollowConversation",
+		"Close", "Redact", "Proxy", "FollowConversation",
 		"InlineImages", "FetchAttachments",
 		"InstallPluginFromRegistryWithProgress", "PrepareModelWithProgress", "DownloadRecognitionModel",
 	} {

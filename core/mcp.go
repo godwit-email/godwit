@@ -414,8 +414,13 @@ func (s *Service) GrantMCPServer(ctx context.Context, id int64) error {
 	defer s.bus.Publish(events.Event{Type: events.MCPChanged})
 	s.mcpMu.Lock()
 	defer s.mcpMu.Unlock()
-	r, err := s.db.Execute(ctx, "UPDATE mcp_servers SET granted_version = version WHERE id = ?", id)
-	if err == nil && r.Changes == 0 {
+	// A grant lets its tools run without approval later (ADR 0003): audited with it.
+	stmts := []sqlite.Statement{{SQL: "UPDATE mcp_servers SET granted_version = version WHERE id = ?", Args: []any{id}}}
+	if e, ok := apiAudit(ctx, "GrantMCPServer", id); ok {
+		stmts = append(stmts, gateway.AuditChange(e, s.secrets.Redact, false))
+	}
+	rs, err := s.db.Transaction(ctx, stmts)
+	if err == nil && rs[0].Changes == 0 {
 		err = ErrMCPNotFound
 	}
 	return err
@@ -503,8 +508,12 @@ func (s *Service) SetMCPToolTrusted(ctx context.Context, id int64, tool string, 
 		return fmt.Errorf("MCP server %s has no tool %q listed; refresh its tools", srv.Name, tool)
 	}
 	if trusted {
-		_, err = s.db.Execute(ctx, "INSERT OR REPLACE INTO mcp_tool_trust(server_id, tool, definition_hash) VALUES (?, ?, ?)",
-			id, tool, def.DefinitionHash)
+		stmts := []sqlite.Statement{{SQL: "INSERT OR REPLACE INTO mcp_tool_trust(server_id, tool, definition_hash) VALUES (?, ?, ?)",
+			Args: []any{id, tool, def.DefinitionHash}}}
+		if e, ok := apiAudit(ctx, "SetMCPToolTrusted", id, tool); ok { // trusted, it runs without approval (ADR 0003)
+			stmts = append(stmts, gateway.Audit(e, s.secrets.Redact))
+		}
+		_, err = s.db.Transaction(ctx, stmts)
 	} else {
 		_, err = s.db.Execute(ctx, "DELETE FROM mcp_tool_trust WHERE server_id = ? AND tool = ?", id, tool)
 	}

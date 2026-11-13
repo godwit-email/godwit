@@ -90,6 +90,11 @@ func (s *Service) UnsubscribeMethod(ctx context.Context, messageID int64) (Unsub
 // sent. A web one is ErrUnsubscribeWeb, none ErrNoUnsubscribe; a second
 // one-click call while one is under way is ErrUnsubscribing.
 func (s *Service) Unsubscribe(ctx context.Context, messageID int64) (UnsubscribeResult, error) {
+	// Which method it takes is known only inside: a call over the Local API is
+	// audited first, as one-click POSTs to the list's host (ADR 0003).
+	if err := s.auditAPI(ctx, "Unsubscribe", messageID); err != nil {
+		return UnsubscribeResult{}, err
+	}
 	return s.unsubscribe(ctx, messageID, nil)
 }
 
