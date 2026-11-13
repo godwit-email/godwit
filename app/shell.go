@@ -640,10 +640,20 @@ func (a *App) saveWidths() {
 // to close anyway and lose its last edits.
 func (a *App) closeDialog(c *ui.Context) {
 	kit.Dialog(c, &a.closeAsk, i18n.T("close.unsaved.title"), kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: humanize(a.closeErr), Close: i18n.T("common.close")}, nil, func() {
-		kit.Button(c, i18n.T("close.unsaved.back"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { a.closeAsk = false })
+		kit.Button(c, i18n.T("close.unsaved.back"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() {
+			a.closeAsk = false
+			a.QuitCancelled()
+		})
 		kit.Button(c, i18n.T("close.unsaved.quit"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
 			a.closeAsk = false
 			a.closeAnyway()
 		})
 	})
+}
+
+// QuitCancelled tells the backend the user kept the interface open at a
+// quit's prompt, so a quit the tray's 退出并停止收信 began does not stop it
+// later (CancelTrayQuit). UI thread.
+func (a *App) QuitCancelled() {
+	a.do(func(ctx context.Context) error { return a.svc.CancelTrayQuit(ctx) }, nil)
 }

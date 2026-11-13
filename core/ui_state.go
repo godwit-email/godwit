@@ -125,11 +125,21 @@ func (s *Service) SetUIReady(ctx context.Context, on bool) error {
 // StopWhenUIQuits arms the tray's 退出并停止收信 while an interface quits
 // first: stop runs once the last interface has gone or asks to stop the
 // backend (StopUIBackend), whatever 后台收信 says or who started the backend.
-// An interface that comes back to the front kept its quit and disarms it.
+// An interface whose user cancels the quit disarms it (CancelTrayQuit).
 func (s *Service) StopWhenUIQuits(stop func()) {
 	s.uiMu.Lock()
 	s.quitStop = stop
 	s.uiMu.Unlock()
+}
+
+// CancelTrayQuit disarms the tray's 退出并停止收信 (StopWhenUIQuits): the
+// interface's user cancelled the quit, at its unsaved-changes prompt or a
+// compose window. Without one pending it does nothing.
+func (s *Service) CancelTrayQuit(ctx context.Context) error {
+	s.uiMu.Lock()
+	s.quitStop = nil
+	s.uiMu.Unlock()
+	return nil
 }
 
 func (s *Service) takeQuitStop() func() {
@@ -191,10 +201,7 @@ func (s *Service) SetUIForeground(ctx context.Context, on bool) error {
 	if _, ok := s.uiSessions[sess]; sess == nil || !ok {
 		return nil
 	}
-	sess.foreground = on
-	if on {
-		s.quitStop = nil // back in front: the user kept the tray's quit
-	}
+	sess.foreground = on // not a cancel of the tray's quit: its prompt shows the window (CancelTrayQuit)
 	s.applyUIBackgroundSyncLocked(st)
 	return nil
 }

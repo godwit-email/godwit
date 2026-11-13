@@ -622,13 +622,13 @@ func TestWitPageFollowBuffersDuringSlowRead(t *testing.T) {
 	f.w.SetService(&hookService{Service: uiService(t, f.e), beforeGet: func() {
 		ch, err := f.e.Svc.Ask(t.Context(), conv, "many chunks")
 		require.NoError(t, err)
-		seen := 0
+		// Up to the last chunk, not a count: this reader falling behind may
+		// lose older text (the stream's own buffer), never the newest.
+		last := chunks[len(chunks)-1]
 		for ev := range ch {
 			run = ev.RunID
-			if ev.Kind == "text" {
-				if seen++; seen == len(chunks) {
-					break
-				}
+			if ev.Kind == "text" && strings.HasSuffix(ev.Text, last) {
+				break
 			}
 		}
 		go func() {

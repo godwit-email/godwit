@@ -491,7 +491,7 @@ func gui(ctx context.Context, dataDir, open string) int {
 				e.PreventDefault()
 				mc.close()
 			})
-			hook := quitHook(windows, nq.onQuit, nq.reset, func() { a.OnUI(func() { quitAsked = false }) })
+			hook := quitHook(windows, nq.onQuit, nq.reset, func() { a.OnUI(func() { quitAsked = false; a.QuitCancelled() }) })
 			mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) { quitAsked = true; hook(e) })
 			a.Start(ctx)
 			a.SetForeground(win.IsFocused())

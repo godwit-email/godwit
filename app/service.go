@@ -223,6 +223,7 @@ type Service interface {
 	SetAddressBookCollectionEnabled(ctx context.Context, collectionID int64, enabled bool) error
 	SyncAddressBook(ctx context.Context, id int64) error
 	UpdateAddressBookAuth(ctx context.Context, id int64, password, oauthFlowID string, client core.OAuthClient) (core.AddressBook, error)
+	CancelTrayQuit(ctx context.Context) error
 }
 
 var _ Service = (*core.Service)(nil)

@@ -137,6 +137,10 @@ func (cl *Client) CancelRun(ctx context.Context, runID int64) error {
 	return callErr(cl, ctx, "CancelRun", runID)
 }
 
+func (cl *Client) CancelTrayQuit(ctx context.Context) error {
+	return callErr(cl, ctx, "CancelTrayQuit")
+}
+
 func (cl *Client) CheckAccount(ctx context.Context, in core.AccountInput) (core.CheckReport, error) {
 	return call[core.CheckReport](cl, ctx, "CheckAccount", in)
 }

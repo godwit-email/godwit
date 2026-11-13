@@ -42,3 +42,24 @@ func TestExternalWitRunNeedsUI(t *testing.T) {
 	evs = e.ask(t, conv.ID, "And where?") // in-process: Godwit's own caller
 	assert.Equal(t, "done", evs[len(evs)-1].Kind)
 }
+
+// The tray's 退出并停止收信 stays armed while the interface shows its
+// unsaved-changes prompt (which brings it to the front): only an explicit
+// cancel disarms it.
+func TestTrayQuitStopSurvivesForeground(t *testing.T) {
+	e := newSyncEnv(t)
+	ui, disconnect := context.WithCancel(t.Context())
+	defer disconnect()
+	ui = WithUISession(ui, e.s)
+	stopped := 0
+	e.s.StopWhenUIQuits(func() { stopped++ })
+	require.NoError(t, e.s.SetUIForeground(ui, true)) // the prompt shows the window
+	require.NoError(t, e.s.StopUIBackend(ui))         // the user confirms the quit
+	assert.Equal(t, 1, stopped, "the confirmed quit stops the backend")
+
+	e.s.StopWhenUIQuits(func() { stopped++ })
+	require.NoError(t, e.s.CancelTrayQuit(ui)) // the user went back
+	disconnect()
+	require.Eventually(t, func() bool { return !e.s.UIConnected() }, time.Second, time.Millisecond)
+	assert.Equal(t, 1, stopped, "a cancelled quit leaves the backend running")
+}
