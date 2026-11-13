@@ -404,7 +404,7 @@ func TestReaderAvatarManualPermissionSurvivesUnrelatedSettings(t *testing.T) {
 				return h.app.events > before && h.app.settingsVer == h.app.settingsSavedVer
 			})
 			h.app.load()
-			h.until("new settings loaded", func() bool { return h.app.settings.Theme == "dark" && h.app.accountsGen == h.app.loadGen })
+			h.until("new settings loaded", func() bool { return h.app.settings.Theme == "dark" && h.app.accountsGen == h.app.loads.Gen() })
 			if b.avatar == nil || !b.avatarAllow || !b.allow || hits.Load() != 1 {
 				t.Fatalf("unrelated setting revoked permission: avatar=%v manual=%v body=%v requests=%d", b.avatar != nil, b.avatarAllow, b.allow, hits.Load())
 			}

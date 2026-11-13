@@ -205,7 +205,7 @@ type App struct {
 	gen   uint64 // bumped on every navigation; async results from an older gen are dropped
 
 	fetch         func(ctx context.Context) (core.Settings, []core.Account, error) // what load reads; tests swap it
-	loadGen       uint64                                                           // bumped per load; older completions are dropped
+	loads         latest                                                           // load's reads; only the newest applies
 	loaded        bool
 	loadErr       error // the newest load's error; nil once a load succeeds
 	loadFailing   bool  // loads have failed since the last success: toast once per streak
@@ -218,7 +218,7 @@ type App struct {
 	blocked       []string               // the blocked senders, as the last load read them or a block changed them
 	settings      core.Settings          // what the interface shows: the newest edit while one saves
 	taskModels    map[string]bool        // the reader's tasks ("summarize", "translate", "" quick replies) core has a model for, and "labels"
-	taskGen       uint64                 // bumped per refreshTasks; only the newest answer counts
+	tasks         latest                 // refreshTasks' reads; only the newest answer counts
 
 	settingsOK       core.Settings                                                      // the last settings the Service confirmed; a failed save reverts to them
 	settingsGen      uint64                                                             // bumped per settings save; only the newest one's result counts
@@ -228,7 +228,7 @@ type App struct {
 	mcpEnv           func() (mcpclients.Env, error)                                     // where 接入 AI 应用 looks for the AI apps; tests swap it
 	setLanguage      func(string)
 	sysLang          string // Deps.SystemLanguage
-	accountsGen      uint64 // the load gen that read a.accounts
+	accountsGen      uint64 // the loads.Gen that read a.accounts
 
 	externalAlways bool // Deps.ExternalAlways
 
@@ -240,7 +240,7 @@ type App struct {
 
 	logf        func(format string, args ...any)
 	noteRoute   func(ctx context.Context, id string) (Route, bool, error) // where a notification leads; tests wrap it
-	noteGen     uint64                                                    // bumped per notification click; only the newest navigates
+	note        latest                                                    // where a notification click leads; only the newest navigates
 	noteFirst   string                                                    // a click, or OpenCompose, that came before the first load
 	noteSeen    map[string]time.Time                                      // when each click was taken: one given to both processes counts once
 	inboxUnread int                                                       // the inboxes' unread total
@@ -301,7 +301,7 @@ type App struct {
 	closeToasts []string      // the IDs of toasts to close on the next frame
 
 	undoToasts map[int64]bool // outbox items offered undo send: true while the toast shows
-	undoGen    uint64         // bumped per offerUndo; only the newest listing counts
+	undoList   latest         // offerUndo's listing; only the newest counts
 }
 
 // New builds an App; Start brings it up.
@@ -398,8 +398,6 @@ func (a *App) readLatest() {
 // load re-reads accounts, settings and unread counts; only the newest
 // load's result applies. The first load picks the start route.
 func (a *App) load() {
-	a.loadGen++
-	gen := a.loadGen
 	var accs []core.Account
 	var st core.Settings
 	var unread map[int64]int
@@ -413,7 +411,7 @@ func (a *App) load() {
 	inbox := 0
 	fetch, ver := a.fetch, a.settingsVer
 	settled := ver == a.settingsSavedVer // no local change waits for its save
-	a.do(func(ctx context.Context) error {
+	a.loads.Run(a, func(ctx context.Context) error {
 		var err error
 		if st, accs, err = fetch(ctx); err != nil {
 			return err
@@ -449,9 +447,6 @@ func (a *App) load() {
 		}
 		return nil
 	}, func(err error) {
-		if gen != a.loadGen {
-			return
-		}
 		a.loadErr = err
 		if err != nil {
 			if a.loaded && !a.loadFailing { // the first load's error shows in place of the shell
@@ -468,7 +463,7 @@ func (a *App) load() {
 				break
 			}
 		}
-		a.accounts, a.accountsGen, a.unread, a.loaded = accs, gen, unread, true
+		a.accounts, a.accountsGen, a.unread, a.loaded = accs, a.loads.Gen(), unread, true
 		if b := a.syncBatch; b != nil { // a removed account no longer holds up or fails the batch
 			for id := range b.pending {
 				if !slices.ContainsFunc(accs, func(acc core.Account) bool { return acc.ID == id }) {
@@ -692,9 +687,8 @@ func (a *App) do(fn func(ctx context.Context) error, done func(err error)) {
 // a load, a settings save and a model service change. Without a model they
 // are hidden; any other error shows them, so their run reports it.
 func (a *App) refreshTasks() {
-	a.taskGen++
-	gen, got := a.taskGen, map[string]bool{}
-	a.do(func(ctx context.Context) error {
+	got := map[string]bool{}
+	a.tasks.Run(a, func(ctx context.Context) error {
 		for _, task := range []string{"summarize", "translate", ""} {
 			_, err := a.svc.TaskModel(ctx, task)
 			got[task] = !errors.Is(err, core.ErrAINotConfigured) && !errors.Is(err, core.ErrModelServiceNotFound) && !errors.Is(err, core.ErrModelNotFound)
@@ -702,7 +696,7 @@ func (a *App) refreshTasks() {
 		got["labels"] = a.svc.LabelModelReady(ctx)
 		return nil
 	}, func(error) {
-		if gen != a.taskGen || maps.Equal(a.taskModels, got) {
+		if maps.Equal(a.taskModels, got) {
 			return
 		}
 		a.taskModels = got
@@ -715,12 +709,18 @@ func (a *App) refreshTasks() {
 // query is do for a read whose result belongs to the current route: done is
 // dropped if the App navigated meanwhile.
 func (a *App) query(fn func(ctx context.Context) error, done func(err error)) {
+	a.do(fn, a.here(done))
+}
+
+// here is done for a read whose result belongs to the current route: it is
+// dropped if the App navigated meanwhile.
+func (a *App) here(done func(err error)) func(err error) {
 	gen := a.gen
-	a.do(fn, func(err error) {
+	return func(err error) {
 		if gen == a.gen {
 			done(err)
 		}
-	})
+	}
 }
 
 // after runs f on the UI thread once d has passed, unless stop was called

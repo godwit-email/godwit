@@ -27,7 +27,7 @@ func uiApp(t *testing.T) (a *App, step func()) {
 }
 
 // An older run's result is dropped once a newer one started, though it
-// finishes last, and its context is cancelled.
+// finishes last; it is left to finish, not cancelled.
 func TestLatestDropsStale(t *testing.T) {
 	a, step := uiApp(t)
 	var l latest
@@ -47,8 +47,8 @@ func TestLatestDropsStale(t *testing.T) {
 		t.Fatalf("after the new run: loading %v, got %q", l.loading, got)
 	}
 	close(release)
-	if !<-cancelled {
-		t.Fatal("the old run's context was not cancelled")
+	if <-cancelled {
+		t.Fatal("the old run's context was cancelled")
 	}
 	step()
 	if len(got) != 1 {

@@ -1039,7 +1039,7 @@ func TestSearchDropsStaleResults(t *testing.T) {
 	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Lunch Plans", "eat"))
 	h.syncNow(accs[0])
 	h.waitMail("two threads", func() bool {
-		return len(h.items()) == 2 && h.app.accountsGen == h.app.loadGen && !h.app.mail.list.loading
+		return len(h.items()) == 2 && h.app.accountsGen == h.app.loads.Gen() && !h.app.mail.list.loading
 	})
 	h.settle() // nothing else is posted from here on
 	p := h.app.mail

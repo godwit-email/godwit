@@ -332,7 +332,7 @@ func TestSettingsAddressBooksGoogleOAuthAndSearch(t *testing.T) {
 		return core.AddressBook{ID: 42, Preset: core.PresetGoogle, Name: "Google", AuthType: "oauth", Username: "alice@gmail.com", Status: "ok"}, nil
 	}
 	h.post(func() {
-		h.app.loadGen++
+		h.app.loads.Stop()
 		h.app.addressBooks = []core.AddressBook{{
 			ID: 42, Preset: core.PresetGoogle, Name: "Google", AuthType: "oauth",
 			Username: "alice@gmail.com", Status: "reauth_required", StatusDetail: "token_revoked",

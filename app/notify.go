@@ -49,16 +49,14 @@ func (a *App) NotificationClicked(id string) {
 	now := a.clock.Now()
 	maps.DeleteFunc(a.noteSeen, func(_ string, at time.Time) bool { return now.Sub(at) >= noteDedupe })
 	a.noteSeen[id] = now
-	a.noteGen++
-	gen, look := a.noteGen, a.noteRoute
+	look := a.noteRoute
 	var r Route
 	var ok bool
-	a.query(func(ctx context.Context) (err error) {
+	a.note.Run(a, func(ctx context.Context) (err error) {
 		r, ok, err = look(ctx, id)
 		return err
-	}, func(err error) {
+	}, a.here(func(err error) {
 		switch {
-		case gen != a.noteGen:
 		case err != nil:
 			a.toastErr(err)
 		case ok:
@@ -67,7 +65,7 @@ func (a *App) NotificationClicked(id string) {
 			}
 			a.navigate(r)
 		}
-	})
+	}))
 }
 
 // notificationRoute is where the notification id leads (MessageID set for a
