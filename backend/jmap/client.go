@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"strings"
 	"sync"
-	"time"
 
 	gojmap "git.sr.ht/~rockorager/go-jmap"
 	"git.sr.ht/~rockorager/go-jmap/mail"
@@ -40,7 +39,7 @@ type Config struct {
 
 // client speaks JMAP over HTTP. It signs every request with the account's
 // credentials and trusts the hosts the session names; it follows a redirect
-// only to the same host, except from /.well-known/jmap.
+// only as conn.SameHost allows, except to another host from /.well-known/jmap.
 type client struct {
 	cfg  Config
 	http *http.Client
@@ -53,35 +52,17 @@ type client struct {
 	host    string // where the session came from
 }
 
-var errOtherHost = errors.New("jmap: refused a redirect to another host")
-
-// Timeouts of one HTTP request, so a server that stops answering cannot hold
-// the account's sync forever; vars so tests can shorten them.
-var (
-	headerTimeout  = time.Minute     // until the response headers arrive
-	requestTimeout = 5 * time.Minute // a whole request, except a download or the event stream
-	stallTimeout   = time.Minute     // a download with no byte arriving
-)
-
 func newClient(cfg Config) *client {
-	c := &client{cfg: cfg}
 	t := conn.HTTPTransport()
-	t.ResponseHeaderTimeout = headerTimeout
-	c.http = &http.Client{Timeout: requestTimeout, Transport: authTransport{cfg.Credentials, t}, CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		switch {
-		case len(via) >= 10:
-			return errors.New("jmap: too many redirects")
-		case strings.HasSuffix(via[0].URL.Path, "/.well-known/jmap"):
-			return nil
-		case req.URL.Host != via[0].URL.Host:
-			return errOtherHost
+	hc := conn.NewHTTPClient(t, authTransport{cfg.Credentials, t})
+	hc.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		err := conn.SameHost(req, via)
+		if errors.Is(err, conn.ErrOtherHost) && strings.HasSuffix(via[0].URL.Path, "/.well-known/jmap") {
+			return nil // discovery may name the session on another host (ADR 0037)
 		}
-		return nil
-	}}
-	stream := *c.http
-	stream.Timeout = 0
-	c.stream = &stream
-	return c
+		return err
+	}
+	return &client{cfg: cfg, http: hc, stream: conn.Streaming(hc)}
 }
 
 type authTransport struct {
@@ -103,8 +84,8 @@ func (a authTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return a.base.RoundTrip(r)
 }
 
-// do does an HTTP request on hc and checks its status: 401 is ErrAuthFailed,
-// 404 ErrNotFound.
+// do does an HTTP request on hc and checks its status: as
+// conn.HTTPStatusErr, and 404 is ErrNotFound.
 func (c *client) do(hc *http.Client, req *http.Request) (*http.Response, error) {
 	resp, err := hc.Do(req)
 	if err != nil {
@@ -114,10 +95,10 @@ func (c *client) do(hc *http.Client, req *http.Request) (*http.Response, error) 
 		return resp, nil
 	}
 	resp.Body.Close()
-	switch resp.StatusCode {
-	case http.StatusUnauthorized:
-		return nil, fmt.Errorf("jmap: %s: %w", req.URL.Path, backend.ErrAuthFailed)
-	case http.StatusNotFound:
+	if err := conn.HTTPStatusErr(resp); err != nil {
+		return nil, fmt.Errorf("jmap: %s: %w", req.URL.Path, err)
+	}
+	if resp.StatusCode == http.StatusNotFound {
 		return nil, fmt.Errorf("jmap: %s: %w", req.URL.Path, backend.ErrNotFound)
 	}
 	return nil, fmt.Errorf("jmap: %s: HTTP %s", req.URL.Path, resp.Status)
@@ -249,7 +230,7 @@ func (c *client) download(ctx context.Context, blobID gojmap.ID) (io.ReadCloser,
 		cancel()
 		return nil, err
 	}
-	return conn.StallBody(resp.Body, stallTimeout, cancel), nil
+	return conn.StallBody(resp.Body, conn.StallTimeout, cancel), nil
 }
 
 // upload stores raw as a blob and returns its id (RFC 8620 6.1).

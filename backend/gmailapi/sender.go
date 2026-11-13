@@ -14,12 +14,10 @@ import (
 	"net/mail"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/conn"
 )
-
-const sendTimeout = 5 * time.Minute
 
 // Sender submits mail through Gmail REST API users.messages.send. Gmail
 // automatically stores the sent copy with the SENT label (SavesSent == true).
@@ -28,7 +26,7 @@ type Sender struct{ c *client }
 var _ backend.Sender = (*Sender)(nil)
 
 // NewSender returns a Sender for the Gmail account cfg reaches.
-func NewSender(cfg Config) *Sender { return &Sender{c: newClient(cfg, sendTimeout)} }
+func NewSender(cfg Config) *Sender { return &Sender{c: newClient(cfg)} }
 
 // SavesSent implements backend.Sender.
 func (*Sender) SavesSent() bool { return true }
@@ -48,12 +46,6 @@ func (s *Sender) Send(ctx context.Context, _ string, rcpts []string, raw []byte)
 	if cr.Token == "" {
 		return fmt.Errorf("gmailapi: %w", backend.ErrAuthFailed)
 	}
-	release, err := acquire(ctx, s.c.accountKey(cr))
-	if err != nil {
-		return err
-	}
-	defer release()
-
 	payload, err := json.Marshal(struct {
 		Raw string `json:"raw"`
 	}{Raw: base64.RawURLEncoding.EncodeToString(withBcc(raw, rcpts))})
@@ -62,7 +54,7 @@ func (s *Sender) Send(ctx context.Context, _ string, rcpts []string, raw []byte)
 	}
 	u := s.c.baseURL + "/gmail/v1/users/me/messages/send"
 
-	for try := 0; ; try++ {
+	return conn.Serial(ctx, s.c.accountKey(cr), s.c.cfg.Wait, func() error {
 		var wrote atomic.Bool
 		reqCtx := httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
 			GetConn:      func(string) { wrote.Store(false) },
@@ -92,22 +84,9 @@ func (s *Sender) Send(ctx context.Context, _ string, rcpts []string, raw []byte)
 			return fmt.Errorf("%w: HTTP %s", backend.ErrUncertain, resp.Status)
 		}
 		perr := parseError(resp, body)
-		if errors.Is(perr, backend.ErrAuthFailed) {
-			return perr
-		}
-		var rl *rateLimitError
-		if errors.As(perr, &rl) {
-			if try == maxRetries {
-				return perr
-			}
-			d := rl.backOff
-			if d <= 0 {
-				d = min(defaultBackOff<<try, maxBackOff)
-			}
-			if err := s.c.wait(ctx, d); err != nil {
-				return err
-			}
-			continue
+		var busy *conn.BusyError
+		if errors.Is(perr, backend.ErrAuthFailed) || errors.As(perr, &busy) {
+			return perr // conn.Serial waits a busy answer out
 		}
 		var ae *apiError
 		code := 554
@@ -119,7 +98,7 @@ func (s *Sender) Send(ctx context.Context, _ string, rcpts []string, raw []byte)
 			msg = fmt.Sprintf("%d %s: %s", ae.StatusCode, cmp.Or(ae.Reason, ae.Status), ae.Message)
 		}
 		return &backend.RejectedError{Stage: "messages.send", Code: code, Message: msg}
-	}
+	})
 }
 
 func withBcc(raw []byte, rcpts []string) []byte {
