@@ -574,10 +574,6 @@ func TestUnsupportedChangeFails(t *testing.T) {
 // ends is the server's: one copy, in the destination, the same local row, not
 // announced as new mail, with no conflict claiming the folder was recreated.
 func TestMoveWhoseReplyWasLost(t *testing.T) {
-	t.Skip("suspected bug: on an IdentityLocation account pushOp reads any ErrNotFound as a recreated folder: " +
-		"the op becomes a conflict saying so, the snapshot then orphans the local row, and the moved message is " +
-		"stored again as a new arrival (message.received, rules). IMAP escapes it through MoveBaseline; " +
-		"a location-only backend without one (EWS) does not. Treat it like lostSource: await the claim when a send may have reached the server.")
 	e := newEnv(t)
 	e.fake.Deliver(t, "INBOX", raw("a@x"))
 	e.fake.Deliver(t, "Archive", raw("z@x"))
