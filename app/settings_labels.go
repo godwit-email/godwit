@@ -210,34 +210,46 @@ func (v *labelsView) dialog(c *ui.Context) {
 				ui.Text(c, i18n.T("settings.labels.color")).FontWeight(500)
 				ui.Text(c, "· "+i18n.T("label.color."+v.color)).TextColor(t.Muted)
 			})
-			// One strip across the field, warm to cool, the cells touching; the chosen one
-			// lifts out of it on a ring of the background. It is a slider: press, drag
-			// along it, or the arrows. Padded by half a cell (of the last frame's width),
-			// so each value sits at its cell's middle; the cells cover the padding.
+			// One strip across the field, warm to cool, the cells touching, under a thumb
+			// of the chosen color lifted on a ring of the background. It is a slider:
+			// press, drag along it, or the arrows. Padded by half a cell (of the last
+			// frame's width), so each value sits at its cell's middle; the cells cover
+			// the padding.
 			last := len(core.LabelColors) - 1
 			strip := ui.SliderBase(c, &v.colorAt, 0, float64(last)).Step(1).FillWidth().Height(theme.LabelStrip).MarginY(th.Space(1)).Radius(t.Radius.Md)
-			strip.PaddingX(strip.LayoutBounds().W / float32(2*len(core.LabelColors)))
+			cell := strip.LayoutBounds().W / float32(len(core.LabelColors))
+			strip.PaddingX(cell / 2)
 			if strip.Changed() {
 				v.color = core.LabelColors[max(0, min(last, int(math.Round(v.colorAt))))]
 			} else {
 				v.colorAt = float64(max(0, slices.Index(core.LabelColors, v.color)))
 			}
 			strip.Label(i18n.T("settings.labels.color")).Value(i18n.T("label.color." + v.color))
+			// The thumb follows the pointer while the strip is pressed, then settles on
+			// the chosen cell; a quick spring carries it, so it glides rather than hops.
+			at := float32(v.colorAt)
+			if x, _, _ := strip.PointerPosition(); strip.Pressed() && cell > 0 {
+				at = max(0, min(float32(last), x/cell-0.5))
+			}
+			at = strip.Spring("thumb", at, ui.SpringOptions{Duration: theme.MotionFast})
 			strip.Children(func() {
 				ui.Row(c).Absolute().Top(0).Left(0).Right(0).Children(func() {
 					for i, name := range core.LabelColors {
-						cell := ui.Box(c.Key(name)).Height(theme.LabelStrip).Grow(1).Background(t.Label(name).Dot)
-						switch {
-						case name == v.color:
-							cell.Radius(t.Radius.Sm).TransformOrigin(0.5, 0.5).Scale(1.25, 1.25).ZIndex(1).Shadow(0, 0, 0, 2, t.Background)
-							kit.Elevate(c, cell, theme.ShadowMd)
-						case i == 0:
-							cell.Radius(t.Radius.Md, 0, 0, t.Radius.Md)
-						case i == last:
-							cell.Radius(0, t.Radius.Md, t.Radius.Md, 0)
+						sw := ui.Box(c.Key(name)).Height(theme.LabelStrip).Grow(1).Background(t.Label(name).Dot)
+						switch i {
+						case 0:
+							sw.Radius(t.Radius.Md, 0, 0, t.Radius.Md)
+						case last:
+							sw.Radius(0, t.Radius.Md, t.Radius.Md, 0)
 						}
 					}
 				})
+				if cell > 0 { // the first frame has no width yet
+					w, h := cell*1.25, float32(theme.LabelStrip)*1.25
+					thumb := ui.Box(c).Absolute().Left(at*cell+(cell-w)/2).Top((theme.LabelStrip-h)/2).Size(w, h).Radius(t.Radius.Sm).Shadow(0, 0, 0, 2, t.Background)
+					thumb.Background(thumb.AnimateColor("dot", t.Label(v.color).Dot, ui.Animation{Duration: theme.MotionFast}))
+					kit.Elevate(c, thumb, theme.ShadowMd)
+				}
 			})
 		})
 		kit.Field(c, i18n.T("settings.labels.icon"), "", "", func() {
