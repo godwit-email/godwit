@@ -52,7 +52,8 @@ func (v *labelsView) view(c *ui.Context, p *settingsPage) {
 	defer p.syncSettings()
 	a := v.a
 	pageHeading(c, i18n.T("settings.labels"), i18n.T("settings.labels.sub"), func() {
-		settingButton(c, i18n.T("settings.labels.new"), kit.Outline, false).OnClick(func() { v.open(core.Label{Color: "gray", Icon: "folder-3"}) })
+		// as 新建规则 and 新建签名
+		kit.Button(c, i18n.T("settings.labels.new"), kit.ButtonOpts{Icon: "plus"}).PaddingX(c.Theme().Space(3)).OnClick(func() { v.open(core.Label{Color: "gray", Icon: "folder-3"}) })
 	})
 	settingsSection(c, i18n.T("settings.labels.list"), i18n.T("settings.labels.list.foot"), func() { v.list(c) })
 
