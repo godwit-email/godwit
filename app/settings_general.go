@@ -73,14 +73,10 @@ func (a *App) settingsEffects(old, st core.Settings) {
 	if st.UILanguage != old.UILanguage {
 		a.setLanguage(st.UILanguage)
 	}
-	if st.ShowTrayIcon != old.ShowTrayIcon {
-		a.plat.SetTrayVisible(st.ShowTrayIcon)
-	}
 	a.plat.SettingsChanged(st)
-	if st.UnreadOnAppIcon != old.UnreadOnAppIcon || st.UnreadInMenuBar != old.UnreadInMenuBar || st.ShowTrayIcon != old.ShowTrayIcon {
+	if st.UnreadOnAppIcon != old.UnreadOnAppIcon {
 		a.showUnread(a.inboxUnread)
 	}
-	a.syncLocalAPI()
 }
 
 // opensAtLogin reports whether st wants Godwit's one login item: for the
@@ -97,47 +93,6 @@ func (a *App) checkLoginItem() {
 	plat, want, on := a.plat, opensAtLogin(a.settings), false
 	a.writes.Chain("open-at-login", func(context.Context) error { on = want && plat.OpenAtLogin(); return nil },
 		func(error) { a.loginItemOff = want && !on })
-}
-
-// syncLocalAPI asks the platform to serve the Local API as a.settings say.
-// Requests run in order and only the newest one's result counts: when it
-// fails, the reason shows on the privacy page and the setting turns off.
-func (a *App) syncLocalAPI() {
-	on := a.settings.LocalAPI || a.externalAlways
-	if on == a.localAPIWant {
-		return
-	}
-	a.localAPIWant = on
-	a.localAPIGen++
-	gen := a.localAPIGen
-	if on {
-		a.localAPIErr = nil
-	}
-	plat := a.plat
-	var path string
-	a.writes.Chain("local-api", func(context.Context) (err error) {
-		path, err = plat.SetLocalAPI(gen, on)
-		return err
-	}, func(err error) {
-		if gen != a.localAPIGen { // a newer request runs after this one and decides
-			return
-		}
-		a.localAPIPath = path
-		if err != nil {
-			a.localAPIWant = false // a failed request leaves the server off
-			a.localAPIFailed(err)
-		}
-	})
-}
-
-// localAPIFailed shows err on the privacy page and turns the setting off.
-func (a *App) localAPIFailed(err error) {
-	a.localAPIErr = err
-	if a.settings.LocalAPI {
-		st := a.settings
-		st.LocalAPI = false
-		a.changeSettings(st)
-	}
 }
 
 func sameSettings(x, y core.Settings) bool {
