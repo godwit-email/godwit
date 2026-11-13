@@ -69,12 +69,23 @@ type Event struct {
 type Bus struct {
 	mu   sync.Mutex
 	next uint64
-	subs map[uint64]chan Event
+	subs map[uint64]*sub
+}
+
+// sub is one subscriber. Events go straight into out while it has room and
+// nothing waits before them; past that they queue in q (under the Bus's
+// lock), which the forwarder hands on in order.
+type sub struct {
+	out  chan Event    // buffered subscriberBuffer
+	q    []Event       // waiting for room in out
+	busy bool          // the forwarder holds q's head, sending it
+	wake chan struct{} // q grew; buffered 1
+	done chan struct{} // closed by unsubscribe
 }
 
 // New returns an empty Bus.
 func New() *Bus {
-	return &Bus{subs: make(map[uint64]chan Event)}
+	return &Bus{subs: make(map[uint64]*sub)}
 }
 
 // Subscribe returns a channel of events and a func that unsubscribes it.
@@ -84,33 +95,72 @@ func (b *Bus) Subscribe() (<-chan Event, func()) {
 	defer b.mu.Unlock()
 	id := b.next
 	b.next++
-	ch := make(chan Event, subscriberBuffer)
-	b.subs[id] = ch
-	return ch, func() {
+	s := &sub{out: make(chan Event, subscriberBuffer), wake: make(chan struct{}, 1), done: make(chan struct{})}
+	b.subs[id] = s
+	go b.forward(s)
+	return s.out, func() {
 		b.mu.Lock()
 		defer b.mu.Unlock()
-		if c, ok := b.subs[id]; ok {
+		if _, ok := b.subs[id]; ok {
 			delete(b.subs, id)
-			close(c)
+			close(s.done)
 		}
 	}
 }
 
-// Publish delivers e to every subscriber without blocking.
+// forward hands s's queue on to s.out, oldest first, until unsubscribed.
+func (b *Bus) forward(s *sub) {
+	defer close(s.out)
+	for {
+		b.mu.Lock()
+		if len(s.q) == 0 {
+			s.busy = false
+			b.mu.Unlock()
+			select {
+			case <-s.wake:
+				continue
+			case <-s.done:
+				return
+			}
+		}
+		e := s.q[0]
+		s.q = s.q[1:]
+		s.busy = true // Publish must not pass e
+		b.mu.Unlock()
+		select {
+		case s.out <- e:
+		case <-s.done:
+			return
+		}
+	}
+}
+
+// Publish delivers e to every subscriber without blocking. Past a full out,
+// a subscriber's queue keeps at most subscriberBuffer events, losing its
+// oldest that is not a Command (UI only, lossy by design; plugins read the
+// database cursor): the tray's Open or Quit and clicks survive a burst.
 func (b *Bus) Publish(e Event) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	for _, ch := range b.subs {
-		select {
-		case ch <- e:
-		default:
-			// ponytail: UI-only, lossy by design. A full queue drops its oldest event so the
-			// newest one still gets through. Reliable delivery for plugins lives in the plugin plan.
+	for _, s := range b.subs {
+		if !s.busy && len(s.q) == 0 {
 			select {
-			case <-ch:
+			case s.out <- e: // at once, as a reader polling right after expects
+				continue
 			default:
 			}
-			ch <- e // only Publish sends, and it holds the lock, so there is room now
+		}
+		s.q = append(s.q, e)
+		if len(s.q) > subscriberBuffer {
+			i := 0
+			for i < len(s.q)-1 && Command(s.q[i].Type) {
+				i++
+			}
+			s.q = append(s.q[:i], s.q[i+1:]...)
+		}
+		select {
+		case s.wake <- struct{}{}:
+		default:
 		}
 	}
 }
