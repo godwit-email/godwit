@@ -1386,7 +1386,7 @@ func TestJunkActionNotInJunk(t *testing.T) {
 	h.see("移到垃圾邮件")
 	f := h.folderOf(acc, "junk")
 	h.post(func() { h.app.navigate(Route{Page: PageMail, View: core.View{FolderID: f.ID}}) })
-	h.until("the junk folder", func() bool { return h.app.mail.view.FolderID == f.ID && !h.app.mail.loading })
+	h.until("the junk folder", func() bool { return h.app.mail.view.FolderID == f.ID && !h.app.mail.list.loading })
 	h.openThread(m.ThreadID)
 	h.see("回复")
 	if h.tt.HasText("移到垃圾邮件") {
@@ -1403,7 +1403,7 @@ func TestReaderMoveToInbox(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.post(func() { h.app.navigate(Route{Page: PageMail, View: core.View{FolderID: f.ID}}) })
-	h.until("the archive folder", func() bool { return h.app.mail.view.FolderID == f.ID && !h.app.mail.loading })
+	h.until("the archive folder", func() bool { return h.app.mail.view.FolderID == f.ID && !h.app.mail.list.loading })
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
 	h.click(i18n.T("mail.action.inbox"))
@@ -1447,7 +1447,7 @@ func TestReaderAvatarMoveToJunk(t *testing.T) {
 	h.click("加载")
 	h.until("manual junk avatar", func() bool { return b.avatar != nil && b.avatarAllow && b.allow })
 	h.app.refresh(nil)
-	h.until("same-message refresh", func() bool { return !h.app.mail.loading })
+	h.until("same-message refresh", func() bool { return !h.app.mail.list.loading })
 	if !b.avatarAllow || b.avatar == nil {
 		t.Fatal("refresh revoked current-message manual permission")
 	}

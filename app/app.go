@@ -548,7 +548,7 @@ func (a *App) MailReady() bool {
 	if !a.loaded {
 		return false
 	}
-	return a.route.Page == PageOnboarding || (a.route.Page == PageMail && !a.mail.loading)
+	return a.route.Page == PageOnboarding || (a.route.Page == PageMail && !a.mail.list.loading)
 }
 
 // Close cancels all work in flight, whose done callbacks never run, closes
