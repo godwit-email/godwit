@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -68,7 +69,7 @@ func TestSettingsLabelsCreate(t *testing.T) {
 	h.labelsPage()
 	h.click("新建标签")
 	h.typeUnder("名称", "家人")
-	h.click("粉")
+	h.pickColor("pink")
 	h.click("heart-3")
 	h.click("创建")
 	h.until("the new label", func() bool {
@@ -263,10 +264,34 @@ func TestSettingsLabelsDescriptionTooLong(t *testing.T) {
 	}
 }
 
-// TestSettingsLabelsSwatchesFit: at either density the colors are one strip
-// from the field's left edge (名称's) to its right (the right-aligned 创建
-// button's), and the field's title names the chosen one.
-func TestSettingsLabelsSwatchesFit(t *testing.T) {
+// colorCell is the middle of the label dialog's color strip cell for color: the
+// strip runs from the field's left edge (名称's) to its right (the right-aligned
+// 创建 button's), between the color field's title and the icon field's.
+func (h *harness) colorCell(color string) (x, y float32) {
+	h.t.Helper()
+	name, _ := h.tt.Find("名称")
+	create, _ := h.tt.Find("创建")
+	title, _ := h.tt.Find(i18n.T("settings.labels.color"))
+	icons, _ := h.tt.Find(i18n.T("settings.labels.icon"))
+	i := slices.Index(core.LabelColors, color)
+	if i < 0 {
+		h.t.Fatalf("no label color %s", color)
+	}
+	w := create.X + create.W - name.X
+	return name.X + (float32(i)+0.5)*w/float32(len(core.LabelColors)), (title.Y + title.H + icons.Y) / 2
+}
+
+// pickColor clicks color in the label dialog's strip.
+func (h *harness) pickColor(color string) {
+	h.t.Helper()
+	h.tt.ClickAt(h.colorCell(color))
+	h.see("· " + i18n.T("label.color."+color))
+}
+
+// TestSettingsLabelsColorStrip: at either density a press on the color strip
+// chooses the cell under it, and the field's title names the choice; dragging
+// along it chooses each cell it passes, and the arrows step it.
+func TestSettingsLabelsColorStrip(t *testing.T) {
 	for _, density := range []string{"compact", "comfortable"} {
 		t.Run(density, func(t *testing.T) {
 			h, _ := withAccount(t)
@@ -283,32 +308,25 @@ func TestSettingsLabelsSwatchesFit(t *testing.T) {
 			h.click("新建标签")
 			h.see("创建")
 			h.see("· 灰")
-			// The chosen cell is scaled out of the strip: choose one in the middle, measure the rest.
-			h.click("天蓝")
-			h.see("· 天蓝")
-			name, _ := h.tt.Find("名称")
-			create, _ := h.tt.Find("创建")
-			first, _ := h.tt.Find(i18n.T("label.color." + core.LabelColors[0]))
-			for i, c := range core.LabelColors {
-				label := i18n.T("label.color." + c)
-				r, ok := h.tt.Find(label)
-				switch {
-				case !ok:
-					t.Fatalf("no swatch %s", label)
-				case c == "sky":
-					continue
-				case r.Y != first.Y:
-					t.Errorf("swatch %s at y %v, want one strip at %v", label, r.Y, first.Y)
-				case i == 0:
-					if d := r.X - name.X; d < -1 || d > 1 {
-						t.Errorf("first swatch at x %v, want the field's left edge %v", r.X, name.X)
-					}
-				case i == len(core.LabelColors)-1:
-					if d := r.X + r.W - (create.X + create.W); d < -1 || d > 1 {
-						t.Errorf("last swatch ends at %v, want the field's right edge %v", r.X+r.W, create.X+create.W)
-					}
-				}
+			for _, c := range slices.Backward(core.LabelColors) {
+				h.pickColor(c)
 			}
+
+			x, y := h.colorCell("red")
+			h.tt.Press(x, y)
+			h.see("· 红")
+			for _, c := range []string{"amber", "emerald", "fuchsia"} {
+				x, _ := h.colorCell(c)
+				h.tt.Move(x, y+20) // off the strip, as a hand drifts: the drag goes on
+				h.see("· " + i18n.T("label.color."+c))
+			}
+			h.tt.Release(x, y)
+			h.see("· 红")
+
+			h.tt.Key(0, ui.KeyRight)
+			h.see("· 橙")
+			h.tt.Key(0, ui.KeyEnd)
+			h.see("· 粉")
 		})
 	}
 }

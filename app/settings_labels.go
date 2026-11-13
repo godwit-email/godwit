@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -38,6 +39,8 @@ type labelsView struct {
 	total   int // the running rescan's messages; pending of them left
 	pending int
 	poll    func() // stops the progress poll
+
+	colorAt float64 // the dialog's color strip, a slider: color's index in core.LabelColors
 }
 
 func newLabelsView(a *App) *labelsView {
@@ -208,25 +211,33 @@ func (v *labelsView) dialog(c *ui.Context) {
 				ui.Text(c, "· "+i18n.T("label.color."+v.color)).TextColor(t.Muted)
 			})
 			// One strip across the field, warm to cool, the cells touching; the chosen one
-			// lifts out of it on a ring of the background.
-			ui.Row(c).FillWidth().MarginY(th.Space(1)).Children(func() {
-				last := len(core.LabelColors) - 1
-				for i, name := range core.LabelColors {
-					on := name == v.color
-					sw := kit.Pressable(c.Key(name), kit.PressableOpts{Bare: true, Selected: on, OnClick: func() { v.color = name }}).
-						Label(i18n.T("label.color." + name)).Checked(on).Height(theme.LabelStrip).Grow(1).Background(t.Label(name).Dot)
-					switch {
-					case on:
-						sw.Radius(t.Radius.Sm).TransformOrigin(0.5, 0.5).Scale(1.25, 1.25).ZIndex(1).Shadow(0, 0, 0, 2, t.Background)
-						kit.Elevate(c, sw, theme.ShadowMd)
-					case i == 0:
-						sw.Radius(t.Radius.Md, 0, 0, t.Radius.Md)
-					case i == last:
-						sw.Radius(0, t.Radius.Md, t.Radius.Md, 0)
-					default:
-						sw.Radius(0) // a Pressable is rounded
+			// lifts out of it on a ring of the background. It is a slider: press, drag
+			// along it, or the arrows. Padded by half a cell (of the last frame's width),
+			// so each value sits at its cell's middle; the cells cover the padding.
+			last := len(core.LabelColors) - 1
+			strip := ui.SliderBase(c, &v.colorAt, 0, float64(last)).Step(1).FillWidth().Height(theme.LabelStrip).MarginY(th.Space(1)).Radius(t.Radius.Md)
+			strip.PaddingX(strip.LayoutBounds().W / float32(2*len(core.LabelColors)))
+			if strip.Changed() {
+				v.color = core.LabelColors[max(0, min(last, int(math.Round(v.colorAt))))]
+			} else {
+				v.colorAt = float64(max(0, slices.Index(core.LabelColors, v.color)))
+			}
+			strip.Label(i18n.T("settings.labels.color")).Value(i18n.T("label.color." + v.color))
+			strip.Children(func() {
+				ui.Row(c).Absolute().Top(0).Left(0).Right(0).Children(func() {
+					for i, name := range core.LabelColors {
+						cell := ui.Box(c.Key(name)).Height(theme.LabelStrip).Grow(1).Background(t.Label(name).Dot)
+						switch {
+						case name == v.color:
+							cell.Radius(t.Radius.Sm).TransformOrigin(0.5, 0.5).Scale(1.25, 1.25).ZIndex(1).Shadow(0, 0, 0, 2, t.Background)
+							kit.Elevate(c, cell, theme.ShadowMd)
+						case i == 0:
+							cell.Radius(t.Radius.Md, 0, 0, t.Radius.Md)
+						case i == last:
+							cell.Radius(0, t.Radius.Md, t.Radius.Md, 0)
+						}
 					}
-				}
+				})
 			})
 		})
 		kit.Field(c, i18n.T("settings.labels.icon"), "", "", func() {
