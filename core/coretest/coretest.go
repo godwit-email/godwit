@@ -701,6 +701,10 @@ func (l *LLM) RequestLog() []Request { return l.srv.Requests() }
 // Release lets hanging turns finish.
 func (l *LLM) Release() { l.srv.Release() }
 
+// Rearm makes turns hang again after a Release: a test that releases one run
+// can hold the next.
+func (l *LLM) Rearm() { l.srv.Rearm() }
+
 // PluginFixture copies the fixture plugin name into a temporary directory and
 // returns it. Fixtures are looked up in core/coretest/testdata,
 // core/plugins/testdata and core/testdata, in that order.
