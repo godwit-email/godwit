@@ -90,8 +90,8 @@ func call[R any](ctx context.Context, c *client, op any) (R, error) {
 		return zero, err
 	}
 	release, err := acquire(ctx, c.account(cr))
-	if err != nil {
-		return zero, err
+	if err != nil { // ctx's own error: say where it ended (#755)
+		return zero, fmt.Errorf("ews %s: waiting for the account's other requests: %w", c.host(), err)
 	}
 	defer release()
 	for try := 0; ; try++ {
@@ -101,7 +101,7 @@ func call[R any](ctx context.Context, c *client, op any) (R, error) {
 			return r, err
 		}
 		if err := c.wait(ctx, busy.backOff); err != nil {
-			return r, err
+			return r, fmt.Errorf("ews %s: waiting out ErrorServerBusy: %w", c.host(), err)
 		}
 	}
 }

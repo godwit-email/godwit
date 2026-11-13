@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,6 +50,48 @@ func TestSendBusyIsRetried(t *testing.T) {
 				t.Errorf("Send to a busy server = %v, want a plain error", err)
 			}
 		})
+	}
+}
+
+// A send that runs out of time waiting, for the account's other requests or
+// for a busy server's back-off, says so and names the server: the wait
+// returned the bare "context deadline exceeded" (#755).
+func TestSendTimeoutNamesStepAndHost(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusInternalServerError)
+		io.WriteString(w, busyFault)
+	}))
+	t.Cleanup(srv.Close)
+	u, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cr := backend.Credentials{Username: "alice", Password: "secret"}
+	s := NewSender(Config{URL: srv.URL, Credentials: func(context.Context) (backend.Credentials, error) { return cr, nil }})
+	send := func() error {
+		ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+		defer cancel()
+		return s.Send(ctx, "a@example.com", []string{"b@example.com"}, []byte("To: b@example.com\r\n\r\nhi\r\n"))
+	}
+	check := func(err error, step string) {
+		t.Helper()
+		if err == nil || !strings.Contains(err.Error(), "ews "+u.Host+": "+step+": context deadline exceeded") {
+			t.Errorf("Send = %v, want the deadline under %q at %s", err, step, u.Host)
+		}
+	}
+
+	check(send(), "waiting out ErrorServerBusy") // the real back-off, 5 s, outlasts the deadline
+
+	release, err := acquire(t.Context(), s.c.account(cr)) // another request of the account's is running
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	err = send()
+	check(err, "waiting for the account's other requests")
+	if !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, backend.ErrUncertain) {
+		t.Errorf("Send = %v, want the deadline itself: nothing was written, so it is not uncertain", err)
 	}
 }
 
