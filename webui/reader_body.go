@@ -1,7 +1,6 @@
 package webui
 
 import (
-	"net/url"
 	"strconv"
 	"strings"
 
@@ -69,7 +68,7 @@ type preparer struct {
 	changed bool
 }
 
-// proxy is the godwit-img: URL of the remote image src, or "" when the
+// proxy is the godwit-img: URL (imageURL) of the remote image src, or "" when the
 // message has used up its image count: the page loads every image at once, so
 // a message cannot hold unbounded ones. Their pixels are charged to the same
 // budget by the proxy, once their size is known (Reader.chargePixels).
@@ -82,7 +81,7 @@ func (p *preparer) proxy(src string) string {
 	}
 	p.tokens[token] = src
 	p.changed = true
-	return (&url.URL{Scheme: ImageScheme, Host: "m" + strconv.FormatInt(p.message, 10), Path: "/" + token}).String()
+	return imageURL("m"+strconv.FormatInt(p.message, 10), "/"+token)
 }
 
 // image checks img's src: a data: image against the budget (its src goes

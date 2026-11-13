@@ -213,9 +213,27 @@ func (f *readerFixture) imageAt(t *testing.T, u string) *httptest.ResponseRecord
 	return rec
 }
 
-// proxied is src as the body holds it.
+// proxied is src as the body holds it: the URL the page loads, which is
+// http://m<message>.godwit-img.localhost/… on Windows (imageURL).
 func proxied(message int64, src string) string {
+	return imageURL(fmt.Sprintf("m%d", message), "/"+imagecache.Key(src))
+}
+
+// served is the URL ImageHandler gets for src: the godwit-img: one, which
+// MyGo maps the page's URL back to.
+func served(message int64, src string) string {
 	return fmt.Sprintf("godwit-img://m%d/%s", message, imagecache.Key(src))
+}
+
+// TestImageURLWebView2 pins the image URLs a page loads: WebView2 requests no
+// custom scheme, so on Windows they are MyGo's http://<host>.<scheme>.localhost
+// form, else every body image and avatar stays a broken image (godwit#750).
+func TestImageURLWebView2(t *testing.T) {
+	assert.Equal(t, "http://m196.godwit-img.localhost/221c61d0", imageURLOn("windows", "m196", "/221c61d0"))
+	assert.Equal(t, "http://a42.godwit-img.localhost/", imageURLOn("windows", "a42", "/"))
+	for _, goos := range []string{"darwin", "linux"} {
+		assert.Equal(t, "godwit-img://m196/221c61d0", imageURLOn(goos, "m196", "/221c61d0"), goos)
+	}
 }
 
 // remoteMail is a message with text and one remote image at src.
@@ -271,13 +289,13 @@ func TestReaderTranslationKeepsBodyAndImagePolicy(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, withImages.Remote)
 	assert.Contains(t, withImages.HTML, `你好 &lt;img`)
-	assert.Contains(t, withImages.HTML, `godwit-img:`)
+	assert.Contains(t, withImages.HTML, ImageScheme)
 	f.r.Translate(m.ID, nil)
 	restored, err := f.p.Load(pageCtx(k))
 	require.NoError(t, err)
 	assert.Contains(t, restored.HTML, "Hello reader")
 	assert.NotContains(t, restored.HTML, "你好")
-	assert.Contains(t, restored.HTML, `godwit-img:`)
+	assert.Contains(t, restored.HTML, ImageScheme)
 	assert.True(t, restored.Remote, "switching back keeps image consent")
 }
 
@@ -659,7 +677,7 @@ func TestReaderPolicyLoadsImagesAtOnce(t *testing.T) {
 	src := srv.URL + "/a.png"
 	b := load("auto", src)
 	assert.True(t, b.Remote, "automatic: no asking")
-	assert.Contains(t, b.HTML, "godwit-img://")
+	assert.Contains(t, b.HTML, proxied(b.Message, src))
 	assert.Equal(t, http.StatusOK, f.image(t, b.Message, src).Code)
 
 	setMode("trusted")
@@ -973,7 +991,7 @@ func TestReaderInlineImageDownloadStoppedIsNotTold(t *testing.T) {
 	require.NoError(t, err)
 	first := make(chan int, 1)
 	go func() {
-		req, _ := http.NewRequest(http.MethodGet, proxied(7, "cid:a"), nil)
+		req, _ := http.NewRequest(http.MethodGet, served(7, "cid:a"), nil)
 		rec := httptest.NewRecorder()
 		f.r.ImageHandler().ServeHTTP(rec, req)
 		first <- rec.Code
@@ -1070,7 +1088,7 @@ func TestReaderInlineImageCountReservedInOrder(t *testing.T) {
 	}
 	b, err := f.p.Load(pageCtx(f.page(7)))
 	require.NoError(t, err)
-	assert.Equal(t, imagefetch.MaxImages, strings.Count(b.HTML, ImageScheme+":"))
+	assert.Equal(t, imagefetch.MaxImages, strings.Count(b.HTML, ImageScheme))
 	for i := range imagefetch.MaxImages {
 		require.Equal(t, http.StatusOK, f.image(t, 7, fmt.Sprintf("cid:n%d", i)).Code, i)
 	}

@@ -1,12 +1,15 @@
 import type { ReaderBody, Theme } from "@/mygo";
+import { imageSources } from "@/shared/imageURL";
 import frameCSS from "./frame.css?inline";
 
 /**
  * The body iframe's own CSP, the first element of its head: nothing loads but inline styles,
- * data: images and the godwit-img: images Go's image proxy serves (a remote image never reaches
- * the network from the page), on top of the page's CSP (ADR 0013).
+ * data: images and the images Go's image proxy serves (godwit-img:, or its loopback http form on
+ * Windows: imageURL); a remote image never reaches the network from the page. On top of the page's
+ * CSP (ADR 0013).
  */
-export const FRAME_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data: godwit-img:";
+export const frameCSP = () =>
+  `default-src 'none'; style-src 'unsafe-inline'; img-src data: ${imageSources()}`;
 
 const escapeText = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
@@ -635,7 +638,7 @@ export function buildSrcdoc(b: ReaderBody, t: Theme, systemDark = false): string
         : "godwit-light") + (html && isTextHTML(b.html) ? " godwit-text" : "");
   return (
     "<!doctype html><html><head>" +
-    `<meta http-equiv="Content-Security-Policy" content="${FRAME_CSP}">` +
+    `<meta http-equiv="Content-Security-Policy" content="${frameCSP()}">` +
     '<meta charset="utf-8">' +
     `<style>${css}</style></head>` +
     `<body><div id="godwit-body" class="${cls}"${auto ? " data-auto-dark" : ""}>${html ? (b.collapseQuotes ? foldQuotes(b.html) : b.html) : plainHTML(b.plain, b.collapseQuotes)}</div></body></html>`

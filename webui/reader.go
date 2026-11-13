@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -602,6 +603,20 @@ func (p *ReaderPage) Print(ctx context.Context) error {
 // served by ImageHandler: godwit-img://m<message>/<token>; and of its sender's
 // avatar: godwit-img://a<message>.
 const ImageScheme = "godwit-img"
+
+// imageURL is the URL a page loads godwit-img://<host><path> at.
+func imageURL(host, path string) string { return imageURLOn(runtime.GOOS, host, path) }
+
+// imageURLOn is imageURL on the system goos. WebView2 (Windows) requests no
+// custom scheme a page names: MyGo serves an app scheme there at
+// http://<host>.<scheme>.localhost<path>, a loopback origin, and hands
+// ImageHandler the godwit-img: URL, so only the page's URL differs.
+func imageURLOn(goos, host, path string) string {
+	if goos == "windows" {
+		return (&url.URL{Scheme: "http", Host: host + "." + ImageScheme + ".localhost", Path: path}).String()
+	}
+	return (&url.URL{Scheme: ImageScheme, Host: host, Path: path}).String()
+}
 
 // ImageHandler is the image proxy the pages load images from. It serves the
 // image of a token of a message a page shows: an inline image, from the mail
