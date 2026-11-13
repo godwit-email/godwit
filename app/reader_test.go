@@ -209,7 +209,7 @@ func TestReaderAvatarPulsesUntilDone(t *testing.T) {
 	m := h.deliverOne(accs[0], coretest.Msg("Bob <bob@example.com>", accs[0].Email, "Hi", "body"))
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
-	h.until("avatar started", func() bool { return r.bodies[m.ID].avatarStop != nil })
+	h.until("avatar started", func() bool { return r.bodies[m.ID].avatarRun.loading })
 	initial := func() bool { h.tt.Frame(); return slices.Contains(h.tt.Texts(), "B") }
 	if initial() {
 		t.Fatal("the initial shows while the avatar loads")
@@ -227,7 +227,7 @@ func TestReaderAvatarParseFailure(t *testing.T) {
 	m := h.deliverOne(accs[0], coretest.Msg("Bob <bob@example.com>", accs[0].Email, "Bad", "body"))
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
-	h.until("avatar completed", func() bool { b := r.bodies[m.ID]; return b.avatarStop == nil })
+	h.until("avatar completed", func() bool { b := r.bodies[m.ID]; return !b.avatarRun.loading })
 	h.see("B")
 	if r.bodies[m.ID].avatar != nil {
 		t.Fatal("invalid SVG displayed")
@@ -335,14 +335,14 @@ func TestReaderAvatarWaitsForSettingsSave(t *testing.T) {
 			r.toggle(m.ID)
 			h.seeBody(m.ID)
 			b := r.bodies[m.ID]
-			h.until("reopened avatar attempt", func() bool { return b.avatarDone || b.avatarStop == nil })
+			h.until("reopened avatar attempt", func() bool { return b.avatarDone || !b.avatarRun.loading })
 			if b.avatar != nil {
 				t.Error("cached avatar displayed while restrictive setting is unsaved")
 			}
 			h.openThread(n.ThreadID)
 			h.seeBody(n.ID)
 			b = r.bodies[n.ID]
-			h.until("new message avatar attempt", func() bool { return b.avatarDone || b.avatarStop == nil })
+			h.until("new message avatar attempt", func() bool { return b.avatarDone || !b.avatarRun.loading })
 			if b.avatar != nil || hits.Load() != 1 {
 				t.Errorf("unsaved ask allowed new avatar: image %v, requests %d", b.avatar != nil, hits.Load())
 			}

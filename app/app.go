@@ -457,9 +457,10 @@ func (a *App) load() {
 		}
 		a.loadFailing = false
 		first := !a.loaded
+		avatars := settingsSettled
 		for _, old := range a.accounts {
 			if !slices.ContainsFunc(accs, func(acc core.Account) bool { return acc.ID == old.ID }) {
-				a.mail.reader.invalidateAvatars(true)
+				avatars = trustChanged
 				break
 			}
 		}
@@ -479,7 +480,7 @@ func (a *App) load() {
 		}
 		if listsRead {
 			if !slices.Equal(a.trusted, trusted) {
-				a.mail.reader.invalidateAvatars(true)
+				avatars = trustChanged
 			}
 			a.trusted, a.blocked = trusted, blocked
 		}
@@ -505,8 +506,9 @@ func (a *App) load() {
 				a.settingsEffects(old, st)
 			}
 		}
-		a.mail.reader.refreshAvatars() // after any invalidation above; loadAvatar holds them while a local change is unsaved
-		a.refreshTasks()               // skills or services may have changed too
+		a.mail.reader.avatarsChanged(avatars) // with the settings above: loadAvatar holds them while a local change is unsaved
+		a.refreshTasks()                      // skills or services may have changed too
+
 		a.inboxUnread = inbox
 		a.showUnread(inbox)
 		if first {

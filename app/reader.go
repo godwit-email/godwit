@@ -174,11 +174,7 @@ type msgBody struct {
 	unsubbing bool             // its unsubscribe is under way
 	attSel    map[int64]bool   // selected attachment IDs for batch save
 
-	avatar                                 ui.ImageSource
-	avatarSource                           string
-	avatarStop                             context.CancelFunc
-	avatarGen                              uint64
-	avatarDone, avatarAllow, avatarBlocked bool
+	senderAvatar
 }
 
 func newReader(p *mailPage) *reader {
@@ -343,8 +339,7 @@ func (r *reader) load(k [2]int64) {
 						b.msg.MessageSummary = m
 						b.trusted = false
 						if !b.avatarAllow || b.avatarSource == "carddav" {
-							b.stopAvatar()
-							b.avatar, b.avatarSource, b.avatarDone, b.avatarBlocked = nil, "", false, true
+							b.forgetAvatar(true) // read again with the body
 						}
 						b.read.Stop()
 						r.loadBody(m.ID)
@@ -397,7 +392,7 @@ func (r *reader) expand(id int64) {
 	if b := r.bodies[id]; b == nil || b.err != nil {
 		r.loadBody(id)
 	} else {
-		if !b.avatarDone && b.avatarStop == nil {
+		if b.avatarPending() {
 			r.loadAvatar(id, b.avatarAllow)
 		}
 		r.openView(id)
@@ -482,113 +477,6 @@ func (r *reader) loadUnsubscribe(id int64) {
 	})
 }
 
-// loadAvatar does both network work and image conversion off the UI thread.
-// Its result belongs to this body, message and generation, including retries.
-func (r *reader) loadAvatar(id int64, manual bool) {
-	b := r.bodies[id]
-	if b == nil || !b.ready {
-		return
-	}
-	b.stopAvatar()
-	a, s, seq, get := r.p.a, r.session, b.avatarGen, r.getAvatar
-	b.avatarAllow, b.avatarDone = manual, false
-	if !manual && a.settingsVer != a.settingsSavedVer {
-		b.avatar, b.avatarSource, b.avatarBlocked = nil, "", true
-		return
-	}
-	ctx, stop := context.WithCancel(a.ctx)
-	b.avatarStop = stop
-	var image ui.ImageSource
-	var source string
-	var trusted, carddav bool
-	a.do(func(context.Context) (err error) {
-		trusted, err = a.svc.ImagesAllowed(ctx, id)
-		if err != nil {
-			return err
-		}
-		if !manual && !trusted {
-			books, bErr := a.svc.ListAddressBooks(ctx)
-			if bErr != nil || !slices.ContainsFunc(books, func(ab core.AddressBook) bool {
-				return slices.ContainsFunc(ab.Collections, func(col core.AddressBookCollection) bool {
-					return col.Enabled && col.CardCount > 0
-				})
-			}) {
-				return bErr
-			}
-		}
-		avatar, err := get(ctx, id, manual)
-		if err != nil || len(avatar.Data) == 0 {
-			return err
-		}
-		source = avatar.Source
-		carddav = source == "carddav"
-		if !manual && !trusted && !carddav {
-			return nil
-		}
-		image, err = avatarImage(avatar)
-		if err == nil && !manual && !carddav {
-			trusted, err = a.svc.ImagesAllowed(ctx, id)
-			if !trusted {
-				image = nil
-			}
-		}
-		if err == nil {
-			err = ctx.Err()
-		}
-		return err
-	}, func(err error) {
-		defer stop()
-		if !r.has(s) || r.bodies[id] != b || seq != b.avatarGen || ctx.Err() != nil {
-			return
-		}
-		b.avatarStop, b.avatarDone = nil, true
-		b.avatarBlocked = !trusted && !manual && (err != nil || !carddav || image == nil)
-		if err == nil && image != nil {
-			b.avatar, b.avatarSource = image, source
-		} else {
-			b.avatar, b.avatarSource = nil, ""
-		}
-	})
-}
-
-func (b *msgBody) stopAvatar() {
-	if b.avatarStop != nil {
-		b.avatarStop()
-	}
-	b.avatarStop = nil
-	b.avatarGen++
-}
-
-// invalidateAvatars clears displayed images and in-flight results, preserving
-// manual grants unless the image policy changed or the reader is closing.
-func (r *reader) invalidateAvatars(revokeManual bool) {
-	for _, b := range r.bodies {
-		if b.avatarAllow && !revokeManual {
-			continue
-		}
-		b.stopAvatar()
-		b.avatar, b.avatarSource, b.avatarDone, b.avatarAllow, b.avatarBlocked = nil, "", false, false, true
-	}
-}
-
-func (r *reader) invalidateCardDAVAvatars() {
-	for _, b := range r.bodies {
-		if b.avatarAllow && b.avatar != nil && b.avatarSource != "carddav" {
-			continue
-		}
-		b.stopAvatar()
-		b.avatar, b.avatarSource, b.avatarDone, b.avatarBlocked = nil, "", false, !b.avatarAllow
-	}
-}
-
-func (r *reader) refreshAvatars() {
-	for id, b := range r.bodies {
-		if r.open[id] && b.ready && !b.avatarDone && b.avatarStop == nil {
-			r.loadAvatar(id, b.avatarAllow)
-		}
-	}
-}
-
 // openView makes message id's page, if at this moment its body is read,
 // of the thread shown, expanded, and without one. NewBodyView may run the
 // event loop, so the reader may have moved on by its return: then the page
@@ -641,7 +529,7 @@ func (b *msgBody) closeView() {
 
 // closeViews closes every page (the App closing).
 func (r *reader) closeViews() {
-	r.invalidateAvatars(true)
+	r.forgetAvatars(true)
 	r.dropPrev()
 	for _, b := range r.bodies {
 		b.closeView()
@@ -1842,7 +1730,8 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 					// Until the avatar is fetched or refused, a pulse, or in a thread what
 					// its folded row showed (no grey flash as it opens); then the image or
 					// the initial.
-					switch loading := b == nil || b.err == nil && !b.ready || b.avatarStop != nil; {
+					switch loading := b == nil || b.err == nil && !b.ready || b.avatarRun.loading; {
+
 					case loading && len(r.msgs) == 1:
 						kit.Skeleton(c, th.Space(8), th.Space(8)).Radius(t.Radius.Lg).Shrink(0).Label(name)
 					case loading:
