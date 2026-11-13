@@ -55,8 +55,8 @@ type modelForm struct {
 	savedKind, savedJudge    string // as saved: where a stored key may go
 	savedURL                 string // as saved, normalized
 	provider                 string // its tile; fixed once added
-	email, flowID, authURL   string // this session's OAuth sign-in; authURL for Reopen
-	loggingIn                bool
+	email, flowID            string // this session's finished OAuth sign-in
+	signIn                   browserLogin
 	loginErr                 string
 	confirmDel               bool // the footer asks to confirm the removal
 	keyFocus, urlFocus       bool
@@ -286,11 +286,11 @@ func (f *modelForm) pickGateway(name, url string) {
 }
 
 func (f *modelForm) anyCap() bool  { return f.genOn || f.judgeOn }
-func (f *modelForm) anyKey() bool  { return f.key != "" || f.hasKey || f.flowID != "" && !f.loggingIn }
+func (f *modelForm) anyKey() bool  { return f.key != "" || f.hasKey || f.flowID != "" }
 func (f *modelForm) testing() bool { return f.gen.state == "testing" || f.judge.state == "testing" }
 func (f *modelForm) needKey() bool {
 	if f.oauth() {
-		return f.id == 0 && (f.flowID == "" || f.loggingIn)
+		return f.id == 0 && f.flowID == ""
 	}
 	return f.id == 0 && !f.custom() && f.key == ""
 }
@@ -537,11 +537,11 @@ func (m *modelsView) cancelFlow(id string) {
 
 func (m *modelsView) cancelForm() {
 	if f := m.form; f != nil {
+		f.signIn.Stop()
 		if f.flowID != "" {
 			m.cancelFlow(f.flowID)
 			f.flowID = ""
 		}
-		f.loggingIn = false
 	}
 }
 
@@ -562,61 +562,23 @@ func loginError(err error) string {
 	return humanize(err)
 }
 
-// login begins a browser sign-in for f, opens it, awaits the result, and
-// fetches the service's models once signed in.
+// login signs in for f in the browser and fetches the service's models once
+// signed in.
 func (m *modelsView) login(f *modelForm) {
 	if f.flowID != "" {
 		m.cancelFlow(f.flowID)
 	}
-	f.loggingIn, f.loginErr, f.flowID, f.authURL = true, "", "", ""
-	a := m.a
-	oauth, plat, prov, hint := a.oauth, a.plat, f.provider, strings.TrimSpace(f.email)
-	var id, url string
-	var openErr error
-	a.do(func(ctx context.Context) error {
-		var err error
-		if id, url, err = oauth.Begin(ctx, prov, hint, core.OAuthClient{}); err != nil {
-			return err
-		}
-		openErr = plat.OpenURL(url)
-		return nil
-	}, func(err error) {
-		if m.form != f || !f.loggingIn {
-			if err == nil && id != "" {
-				m.cancelFlow(id)
-			}
+	f.loginErr, f.flowID = "", ""
+	f.signIn.Start(m.a, signInRequest{Provider: f.provider, Hint: strings.TrimSpace(f.email)}, func(s signIn, err error) {
+		if m.form != f {
 			return
 		}
 		if err != nil {
-			f.loggingIn = false
 			f.loginErr = loginError(err)
 			return
 		}
-		a.toastErr(openErr)
-		f.flowID, f.authURL = id, url
-		var email string
-		a.do(func(ctx context.Context) error {
-			var err error
-			email, err = oauth.Await(ctx, id)
-			return err
-		}, func(err error) {
-			if m.form != f || !f.loggingIn || f.flowID != id {
-				return
-			}
-			f.loggingIn = false
-			if errors.Is(err, context.Canceled) {
-				f.flowID = ""
-				return
-			}
-			a.plat.ShowWindow()
-			if err != nil {
-				f.flowID = ""
-				f.loginErr = loginError(err)
-				return
-			}
-			f.email, f.flowID = email, id
-			m.fetch(f)
-		})
+		f.email, f.flowID = s.Email, s.Flow
+		m.fetch(f)
 	})
 }
 

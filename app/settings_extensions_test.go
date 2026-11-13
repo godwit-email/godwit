@@ -276,8 +276,15 @@ func TestPluginInstallGrantConfigure(t *testing.T) {
 	h.called("OpenDirectory")
 	h.until("installed", func() bool { _, ok := h.plugin("config-demo"); return ok })
 	h.see("待授权")
+	h.see("套餐")
+	pending := p.ext.cfgs["config-demo"]
 	h.click("允许并启用")
-	h.until("enabled", func() bool { info, _ := h.plugin("config-demo"); return info.Enabled && !info.NeedsGrant })
+	// The grant has landed in the interface, not only in the Service: it
+	// reads the form again, which would close a menu opened before it.
+	h.until("enabled", func() bool {
+		info, _ := h.plugin("config-demo")
+		return info.Enabled && !info.NeedsGrant && p.ext.cfgs["config-demo"] != pending && h.tt.HasText("卸载插件")
+	})
 
 	// endpoint shows only on the Pro plan.
 	h.see("套餐")

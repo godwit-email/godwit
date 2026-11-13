@@ -366,6 +366,7 @@ type fakePlatform struct {
 	notifyErr    error    // Notify
 	onNotify     func(Notification)
 	tempDir      string
+	openErr      error // OpenURL's
 
 	dataDir   string // DataDir
 	customDir bool
@@ -569,7 +570,12 @@ func (p *fakePlatform) Calls() []string {
 	return slices.Clone(p.calls)
 }
 
-func (p *fakePlatform) OpenURL(url string) error   { p.record("OpenURL", url); return nil }
+func (p *fakePlatform) OpenURL(url string) error {
+	p.record("OpenURL", url)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.openErr
+}
 func (p *fakePlatform) OpenPath(path string) error { p.record("OpenPath", path); return nil }
 func (p *fakePlatform) TypeIcon(string, int) ([]byte, error) {
 	return nil, errors.New("no type icons")
