@@ -14,13 +14,10 @@ import (
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/conn"
-	"github.com/godwit-email/godwit/backend/ews"
-	"github.com/godwit-email/godwit/backend/gmailapi"
 	"github.com/godwit-email/godwit/backend/graph"
-	"github.com/godwit-email/godwit/backend/jmap"
-	"github.com/godwit-email/godwit/backend/smtpbackend"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/core/gateway"
 	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/store"
 )
@@ -207,11 +204,18 @@ func (s *Service) ResolveOutbox(ctx context.Context, id int64, action string) er
 	case "confirm_sent":
 		ok, err = s.moveOutbox(ctx, o, "sent", []string{"send_uncertain", "archive_uncertain", "failed"}, "last_error = NULL, failure = NULL")
 	case "resend":
-		ok, err = s.moveOutbox(ctx, o, "queued", []string{"send_uncertain", "failed"},
-			"attempts = 0, last_error = NULL, failure = NULL, send_after = ?, next_attempt_at = NULL", s.clk().Now().UnixMilli())
-		if err == nil && !ok { // retry a queued one now
-			ok, err = s.moveOutbox(ctx, o, "queued", []string{"queued"}, "next_attempt_at = NULL")
+		// Queued, it leaves unattended (ADR 0003): audited in the transaction
+		// that queues it, which moveOutbox's would not take.
+		stmts := []sqlite.Statement{
+			{SQL: `UPDATE outbox SET state = 'queued', attempts = 0, last_error = NULL, failure = NULL, send_after = ?, next_attempt_at = NULL
+				WHERE id = ? AND state IN ('send_uncertain', 'failed')`, Args: []any{s.clk().Now().UnixMilli(), id}},
+			{SQL: "UPDATE outbox SET next_attempt_at = NULL WHERE id = ? AND state = 'queued'", Args: []any{id}}, // and retries a queued one now
 		}
+		if e, audited := apiAudit(ctx, "ResolveOutbox", id); audited {
+			stmts = append(stmts, gateway.AuditChange(e, s.secrets.Redact, false))
+		}
+		rs, terr := s.db.DurableTransaction(ctx, stmts)
+		ok, err = terr == nil && rs[1].Changes == 1, terr
 	case "discard":
 		// The draft goes with the item, in the same transaction: it is done with.
 		const decidable = "id = ? AND state IN ('send_uncertain', 'archive_uncertain', 'failed')"
@@ -441,29 +445,7 @@ func (a *sendAuth) credentials(ctx context.Context) (backend.Credentials, error)
 }
 
 // sender is the account's sending backend.
-func (a *sendAuth) sender() backend.Sender {
-	switch a.acc.Sending.Protocol {
-	case auth.Graph:
-		u := graphSendURL
-		if a.acc.Receiving.Protocol == auth.Graph {
-			u = graphURL(a.acc.Receiving) + "/me/sendMail"
-		}
-		return graph.New(u, a.credentials)
-	case auth.EWS:
-		return ews.NewSender(ews.Config{URL: ewsURL(a.acc), Credentials: a.credentials})
-	case auth.GmailAPI:
-		return gmailapi.NewSender(gmailapi.Config{BaseURL: slotURL(a.acc.Receiving, a.acc.Receiving.Path), Credentials: a.credentials})
-	case auth.JMAP:
-		return jmap.NewSender(jmap.Config{SessionURL: sessionURL(a.acc.Receiving), Credentials: a.credentials, SentFolder: a.sent})
-	}
-	return a.smtp()
-}
-
-// smtp is the account's SMTP sending backend.
-func (a *sendAuth) smtp() *smtpbackend.Sender {
-	return smtpbackend.New(smtpbackend.Config{Host: a.acc.Sending.Host, Port: a.acc.Sending.Port,
-		Security: a.acc.Sending.Security, Credentials: a.credentials})
-}
+func (a *sendAuth) sender() backend.Sender { return newSender(a.acc, a.credentials, a.sent) }
 
 // retry reports whether a send that failed with err is worth one more try
 // with other credentials: SMTP refused AUTH for the mailbox and the account

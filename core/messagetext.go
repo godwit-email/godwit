@@ -72,22 +72,34 @@ const AuditUI = "ui"
 // model service's host).
 const AuditRule = "rule"
 
-// AuditExternal writes an audit_log row for a call made over the Local API:
-// source (AuditLocalAPI, AuditMCP or AuditUI), the method as action, the
-// target's ID (0 = none) and the destinations the call sets up, which are
-// stored as their domains. No content is stored.
-func (s *Service) AuditExternal(ctx context.Context, source, action string, target int64, dests ...string) error {
-	if source != AuditLocalAPI && source != AuditMCP && source != AuditUI {
-		return fmt.Errorf("audit: unknown external source %q", source)
-	}
-	return s.gateway().Record(ctx, gateway.Entry{Source: source, Tool: action, TargetID: target, Destinations: dests, Decision: "allow"})
-}
-
 type externalSourceKey struct{}
 
 // WithExternalSource marks ctx as coming from an external API source
-// (AuditLocalAPI or AuditMCP), so methods whose audit depends on stored state
-// can decide and write the audit row atomically with their update.
+// (AuditLocalAPI or AuditMCP): such a call is audited as that source and
+// gated as external (needUI).
 func WithExternalSource(ctx context.Context, source string) context.Context {
 	return context.WithValue(ctx, externalSourceKey{}, source)
+}
+
+// apiAudit is the audit_log row of a call over the Local API (ADR 0003), made
+// by the method that does what is audited: ctx's source (AuditUI,
+// AuditLocalAPI or AuditMCP), the method as action, the target's ID (0 =
+// none) and the destinations the call reaches or sets up, stored as their
+// hosts; no content. ok is false for a call with no source, such as the
+// engine's own, which is not audited.
+func apiAudit(ctx context.Context, action string, target int64, dests ...string) (e gateway.Entry, ok bool) {
+	src, _ := ctx.Value(externalSourceKey{}).(string)
+	if uiSessionFromContext(ctx) != nil {
+		src = AuditUI
+	}
+	return gateway.Entry{Source: src, Tool: action, TargetID: target, Destinations: dests, Decision: "allow"}, src != ""
+}
+
+// auditAPI writes apiAudit's row now, for a call that reaches a host as it
+// runs: a row it cannot write stops the call before anything leaves.
+func (s *Service) auditAPI(ctx context.Context, action string, target int64, dests ...string) error {
+	if e, ok := apiAudit(ctx, action, target, dests...); ok {
+		return s.gateway().Record(ctx, e)
+	}
+	return nil
 }

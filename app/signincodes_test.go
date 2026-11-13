@@ -2,124 +2,29 @@ package app
 
 import (
 	"testing"
-	"time"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 )
 
-func TestSignInCodesArrivalAndCopy(t *testing.T) {
+// The tray's recent codes and the code banner are the backend's (ADR 0038,
+// cmd/godwit TestHeadlessTraySignInCodesAndBanner); the reader tags a code
+// mail with its code, and a click copies it.
+func TestSignInCodeTagCopies(t *testing.T) {
 	h, acc := notifyHarness(t, nil)
-	h.clock.mu.Lock()
-	h.clock.now = time.Now().Truncate(time.Second)
-	h.clock.mu.Unlock()
-	h.app.refreshSignInCodes()
-	h.until("initial code scan", func() bool { return h.app.codesReady })
-	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("Login <login@example.com>", acc.Email, "Your verification code: aB0123", "Your verification code: aB0123"))
-	h.until("the mail arrival", func() bool { return h.newMail(acc.ID) != nil })
-	h.advance(notifyWait)
-	h.until("the recent code", func() bool { return len(h.plat.codes) == 1 && len(h.plat.codeBanners) == 1 })
-	if got := h.plat.codes[0].Code; got != "aB0123" {
-		t.Fatalf("recent code %q", got)
-	}
-	if notes := h.notesAfter(0); len(notes) != 0 {
-		t.Fatalf("duplicate ordinary notification alongside the code card: %+v", notes)
-	}
-	h.app.refreshSignInCodes()
-	h.until("code refresh", func() bool { return h.app.codesReady && !h.app.codesLoading })
-	if len(h.plat.codeBanners) != 1 {
-		t.Fatal("refresh displayed the same banner again")
-	}
-	h.app.OpenMessage(h.plat.codes[0].MessageID)
+	h.arrive(acc, "Your verification code: aB0123")
+	h.app.OpenMessage(h.newMail(acc.ID).msgs[0])
 	h.until("the plugin's tag after the subject", func() bool { return h.tt.HasText("aB0123") && !h.tt.HasText("验证码 · 内置插件") })
 	h.click("aB0123")
 	if got := h.tt.Clipboard(); got != "aB0123" {
 		t.Fatalf("clipboard %q", got)
 	}
-	h.advance(15 * time.Minute)
-	h.until("expired code removed", func() bool { return len(h.plat.codes) == 0 })
 }
 
-func TestSignInCodeBannerRespectsPrivacy(t *testing.T) {
-	for _, mode := range []string{"foreground", "notifications off", "preview off"} {
-		t.Run(mode, func(t *testing.T) {
-			h, acc := notifyHarness(t, func(st *core.Settings) {
-				if mode == "notifications off" {
-					st.NotifyNewMail = false
-				}
-				if mode == "preview off" {
-					st.NotifyPreview = false
-				}
-			})
-			h.clock.mu.Lock()
-			h.clock.now = time.Now().Truncate(time.Second)
-			h.clock.mu.Unlock()
-			h.app.refreshSignInCodes()
-			h.until("initial scan", func() bool { return h.app.codesReady && !h.app.codesLoading })
-			h.app.SetForeground(mode == "foreground")
-			h.arrive(acc, "验证码：001234")
-			h.advance(notifyWait)
-			h.until("recent code", func() bool { return len(h.plat.codes) == 1 })
-			if len(h.plat.codeBanners) != 0 {
-				t.Fatal("banner exposed the code despite the notification setting")
-			}
-		})
-	}
-}
-
-func TestSignInCodeWithoutTrayKeepsNotification(t *testing.T) {
-	h, acc := notifyHarness(t, nil)
-	h.plat.noCodeBanner = true
-	h.clock.mu.Lock()
-	h.clock.now = time.Now().Truncate(time.Second)
-	h.clock.mu.Unlock()
-	h.app.refreshSignInCodes()
-	h.until("initial scan", func() bool { return h.app.codesReady && !h.app.codesLoading })
-	h.arrive(acc, "验证码：001234")
-	if notes := h.notesAfter(1); len(notes) != 1 {
-		t.Fatalf("notifications %+v", notes)
-	}
-	if len(h.plat.codeBanners) != 0 {
-		t.Fatal("banner without a tray")
-	}
-}
-
-func TestSignInCodeArrivingBeforeFirstScan(t *testing.T) {
-	h, acc := notifyHarness(t, nil)
-	h.until("idle initial scan", func() bool { return h.app.codesReady && !h.app.codesLoading })
-	h.clock.mu.Lock()
-	h.clock.now = time.Now().Truncate(time.Second)
-	h.clock.mu.Unlock()
-	h.app.codesReady = false // the initial scan has not completed yet
-	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("login@example.com", acc.Email, "Verification code: 001234", ""))
-	h.app.refreshSignInCodes()
-	h.until("startup arrival banner", func() bool { return len(h.plat.codeBanners) == 1 })
-}
-
-func TestSignInCodesInOneBatchKeepOtherNotifications(t *testing.T) {
-	h, acc := notifyHarness(t, nil)
-	h.clock.mu.Lock()
-	h.clock.now = time.Now().Truncate(time.Second)
-	h.clock.mu.Unlock()
-	h.app.refreshSignInCodes()
-	h.until("initial scan", func() bool { return h.app.codesReady && !h.app.codesLoading })
-	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("first@example.com", acc.Email, "Verification code: 111111", ""))
-	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("second@example.com", acc.Email, "Verification code: 222222", ""))
-	h.until("both arrivals", func() bool { return h.newMail(acc.ID) != nil && len(h.newMail(acc.ID).msgs) == 2 })
-	notes := h.notesAfter(1)
-	h.until("the banner", func() bool { return len(h.plat.codeBanners) == 1 })
-	if len(notes) != 1 || notes[0].MessageID == h.plat.codeBanners[0].MessageID {
-		t.Fatalf("notifications %+v beside the banner for %d", notes, h.plat.codeBanners[0].MessageID)
-	}
-}
-
+// With the sign-in codes plugin off a code mail is ordinary mail: it
+// notifies, and the reader shows no code tag until the plugin is on again.
 func TestSignInCodesPluginOffStopsEverySurface(t *testing.T) {
 	h, acc := notifyHarness(t, nil)
-	h.clock.mu.Lock()
-	h.clock.now = time.Now().Truncate(time.Second)
-	h.clock.mu.Unlock()
-	h.app.refreshSignInCodes()
-	h.until("initial scan", func() bool { return h.app.codesReady && !h.app.codesLoading })
 	if err := h.env.Svc.SetPluginEnabled(t.Context(), core.SignInCodesPlugin, false); err != nil {
 		t.Fatal(err)
 	}
@@ -127,9 +32,6 @@ func TestSignInCodesPluginOffStopsEverySurface(t *testing.T) {
 	notes := h.notesAfter(1)
 	if len(notes) != 1 {
 		t.Fatalf("with the plugin off the code mail is ordinary mail: %+v", notes)
-	}
-	if len(h.plat.codeBanners) != 0 || len(h.plat.codes) != 0 {
-		t.Fatalf("banner %v, tray %v with the plugin off", h.plat.codeBanners, h.plat.codes)
 	}
 	h.app.OpenMessage(notes[0].MessageID)
 	h.until("the message", func() bool { return h.tt.HasText("验证码：001234") })
@@ -146,7 +48,7 @@ func TestSignInCodesPluginOffStopsEverySurface(t *testing.T) {
 	if err := h.env.Svc.SetPluginEnabled(t.Context(), core.SignInCodesPlugin, true); err != nil {
 		t.Fatal(err)
 	}
-	h.waitMail("tray and card back", func() bool { return len(h.plat.codes) == 1 && len(tags()) == 1 })
+	h.waitMail("the tag back", func() bool { return len(tags()) == 1 })
 }
 
 func TestSignInLinkTagAsksFirst(t *testing.T) {

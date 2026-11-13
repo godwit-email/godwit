@@ -319,11 +319,11 @@ func TestDialFull(t *testing.T) {
 	require.NoError(t, c.Call(t.Context(), "ListAccounts", &accs))
 	require.Len(t, accs, 1)
 	assert.Equal(t, acc.ID, accs[0].ID)
-	// Errors decode through the codec; AuditExternal is not on the wire.
+	// Errors decode through the codec; Redact is not on the wire.
 	err = c.Call(t.Context(), "GetPluginConfig", nil, "nope")
 	assert.ErrorIs(t, err, core.ErrPluginNotFound)
 	var we *rpc.RemoteError
-	require.ErrorAs(t, c.Call(t.Context(), "AuditExternal", nil, "mcp", "x", 1), &we)
+	require.ErrorAs(t, c.Call(t.Context(), "Redact", nil, "x"), &we)
 	assert.Equal(t, rpc.CodeMethodNotFound, we.Code)
 }
 
@@ -441,7 +441,7 @@ func TestUIRoleAudited(t *testing.T) {
 	assert.Equal(t, [][]any{
 		{"ui", "Send", d.ID, ""},
 		{"ui", "SetSettings", nil, ""},
-		{"ui", "SaveRule", nil, "example.org"},
+		{"ui", "SaveRule", fwdID, "example.org"},
 		{"ui", "GrantPermission", nil, "card-demo"},
 		{"ui", "GrantMCPServer", srv.ID, ""},
 		{"ui", "SetMCPToolTrusted", srv.ID, "lookup"},
@@ -592,11 +592,89 @@ func TestAuditRuleForward(t *testing.T) {
 		assert.Equal(t, rpc.CodeForbidden, we.Code, m)
 	}
 	assert.Equal(t, [][]any{
-		{"local_api", "SaveRule", nil, "example.org,example.net"}, // new: no id yet
+		{"local_api", "SaveRule", fwdID, "example.org,example.net"}, // new: the id it was saved under
 		{"local_api", "SaveRule", fwdID, "example.org,example.net"},
 		{"local_api", "SetRuleEnabled", fwdID, "example.org,example.net"},
 		{"local_api", "RetryRuleRun", int64(7), ""},
 	}, auditRows(t, e.DataDir))
+}
+
+// Every role's connection carries its audit source in the call's context, so
+// the methods that audit themselves record the caller: an audited call per
+// role writes a row under that role's source.
+func TestAuditSourcePerRole(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	ctx := t.Context()
+	acc := e.AddAccount(t, "alice@example.com")
+	dir := listen(t, e.Svc)
+	calls := map[string]func(c *rpc.Client) error{
+		rpc.RoleFull: func(c *rpc.Client) error { return c.Call(ctx, "BeginPluginLogin", nil, "absent") },
+		rpc.RoleUI:   func(c *rpc.Client) error { return c.Call(ctx, "BeginPluginLogin", nil, "absent") },
+		rpc.RoleMCP:  func(c *rpc.Client) error { return c.Call(ctx, "NewDraft", nil, acc.ID, "new", 0) },
+	}
+	want := map[string]string{rpc.RoleFull: core.AuditLocalAPI, rpc.RoleUI: core.AuditUI, rpc.RoleMCP: core.AuditMCP}
+	for _, role := range []string{rpc.RoleFull, rpc.RoleUI, rpc.RoleMCP} {
+		before := len(auditRows(t, e.DataDir))
+		calls[role](dial(t, dir, role))
+		rows := auditRows(t, e.DataDir)
+		require.Len(t, rows, before+1, role)
+		assert.Equal(t, want[role], rows[before][0], role)
+	}
+}
+
+// Turning on a forwarding rule writes its row in the transaction that turns it
+// on: with audit_log broken the rule stays off, while a rule without a forward
+// still turns on; and a call that changes nothing (no such rule) leaves no row.
+// A forward saved between the read and the update: core's
+// TestSetRuleEnabledAuditsForwardSavedMeanwhile.
+func TestAuditSetRuleEnabledAtomic(t *testing.T) {
+	logs(t)
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	ctx := t.Context()
+	doc := func(acts ...core.RuleAction) core.RuleDoc {
+		return core.RuleDoc{Version: core.RuleVersion, Name: "R", Trigger: core.TriggerReceive, Match: core.MatchAll,
+			Conditions: []core.RuleCondition{{Field: core.FieldFrom, Op: core.OpContains, Value: "billing@"}}, Actions: acts}
+	}
+	fwdID, err := e.Svc.SaveRule(ctx, core.Rule{Doc: doc(core.RuleAction{Kind: core.ActionForward, To: "carol@example.org"}), Confirmed: []string{"carol@example.org"}})
+	require.NoError(t, err)
+	localID, err := e.Svc.SaveRule(ctx, core.Rule{Doc: doc(core.RuleAction{Kind: core.ActionRead})})
+	require.NoError(t, err)
+	full := dial(t, listen(t, e.Svc), rpc.RoleFull)
+
+	assert.Error(t, full.Call(ctx, "SetRuleEnabled", nil, fwdID+localID+1, true))
+	assert.Empty(t, auditRows(t, e.DataDir), "nothing turned on, nothing audited")
+
+	db, err := store.Open(ctx, filepath.Join(e.DataDir, "godwit.db"))
+	require.NoError(t, err)
+	_, err = db.Execute(ctx, "DROP TABLE audit_log")
+	require.NoError(t, err)
+	db.Close()
+
+	var we *rpc.WireError
+	require.ErrorAs(t, full.Call(ctx, "SetRuleEnabled", nil, fwdID, true), &we)
+	assert.Equal(t, rpc.CodeInternal, we.Code)
+	require.NoError(t, full.Call(ctx, "SetRuleEnabled", nil, localID, true))
+	rules, err := e.Svc.Rules(ctx)
+	require.NoError(t, err)
+	for _, r := range rules {
+		assert.Equal(t, r.ID == localID, r.Enabled, r.ID)
+	}
+}
+
+// A refused SaveRule changes nothing and leaves no row, though its rule
+// forwards: rows are written only with the save.
+func TestAuditRefusedSaveRuleNoRow(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	ctx := t.Context()
+	full := dial(t, listen(t, e.Svc), rpc.RoleFull)
+	r := core.Rule{ID: 99, Enabled: true, Doc: core.RuleDoc{Version: core.RuleVersion, Name: "R", Trigger: core.TriggerReceive, Match: core.MatchAll,
+		Conditions: []core.RuleCondition{{Field: core.FieldFrom, Op: core.OpContains, Value: "billing@"}},
+		Actions:    []core.RuleAction{{Kind: core.ActionForward, To: "carol@example.org"}}}, Confirmed: []string{"carol@example.org"}}
+	assert.Error(t, full.Call(ctx, "SaveRule", nil, r), "no rule 99")
+	assert.Empty(t, auditRows(t, e.DataDir))
+	rules, err := e.Svc.Rules(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, rules)
 }
 
 // A resend whose audit cannot be written re-queues nothing.

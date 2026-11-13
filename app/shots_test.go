@@ -670,7 +670,9 @@ func TestShots(t *testing.T) {
 		installClaudeExtension(t, e.Home, s.app.mcpServer())
 		s.post(func() { // serving: the rows to connect a client show
 			s.app.settings.LocalAPI = true
-			s.app.localAPIPath = "/Users/you/Library/Application Support/Godwit/godwit.sock"
+			s.plat.mu.Lock()
+			s.plat.dataDir = "/Users/you/Library/Application Support/Godwit"
+			s.plat.mu.Unlock()
 		})
 		s.openSettings("general") // back: the AI apps are read again
 		s.openSettings("models")
