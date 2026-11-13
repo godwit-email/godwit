@@ -352,7 +352,7 @@ type fakePlatform struct {
 	mu           sync.Mutex
 	calls        []string
 	notes        []Notification
-	noCodeBanner bool // the mail notifier's sink has no sign-in code banner
+	noCodeBanner bool   // the mail notifier's sink has no sign-in code banner
 	latest       string // LatestVersion's answer
 	autoUpdates  bool   // UpdatesInstallThemselves' answer
 	gh           bool   // the GitHub CLI is signed in
@@ -367,8 +367,8 @@ type fakePlatform struct {
 	onNotify     func(Notification)
 	tempDir      string
 
-	dataDir      string // DataDir
-	customDir    bool
+	dataDir   string // DataDir
+	customDir bool
 
 	views     map[int64]*fakeBodyView // the body pages open, by message
 	onNewView func(message int64)     // runs inside NewBodyView, as the event loop may run there
