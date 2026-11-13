@@ -30,6 +30,8 @@ var tools = []tool{
 		`{"type":"object","properties":{"message_id":{"type":"integer","minimum":1}},"required":["message_id"],"additionalProperties":false}`, getMessage},
 	{"search", "Search synced mail, in one account or (without account_id) in all of them.", true,
 		`{"type":"object","properties":{"query":{"type":"string","minLength":1},"account_id":{"type":"integer","minimum":1},"limit":{"type":"integer","minimum":1,"maximum":50}},"required":["query"],"additionalProperties":false}`, search},
+	{"search_contacts", "Search contacts from synced mail and enabled address books by name, organization, title or email address.", true,
+		`{"type":"object","properties":{"query":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":50}},"required":["query"],"additionalProperties":false}`, searchContacts},
 	{"list_drafts", "List an account's drafts, most recently saved first.", true,
 		`{"type":"object","properties":{"account_id":{"type":"integer","minimum":1}},"required":["account_id"],"additionalProperties":false}`, listDrafts},
 	{"get_draft", "Get a draft: recipients, subject, its editable body, the quoted mail and the signature, and its revision (update_draft needs it).", true,
@@ -222,6 +224,38 @@ func search(ctx context.Context, c *rpc.Client, args json.RawMessage) (string, e
 		b.WriteByte('\n')
 	}
 	return orNone(b.String(), "no messages found"), nil
+}
+
+func searchContacts(ctx context.Context, c *rpc.Client, args json.RawMessage) (string, error) {
+	var a struct {
+		Query string `json:"query"`
+		Limit int    `json:"limit"`
+	}
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
+	if a.Limit == 0 {
+		a.Limit = 50
+	}
+	var cs []core.ContactMatch
+	if err := c.Call(ctx, "SearchContacts", &cs, a.Query, a.Limit); err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	for i, ct := range cs {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		fmt.Fprintf(&b, "contact %d\n", i+1)
+		id := fmt.Sprintf("contact-%d", i+1)
+		untrusted(&b, id, "name", ct.Name)
+		untrusted(&b, id, "subtitle", ct.Subtitle)
+		untrusted(&b, id, "address", ct.Address)
+		if len(ct.Addresses) > 1 {
+			untrusted(&b, id, "addresses", strings.Join(ct.Addresses, ", "))
+		}
+	}
+	return orNone(b.String(), "no contacts found"), nil
 }
 
 func listDrafts(ctx context.Context, c *rpc.Client, args json.RawMessage) (string, error) {

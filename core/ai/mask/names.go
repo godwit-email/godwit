@@ -21,19 +21,67 @@ const nameKind = "NAME"
 // learned nor masked; their placeholders still restore.
 func (m *Masker) SetNames(on bool) { m.namesOn.Store(on) }
 
+// SetKnownNames replaces the externally supplied known names (such as enabled
+// address-book card names), kept separate from mail-header names so disabling
+// or removing an address book immediately stops masking its names.
+func (m *Masker) SetKnownNames(names []string) {
+	var cleaned []string
+	for _, raw := range names {
+		n := strings.TrimSpace(raw)
+		if !shortName(n) && !strings.Contains(n, "@") {
+			cleaned = append(cleaned, n)
+		}
+	}
+	slices.SortFunc(cleaned, compareNames)
+	cleaned = slices.Compact(cleaned)
+	m.mu.Lock()
+	m.externalNames = cleaned
+	m.mu.Unlock()
+}
+
 // headerRe is a From, To or Cc line, as mailHeader writes one.
 var headerRe = regexp.MustCompile(`(?im)^(?:from|to|cc)[ \t]*:[ \t]*(.+)$`)
 
-// learnNames makes the display names in s's header lines known values.
+// contactRe is the Name line of a contact a tool returned, as ai.Untrusted
+// wraps it (source contact:N; a tag inside content is escaped, so mail
+// cannot write one): stored with the conversation, its name is learned again
+// when the history is read back, as a header's is.
+var contactRe = regexp.MustCompile(`(?m)^<untrusted_email source="contact:\d+"[^>]*>\nName:[ \t]*(.+)$`)
+
+// LearnNames makes names known values, as learnNames does a header's
+// display names: for names read from mail outside a header (a contact).
+func (m *Masker) LearnNames(names []string) error {
+	if !m.namesOn.Load() {
+		return nil
+	}
+	for _, raw := range names {
+		if n := strings.TrimSpace(raw); !shortName(n) && !strings.Contains(n, "@") {
+			if _, err := m.placeholder(nameKind, n, false, true); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// learnNames makes the display names in s's header lines, and its contacts'
+// names, known values.
 func (m *Masker) learnNames(s string) error {
 	if !m.namesOn.Load() {
 		return nil
+	}
+	for _, sm := range contactRe.FindAllStringSubmatch(s, -1) {
+		if n := strings.TrimSpace(sm[1]); !shortName(n) && !strings.Contains(n, "@") {
+			if _, err := m.placeholder(nameKind, n, false, true); err != nil {
+				return err
+			}
+		}
 	}
 	for _, sm := range headerRe.FindAllStringSubmatch(s, -1) {
 		as, _ := mail.ParseAddressList(strings.TrimSpace(sm[1]))
 		for _, a := range as {
 			if n := strings.TrimSpace(a.Name); !shortName(n) && !strings.Contains(n, "@") {
-				if _, err := m.placeholder(nameKind, n, false); err != nil {
+				if _, err := m.placeholder(nameKind, n, false, true); err != nil {
 					return err
 				}
 			}
@@ -69,11 +117,13 @@ func cjk(r rune) bool {
 	return unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul)
 }
 
+func compareNames(a, b string) int {
+	return cmp.Or(len(b)-len(a), strings.Compare(a, b))
+}
+
 // addName keeps n in m.names, longest first; called with mu held.
 func (m *Masker) addName(n string) {
-	i, found := slices.BinarySearchFunc(m.names, n, func(a, b string) int {
-		return cmp.Or(len(b)-len(a), strings.Compare(a, b))
-	})
+	i, found := slices.BinarySearchFunc(m.names, n, compareNames)
 	if !found {
 		m.names = slices.Insert(m.names, i, n)
 	}
@@ -97,7 +147,31 @@ func (m *Masker) nameSpans(s string) []span {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	var out []span
-	for _, n := range m.names {
+	i, j := 0, 0
+	for i < len(m.names) || j < len(m.externalNames) {
+		var n string
+		switch {
+		case j >= len(m.externalNames):
+			n = m.names[i]
+			i++
+		case i >= len(m.names):
+			n = m.externalNames[j]
+			j++
+		default:
+			c := compareNames(m.names[i], m.externalNames[j])
+			switch {
+			case c < 0:
+				n = m.names[i]
+				i++
+			case c > 0:
+				n = m.externalNames[j]
+				j++
+			default:
+				n = m.names[i]
+				i++
+				j++
+			}
+		}
 		out = spansOf(s, n, span{kind: nameKind}, out)
 	}
 	return out

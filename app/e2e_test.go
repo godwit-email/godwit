@@ -18,7 +18,7 @@ func TestE2EOnboardToReply(t *testing.T) {
 	plaintext(t)
 	h := newHarness(t)
 	h.firstRun()
-	h.click("其他 IMAP 邮箱")
+	h.click("其他邮箱")
 	h.fill("邮箱地址", "new@example.com")
 	h.manualServers()
 	h.fill("密码", "secret")

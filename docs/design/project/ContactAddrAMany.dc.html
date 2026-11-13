@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>方案 A · 几十个地址</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FFFFFF}
+button,input{font:inherit}
+button{cursor:pointer}
+</style>
+</helmet>
+<div style="width: 1280px; height: 640px; box-sizing: border-box; display: flex; background: #FFFFFF; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A">
+<section aria-label="收起" style="flex: 1; box-sizing: border-box; padding: 32px 48px; display: flex; flex-direction: column; align-items: center; gap: 16px; border-right: 1px solid #E5E5E5">
+<span style="align-self: flex-start; font-size: 12px; color: #737373">30 个地址 · 收起时</span>
+<span style="width: 72px; height: 72px; border-radius: 50%; background: #DCFCE7; color: #166534; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 600">运</span>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 2px">
+<h1 style="margin: 0; font-size: 24px; font-weight: 600">运维告警</h1>
+<span style="color: #737373">星云科技 · 基础设施组</span>
+<button type="button" style="margin-top: 2px; padding: 2px 8px; border: none; border-radius: 6px; background: transparent; color: #737373; font-size: 14px">ops@nebula.example</button>
+<button type="button" style="padding: 2px 8px; border: none; border-radius: 6px; background: transparent; color: #737373; font-size: 14px">alerts@nebula.example</button>
+<button type="button" style="padding: 2px 8px; border: none; border-radius: 6px; background: transparent; color: #737373; font-size: 14px">oncall@nebula.example</button>
+<button type="button" style="margin-top: 2px; padding: 2px 8px; border: none; border-radius: 6px; background: transparent; color: #0A0A0A; font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 4px">还有 27 个地址<svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg></button>
+</div>
+<div style="display: flex; gap: 24px">
+<button type="button" style="display: flex; flex-direction: column; align-items: center; gap: 6px; border: none; background: none; color: #0A0A0A; font-size: 12px"><span style="width: 40px; height: 40px; border-radius: 50%; background: #F5F5F5; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></span>写邮件</button>
+<button type="button" style="display: flex; flex-direction: column; align-items: center; gap: 6px; border: none; background: none; color: #0A0A0A; font-size: 12px"><span style="width: 40px; height: 40px; border-radius: 50%; background: #F5F5F5; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"></rect><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"></path><path d="M10 12h4"></path></svg></span>全部归档</button>
+<button type="button" style="display: flex; flex-direction: column; align-items: center; gap: 6px; border: none; background: none; color: #0A0A0A; font-size: 12px"><span style="width: 40px; height: 40px; border-radius: 50%; background: #F5F5F5; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m5.6 5.6 12.8 12.8"></path></svg></span>屏蔽</button>
+</div>
+<span style="max-width: 400px; text-align: center; font-size: 12px; color: #737373">最多直接列 3 个：首选的排第一，其余按往来邮件多少排；超过 3 个，第 4 行换成「还有 N 个地址」，头部高度封顶</span>
+</section>
+<section aria-label="点开全部" style="flex: 1; box-sizing: border-box; padding: 32px 48px; display: flex; flex-direction: column; align-items: center; gap: 16px">
+<span style="align-self: flex-start; font-size: 12px; color: #737373">点「还有 27 个地址」· 弹出可搜索的列表</span>
+<span style="width: 72px; height: 72px; border-radius: 50%; background: #DCFCE7; color: #166534; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 600">运</span>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 2px">
+<h1 style="margin: 0; font-size: 24px; font-weight: 600">运维告警</h1>
+<span style="color: #737373">星云科技 · 基础设施组</span>
+<span style="margin-top: 2px; padding: 2px 8px; color: #737373">ops@nebula.example</span>
+<span style="padding: 2px 8px; color: #737373">alerts@nebula.example</span>
+<span style="padding: 2px 8px; color: #737373">oncall@nebula.example</span>
+<div style="position: relative">
+<button type="button" aria-expanded="true" style="margin-top: 2px; padding: 2px 8px; border: none; border-radius: 6px; background: #F5F5F5; color: #0A0A0A; font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 4px">还有 27 个地址<svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"></path></svg></button>
+<div role="dialog" aria-label="全部 30 个地址" style="position: absolute; top: 32px; left: 50%; transform: translateX(-50%); width: 340px; box-sizing: border-box; padding: 6px; border: 1px solid #E5E5E5; border-radius: 12px; background: #FFFFFF; box-shadow: 0 12px 32px rgba(0,0,0,0.14); display: flex; flex-direction: column; gap: 4px; z-index: 2">
+<label style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 1px solid #E5E5E5; border-radius: 8px"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#737373" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><input type="text" placeholder="搜索 30 个地址" aria-label="搜索地址" style="flex: 1; min-width: 0; border: none; outline: none; background: none; font-size: 14px; color: #0A0A0A"></label>
+<div style="max-height: 236px; overflow: hidden; display: flex; flex-direction: column">
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="8">
+<button type="button" style="{{r.style}}"><span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{r.addr}}</span><span style="{{r.tagStyle}}">{{r.tag}}</span></button>
+</sc-for>
+</div>
+<span style="padding: 4px 8px 2px; font-size: 12px; color: #737373">向下滚动看其余 22 个 · 点一行出 A 的菜单：写邮件、复制、屏蔽</span>
+</div>
+</div>
+</div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":640}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var list = [
+      ['ops@nebula.example', '首选'],
+      ['alerts@nebula.example', ''],
+      ['oncall@nebula.example', ''],
+      ['backup-ops@nebula.example', ''],
+      ['noreply-monitor@nebula.example', '已屏蔽'],
+      ['grafana@nebula.example', ''],
+      ['pager-east@nebula.example', ''],
+      ['pager-west@nebula.example', '']
+    ];
+    return {
+      rows: list.map(function (x, i) {
+        return {
+          addr: x[0],
+          tag: x[1],
+          style: 'display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 4px 10px; border: none; border-radius: 6px; text-align: left; font-size: 14px; color: #0A0A0A; background: ' + (i === 3 ? '#F5F5F5' : 'transparent'),
+          tagStyle: 'font-size: 12px; flex: none; color: ' + (x[1] === '已屏蔽' ? '#B91C1C' : '#737373')
+        };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,8 +1,10 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -363,5 +365,46 @@ func TestPaletteContactOpensContact(t *testing.T) {
 	h.tt.Key(0, ui.KeyEnter)
 	h.until("Bob on the contacts page", func() bool {
 		return !paletteShown(h) && h.app.route.Page == PageContacts && h.app.route.Contact == "bob@example.com"
+	})
+}
+
+func TestPaletteAddressBookContact(t *testing.T) {
+	h, _ := mailHarness(t, []coretest.Option{coretest.WithoutAutoSync()}, "alice@example.com")
+	srv := h.env.StartCardDAV(t)
+	srv.PutCard("contacts", "grace", "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Grace Hopper\r\nORG:Navy\r\nTITLE:Admiral\r\nEMAIL;TYPE=PREF:bob@home.com\r\nEMAIL:bob@work.com\r\nEND:VCARD\r\n")
+	if _, err := h.env.Svc.AddAddressBook(context.Background(), core.AddressBookInput{
+		Preset: core.PresetCustom, Name: "通讯录", URL: srv.URL(), Username: "alice", Password: "secret",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Search by ORG/TITLE shows subtitle on the row, handles zero-mail Last cleanly, and composes to PREF.
+	h.tt.Key(ui.Cmd, ui.KeyK)
+	h.until("the palette", func() bool { return paletteShown(h) })
+	h.typeText("Admiral")
+	h.see("联系人 · 1")
+	h.see("Grace Hopper")
+	h.see("Navy · Admiral")
+	for _, s := range h.tt.Texts() {
+		if strings.Contains(s, "1970") || strings.Contains(s, "0001") {
+			t.Fatalf("unexpected zero timestamp %q in %q", s, h.tt.Texts())
+		}
+	}
+	h.tt.Key(ui.Alt, ui.KeyEnter)
+	h.see("查看往来邮件")
+	h.tt.Key(0, ui.KeyEnter) // 写邮件
+	if d := h.draft(h.composeOpened(0)); !slices.Equal(d.To, []string{"bob@home.com"}) {
+		t.Fatalf("draft To %q", d.To)
+	}
+
+	// Search by secondary email finds the merged contact and Enter opens them on Contacts page.
+	h.tt.Key(ui.Cmd, ui.KeyK)
+	h.until("the palette reopened", func() bool { return paletteShown(h) })
+	h.typeText("bob@work.com")
+	h.see("联系人 · 1")
+	h.see("Grace Hopper")
+	h.tt.Key(0, ui.KeyEnter)
+	h.until("Grace on the contacts page", func() bool {
+		return !paletteShown(h) && h.app.route.Page == PageContacts && h.app.route.Contact == "bob@home.com"
 	})
 }

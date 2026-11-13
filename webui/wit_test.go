@@ -624,6 +624,39 @@ func TestComposeSearchContacts(t *testing.T) {
 	assert.Empty(t, hits, "nothing typed")
 	_, err = f.page.SearchContacts(f.ctx(2), "zhang")
 	assert.Error(t, err, "a window without a draft")
+
+	// Multi-address CardDAV contact expands into one ContactHit per address (PREF first, then recent mail).
+	srv := f.e.StartCardDAV(t)
+	srv.PutCollection("team", "Team")
+	srv.PutCard("team", "dana", strings.Join([]string{
+		"BEGIN:VCARD",
+		"VERSION:4.0",
+		"FN:Dana Lee",
+		"ORG:Orbit Labs",
+		"EMAIL:dana.idle@orbit.example",
+		"EMAIL;PREF=1:dana.pref@orbit.example",
+		"EMAIL:dana.chat@home.example",
+		"END:VCARD",
+	}, "\r\n"))
+	_, err = f.e.Svc.AddAddressBook(t.Context(), core.AddressBookInput{
+		Preset: core.PresetCustom, Name: "Team", URL: srv.URL(), Username: "alice", Password: "secret",
+	})
+	require.NoError(t, err)
+	f.e.Deliver(t, f.acc.ID, "INBOX", coretest.Msg("Dana Old <dana.chat@home.example>", f.acc.Email, "sync", "hello"))
+
+	hits, err = f.page.SearchContacts(f.ctx(1), "orbit labs")
+	require.NoError(t, err)
+	assert.Equal(t, []ContactHit{
+		{Name: "Dana Lee", Address: "dana.pref@orbit.example", Entry: "Dana Lee <dana.pref@orbit.example>"},
+		{Name: "Dana Lee", Address: "dana.chat@home.example", Entry: "Dana Lee <dana.chat@home.example>"},
+		{Name: "Dana Lee", Address: "dana.idle@orbit.example", Entry: "Dana Lee <dana.idle@orbit.example>"},
+	}, hits)
+
+	hits, err = f.page.SearchContacts(f.ctx(1), "@home.example")
+	require.NoError(t, err)
+	assert.Equal(t, []ContactHit{
+		{Name: "Dana Lee", Address: "dana.chat@home.example", Entry: "Dana Lee <dana.chat@home.example>"},
+	}, hits)
 }
 
 // No model but a translation plugin: the panel shows, for translating alone.

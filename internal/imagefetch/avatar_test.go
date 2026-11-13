@@ -73,6 +73,31 @@ func TestFaviconImageMinSize(t *testing.T) {
 	}
 }
 
+func TestCardDAVAvatarImage(t *testing.T) {
+	small := pngOf(t, 16, 16)
+	out, format, w, h, err := CheckAvatarImage(small, "carddav")
+	if err != nil || format != "png" || w != 16 || h != 16 || !bytes.Equal(out, small) {
+		t.Fatalf("16x16 png: %s %dx%d %v", format, w, h, err)
+	}
+	static := strings.Replace(safeSVG, ` baseProfile="tiny-ps"`, "", 1)
+	if _, format, w, h, err := CheckAvatarImage([]byte(static), "carddav"); err != nil || format != "svg" || w != 32 || h != 32 {
+		t.Fatalf("static svg: %s %dx%d %v", format, w, h, err)
+	}
+	truncated := small[:len(small)-6]
+	for name, bad := range map[string][]byte{
+		"ico":       icoOf(t, 32, 32, false),
+		"oversized": pngOf(t, 1025, 32),
+		"svg-wide":  []byte(strings.Replace(static, "0 0 32 32", "0 0 1025 32", 1)),
+		"too-many":  make([]byte, MaxAvatarBytes+1),
+		"truncated": truncated,
+		"script":    []byte(strings.Replace(static, "</svg>", "<script>1</script></svg>", 1)),
+	} {
+		if _, _, _, _, err := CheckAvatarImage(bad, "carddav"); err == nil {
+			t.Errorf("accepted %s for carddav", name)
+		}
+	}
+}
+
 func TestBIMIImageAndAvatarFormats(t *testing.T) {
 	for _, source := range []string{"bimi", "favicon"} {
 		out, format, w, h, err := CheckAvatarImage([]byte(safeSVG), source)

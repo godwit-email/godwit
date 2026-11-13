@@ -215,6 +215,37 @@ func (st Settings) maskConfig() mask.Config {
 	return c
 }
 
+func init() {
+	onAddressBooksChanged = func(s *Service, ctx context.Context) {
+		s.refreshKnownMaskNames(ctx)
+	}
+}
+
+func (s *Service) knownCardNames(ctx context.Context) ([]string, error) {
+	rows, err := s.db.Query(ctx, `SELECT DISTINCT c.fn FROM address_book_cards c
+		JOIN address_book_collections col ON col.id = c.collection_id
+		WHERE col.enabled = 1 AND c.fn <> ''`)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(rows.Values))
+	for _, r := range rows.Values {
+		names = append(names, store.Str(r[0]))
+	}
+	return names, nil
+}
+
+func (s *Service) refreshKnownMaskNames(ctx context.Context) {
+	s.maskMu.Lock()
+	defer s.maskMu.Unlock()
+	if s.mask == nil {
+		return
+	}
+	if names, err := s.knownCardNames(context.WithoutCancel(ctx)); err == nil {
+		s.mask.SetKnownNames(names)
+	}
+}
+
 // masker is the Service's 脱敏 (docs/adr/0025-mask-at-cloud-egress.md),
 // created on first use. Its key is kept in the database: a value keeps its
 // placeholder across restarts, and the key moves with the data directory,
@@ -245,6 +276,11 @@ func (s *Service) masker() (*mask.Masker, error) {
 	if err := st.setMasker(m, s.recognizer(st)); err != nil { // a rule stored by hand: nothing goes out unmasked
 		return nil, err
 	}
+	names, err := s.knownCardNames(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m.SetKnownNames(names)
 	s.mask = m
 	return m, nil
 }
@@ -289,6 +325,13 @@ func (s *Service) PreviewMasking(ctx context.Context, st Settings, text string) 
 	}
 	if !st.Masking {
 		return text, nil
+	}
+	if st.MaskCategories.Names.On {
+		names, err := s.knownCardNames(ctx)
+		if err != nil {
+			return "", err
+		}
+		m.SetKnownNames(names)
 	}
 	out, err := m.Text(text)
 	if b := ai.Blocked(err); b != nil {

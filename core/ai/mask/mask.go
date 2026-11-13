@@ -34,11 +34,12 @@ type Masker struct {
 	// its context is Tagged with. Set it before the first Request.
 	Record func(feature string, hits []Hit)
 
-	mu      sync.RWMutex
-	values  map[string]entry // by hash
-	learned map[[sha256.Size]byte]bool
-	names   []string // the values of NAME placeholders, longest first
-	secrets []entry  // the values of placeholders found by their label (secretSpans): secrets, passports
+	mu            sync.RWMutex
+	values        map[string]entry // by hash
+	learned       map[[sha256.Size]byte]bool
+	names         []string // the values of NAME placeholders learned from headers, longest first
+	externalNames []string // externally supplied known names (SetKnownNames), longest first
+	secrets       []entry  // the values of placeholders found by their label (secretSpans): secrets, passports
 	// found are the values 识别模型 found but accounts, longest first:
 	// known while it is on (foundSpans).
 	// shortcut: only grows, and every text is searched for each value; evict, or match them all at once (Aho-Corasick), when a long session is seen to slow.
@@ -80,7 +81,7 @@ func (m *Masker) hash(kind, v string) string {
 // labelled value is known from then on, and one 识别模型 found, but an
 // account or a short one (shortName), while it is on.
 // shortcut: the table only grows, by each value masked; evict when it is seen to matter.
-func (m *Masker) placeholder(kind, v string, recognized bool) (string, error) {
+func (m *Masker) placeholder(kind, v string, recognized, learnName bool) (string, error) {
 	hash := m.hash(kind, v)
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -92,7 +93,7 @@ func (m *Masker) placeholder(kind, v string, recognized bool) (string, error) {
 	case recognized && kind != "ACCOUNT" && !shortName(v):
 		m.addFound(entry{kind, v})
 	case recognized: // masked only where 识别模型 finds it: a brand's or a project's name is often taken for an account
-	case kind == nameKind:
+	case kind == nameKind && learnName:
 		m.addName(v)
 	case lab && len(v) >= n && !slices.Contains(m.secrets, entry{kind, v}):
 		m.secrets = append(m.secrets, entry{kind, v})
@@ -186,7 +187,7 @@ func (m *Masker) text(s string, defuse, read bool, f *Found) (out string, err er
 			block = block.with(categories[sp.kind])
 			continue
 		}
-		p, err := m.placeholder(sp.kind, v, sp.recognized)
+		p, err := m.placeholder(sp.kind, v, sp.recognized, sp.own)
 		if err != nil {
 			return "", err
 		}

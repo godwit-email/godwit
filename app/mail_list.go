@@ -60,7 +60,7 @@ func threadItem(t core.ThreadSummary) mailItem {
 }
 
 func messageItem(m core.MessageSummary) mailItem {
-	it := mailItem{ID: m.ID, Who: displayName(m.From), Subject: m.Subject, Snippet: m.Snippet, Date: m.Date,
+	it := mailItem{ID: m.ID, Who: cmp.Or(m.FromName, displayName(m.From)), Subject: m.Subject, Snippet: m.Snippet, Date: m.Date,
 		Count: 1, Attach: m.HasAttachments, Msg: m, Security: m.Security}
 	if !slices.Contains(m.Flags, `\Seen`) {
 		it.Unread = 1

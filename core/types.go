@@ -69,6 +69,7 @@ type Account struct {
 	OAuthClientID                           string // the user's own OAuth client (OAuthClient), "" the provider's
 	Kind                                    string // "" a mail account, KindLocalArchive
 	ReceiveOnly                             bool   // added without working SMTP: it syncs but never sends (ErrReceiveOnly)
+	Position                                int    // its place in the accounts list, shared with standalone address books (ReorderAccountEntries)
 	// Features is what its receiving server can do (协议能力), recorded at
 	// the add-account check, a server change and each sign-in (ADR 0034);
 	// nil before the first. See Unsupported.

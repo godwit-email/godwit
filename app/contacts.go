@@ -3,6 +3,7 @@ package app
 import (
 	"cmp"
 	"context"
+	"errors"
 	"slices"
 	"strconv"
 	"strings"
@@ -35,13 +36,14 @@ type contactsPage struct {
 	list     *ui.ListState
 	cur      int // the row chosen, as the list keeps it; -1 none
 	loading  bool
+	syncing  bool
 	gen      uint64 // bumped per load; older results are dropped
 
 	unsub    core.Unsubscribe // a one-click unsubscribe from unsubID, waiting to be confirmed
 	unsubID  int64
 	unsubDlg bool
 
-	avatars    map[int64]*contactAvatar // by the message read for, as settingsSavedVer was
+	avatars    map[string]*contactAvatar // by primary address and newest message, as settingsSavedVer was
 	avatarsVer uint64
 }
 
@@ -49,16 +51,53 @@ type contactsPage struct {
 // or when there is none.
 type contactAvatar struct{ img ui.ImageSource }
 
-// contactCats are the sidebar's categories: every contact, those the user
-// wrote to, those with a List-Unsubscribe, those blocked (as App.blocked).
+func contactAddrs(c core.Contact) []core.ContactAddress {
+	if len(c.Addresses) > 0 {
+		return c.Addresses
+	}
+	if c.Address == "" {
+		return nil
+	}
+	return []core.ContactAddress{{Address: c.Address, Blocked: c.Blocked}}
+}
+
+func contactAnyBlocked(a *App, c core.Contact) bool {
+	return c.Blocked || slices.ContainsFunc(contactAddrs(c), func(ea core.ContactAddress) bool {
+		return slices.Contains(a.blocked, ea.Address)
+	})
+}
+
+func contactAllBlocked(a *App, c core.Contact) bool {
+	addrs := contactAddrs(c)
+	return len(addrs) > 0 && !slices.ContainsFunc(addrs, func(ea core.ContactAddress) bool {
+		return !slices.Contains(a.blocked, ea.Address)
+	})
+}
+
+func findContact(all []core.Contact, addr string) (core.Contact, int) {
+	key := gomail.AddrKey(addr)
+	if key == "" {
+		return core.Contact{}, -1
+	}
+	for i, c := range all {
+		if c.Address == key || slices.ContainsFunc(c.Addresses, func(ea core.ContactAddress) bool { return ea.Address == key }) {
+			return c, i
+		}
+	}
+	return core.Contact{}, -1
+}
+
+// contactCats are the sidebar's categories: every contact, those with mail,
+// those from an address book, those with a List-Unsubscribe, those blocked.
 var contactCats = []struct {
 	key, icon string
 	in        func(a *App, c core.Contact) bool
 }{
 	{"all", "label-team", func(*App, core.Contact) bool { return true }},
-	{"people", "label-chat-3", func(_ *App, c core.Contact) bool { return c.Sent > 0 }},
+	{"people", "label-chat-3", func(_ *App, c core.Contact) bool { return c.Messages > 0 }},
+	{"addressbook", "contacts", func(_ *App, c core.Contact) bool { return c.FromAddressBook }},
 	{"subscriptions", "label-newspaper", func(_ *App, c core.Contact) bool { return c.ListMessage != 0 }},
-	{"blocked", "spam", func(a *App, c core.Contact) bool { return slices.Contains(a.blocked, c.Address) }},
+	{"blocked", "spam", contactAnyBlocked},
 }
 
 var _ pageView = (*contactsPage)(nil)
@@ -79,7 +118,32 @@ func (p *contactsPage) Title() (string, string) {
 	return i18n.T("shell.nav.contacts"), i18n.Tf("contacts.count", len(p.all))
 }
 
-func (p *contactsPage) refresh([]events.Event) { p.load() }
+func (p *contactsPage) refresh(hints []events.Event) {
+	if slices.ContainsFunc(hints, func(ev events.Event) bool {
+		return ev.Type == events.AddressBooksChanged || ev.Type == events.SettingsChanged
+	}) {
+		p.avatars = nil
+	}
+	p.load()
+}
+
+func (p *contactsPage) syncAddressBooks() {
+	if p.syncing {
+		return
+	}
+	a := p.a
+	p.syncing = true
+	a.do(func(ctx context.Context) error {
+		return a.svc.SyncAddressBook(ctx, 0)
+	}, func(err error) {
+		p.syncing = false
+		if err != nil && !errors.Is(err, core.ErrNoAddressBooks) {
+			a.toastErr(err)
+		}
+		p.avatars = nil
+		p.load()
+	})
+}
 
 // contactMailPage is how much of a contact's mail one read takes.
 const contactMailPage = 50
@@ -90,9 +154,12 @@ const contactMailPage = 50
 func (p *contactsPage) load() {
 	a := p.a
 	p.gen++
-	gen, addr := p.gen, a.route.Contact
+	gen, asked := p.gen, a.route.Contact
+	addr := asked
 	want := 0
 	if addr == p.detailOf {
+		want = len(p.mail)
+	} else if ct, idx := findContact(p.all, addr); idx >= 0 && ct.Address == p.detailOf {
 		want = len(p.mail)
 	}
 	p.loading = true
@@ -106,7 +173,11 @@ func (p *contactsPage) load() {
 		if all, err = a.svc.Contacts(ctx); err != nil {
 			return err
 		}
-		if addr == "" && len(all) > 0 {
+		if addr != "" {
+			if ct, idx := findContact(all, addr); idx >= 0 {
+				addr = ct.Address
+			}
+		} else if len(all) > 0 {
 			addr = all[0].Address
 		}
 		if addr == "" {
@@ -132,8 +203,8 @@ func (p *contactsPage) load() {
 			a.toastErr(err)
 			return
 		}
-		if a.route.Page == PageContacts && a.route.Contact == "" {
-			a.route.Contact = addr // the first shown, not a step in the history
+		if a.route.Page == PageContacts && a.route.Contact == asked {
+			a.route.Contact = addr // first contact or secondary address resolved in place
 		}
 		if addr != p.detailOf {
 			p.mailList = &ui.ListState{} // another's mail starts at its top
@@ -180,17 +251,28 @@ func (p *contactsPage) choose(addr string) {
 func (p *contactsPage) shown() []core.Contact {
 	q := strings.ToLower(strings.TrimSpace(p.query))
 	return slices.DeleteFunc(slices.Clone(p.all), func(c core.Contact) bool {
-		return !contactCats[p.cat].in(p.a, c) || q != "" && !strings.Contains(c.Address, q) && !strings.Contains(strings.ToLower(c.Name), q)
+		if !contactCats[p.cat].in(p.a, c) {
+			return true
+		}
+		if q == "" {
+			return false
+		}
+		return !strings.Contains(strings.ToLower(c.Address), q) &&
+			!strings.Contains(strings.ToLower(c.Name), q) &&
+			!strings.Contains(strings.ToLower(c.Subtitle), q) &&
+			!slices.ContainsFunc(c.SearchTerms, func(s string) bool {
+				return strings.Contains(strings.ToLower(s), q)
+			}) &&
+			!slices.ContainsFunc(c.Addresses, func(ea core.ContactAddress) bool {
+				return strings.Contains(strings.ToLower(ea.Address), q)
+			})
 	})
 }
 
 // current is the route's contact, once loaded.
 func (p *contactsPage) current() (core.Contact, bool) {
-	i := slices.IndexFunc(p.all, func(c core.Contact) bool { return c.Address == p.a.route.Contact })
-	if i < 0 {
-		return core.Contact{}, false
-	}
-	return p.all[i], true
+	ct, i := findContact(p.all, p.a.route.Contact)
+	return ct, i >= 0
 }
 
 // Sidebar: the page switch and search, then the categories with their counts.
@@ -221,6 +303,9 @@ func (p *contactsPage) Sidebar(c *ui.Context) {
 // Content is the list and the chosen contact, each a panel, as the mail page's.
 func (p *contactsPage) Content(c *ui.Context) {
 	a, th, r := p.a, c.Theme(), panelRadius(c)
+	if !a.palette.open && !p.unsubDlg && c.Shortcut(ui.Cmd, ui.KeyR) {
+		p.syncAddressBooks()
+	}
 	a.listW = a.listWidth()
 	changed, _ := kit.Resizer(c, &a.listW, th.Space(2), false, i18n.T("mail.resize_list"), nil, func() {
 		kit.Panel(c, r).Grow(1).Children(func() { p.listView(c) })
@@ -241,14 +326,26 @@ func (p *contactsPage) Content(c *ui.Context) {
 func (p *contactsPage) listView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	rows := p.shown()
-	kit.Text(c, i18n.T("contacts.cat."+contactCats[p.cat].key)+" · "+strconv.Itoa(len(rows)), t.Text.Base).FontWeight(500).TextColor(t.Muted).
-		Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4))
+	ui.Row(c).AlignItems(ui.Center).Padding(th.Space(3), th.Space(3), th.Space(2), th.Space(4)).Gap(th.Space(2)).Children(func() {
+		kit.Text(c, i18n.T("contacts.cat."+contactCats[p.cat].key)+" · "+strconv.Itoa(len(rows)), t.Text.Base).FontWeight(500).TextColor(t.Muted)
+		ui.Spacer(c)
+		refreshLabel := i18n.T("contacts.refresh")
+		if p.syncing {
+			b := kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Disabled: true}).
+				Width(th.Space(7)).Label(refreshLabel)
+			kit.Tooltip(c, b, refreshLabel)
+			b.Children(func() { kit.Spinner(c) })
+		} else {
+			kit.IconButton(c, "refresh-cw", refreshLabel, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
+				OnClick(p.syncAddressBooks)
+		}
+	})
 	box := kit.InputGroup(c, kit.InputOpts{}).Gap(th.Space(2)).Margin(0, th.Space(3), th.Space(2), th.Space(3)).Padding(0, th.Space(1), 0, th.Space(2.5)).Radius(t.Radius.Lg)
 	box.Children(func() {
 		ui.Icon(c, icons.Get("search")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
 		kit.Input(c, &p.query, kit.InputOpts{Placeholder: i18n.T("contacts.filter"), Bare: true}).FocusRing(false).Grow(1).Label(i18n.T("contacts.filter"))
 	})
-	p.cur = slices.IndexFunc(rows, func(ct core.Contact) bool { return ct.Address == p.a.route.Contact })
+	_, p.cur = findContact(rows, p.a.route.Contact)
 	p.list.Key = func(i int) any { return rows[i].Address }
 	p.list.Selected = &p.cur
 	l := kit.List(c, p.list, len(rows), func(i int) { p.row(c, rows[i]) }).Grow(1).Padding(0, th.Space(2)).Gap(theme.Stroke)
@@ -286,11 +383,13 @@ func (p *contactsPage) row(c *ui.Context, ct core.Contact) ui.Element {
 		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(0.5)).Children(func() {
 			ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, name).FontWeight(weight).SingleLine().Shrink(1)
-				if slices.Contains(p.a.blocked, ct.Address) {
+				if contactAllBlocked(p.a, ct) {
 					kit.Badge(c, i18n.T("reader.blocked_badge"))
 				}
 				ui.Spacer(c)
-				kit.Text(c, listTime(p.a.clock.Now(), ct.Last), small).TextColor(t.Muted).SingleLine().Shrink(0)
+				if !ct.Last.IsZero() {
+					kit.Text(c, listTime(p.a.clock.Now(), ct.Last), small).TextColor(t.Muted).SingleLine().Shrink(0)
+				}
 			})
 			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 				kit.Text(c, ct.Address, small).TextColor(t.Muted).SingleLine().Shrink(1)
@@ -314,12 +413,15 @@ func (p *contactsPage) detailView(c *ui.Context) {
 		}
 		return
 	}
+	addrs := contactAddrs(ct)
 	d, mail, name := p.detail, p.mail, cmp.Or(ct.Name, ct.Address)
-	ready := p.detailOf == ct.Address // another's while this one's loads, or failed to
+	ready := p.detailOf != "" && (p.detailOf == ct.Address || slices.ContainsFunc(addrs, func(ea core.ContactAddress) bool {
+		return ea.Address == p.detailOf
+	})) // another's while this one's loads, or failed to
 	if !ready {
 		d, mail = core.ContactDetail{}, nil
 	}
-	blocked := slices.Contains(a.blocked, ct.Address)
+	blocked := contactAllBlocked(a, ct)
 	// one column as wide as the reader's, centered: the head, then a row per message
 	column := func() ui.Element {
 		return ui.Column(c).FillWidth().MaxWidth(theme.ReaderMaxWidth).AlignSelf(ui.Center).Padding(0, th.Space(10))
@@ -336,12 +438,15 @@ func (p *contactsPage) detailView(c *ui.Context) {
 			return
 		}
 		column().Padding(th.Space(10), th.Space(10), th.Space(1), th.Space(10)).Gap(th.Space(6)).Children(func() {
-			// who, centered: the avatar, the name and the address each on a line, then the actions
+			// who, centered: the avatar, the name, subtitle and address, then the actions
 			ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(4)).Children(func() {
 				p.bigAvatar(c, ct, name)
 				ui.Column(c).MaxWidth(theme.ReaderMaxWidth).AlignItems(ui.Center).Gap(th.Space(0.5)).Children(func() {
 					kit.Text(c, name, t.Text.X2l).FontWeight(600).TextAlign(ui.Center)
-					kit.Text(c, ct.Address, t.Text.Base).TextColor(t.Muted).TextAlign(ui.Center)
+					if ct.Subtitle != "" {
+						kit.Text(c, ct.Subtitle, t.Text.Base).TextColor(t.Muted).TextAlign(ui.Center)
+					}
+					p.addressLine(c, addrs)
 					if ct.ListMessage != 0 || blocked {
 						ui.Row(c).Wrap().Gap(th.Space(1.5)).Padding(th.Space(1.5), 0, 0, 0).Children(func() {
 							if ct.ListMessage != 0 {
@@ -356,26 +461,43 @@ func (p *contactsPage) detailView(c *ui.Context) {
 				ui.Row(c).Gap(th.Space(2)).Children(func() {
 					if ct.ListMessage != 0 {
 						kit.RoundAction(c, "mail-forbid", i18n.T("reader.unsubscribe"), "", false, false).OnClick(func() { p.unsubscribe(ct) })
-					} else {
-						kit.RoundAction(c, "square-pen", i18n.T("palette.action.compose"), "", false, false).OnClick(func() { a.composeTo(ct.Address) })
+					}
+					if ct.ListMessage == 0 || ct.FromAddressBook {
+						compose := kit.RoundAction(c, "square-pen", i18n.T("palette.action.compose"), "", false, false)
+						if len(addrs) <= 1 {
+							compose.OnClick(func() { a.composeTo(ct.Address) })
+						} else {
+							compose.Menu(func(m *ui.Menu) {
+								for _, ea := range addrs {
+									addr := ea.Address
+									if m.Item(addr).Chosen() {
+										a.composeTo(addr)
+									}
+								}
+							})
+						}
 					}
 					kit.RoundAction(c, "archive", i18n.T("contacts.archive_all"), archiveLabel(d, ready), d.Archivable == 0, false).OnClick(func() { p.archive(ct.Address) })
 					short, long := i18n.T("contacts.block"), i18n.T("reader.block_sender")
 					if blocked {
 						short, long = i18n.T("contacts.unblock"), i18n.T("reader.unblock_sender")
 					}
-					kit.RoundAction(c, "spam", short, long, false, blocked).OnClick(func() { p.block(ct.Address, !blocked) })
+					kit.RoundAction(c, "spam", short, long, false, blocked).OnClick(func() { p.blockAll(addrs, !blocked) })
 				})
 			})
 			// the counts in a row between hairlines, each centered
 			ui.Column(c).FillWidth().Children(func() {
 				kit.Separator(c, false)
 				ui.Row(c).Padding(th.Space(3.5), 0).Children(func() {
+					lastStat := "—"
+					if !ct.Last.IsZero() {
+						lastStat = listTime(a.clock.Now(), ct.Last)
+					}
 					for i, st := range [][2]string{
 						{i18n.T("contacts.stat.received"), strconv.Itoa(ct.Received)},
 						{i18n.T("contacts.stat.sent"), strconv.Itoa(ct.Sent)},
 						{i18n.T("mail.filter.unread"), strconv.Itoa(ct.Unread)},
-						{i18n.T("contacts.stat.last"), listTime(a.clock.Now(), ct.Last)},
+						{i18n.T("contacts.stat.last"), lastStat},
 					} {
 						if i > 0 {
 							kit.Separator(c, true)
@@ -393,6 +515,74 @@ func (p *contactsPage) detailView(c *ui.Context) {
 	}).Grow(1)
 	if _, last := p.mailList.Visible(); ready && last >= len(mail)-5 {
 		p.loadMore()
+	}
+}
+
+// addressLine is the contact's first address, a menu of what to do with it,
+// and with more, +N: a native menu of them all, the blocked last, each a
+// submenu of the same actions. One address or thirty, the head keeps one line.
+func (p *contactsPage) addressLine(c *ui.Context, addrs []core.ContactAddress) {
+	if len(addrs) == 0 {
+		return
+	}
+	a := p.a
+	t, th := theme.Of(c), c.Theme()
+	ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
+		first := addrs[0].Address
+		kit.Button(c, first, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).FontWeight(400).TextColor(t.Muted).
+			Label(i18n.Tf("contacts.address_menu", first)).Menu(func(m *ui.Menu) { p.addressMenu(c, m, first, slices.Contains(a.blocked, first)) })
+		if len(addrs) < 2 {
+			return
+		}
+		more := len(addrs) - 1
+		filterChip(c, "+"+strconv.Itoa(more), false, nil, nil).Label(i18n.Tf("contacts.addresses.more", more)).Menu(func(m *ui.Menu) {
+			var groups [2][]core.ContactAddress // the others, then the blocked
+			for _, ea := range addrs {
+				i := 0
+				if slices.Contains(a.blocked, ea.Address) {
+					i = 1
+				}
+				groups[i] = append(groups[i], ea)
+			}
+			for gi, g := range groups {
+				if len(g) == 0 {
+					continue
+				}
+				title := i18n.T("contacts.addresses")
+				if gi == 1 {
+					m.Separator()
+					title = i18n.T("reader.blocked_badge")
+				}
+				m.Item(title + " · " + strconv.Itoa(len(g))).Disabled(true)
+				for _, ea := range g {
+					addr, blocked := ea.Address, gi == 1
+					it := m.Submenu(addr, func(m *ui.Menu) { p.addressMenu(c, m, addr, blocked) })
+					if ea.Pref {
+						it.Trailing(i18n.T("contacts.preferred"))
+					}
+				}
+			}
+		})
+	})
+}
+
+// addressMenu is what can be done with one address: write, copy, block.
+func (p *contactsPage) addressMenu(c *ui.Context, m *ui.Menu, addr string, blocked bool) {
+	a := p.a
+	if m.Item(i18n.T("palette.action.compose")).Icon(menuIcon("square-pen")).Chosen() {
+		a.composeTo(addr)
+	}
+	if m.Item(i18n.T("contacts.copy_address")).Icon(menuIcon("copy")).Chosen() {
+		c.WriteClipboard(addr)
+		a.toast(i18n.T("contacts.address_copied"))
+	}
+	m.Separator()
+	blk, icon := i18n.T("reader.block_sender"), "spam"
+	if blocked {
+		blk, icon = i18n.T("reader.unblock_sender"), "shield" // as the mail list's menu
+	}
+	if m.Item(blk).Icon(menuIcon(icon)).Danger().Chosen() {
+		p.blockAddrs([]string{addr}, !blocked)
 	}
 }
 
@@ -516,44 +706,99 @@ func (p *contactsPage) archive(addr string) {
 	})
 }
 
-// block blocks or unblocks addr, with a toast saying so.
-func (p *contactsPage) block(addr string, on bool) {
-	msg := i18n.T("reader.sender_unblocked")
-	if on {
-		msg = i18n.T("reader.sender_blocked")
+func (p *contactsPage) syncBlockedState() {
+	for i := range p.all {
+		all := len(p.all[i].Addresses) > 0
+		for j := range p.all[i].Addresses {
+			b := slices.Contains(p.a.blocked, p.all[i].Addresses[j].Address)
+			p.all[i].Addresses[j].Blocked = b
+			if !b {
+				all = false
+			}
+		}
+		if len(p.all[i].Addresses) == 0 {
+			all = slices.Contains(p.a.blocked, p.all[i].Address)
+		}
+		p.all[i].Blocked = all
 	}
-	p.a.setBlocked(addr, on, func() { p.a.toast(msg) })
+}
+
+func (p *contactsPage) blockAll(addrs []core.ContactAddress, on bool) {
+	raw := make([]string, len(addrs))
+	for i, ea := range addrs {
+		raw[i] = ea.Address
+	}
+	p.blockAddrs(raw, on)
+}
+
+func (p *contactsPage) blockAddrs(addrs []string, on bool) {
+	a := p.a
+	a.do(func(ctx context.Context) error {
+		for _, addr := range addrs {
+			var err error
+			if on {
+				err = a.svc.BlockSender(ctx, addr)
+			} else {
+				err = a.svc.UnblockSender(ctx, addr)
+			}
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}, func(err error) {
+		if err != nil {
+			a.toastErr(err)
+			return
+		}
+		l := slices.Clone(a.blocked)
+		for _, addr := range addrs {
+			key := gomail.AddrKey(addr)
+			l = slices.DeleteFunc(l, func(s string) bool { return s == key })
+			if on {
+				l = append(l, key)
+			}
+		}
+		a.blocked = l
+		p.syncBlockedState()
+		msg := i18n.T("reader.sender_unblocked")
+		if on {
+			msg = i18n.T("reader.sender_blocked")
+		}
+		a.toast(msg)
+	})
 }
 
 // contacts is the contacts page.
 func (a *App) contacts() *contactsPage { return a.pages[PageContacts].(*contactsPage) }
 
-// avatar is ct's sender avatar the reader's way: core's SenderAvatar of their
-// latest message, under the remote-image setting, read off the UI thread the
-// first time it shows and again once that setting is saved changed; nil until
-// read, or for none (one only written to has none).
+// avatar is ct's avatar: an enabled address-book card's cached PHOTO first
+// (even with zero received mail), else SenderAvatar of their newest message
+// under the remote-image setting.
 func (p *contactsPage) avatar(ct core.Contact) ui.ImageSource {
-	a, id := p.a, ct.Latest
-	if id == 0 {
+	a, addr := p.a, ct.Address
+	if addr == "" {
 		return nil
 	}
 	if p.avatarsVer != a.settingsSavedVer {
 		p.avatars, p.avatarsVer = nil, a.settingsSavedVer
 	}
-	if av := p.avatars[id]; av != nil {
+	// keyed by the newest message too: a sent-only contact's first received mail brings a sender avatar
+	key := addr + "\x00" + strconv.FormatInt(ct.Latest, 10)
+	if av := p.avatars[key]; av != nil {
 		return av.img
 	}
 	if a.settingsVer != a.settingsSavedVer {
 		return nil // as the reader, none while settings are unsaved
 	}
 	if p.avatars == nil {
-		p.avatars = map[int64]*contactAvatar{}
+		p.avatars = map[string]*contactAvatar{}
 	}
 	av := &contactAvatar{}
-	p.avatars[id] = av
+	p.avatars[key] = av
 	var img ui.ImageSource
 	a.do(func(ctx context.Context) error {
-		got, err := a.svc.SenderAvatar(ctx, id, false)
+		got, err := a.svc.ContactAvatar(ctx, addr)
 		if err != nil || len(got.Data) == 0 {
 			return err
 		}

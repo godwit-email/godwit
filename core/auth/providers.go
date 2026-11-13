@@ -197,3 +197,21 @@ func ByID(id string) (Provider, bool) {
 	}
 	return Provider{}, false
 }
+
+// GoogleCardDAVOAuth returns the OAuth 2.0 configuration for Google's standard
+// CardDAV endpoint (kept out of ListProviders, which lists mail providers only).
+func GoogleCardDAVOAuth() OAuthConfig {
+	p, _ := ByID("gmail")
+	var pub *PublicClient
+	if p.OAuth != nil && p.OAuth.Public != nil {
+		cp := *p.OAuth.Public
+		pub = &cp
+	}
+	return OAuthConfig{
+		AuthURL:    "https://accounts.google.com/o/oauth2/v2/auth",
+		TokenURL:   "https://oauth2.googleapis.com/token",
+		Scopes:     []string{"openid", "email", "https://www.googleapis.com/auth/carddav"},
+		AuthParams: map[string]string{"access_type": "offline", "prompt": "select_account consent"},
+		Public:     pub,
+	}
+}

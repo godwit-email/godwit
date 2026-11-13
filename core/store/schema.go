@@ -786,6 +786,62 @@ var Migrations = [][]string{{
 	// Server refusals of an op; attempts counts every send that may have
 	// reached the server, and only MaxAttempts refusals give the op up.
 	`ALTER TABLE ops ADD COLUMN refusals INTEGER NOT NULL DEFAULT 0`,
+}, {
+	// Read-only CardDAV address books (ADR 0040): collections cascade from
+	// address_books, cards from collections, and emails from cards.
+	`CREATE TABLE IF NOT EXISTS address_books (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		preset TEXT NOT NULL DEFAULT '',
+		name TEXT NOT NULL DEFAULT '',
+		url TEXT NOT NULL,
+		auth_type TEXT NOT NULL DEFAULT 'password',
+		username TEXT NOT NULL DEFAULT '',
+		oauth_client_id TEXT NOT NULL DEFAULT '',
+		sort_order INTEGER NOT NULL DEFAULT 0,
+		status TEXT NOT NULL DEFAULT 'ok',
+		status_detail TEXT NOT NULL DEFAULT '',
+		last_synced_at INTEGER NOT NULL DEFAULT 0,
+		created_at INTEGER NOT NULL DEFAULT 0
+	)`,
+	`CREATE TABLE IF NOT EXISTS address_book_collections (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		address_book_id INTEGER NOT NULL REFERENCES address_books(id) ON DELETE CASCADE,
+		href TEXT NOT NULL,
+		name TEXT NOT NULL DEFAULT '',
+		enabled INTEGER NOT NULL DEFAULT 1,
+		sync_token TEXT NOT NULL DEFAULT '',
+		sync_gen INTEGER NOT NULL DEFAULT 0,
+		card_count INTEGER NOT NULL DEFAULT 0,
+		UNIQUE(address_book_id, href)
+	)`,
+	`CREATE TABLE IF NOT EXISTS address_book_cards (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		collection_id INTEGER NOT NULL REFERENCES address_book_collections(id) ON DELETE CASCADE,
+		href TEXT NOT NULL,
+		etag TEXT NOT NULL DEFAULT '',
+		fn TEXT NOT NULL DEFAULT '',
+		org TEXT NOT NULL DEFAULT '',
+		title TEXT NOT NULL DEFAULT '',
+		photo BLOB,
+		photo_format TEXT NOT NULL DEFAULT '',
+		photo_width INTEGER NOT NULL DEFAULT 0,
+		photo_height INTEGER NOT NULL DEFAULT 0,
+		photo_pending_url TEXT NOT NULL DEFAULT '',
+		UNIQUE(collection_id, href)
+	)`,
+	`CREATE TABLE IF NOT EXISTS address_book_emails (
+		card_id INTEGER NOT NULL REFERENCES address_book_cards(id) ON DELETE CASCADE,
+		pos INTEGER NOT NULL,
+		addr_key TEXT NOT NULL,
+		pref INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY(card_id, addr_key)
+	)`,
+	`CREATE INDEX IF NOT EXISTS address_book_emails_addr ON address_book_emails(addr_key)`,
+}, {
+	// An address book linked to a mail account goes with it and takes its
+	// place in the accounts list (ADR 0040); NULL is a standalone one.
+	`ALTER TABLE address_books ADD COLUMN account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE`,
+	`CREATE UNIQUE INDEX address_books_account ON address_books(account_id) WHERE account_id IS NOT NULL`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

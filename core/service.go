@@ -231,6 +231,7 @@ type Service struct {
 	securityJudge     func(context.Context) (ai.Judge, error)
 	securityRaw       func(context.Context, int64) ([]byte, error)
 	securityLookupTXT func(context.Context, string) ([]string, error)
+	clockMu           sync.RWMutex
 	clock             Clock              // outbox timing and Wit's time note; nil is the real clock
 	hookClock         plugins.Clock      // hook backoff and polling; nil is the real clock
 	pluginNet         plugins.NetOptions // ctx.net.fetch's network; tests inject a resolver and dialer
@@ -251,6 +252,17 @@ type Service struct {
 	checksMu   sync.Mutex
 	sendChecks map[string]keptCheck // beforeSend checks with warnings, by digest, until they expire
 	sendNow    func() time.Time     // stored checks' clock; nil is time.Now
+
+	abWriteMu        sync.Mutex              // serializes address-book/collection writes vs sync commits
+	abSync           sync.Map                // address book id -> *sync.Mutex: one discovery and reconciliation of it at a time
+	abTokMu          sync.Mutex              // guards abTokens and abRefreshLocks
+	abTokens         map[int64]auth.Grant    // cached OAuth access tokens by address book ID
+	abRefreshLocks   map[int64]chan struct{} // per-address-book OAuth refresh semaphores
+	abTimerMu        sync.Mutex              // guards abTimerStop and abTimerActive
+	abTimerStop      func() bool             // stops the current 30-minute poll timer
+	abTimerActive    bool                    // true once the background address-book loop armed a timer
+	abWake           chan struct{}           // wakes the background address-book sync loop
+	addressBooksHook func(context.Context)   // optional instance callback invoked on AddressBooksChanged
 
 	closeOnce sync.Once
 	closeErr  error
@@ -277,7 +289,7 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		return nil, err
 	}
 	s := &Service{db: db, bus: events.New(), dataDir: opts.DataDir, opts: opts, installID: install, streamsEnd: make(chan struct{}),
-		clock: testClock, hookClock: testHookClock, pluginClock: testPluginClock, labelWake: make(chan struct{}, 1), securityWake: make(chan struct{}, 1), reclaimWake: make(chan struct{}, 1)}
+		clock: testClock, hookClock: testHookClock, pluginClock: testPluginClock, labelWake: make(chan struct{}, 1), securityWake: make(chan struct{}, 1), reclaimWake: make(chan struct{}, 1), abWake: make(chan struct{}, 1)}
 	s.ledger = &runLedger{db: db, host: s}
 	if err := s.recoverOutbox(ctx); err != nil {
 		db.Close()
@@ -415,6 +427,7 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 			s.startWorker(a.ID)
 		}
 	}
+	s.startAddressBookSync()
 	if err := s.ledger.recover(ctx); err != nil {
 		s.Close()
 		return nil, err

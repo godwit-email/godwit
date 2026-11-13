@@ -27,7 +27,7 @@ func experimentalEWS(e *coretest.Env) {
 func TestOnboardingEWS(t *testing.T) {
 	h := newHarness(t, experimentalEWS)
 	o := h.firstRun()
-	h.click("其他 IMAP 邮箱")
+	h.click("其他邮箱")
 	h.fill("邮箱地址", "new@example.com")
 	_, srv := h.env.StartEWSServers(h.t, "new@example.com")
 	if _, open := h.tt.Find("IMAP 服务器"); !open {
@@ -70,7 +70,7 @@ func TestOnboardingEWS(t *testing.T) {
 func TestOnboardingEWSAutodiscover(t *testing.T) {
 	h := newHarness(t, experimentalEWS)
 	o := h.firstRun()
-	h.click("其他 IMAP 邮箱")
+	h.click("其他邮箱")
 	h.fill("邮箱地址", "new@example.com")
 	_, srv, ad := h.env.StartEWSAutodiscover(h.t, "new@example.com")
 	ad.RedirectURL("autodiscover.example.com", "ad.example.net")
@@ -104,7 +104,7 @@ func TestOnboardingEWSAutodiscover(t *testing.T) {
 func TestOnboardingEWSAutodiscoverFails(t *testing.T) {
 	h := newHarness(t, experimentalEWS)
 	h.firstRun()
-	h.click("其他 IMAP 邮箱")
+	h.click("其他邮箱")
 	h.fill("邮箱地址", "new@example.com")
 	h.env.StartEWSAutodiscover(h.t, "new@example.com")
 	if _, open := h.tt.Find("IMAP 服务器"); !open {
@@ -126,7 +126,7 @@ func TestOnboardingEWSAutodiscoverFails(t *testing.T) {
 func TestOnboardingNoEWSByDefault(t *testing.T) {
 	h := newHarness(t)
 	h.firstRun()
-	h.click("其他 IMAP 邮箱")
+	h.click("其他邮箱")
 	if _, open := h.tt.Find("IMAP 服务器"); !open {
 		h.click("手动设置服务器")
 	}
@@ -168,7 +168,7 @@ func TestSettingsEWSServers(t *testing.T) {
 func TestOnboardingEWSConfirmedHostPerAddress(t *testing.T) {
 	h := newHarness(t, experimentalEWS)
 	h.firstRun()
-	h.click("其他 IMAP 邮箱")
+	h.click("其他邮箱")
 	h.fill("邮箱地址", "a@example.com")
 	_, srv, ad := h.env.StartEWSAutodiscover(h.t, "a@example.com")
 	ad.RedirectURL("autodiscover.example.com", "ad.example.net")

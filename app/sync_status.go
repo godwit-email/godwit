@@ -265,13 +265,20 @@ func (a *App) syncAccounts(c *ui.Context, hs []syncHealth, indent float32, act f
 // while its sync needs the user (red) or is retrying (amber), as the top
 // bar's status says.
 func (a *App) accountMark(c *ui.Context, acc core.Account) {
+	level := a.syncHealth(acc).level
+	badgedMark(c, func() { a.accountIcon(c, acc, theme.MarkSm) }, level == syncAction, level == syncRetrying)
+}
+
+// badgedMark is a small mark with a badge on its corner: red for action,
+// else amber for retrying.
+func badgedMark(c *ui.Context, mark func(), action, retrying bool) {
 	t := theme.Of(c)
 	ui.Box(c).Size(theme.MarkSm, theme.MarkSm).Shrink(0).Children(func() {
-		a.accountIcon(c, acc, theme.MarkSm)
+		mark()
 		color, label := t.Danger, "settings.dot.action"
-		switch a.syncHealth(acc).level {
-		case syncAction:
-		case syncRetrying:
+		switch {
+		case action:
+		case retrying:
 			color, label = t.Attention, "settings.dot.retrying"
 		default:
 			return

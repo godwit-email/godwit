@@ -9,6 +9,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -29,6 +30,7 @@ import (
 	"time"
 
 	"github.com/emersion/go-imap/v2"
+	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/godwit/backend/ews"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai/mask"
@@ -42,16 +44,18 @@ import (
 )
 
 type (
-	IMAP         = testmail.IMAP
-	JMAP         = testmail.JMAP
-	EWS          = testmail.EWS
-	Autodiscover = testmail.Autodiscover
-	POP3         = testmail.POP3
-	SMTP         = testmail.Inbox
-	Scale        = testmail.Scale
-	Turn         = testllm.Turn
-	Call         = testllm.Call
-	Request      = testllm.Request
+	IMAP           = testmail.IMAP
+	JMAP           = testmail.JMAP
+	EWS            = testmail.EWS
+	Autodiscover   = testmail.Autodiscover
+	POP3           = testmail.POP3
+	CardDAV        = testmail.CardDAV
+	CardDAVRequest = testmail.CardDAVRequest
+	SMTP           = testmail.Inbox
+	Scale          = testmail.Scale
+	Turn           = testllm.Turn
+	Call           = testllm.Call
+	Request        = testllm.Request
 )
 
 // The SMTP stages SMTP.Reply answers at.
@@ -170,10 +174,15 @@ func New(t testing.TB, opts ...Option) *Env {
 	claimEnv(t, clock)             // MockInit empties the keychain of any Env still running
 	keyring.MockInit()
 	dir := t.TempDir()
+	roots := testmail.CardDAVRoots()
+	prevRoots := conn.TLSRoots
+	conn.TLSRoots = roots
+	t.Cleanup(func() { conn.TLSRoots = prevRoots })
 	imageClient := imagefetch.NewClient(true)
 	imageClient.Transport.(*imagefetch.Transport).DialContext = netOptions("").Dial
+	imageClient.Transport.(*imagefetch.Transport).TLSClientConfig = &tls.Config{RootCAs: roots}
 	ad := new(atomic.Pointer[Autodiscover])
-	ewsNet := ews.Net{RootCAs: testmail.AutodiscoverRoots(),
+	ewsNet := ews.Net{RootCAs: roots,
 		Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			if a := ad.Load(); a != nil {
 				return a.Dial(ctx, network, addr)
@@ -442,6 +451,13 @@ func (e *Env) startPOP3(t testing.TB, email string) (core.AccountInput, *mailSer
 	return core.AccountInput{Email: email, Username: "alice", Password: "secret",
 		Receiving: core.Server{Protocol: "pop3", Host: ph, Port: pp, Security: core.SecurityNone},
 		Sending:   core.Server{Host: sh, Port: sp, Security: core.SecurityNone}}, &mailServers{pop3: p, smtp: inbox, smtpAddr: addr}
+}
+
+// StartCardDAV starts a fake HTTPS CardDAV server with default Basic credentials
+// alice / secret, trusted by both the Service's CardDAV client and image fetcher.
+func (e *Env) StartCardDAV(t *testing.T) *CardDAV {
+	t.Helper()
+	return testmail.StartCardDAV(t)
 }
 
 // StartServers starts fake IMAP and SMTP servers for an account not added

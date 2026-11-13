@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>方案 B · 电子邮件分组</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Noto+Sans+SC:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FFFFFF}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="width: 1280px; height: 640px; box-sizing: border-box; display: flex; background: #FFFFFF; font-family: 'Geist', 'Noto Sans SC', 'PingFang SC', sans-serif; font-size: 14px; color: #0A0A0A">
+<section aria-label="一个地址" style="flex: 1; box-sizing: border-box; padding: 32px 48px; display: flex; flex-direction: column; align-items: center; gap: 16px; border-right: 1px solid #E5E5E5">
+<span style="align-self: flex-start; font-size: 12px; color: #737373">一个地址</span>
+<span style="width: 72px; height: 72px; border-radius: 50%; background: #E0E7FF; color: #3730A3; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 600">周</span>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 2px">
+<h1 style="margin: 0; font-size: 24px; font-weight: 600">周明</h1>
+<span style="color: #737373">矩石架构 · 基础设施顾问</span>
+</div>
+<div style="display: flex; gap: 24px">
+<button type="button" style="display: flex; flex-direction: column; align-items: center; gap: 6px; border: none; background: none; color: #0A0A0A; font-size: 12px"><span style="width: 40px; height: 40px; border-radius: 50%; background: #F5F5F5; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></span>写邮件</button>
+<button type="button" style="display: flex; flex-direction: column; align-items: center; gap: 6px; border: none; background: none; color: #0A0A0A; font-size: 12px"><span style="width: 40px; height: 40px; border-radius: 50%; background: #F5F5F5; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"></rect><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"></path><path d="M10 12h4"></path></svg></span>全部归档</button>
+<button type="button" style="display: flex; flex-direction: column; align-items: center; gap: 6px; border: none; background: none; color: #0A0A0A; font-size: 12px"><span style="width: 40px; height: 40px; border-radius: 50%; background: #F5F5F5; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m5.6 5.6 12.8 12.8"></path></svg></span>屏蔽</button>
+</div>
+<div style="align-self: stretch; display: flex; flex-direction: column; border-radius: 12px; background: #F5F5F5; overflow: hidden">
+<div style="display: flex; align-items: center; gap: 16px; min-height: 44px; padding: 0 16px"><span style="width: 72px; flex: none; color: #737373">电子邮件</span><span style="flex: 1">zhouming@matrix.example</span></div>
+</div>
+<span style="max-width: 400px; text-align: center; font-size: 12px; color: #737373">一个地址也放在分组里，名字下面不再写地址</span>
+</section>
+<section aria-label="两个地址" style="flex: 1; box-sizing: border-box; padding: 32px 48px; display: flex; flex-direction: column; align-items: center; gap: 16px">
+<span style="align-self: flex-start; font-size: 12px; color: #737373">两个地址（一个已屏蔽）</span>
+<span style="width: 72px; height: 72px; border-radius: 50%; background: #FCE7F3; color: #9D174D; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 600">林</span>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 2px">
+<h1 style="margin: 0; font-size: 24px; font-weight: 600">林晓</h1>
+<span style="color: #737373">星云科技 · 设计总监</span>
+</div>
+<div style="display: flex; gap: 24px">
+<button type="button" style="display: flex; flex-direction: column; align-items: center; gap: 6px; border: none; background: none; color: #0A0A0A; font-size: 12px"><span style="width: 40px; height: 40px; border-radius: 50%; background: #F5F5F5; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></span>写邮件</button>
+<button type="button" style="display: flex; flex-direction: column; align-items: center; gap: 6px; border: none; background: none; color: #0A0A0A; font-size: 12px"><span style="width: 40px; height: 40px; border-radius: 50%; background: #F5F5F5; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"></rect><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"></path><path d="M10 12h4"></path></svg></span>全部归档</button>
+<button type="button" style="display: flex; flex-direction: column; align-items: center; gap: 6px; border: none; background: none; color: #0A0A0A; font-size: 12px"><span style="width: 40px; height: 40px; border-radius: 50%; background: #F5F5F5; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m5.6 5.6 12.8 12.8"></path></svg></span>屏蔽</button>
+</div>
+<div style="align-self: stretch; display: flex; flex-direction: column; border-radius: 12px; background: #F5F5F5; overflow: hidden">
+<div style="display: flex; align-items: center; gap: 16px; min-height: 44px; padding: 0 16px"><span style="width: 72px; flex: none; color: #737373">电子邮件</span><span style="flex: 1">linxiao@nebula.example</span></div>
+<div style="height: 1px; margin-left: 104px; background: #E5E5E5"></div>
+<div style="display: flex; align-items: center; gap: 16px; min-height: 44px; padding: 0 16px; background: #EDEDED"><span style="width: 72px; flex: none"></span><span style="flex: 1; display: flex; align-items: center; gap: 8px">xiao.lin@personal.example<span style="font-size: 12px; color: #B91C1C">已屏蔽</span></span>
+<button type="button" aria-label="写邮件给 xiao.lin@personal.example" style="width: 28px; height: 28px; border: none; border-radius: 6px; background: none; color: #525252; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></button>
+<button type="button" aria-label="复制 xiao.lin@personal.example" style="width: 28px; height: 28px; border: none; border-radius: 6px; background: none; color: #525252; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h10"></path></svg></button>
+<button type="button" aria-label="更多操作" style="width: 28px; height: 28px; border: none; border-radius: 6px; background: none; color: #525252; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="19" cy="12" r="1.6"></circle></svg></button>
+</div>
+</div>
+<span style="max-width: 400px; text-align: center; font-size: 12px; color: #737373">悬停的那一行才出现写邮件、复制和「更多」（屏蔽在「更多」里）</span>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":640}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

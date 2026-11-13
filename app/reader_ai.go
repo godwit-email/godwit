@@ -672,7 +672,7 @@ const textMiddle = 0.36
 // its sender, when, and the start of its text.
 func (r *reader) citeCard(c *ui.Context, anchor ui.Element, m core.MessageSummary) {
 	t, th := theme.Of(c), c.Theme()
-	name, addr := sender(m.From)
+	name, addr := senderOf(m)
 	kit.HoverCard(c, anchor, theme.CiteCardWidth, func() {
 		ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Center).Children(func() {
 			kit.AvatarImage(c, name, r.shownAvatar(m))
@@ -701,14 +701,14 @@ func (r *reader) replyName(m core.MessageSummary) string {
 		name, _ := sender(to[0])
 		return name
 	}
-	name, _ := sender(m.From)
+	name, _ := senderOf(m)
 	return name
 }
 
 // sourceLabel names a message a digest cites: its day and its
 // sender (the user's sidebar name, else "我").
 func (r *reader) sourceLabel(m core.MessageSummary) string {
-	who, addr := sender(m.From)
+	who, addr := senderOf(m)
 	for _, acc := range r.p.a.accounts {
 		if strings.EqualFold(acc.Email, addr) {
 			who = cmp.Or(acc.Alias, i18n.T("reader.me"))
