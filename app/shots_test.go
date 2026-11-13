@@ -324,8 +324,8 @@ func TestShots(t *testing.T) {
 		s := shotMail(t, noAuto)
 		f := s.folderOf(s.you, "inbox")
 		s.post(func() { s.app.navigate(Route{Page: PageMail, View: core.View{FolderID: f.ID}}) })
-		s.until("the folder", func() bool { return s.app.mail.view.FolderID == f.ID && !s.app.mail.loading })
-		s.post(func() { s.app.mail.stopOlder(); s.app.mail.older.busy = true })
+		s.until("the folder", func() bool { return s.app.mail.view.FolderID == f.ID && !s.app.mail.list.loading })
+		s.post(func() { s.app.mail.stopOlder(); s.app.mail.older.read.loading = true })
 		shot(s.harness, "MainOlder")
 	})
 	t.Run("MainSearch", func(t *testing.T) {

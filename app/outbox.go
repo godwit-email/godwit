@@ -182,11 +182,9 @@ func undoToastID(id int64) string { return fmt.Sprint("undo-send:", id) }
 // was taken back) closes, and an item no longer listed is forgotten. Only
 // the newest listing counts.
 func (a *App) offerUndo() {
-	a.undoGen++
-	gen := a.undoGen
 	var queued []outboxEntry
 	listed := map[int64]bool{}
-	a.do(func(ctx context.Context) error {
+	a.undoList.Run(a, func(ctx context.Context) error {
 		accs, err := a.svc.ListAccounts(ctx)
 		if err != nil {
 			return err
@@ -205,9 +203,6 @@ func (a *App) offerUndo() {
 		}
 		return nil
 	}, func(err error) {
-		if gen != a.undoGen {
-			return
-		}
 		if err != nil {
 			a.logf("listing the outbox for undo send: %v", err)
 			return

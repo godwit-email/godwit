@@ -27,7 +27,7 @@ type clientForm struct {
 	manual     bool   // the typed-in fields show
 	public     bool   // the provider's public client (auth.PublicClient) instead
 	showSecret bool
-	gen        uint64 // bumped per import: a read finishing after another started is dropped
+	read       latest // the import's file read; change drops it
 }
 
 // client is pub when chosen, else the typed or imported client, trimmed.
@@ -65,7 +65,7 @@ func (f *clientForm) choice(c *ui.Context, pub *auth.PublicClient) {
 // change drops the imported file, or a failed one's message, for another;
 // what was typed stays.
 func (f *clientForm) change() {
-	f.gen++
+	f.read.Stop()
 	if f.imported {
 		f.id, f.secret, f.imported = f.savedID, "", false
 	}
@@ -77,10 +77,9 @@ const clientFileMax = 64 << 10
 
 // importFile reads path, or a file the user chooses for "", off the UI thread.
 func (f *clientForm) importFile(a *App, path string) {
-	f.gen++
-	gen, plat := f.gen, a.plat
+	plat := a.plat
 	var id, secret string
-	a.do(func(context.Context) error {
+	f.read.Run(a, func(context.Context) error {
 		if path == "" {
 			paths, err := plat.OpenFiles(false)
 			if err != nil || len(paths) == 0 {
@@ -100,7 +99,7 @@ func (f *clientForm) importFile(a *App, path string) {
 		id, secret, err = auth.ParseClientFile(data)
 		return err
 	}, func(err error) {
-		if gen != f.gen || err == nil && id == "" {
+		if err == nil && id == "" {
 			return
 		}
 		f.err = err

@@ -162,7 +162,7 @@ func TestAskConversationAwaiting(t *testing.T) {
 	h.app.refresh(nil)
 	p := h.ask()
 	p.convs = []core.Conversation{{ID: 1, Kind: "ask", Title: "回复 Lena", Awaiting: true}, {ID: 2, Kind: "ask", Title: "这个月的订阅", Answering: true}}
-	p.listGen++ // the refresh's read, still under way, is dropped
+	p.list.Stop() // the refresh's read, still under way, is dropped
 	h.see("回复 Lena")
 	h.see("待确认")
 	h.ask().convs[0].Awaiting = false
@@ -173,9 +173,9 @@ func TestAskConversationAwaiting(t *testing.T) {
 func TestAskRunsChangedReloadsTheList(t *testing.T) {
 	h, _, _ := askHarness(t, true)
 	h.app.refresh(nil)
-	before, gen := h.app.refreshes, h.ask().listGen
+	before, gen := h.app.refreshes, h.ask().list.Gen()
 	h.app.onEvent(events.Event{Type: events.RunsChanged, ConversationID: 1})
-	if h.ask().listGen == gen {
+	if h.ask().list.Gen() == gen {
 		t.Fatal("the list was not read again")
 	}
 	if slices.ContainsFunc(h.app.dirty, func(e events.Event) bool { return e.Type == events.RunsChanged }) || h.app.refreshes != before {

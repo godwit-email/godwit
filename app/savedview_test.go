@@ -172,7 +172,7 @@ func TestViewWhyAndRemove(t *testing.T) {
 	}
 	h.savedViewNamed("Acme")
 	h.click("Acme")
-	h.waitMail("the row", func() bool { return !h.app.mail.loading && len(h.items()) == 1 })
+	h.waitMail("the row", func() bool { return !h.app.mail.list.loading && len(h.items()) == 1 })
 	h.app.mail.open(h.items(), 0)
 	h.see(i18n.T("view.band.unreplied"))
 	h.see("Acme" + "：")
@@ -248,14 +248,14 @@ func TestViewRefreshesWithTime(t *testing.T) {
 	}
 	h.savedViewNamed("Acme")
 	h.click("Acme")
-	h.waitMail("the row", func() bool { return !h.app.mail.loading && len(h.items()) == 1 })
-	before := h.app.mail.gen
+	h.waitMail("the row", func() bool { return !h.app.mail.list.loading && len(h.items()) == 1 })
+	before := h.app.mail.list.Gen()
 	h.advance(time.Minute)
-	if h.app.mail.gen != before {
+	if h.app.mail.list.Gen() != before {
 		t.Fatalf("reread early")
 	}
 	h.advance(viewRefreshEvery)
-	if h.app.mail.gen == before {
+	if h.app.mail.list.Gen() == before {
 		t.Fatalf("no reread after %v", viewRefreshEvery)
 	}
 }
@@ -429,17 +429,17 @@ func TestViewRefreshesAtMidnight(t *testing.T) {
 	}
 	h.savedViewNamed("Acme")
 	h.click("Acme")
-	h.waitMail("the row", func() bool { return !h.app.mail.loading && len(h.items()) == 1 })
+	h.waitMail("the row", func() bool { return !h.app.mail.list.loading && len(h.items()) == 1 })
 	now := h.clock.Now()
 	y, m, d := now.Date()
 	for now.Add(viewRefreshEvery).Before(time.Date(y, m, d+1, 0, 0, 0, 0, now.Location())) {
 		h.advance(viewRefreshEvery)
 		now = h.clock.Now()
 	}
-	h.waitMail("settled", func() bool { return !h.app.mail.loading })
-	before := h.app.mail.gen
+	h.waitMail("settled", func() bool { return !h.app.mail.list.loading })
+	before := h.app.mail.list.Gen()
 	h.advance(time.Date(y, m, d+1, 0, 0, 2, 0, now.Location()).Sub(now))
-	if h.app.mail.gen == before {
+	if h.app.mail.list.Gen() == before {
 		t.Fatal("no reread just after midnight")
 	}
 }

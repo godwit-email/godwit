@@ -45,11 +45,11 @@ type aiRun struct {
 // fetch is a read for the reader: done once it succeeded; a failure keeps
 // err for a retry. gen is the reader gen of the last attempt.
 type fetch[T any] struct {
-	v             T
-	done, loading bool
-	err           error
-	gen           uint64
-	seq           uint64 // bumped per read and by restart; only the newest read lands
+	latest // only the newest read lands
+	v      T
+	done   bool
+	err    error
+	gen    uint64
 }
 
 // fetchInto reads into f unless it is read, being read, or (without force)
@@ -57,27 +57,24 @@ type fetch[T any] struct {
 // restart forgets what was read and drops a read in flight, so the next
 // fetchInto reads afresh.
 func (f *fetch[T]) restart() {
-	f.seq++
-	f.done, f.loading = false, false
+	f.Stop()
+	f.done = false
 }
 
 func fetchInto[T any](r *reader, f *fetch[T], force bool, get func(context.Context) (T, error), failed func(error)) {
 	if f.done || f.loading && f.gen == r.gen || !force && f.gen == r.gen {
 		return
 	}
-	a, gen, ctx := r.p.a, r.gen, r.aiContext()
-	f.seq++
-	seq := f.seq
-	f.gen, f.loading, f.err = gen, true, nil
+	gen, ctx := r.gen, r.aiContext() // stopAI cancels it; a restart does not
+	f.gen, f.err = gen, nil
 	var v T
-	a.do(func(context.Context) (err error) {
+	f.Run(r.p.a, func(context.Context) (err error) {
 		v, err = get(ctx)
 		return err
 	}, func(err error) {
-		if gen != r.gen || seq != f.seq {
+		if gen != r.gen {
 			return
 		}
-		f.loading = false
 		if err != nil {
 			f.err = err
 			if failed != nil {

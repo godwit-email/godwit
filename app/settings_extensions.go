@@ -28,8 +28,8 @@ import (
 type extView struct {
 	a               *App
 	tab             int    // 0 skills, 1 plugins (the first shown); MCP is on the Intelligence page
-	gen             uint64 // bumped per extension read; only the newest applies
-	skillsGen       uint64 // bumped per skill read or write; old reads cannot replace a toggle
+	list            latest // the plugins and MCP servers; only the newest read applies
+	skillsRead      latest // a skill write drops it: an old read cannot replace a toggle
 	skills          []core.SkillInfo
 	plugins         []core.PluginInfo
 	servers         []core.MCPServer
@@ -62,36 +62,30 @@ func extChange(ev events.Event) bool {
 }
 
 func (e *extView) loadSkills() {
-	e.skillsGen++
-	gen := e.skillsGen
 	if len(e.a.writes.chains["skills"]) > 0 {
+		e.skillsRead.Stop()
 		return // 等待队列中所有开关写回完成，再读取最终状态。
 	}
 	var skills []core.SkillInfo
-	e.a.query(func(ctx context.Context) (err error) {
+	e.skillsRead.Run(e.a, func(ctx context.Context) (err error) {
 		skills, err = e.a.svc.ListSkills(ctx)
 		return err
-	}, func(err error) {
-		if gen != e.skillsGen {
-			return
-		}
+	}, e.a.here(func(err error) {
 		if err != nil {
 			e.a.toastErr(err)
 			return
 		}
 		e.skills = skills
-	})
+	}))
 }
 
 func (e *extView) load() {
 	e.loadSkills()
 	a := e.a
-	e.gen++
-	gen := e.gen
 	var pl []core.PluginInfo
 	var ms []core.MCPServer
 	var rv core.RegistryView
-	a.query(func(ctx context.Context) (err error) {
+	e.list.Run(a, func(ctx context.Context) (err error) {
 		if rv, err = a.svc.ListPluginRegistry(ctx); err != nil { // a cache that fails its signature: say so, list nothing
 			rv, err = core.RegistryView{On: true, Stale: err.Error()}, nil
 		}
@@ -100,16 +94,13 @@ func (e *extView) load() {
 		}
 		ms, err = a.svc.ListMCPServers(ctx)
 		return err
-	}, func(err error) {
-		if gen != e.gen {
-			return
-		}
+	}, a.here(func(err error) {
 		if err != nil {
 			a.toastErr(err)
 			return
 		}
 		e.plugins, e.servers, e.reg = pl, ms, rv
-		e.loadLogins(gen)
+		e.loadLogins()
 		for _, p := range pl {
 			if !p.Builtin { // no config, nothing installed
 				e.loadCfg(p.Name)
@@ -126,7 +117,7 @@ func (e *extView) load() {
 		if _, ok := e.server(); !ok && len(ms) > 0 {
 			e.mcp = ms[0].ID
 		}
-	})
+	}))
 }
 
 // signsIn reports whether p offers a sign-in now.
@@ -136,7 +127,8 @@ func signsIn(p core.PluginInfo) bool {
 
 // loadLogins asks each sign-in plugin apart from the list: its process may
 // have to start. One that cannot answer offers nothing, and shows its error.
-func (e *extView) loadLogins(gen uint64) {
+// The next read of the list drops the answers.
+func (e *extView) loadLogins() {
 	a := e.a
 	for _, p := range e.plugins {
 		if !signsIn(p) {
@@ -144,13 +136,10 @@ func (e *extView) loadLogins(gen uint64) {
 		}
 		name := p.Name
 		var st core.PluginLogin
-		a.do(func(ctx context.Context) (err error) {
+		e.list.Also(a, func(ctx context.Context) (err error) {
 			st, err = a.svc.PluginLoginStatus(ctx, name)
 			return err
 		}, func(err error) {
-			if gen != e.gen {
-				return
-			}
 			if err != nil {
 				delete(e.logins, name)
 				return
@@ -252,7 +241,7 @@ func (e *extView) server() (core.MCPServer, bool) {
 func (e *extView) write(key string, fn func(ctx context.Context) error, done func(err error)) {
 	a := e.a
 	if key == "skills" {
-		e.skillsGen++
+		e.skillsRead.Stop()
 	}
 	a.writes.Chain(key, fn, func(err error) {
 		a.toastErr(err)

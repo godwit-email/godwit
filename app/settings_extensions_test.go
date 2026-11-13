@@ -107,8 +107,8 @@ func TestSkillsChangedOnlyRefreshesSkills(t *testing.T) {
 			a.onEvent(events.Event{Type: events.SkillsChanged})
 			a.clock.(*fakeClock).advance(refreshEvery)
 			next()() // the coalesced refresh
-			if a.loadGen != 0 || a.mail.gen != 0 || e.gen != 0 || a.mail.reader.readGen != 0 {
-				t.Fatalf("skill event reloaded unrelated data: shell=%d mail=%d extensions=%d reader=%d", a.loadGen, a.mail.gen, e.gen, a.mail.reader.readGen)
+			if a.loads.Gen() != 0 || a.mail.list.Gen() != 0 || e.list.Gen() != 0 || a.mail.reader.readGen != 0 {
+				t.Fatalf("skill event reloaded unrelated data: shell=%d mail=%d extensions=%d reader=%d", a.loads.Gen(), a.mail.list.Gen(), e.list.Gen(), a.mail.reader.readGen)
 			}
 		})
 	}
@@ -120,7 +120,7 @@ func TestSkillWriteOnlyRefreshesSkills(t *testing.T) {
 	for slices.ContainsFunc(e.skills, func(s core.SkillInfo) bool { return s.Name == "summarize" && s.Enabled }) {
 		next()()
 	}
-	if e.gen != 0 {
+	if e.list.Gen() != 0 {
 		t.Fatal("a skill write reloaded plugins, registry and MCP servers")
 	}
 }
@@ -237,8 +237,8 @@ func TestSkillsChangedWithMailEventsRefreshesMail(t *testing.T) {
 	a, _, _ := skillRefreshApp(t)
 	a.route = Route{Page: PageMail, ThreadID: 1}
 	a.refresh([]events.Event{{Type: events.SkillsChanged}, {Type: events.MessagesChanged}})
-	if a.loadGen != 1 || a.mail.gen != 1 || a.mail.reader.readGen != 1 {
-		t.Fatalf("mixed events skipped mail refresh: shell=%d mail=%d reader=%d", a.loadGen, a.mail.gen, a.mail.reader.readGen)
+	if a.loads.Gen() != 1 || a.mail.list.Gen() != 1 || a.mail.reader.readGen != 1 {
+		t.Fatalf("mixed events skipped mail refresh: shell=%d mail=%d reader=%d", a.loads.Gen(), a.mail.list.Gen(), a.mail.reader.readGen)
 	}
 }
 

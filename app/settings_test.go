@@ -732,7 +732,7 @@ func TestSettingsSavedFieldSurvivesStaleLoad(t *testing.T) {
 		return st, accs, err
 	}
 	h.app.load()
-	staleGen := h.app.loadGen
+	staleGen := h.app.loads.Gen()
 	h.until("the stale load runs", func() bool { return calls.Load() == 1 })
 	h.fillRow("发件人名称", "Alice Liddell")
 	h.advance(accountSaveDelay)
@@ -741,7 +741,7 @@ func TestSettingsSavedFieldSurvivesStaleLoad(t *testing.T) {
 		t.Fatalf("the saved account was not merged: %+v", h.app.accounts[0])
 	}
 	h.until("the reload after the save", func() bool { return h.app.accountsGen > staleGen })
-	h.app.loadGen = staleGen // let the stale load apply, as if it were the newest
+	h.app.loads.seq = staleGen // let the stale load apply, as if it were the newest
 	close(release)
 	h.until("the stale load applies", func() bool { return h.app.accountsGen == staleGen && h.app.accounts[0].Name == "alice" })
 	h.tt.Frame()
@@ -767,7 +767,7 @@ func TestSettingsStaleLoadKeepsSavedSettings(t *testing.T) {
 	h.openSettings("general")
 	h.click("开机时自动启动")
 	h.until("saved", func() bool { return h.app.writes.keys["settings"] == nil && h.app.settingsOK.LaunchAtLogin })
-	gen := h.app.loadGen
+	gen := h.app.loads.Gen()
 	close(release)
 	h.until("the old load finishes", func() bool { return h.app.accountsGen == gen })
 	if !h.app.settings.LaunchAtLogin {
@@ -831,7 +831,7 @@ func gateSettings(h *harness) *gatedSettings {
 func (g *gatedSettings) staleLoad(h *harness) uint64 {
 	g.armed.Store(true)
 	h.app.load()
-	gen := h.app.loadGen
+	gen := h.app.loads.Gen()
 	h.until("the load read", func() bool { return g.read.Load() })
 	return gen
 }

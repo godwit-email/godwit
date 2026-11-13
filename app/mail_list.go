@@ -91,9 +91,8 @@ type mailPage struct {
 	threads bool      // items are threads (Settings.ThreadView when loaded)
 	items   []mailItem
 	cursor  string // where the next page starts; "" once all is loaded
-	loading bool   // a page or a refresh is in flight: one at a time
+	list    latest // a page or a refresh in flight: one at a time; a reload drops the one before
 	stalled bool   // the last page failed: no more pages until a refresh
-	gen     uint64 // bumped per reload; older list results are dropped
 	older   olderLoad
 
 	main   listSel // the list's choice and place
@@ -117,7 +116,7 @@ type mailPage struct {
 	results              []mailItem
 	hlQuery              string // the query the results answer: what they highlight
 	sf                   searchFilters
-	searchGen            uint64 // bumped per request and on leaving; older answers are dropped
+	searching            latest // left, its answer is dropped
 
 	reader *reader // the thread or message the route names
 
@@ -225,8 +224,6 @@ func (p *mailPage) refresh(dirty []events.Event) {
 // in a new one it starts again with the first page.
 func (p *mailPage) reload() {
 	a := p.a
-	p.gen++
-	gen := p.gen
 	v := a.route.View
 	if a.route.Page != PageMail {
 		v = p.view // a draft open: the list stays as it was
@@ -254,7 +251,6 @@ func (p *mailPage) reload() {
 	if p.searched {
 		p.search()
 	}
-	p.loading = true
 	hook := p.fetched
 	var (
 		folders      = map[int64][]core.Folder{}
@@ -268,7 +264,7 @@ func (p *mailPage) reload() {
 		saved        []core.SavedView
 		viewGroups   []viewGroupState
 	)
-	a.do(func(ctx context.Context) error {
+	p.list.Run(a, func(ctx context.Context) error {
 		accs, err := a.svc.ListAccounts(ctx)
 		if err != nil {
 			return err
@@ -320,10 +316,6 @@ func (p *mailPage) reload() {
 		}
 		return err
 	}, func(err error) {
-		if gen != p.gen {
-			return
-		}
-		p.loading = false
 		if err != nil {
 			a.toastErr(err)
 			return
@@ -414,22 +406,17 @@ func (p *mailPage) loadMore() {
 	if p.savedViewID() != 0 {
 		return // each group loads on its own: viewLoadVisible
 	}
-	if p.loading || p.stalled || p.cursor == "" || p.searched {
+	if p.list.loading || p.stalled || p.cursor == "" || p.searched {
 		return
 	}
 	a := p.a
-	p.loading = true
-	gen, v, threads, cursor := p.gen, p.view, p.threads, p.cursor
+	v, threads, cursor := p.view, p.threads, p.cursor
 	var got []mailItem
 	var next string
-	a.do(func(ctx context.Context) (err error) {
+	p.list.Run(a, func(ctx context.Context) (err error) {
 		got, next, err = fetchItems(ctx, a.svc, v, threads, cursor, pageSize, false)
 		return err
 	}, func(err error) {
-		if gen != p.gen {
-			return
-		}
-		p.loading = false
 		if err != nil {
 			p.stalled = true
 			a.toastErr(err)
@@ -1002,7 +989,7 @@ func (p *mailPage) listView(c *ui.Context) {
 		p.devPath = ""
 	}
 	// An empty folder still fetching older mail is loading, not empty: its placeholders, not 没有邮件 above a spinner.
-	loading := p.loading || p.older.busy
+	loading := p.list.loading || p.older.read.loading
 	l.Children(func() {
 		if len(rows) == 0 && loading { // the first load: placeholder rows
 			for range 6 {
@@ -1034,7 +1021,7 @@ func (p *mailPage) listView(c *ui.Context) {
 	if act != "" {
 		p.batch(act, target)
 	}
-	if (p.older.busy && len(rows) > 0) || p.older.err != nil {
+	if (p.older.read.loading && len(rows) > 0) || p.older.err != nil {
 		p.olderRow(c)
 	}
 	first, last := ls.list.Visible()
@@ -1051,11 +1038,9 @@ func (p *mailPage) listView(c *ui.Context) {
 // once the list shows all it stores: one at a time, stopped when the view
 // changes. The unified views and search don't fetch: their rows mix folders.
 type olderLoad struct {
-	gen    uint64 // bumped per fetch and on leaving; older answers are dropped
+	read   latest // left, the fetch is cancelled
 	folder int64
-	busy   bool
 	err    error
-	cancel context.CancelFunc
 	done   map[int64]bool // folders whose server has nothing older, this session
 	notYet int64          // a folder whose first sync is under way: its next SyncFinished asks again
 }
@@ -1073,24 +1058,16 @@ func (p *mailPage) olderFolder() int64 {
 // again) or the server has nothing older.
 func (p *mailPage) loadOlder() {
 	f, o := p.olderFolder(), &p.older
-	if f == 0 || p.loading || p.stalled || p.cursor != "" || p.searched || p.filter != 0 || o.busy || o.err != nil || o.done[f] || o.notYet == f {
+	if f == 0 || p.list.loading || p.stalled || p.cursor != "" || p.searched || p.filter != 0 || o.read.loading || o.err != nil || o.done[f] || o.notYet == f {
 		return
 	}
 	a := p.a
-	ctx, cancel := context.WithCancel(a.ctx)
-	o.gen++
-	gen := o.gen
-	o.folder, o.busy, o.cancel = f, true, cancel
+	o.folder = f
 	var more bool
-	a.do(func(context.Context) (err error) {
+	o.read.Run(a, func(ctx context.Context) (err error) {
 		more, err = a.svc.LoadOlder(ctx, f)
 		return err
 	}, func(err error) {
-		cancel()
-		if gen != o.gen {
-			return
-		}
-		o.busy, o.cancel = false, nil
 		switch {
 		case errors.Is(err, core.ErrNotSynced): // not an error: the sync fills it first
 			o.notYet = f
@@ -1109,12 +1086,8 @@ func (p *mailPage) loadOlder() {
 
 // stopOlder cancels the fetch of older mail; leaving the folder drops its error.
 func (p *mailPage) stopOlder() {
-	o := &p.older
-	if o.cancel != nil {
-		o.cancel()
-	}
-	o.gen++
-	o.busy, o.err, o.cancel = false, nil, nil
+	p.older.read.Stop()
+	p.older.err = nil
 }
 
 // olderRow is the row under the list while older mail loads, or the error
@@ -1122,7 +1095,7 @@ func (p *mailPage) stopOlder() {
 func (p *mailPage) olderRow(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).Height(theme.OlderRowHeight).Padding(0, th.Space(4)).Gap(th.Space(2)).Justify(ui.Center).AlignItems(ui.Center).Children(func() {
-		if p.older.busy {
+		if p.older.read.loading {
 			kit.Spinner(c)
 			kit.Text(c, i18n.T("mail.older.loading"), t.Text.Sm).TextColor(t.Muted)
 			return
@@ -1410,17 +1383,17 @@ func (p *mailPage) runSearch() {
 // search runs the query; only the newest request's answer shows, and none
 // once the search is left.
 func (p *mailPage) search() {
-	p.searchGen++
 	sq := p.searchQuery()
 	if sq.Text == "" && !sq.Filtered() {
+		p.searching.Stop()
 		p.searched, p.results = false, nil
 		return
 	}
 	a := p.a
-	q, gen := sq.Text, p.searchGen
+	q := sq.Text
 	var found []core.MessageSummary
 	labels := map[int64][]core.AppliedLabel{}
-	a.do(func(ctx context.Context) (err error) {
+	p.searching.Run(a, func(ctx context.Context) (err error) {
 		if found, err = a.svc.SearchWith(ctx, sq, searchLimit); err != nil {
 			return err
 		}
@@ -1436,9 +1409,6 @@ func (p *mailPage) search() {
 		}
 		return nil
 	}, func(err error) {
-		if gen != p.searchGen {
-			return
-		}
 		if err != nil {
 			a.toastErr(err)
 			return
@@ -1466,7 +1436,7 @@ func (p *mailPage) clearSearch() {
 }
 
 func (p *mailPage) closeSearch() {
-	p.searchGen++
+	p.searching.Stop()
 	p.searchOpen, p.searched, p.query, p.results = false, false, "", nil
 	p.sf = searchFilters{}
 	p.found.reset()
