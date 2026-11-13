@@ -38,7 +38,7 @@ func merge(ctx context.Context, db *store.DB, keep int64, drop []int64) ([]sqlit
 	to := func(sql string) sqlite.Statement {
 		return sqlite.Statement{SQL: sql, Args: append([]any{keep}, args...)}
 	}
-	stmts := []sqlite.Statement{
+	stmts := slices.Concat([]sqlite.Statement{
 		to("UPDATE message_aliases SET message_id = ? WHERE message_id IN " + in),
 		to("INSERT OR REPLACE INTO message_aliases(id, message_id) SELECT id, ? FROM messages WHERE id IN " + in),
 		{SQL: "UPDATE messages SET server_id = coalesce(server_id, (SELECT max(server_id) FROM messages WHERE id IN " + in + ")) WHERE id = ?",
@@ -50,9 +50,7 @@ func merge(ctx context.Context, db *store.DB, keep int64, drop []int64) ([]sqlit
 			(SELECT folder_id FROM message_locations WHERE server_ref IS NOT NULL AND message_id IN ` + in + ")"),
 		to("UPDATE OR IGNORE message_locations SET message_id = ? WHERE server_ref IS NOT NULL AND message_id IN " + in),
 		to("UPDATE OR IGNORE message_locations SET message_id = ? WHERE message_id IN " + in),
-		to("UPDATE ops SET message_id = ? WHERE message_id IN " + in),
-		{SQL: `UPDATE ops SET depends_on = (SELECT max(p.id) FROM ops p WHERE p.message_id = ops.message_id AND p.state IN ('pending', 'awaiting_claim') AND p.id < ops.id)
-			WHERE message_id = ? AND state = 'pending'`, Args: []any{keep}},
+	}, mergeOps(keep, in, args), []sqlite.Statement{
 		// The rows' labels are deleted before the rows, so messages_label_stash
 		// hands none of them to other rows sharing a label_fp.
 		{SQL: `INSERT INTO message_labels(message_id, label_id, source, active)
@@ -78,7 +76,7 @@ func merge(ctx context.Context, db *store.DB, keep int64, drop []int64) ([]sqlit
 			Args: append(append(slices.Clone(args), keep), args...)},
 		// Files the kept message did not take are orphans the startup sweep collects.
 		{SQL: "DELETE FROM messages WHERE id IN " + in, Args: args},
-	}
+	})
 	return stmts, tids, nil
 }
 

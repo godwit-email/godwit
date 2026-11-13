@@ -217,7 +217,7 @@ func claim(ctx context.Context, db *store.DB, accountID int64, f *folder, ref st
 	if len(rows.Values) == 1 && twins <= 1 && store.Int(present.Values[0][0]) == 0 {
 		op, id := store.Int(rows.Values[0][0]), store.Int(rows.Values[0][1])
 		_, err = db.Transaction(ctx, append(locate(id, f.id, ref),
-			sqlite.Statement{SQL: "UPDATE ops SET state = 'done' WHERE id = ?", Args: []any{op}}))
+			opsTo(opDone, fromAwaiting, "", "id = ?", op)))
 		if err != nil {
 			return 0, err
 		}
@@ -233,7 +233,7 @@ func claim(ctx context.Context, db *store.DB, accountID int64, f *folder, ref st
 		return 0, err
 	}
 	stmts := []sqlite.Statement{
-		{SQL: "UPDATE ops SET state = 'conflict', last_error = ? WHERE id IN (" + marks(len(ops)) + ")", Args: append([]any{msg}, ops...)},
+		opsTo(opConflict, fromAwaiting, "last_error = ?", "id IN ("+marks(len(ops))+")", append([]any{msg}, ops...)...),
 		{SQL: "DELETE FROM messages WHERE id IN (" + marks(len(msgs)) + ")", Args: msgs},
 	}
 	if _, err := db.Transaction(ctx, append(stmts, tidyThreads(accountID, tids)...)); err != nil {
@@ -268,8 +268,7 @@ func unclaimable(ctx context.Context, db *store.DB, accountID int64, r *result) 
 		return err
 	}
 	stmts := []sqlite.Statement{
-		{SQL: "UPDATE ops SET state = 'conflict', last_error = ? WHERE state IN ('pending', 'awaiting_claim') AND message_id IN (" + marks(len(msgs)) + ")",
-			Args: append([]any{msg}, msgs...)},
+		opsTo(opConflict, fromUnfinished, "last_error = ?", "message_id IN ("+marks(len(msgs))+")", append([]any{msg}, msgs...)...),
 		{SQL: "DELETE FROM messages WHERE " + unlocated + " AND id IN (" + marks(len(msgs)) + ")", Args: msgs},
 	}
 	for _, m := range msgs {

@@ -61,7 +61,7 @@ const onServer = "l.server_ref IS NOT NULL"
 // argument is an op id the check ignores (the purge being pushed), else 0.
 var purgeable = `EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id AND l.folder_id = p.folder_id AND l.shown
 		AND (` + onServer + ` OR f.server_ref IS NULL) AND l.entered_at > 0 AND max(l.entered_at, f.role_since, p.since) <= unixepoch() - p.days * 86400)
-	AND p.days > 0 AND NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.state IN ('pending', 'awaiting_claim') AND o.id != ?)`
+	AND p.days > 0 AND NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.state IN ` + unfinished + ` AND o.id != ?)`
 
 // QueuePurge queues the account's due junk and trash purges as purge ops, which
 // PushOps expunges after checking again. A folder is purged at most once a day,
@@ -143,7 +143,7 @@ var claimable = `state = 'pending' AND EXISTS (SELECT 1 FROM messages m JOIN pur
 var claimableNow = `state = 'pending' AND EXISTS (SELECT 1 FROM messages m JOIN folders f ON f.id = ops.dst_folder_id
 	WHERE m.id = ops.message_id AND EXISTS (SELECT 1 FROM message_locations l WHERE l.message_id = m.id AND l.folder_id = f.id AND l.shown
 		AND (` + onServer + ` OR f.server_ref IS NULL))
-	AND NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.state IN ('pending', 'awaiting_claim') AND o.id != ops.id))`
+	AND NOT EXISTS (SELECT 1 FROM ops o WHERE o.message_id = m.id AND o.state IN ` + unfinished + ` AND o.id != ops.id))`
 
 // purgeClaim is the claimable condition of a purge op with payload p and id, and its arguments.
 func purgeClaim(p purgePayload, id int64) (string, []any) {
@@ -197,7 +197,7 @@ func (pu *pusher) pushPurge(ctx context.Context, o op, at backend.Location) (str
 			return msg, finish(ctx, db, o, "failed", msg)
 		}
 		// Recorded even if a rescue cancelled it meanwhile: the message is gone.
-		_, err = db.Execute(ctx, "UPDATE ops SET state = 'done', last_error = NULL WHERE id = ?", o.id)
+		_, err = db.Transaction(ctx, []sqlite.Statement{opsTo(opDone, []string{opPending, opCancelled}, "last_error = NULL", "id = ?", o.id)})
 		return "", err
 	}
 	cancel := func() (string, error) {
@@ -220,14 +220,13 @@ func (pu *pusher) pushPurge(ctx context.Context, o op, at backend.Location) (str
 		return cancel()
 	}
 	cond, args := purgeClaim(p, o.id)
-	res, err := db.Execute(ctx, "UPDATE ops SET attempts = attempts + 1 WHERE id = ? AND "+cond, append([]any{o.id}, args...)...)
+	claimed, err := claimPurge(ctx, db, &o, cond, args)
 	if err != nil {
 		return "", err
 	}
-	if res.Changes != 1 {
+	if !claimed {
 		return cancel()
 	}
-	o.attempts++
 	steps := []string{"selected", "stored"}
 	return apply(func() bool {
 		step := steps[0]

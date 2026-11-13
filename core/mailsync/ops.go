@@ -14,9 +14,6 @@ import (
 	"github.com/godwit-email/godwit/internal/i18n"
 )
 
-// MaxAttempts is how many server refusals an op takes before it is marked failed.
-const MaxAttempts = 5
-
 // FlagsPayload is the payload of a flags op: flags to add, then flags to remove.
 type FlagsPayload struct {
 	Add    []string `json:"add,omitempty"`
@@ -33,12 +30,6 @@ type OpsError struct {
 func (e *OpsError) Error() string { return strings.Join(e.Problems, "; ") }
 
 var errNoDestination = errors.New("the destination folder no longer exists")
-
-type op struct {
-	id, msg, src, dst, dep, accountID int64
-	kind, payload                     string
-	attempts, refusals                int
-}
 
 // pusher is one push: the account's backend and what it declares.
 type pusher struct {
@@ -72,16 +63,15 @@ func PushNewOps(ctx context.Context, db *store.DB, recv backend.Receiver, accoun
 func push(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64, now time.Time, filter string) (rerr error) {
 	var problems []string
 	var changed []int64
-	// A purge of a message already gone has nothing left to do.
-	if _, err := db.Execute(ctx, `UPDATE ops SET state = 'cancelled'
-		WHERE account_id = ? AND message_id IS NULL AND kind = 'purge' AND state = 'pending'`, accountID); err != nil {
-		return err
-	}
-	res, err := db.Execute(ctx, `UPDATE ops SET state = 'conflict', last_error = 'the message no longer exists'
-		WHERE account_id = ? AND message_id IS NULL AND state IN ('pending', 'awaiting_claim')`, accountID)
+	rs, err := db.Transaction(ctx, []sqlite.Statement{
+		// A purge of a message already gone has nothing left to do.
+		opsTo(opCancelled, fromPending, "", "account_id = ? AND message_id IS NULL AND kind = 'purge'", accountID),
+		opsTo(opConflict, fromUnfinished, "last_error = 'the message no longer exists'", "account_id = ? AND message_id IS NULL", accountID),
+	})
 	if err != nil {
 		return err
 	}
+	res := rs[1]
 	purged := map[int64]int{} // expunged per folder, audited when the push ends
 	defer func() {
 		if aerr := auditPurges(context.WithoutCancel(ctx), db, accountID, purged); aerr != nil && rerr == nil {
@@ -149,17 +139,8 @@ func push(ctx context.Context, db *store.DB, recv backend.Receiver, accountID in
 // connection or database is unusable.
 func (p *pusher) pushOp(ctx context.Context, o op) (problem string, err error) {
 	db := p.db
-	if o.dep != 0 {
-		r, err := db.Query(ctx, "SELECT state FROM ops WHERE id = ?", o.dep)
-		if err != nil {
-			return "", err
-		}
-		if len(r.Values) > 0 && (store.Str(r.Values[0][0]) == "pending" || store.Str(r.Values[0][0]) == "awaiting_claim") {
-			return "", nil
-		}
-		if _, err := db.Execute(ctx, "UPDATE ops SET depends_on = NULL WHERE id = ?", o.id); err != nil {
-			return "", err
-		}
+	if wait, err := waiting(ctx, db, o); wait || err != nil {
+		return "", err
 	}
 	if o.kind == "move" && p.stable {
 		return p.pushStableMove(ctx, o)
@@ -204,7 +185,7 @@ func (p *pusher) pushOp(ctx context.Context, o op) (problem string, err error) {
 	}
 	// Counted before anything is sent: after a dropped connection the next round
 	// knows the command may have reached the server.
-	if err := p.count(ctx, &o, 1); err != nil {
+	if err := count(ctx, db, &o, 1); err != nil {
 		return "", err
 	}
 
@@ -233,14 +214,7 @@ func (p *pusher) pushOp(ctx context.Context, o op) (problem string, err error) {
 		}
 		w = backend.Move{
 			At: loc, To: dst.ref, Cursor: dst.cursor, Before: mp.Before,
-			BeforeCopy: func(b backend.MoveBaseline) error {
-				raw, err := json.Marshal(b)
-				if err != nil {
-					return err
-				}
-				_, err = db.Execute(ctx, "UPDATE ops SET payload = json_set(coalesce(nullif(payload, ''), '{}'), '$.before', json(?)) WHERE id = ?", string(raw), o.id)
-				return err
-			},
+			BeforeCopy: func(b backend.MoveBaseline) error { return saveBaseline(ctx, db, o.id, b) },
 		}
 	default:
 		msg := fmt.Sprintf("unknown change %q", o.kind)
@@ -251,7 +225,7 @@ func (p *pusher) pushOp(ctx context.Context, o op) (problem string, err error) {
 		res, err = p.recv.Apply(ctx, w)
 	}
 	if nothingDone(res, err) {
-		if err := p.count(ctx, &o, -1); err != nil {
+		if err := count(ctx, db, &o, -1); err != nil {
 			return "", err
 		}
 	}
@@ -364,8 +338,7 @@ func (p *pusher) lostSource(ctx context.Context, o op, sent bool) (string, error
 	}
 	switch {
 	case store.Int(r.Values[0][1]) > 0:
-		_, err := p.db.Transaction(ctx, append(unlocate(o.msg, o.src),
-			sqlite.Statement{SQL: "UPDATE ops SET state = 'done', last_error = NULL WHERE id = ?", Args: []any{o.id}}))
+		_, err := p.db.Transaction(ctx, append(unlocate(o.msg, o.src), opDoneStmt(o.id)))
 		return "", err
 	case sent:
 		return "", moved(ctx, p.db, o, "")
@@ -382,14 +355,13 @@ func (p *pusher) lostSource(ctx context.Context, o op, sent bool) (string, error
 // (Gmail's All Mail copy of mail archived there, synced before X-GM-MSGID
 // was, #506): it is merged into the moved one (ADR 0034), its queued ops with it.
 func moved(ctx context.Context, db *store.DB, o op, ref string) error {
-	stmts := append(unlocate(o.msg, o.src),
-		sqlite.Statement{SQL: "UPDATE ops SET state = 'awaiting_claim', last_error = NULL WHERE id = ?", Args: []any{o.id}})
+	stmts := append(unlocate(o.msg, o.src), opsTo(opAwaiting, fromPending, "last_error = NULL", "id = ?", o.id))
 	if ref != "" {
 		ids, _, err := doomed(ctx, db, "EXISTS (SELECT 1 FROM message_locations WHERE message_id = messages.id AND folder_id = ? AND server_ref = ?) AND id != ?", o.dst, ref, o.msg)
 		if err != nil {
 			return err
 		}
-		stmts = append(unlocate(o.msg, o.src), sqlite.Statement{SQL: "UPDATE ops SET state = 'done', last_error = NULL WHERE id = ?", Args: []any{o.id}})
+		stmts = append(unlocate(o.msg, o.src), opDoneStmt(o.id))
 		if len(ids) > 0 { // at most one: UNIQUE(folder_id, server_ref)
 			m, tids, err := merge(ctx, db, o.msg, ids)
 			if err != nil {
@@ -407,46 +379,4 @@ func moved(ctx context.Context, db *store.DB, o op, ref string) error {
 	}
 	_, err := db.Transaction(ctx, stmts)
 	return err
-}
-
-// finish sets o's state. A move that ends failed or conflict puts the message
-// back in the folders the server has it in (settle); a move queued after it
-// from its destination then moves it from its source.
-func finish(ctx context.Context, db *store.DB, o op, state, lastError string) error {
-	where := "id = ?"
-	if o.kind == "purge" {
-		where += " AND state = 'pending'" // a rescue's cancel stands
-	}
-	stmts := []sqlite.Statement{{SQL: "UPDATE ops SET state = ?, refusals = ?, last_error = ? WHERE " + where, Args: []any{state, o.refusals, nullable(lastError), o.id}}}
-	if o.kind == "move" && (state == "failed" || state == "conflict") {
-		stmts = append(append(stmts,
-			sqlite.Statement{SQL: `UPDATE ops SET src_folder_id = ? WHERE message_id = ? AND kind IN ('move', 'purge') AND state = 'pending'
-				AND src_folder_id = ? AND id > ?`, Args: []any{o.src, o.msg, o.dst, o.id}}),
-			settle(o.msg)...)
-	}
-	_, err := db.Transaction(ctx, stmts)
-	return err
-}
-
-// fail records a failed attempt. Only server refusals (!stop) count toward
-// MaxAttempts; an uncertain or refused read error (stop) leaves the op pending,
-// and anything other than a *backend.FolderError stops the push.
-func fail(ctx context.Context, db *store.DB, o op, cause error, stop bool) (string, error) {
-	if stop {
-		err := finish(ctx, db, o, "pending", cause.Error())
-		var refused *backend.FolderError
-		if errors.As(cause, &refused) {
-			return "", err // a refused read: the push goes on
-		}
-		return "", errors.Join(cause, err)
-	}
-	o.refusals++
-	state, problem := "pending", ""
-	if o.refusals >= MaxAttempts {
-		state, problem = "failed", fmt.Sprintf("a change was given up after %d attempts: %v", o.refusals, cause)
-	}
-	if err := finish(ctx, db, o, state, cause.Error()); err != nil {
-		return problem, errors.Join(cause, err)
-	}
-	return problem, nil
 }
