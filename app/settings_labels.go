@@ -201,26 +201,31 @@ func (v *labelsView) dialog(c *ui.Context) {
 		kit.Field(c, i18n.T("settings.labels.desc"), "", descErr, func() {
 			kit.TextArea(c, &v.desc, kit.InputOpts{Placeholder: i18n.T("settings.labels.desc.placeholder"), Invalid: descErr != ""}).Label(i18n.T("settings.labels.desc"))
 		})
-		kit.Field(c, i18n.T("settings.labels.color"), "", "", func() {
-			// Rows of eight across the field, as the icons below: the gap is a floor, the space left spreads between.
-			const perRow = 8
-			ui.Column(c).Gap(th.Space(2)).Children(func() {
-				for start := 0; start < len(core.LabelColors); start += perRow {
-					ui.Row(c.Key(start)).FillWidth().Justify(ui.SpaceBetween).Gap(th.Space(2)).Children(func() {
-						for _, name := range core.LabelColors[start:min(start+perRow, len(core.LabelColors))] {
-							on := name == v.color
-							dot := t.Label(name).Dot
-							sw := kit.Pressable(c.Key(name), kit.PressableOpts{Bare: true, Selected: on, OnClick: func() { v.color = name }}).
-								Label(i18n.T("label.color."+name)).Checked(on).Size(theme.LabelSwatch, theme.LabelSwatch).Radius(t.Radius.Full).
-								Justify(ui.Center).AlignItems(ui.Center)
-							if on {
-								sw.Border(theme.LabelSwatchRing, dot)
-							}
-							sw.Children(func() {
-								ui.Box(c).Size(theme.LabelSwatchDot, theme.LabelSwatchDot).Radius(t.Radius.Full).Background(dot)
-							})
-						}
-					})
+		// kit.Field's layout, its label followed by the chosen color's name.
+		ui.Column(c).Gap(th.Space(1.5)).Children(func() {
+			ui.Row(c).Gap(th.Space(1)).Children(func() {
+				ui.Text(c, i18n.T("settings.labels.color")).FontWeight(500)
+				ui.Text(c, "· "+i18n.T("label.color."+v.color)).TextColor(t.Muted)
+			})
+			// One strip across the field, warm to cool, the cells touching; the chosen one
+			// lifts out of it on a ring of the background.
+			ui.Row(c).FillWidth().MarginY(th.Space(1)).Children(func() {
+				last := len(core.LabelColors) - 1
+				for i, name := range core.LabelColors {
+					on := name == v.color
+					sw := kit.Pressable(c.Key(name), kit.PressableOpts{Bare: true, Selected: on, OnClick: func() { v.color = name }}).
+						Label(i18n.T("label.color." + name)).Checked(on).Height(theme.LabelStrip).Grow(1).Background(t.Label(name).Dot)
+					switch {
+					case on:
+						sw.Radius(t.Radius.Sm).TransformOrigin(0.5, 0.5).Scale(1.25, 1.25).ZIndex(1).Shadow(0, 0, 0, 2, t.Background)
+						kit.Elevate(c, sw, theme.ShadowMd)
+					case i == 0:
+						sw.Radius(t.Radius.Md, 0, 0, t.Radius.Md)
+					case i == last:
+						sw.Radius(0, t.Radius.Md, t.Radius.Md, 0)
+					default:
+						sw.Radius(0) // a Pressable is rounded
+					}
 				}
 			})
 		})

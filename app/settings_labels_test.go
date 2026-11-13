@@ -263,9 +263,9 @@ func TestSettingsLabelsDescriptionTooLong(t *testing.T) {
 	}
 }
 
-// TestSettingsLabelsSwatchesFit: at either density the color swatches sit in
-// rows of eight, each from the field's left edge (名称's) to its right (the
-// right-aligned 创建 button's).
+// TestSettingsLabelsSwatchesFit: at either density the colors are one strip
+// from the field's left edge (名称's) to its right (the right-aligned 创建
+// button's), and the field's title names the chosen one.
 func TestSettingsLabelsSwatchesFit(t *testing.T) {
 	for _, density := range []string{"compact", "comfortable"} {
 		t.Run(density, func(t *testing.T) {
@@ -282,32 +282,31 @@ func TestSettingsLabelsSwatchesFit(t *testing.T) {
 			h.labelsPage()
 			h.click("新建标签")
 			h.see("创建")
+			h.see("· 灰")
+			// The chosen cell is scaled out of the strip: choose one in the middle, measure the rest.
+			h.click("天蓝")
+			h.see("· 天蓝")
 			name, _ := h.tt.Find("名称")
 			create, _ := h.tt.Find("创建")
-			const perRow = 8
-			var rowY float32
+			first, _ := h.tt.Find(i18n.T("label.color." + core.LabelColors[0]))
 			for i, c := range core.LabelColors {
 				label := i18n.T("label.color." + c)
 				r, ok := h.tt.Find(label)
-				if !ok {
+				switch {
+				case !ok:
 					t.Fatalf("no swatch %s", label)
-				}
-				switch i % perRow {
-				case 0:
-					if i > 0 && r.Y <= rowY {
-						t.Errorf("swatch %s at y %v, want a row below %v", label, r.Y, rowY)
-					}
-					rowY = r.Y
+				case c == "sky":
+					continue
+				case r.Y != first.Y:
+					t.Errorf("swatch %s at y %v, want one strip at %v", label, r.Y, first.Y)
+				case i == 0:
 					if d := r.X - name.X; d < -1 || d > 1 {
-						t.Errorf("swatch %s at x %v, want the field's left edge %v", label, r.X, name.X)
+						t.Errorf("first swatch at x %v, want the field's left edge %v", r.X, name.X)
 					}
-				case perRow - 1:
+				case i == len(core.LabelColors)-1:
 					if d := r.X + r.W - (create.X + create.W); d < -1 || d > 1 {
-						t.Errorf("swatch %s ends at %v, want the field's right edge %v", label, r.X+r.W, create.X+create.W)
+						t.Errorf("last swatch ends at %v, want the field's right edge %v", r.X+r.W, create.X+create.W)
 					}
-				}
-				if r.Y != rowY {
-					t.Errorf("swatch %s at y %v, want its row at %v", label, r.Y, rowY)
 				}
 			}
 		})
