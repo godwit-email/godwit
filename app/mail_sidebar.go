@@ -306,6 +306,7 @@ func (p *mailPage) account(c *ui.Context, acc core.Account) {
 		}
 	})
 	row.ContextMenu(func(m *ui.Menu) { p.accountItems(m, acc, 0) })
+	p.saveAccountOpen(acc.ID)
 }
 
 // accountItems are a sidebar menu's account entries: sync it now, or edit it
@@ -418,10 +419,32 @@ func (p *mailPage) folderRow(c *ui.Context, f sideFolder, open *bool) {
 	})
 }
 
-// accountOpen is whether an account's folders show in the sidebar; at first
-// only the first account's do.
+// accountOpen is whether an account's folders show in the sidebar: as the
+// user left them (Settings.SidebarAccountsOpen), else only the first account's do.
 func (p *mailPage) accountOpen(id int64) *bool {
-	return boolAt(p.accOpen, id, len(p.a.accounts) > 0 && p.a.accounts[0].ID == id)
+	open, ok := p.a.settings.SidebarAccountsOpen[id]
+	if !ok {
+		open = len(p.a.accounts) > 0 && p.a.accounts[0].ID == id
+	}
+	return boolAt(p.accOpen, id, open)
+}
+
+// saveAccountOpen saves an account's fold once its row changes it; the
+// row's first frame only notes what it starts as.
+func (p *mailPage) saveAccountOpen(id int64) {
+	open := *p.accOpen[id]
+	seen, ok := p.accOpenSeen[id]
+	p.accOpenSeen[id] = open
+	if !ok || seen == open {
+		return
+	}
+	st := p.a.settings
+	st.SidebarAccountsOpen = maps.Clone(st.SidebarAccountsOpen)
+	if st.SidebarAccountsOpen == nil {
+		st.SidebarAccountsOpen = map[int64]bool{}
+	}
+	st.SidebarAccountsOpen[id] = open
+	p.a.changeSettings(st)
 }
 
 // accountLabelsOpen is whether an account's labels show in the sidebar; default false.

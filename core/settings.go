@@ -128,6 +128,10 @@ type Settings struct {
 	// SidebarOrder is the mail sidebar's sections, top to bottom, as a comma-separated
 	// permutation of SidebarSections ("" is the default, views, labels, accounts).
 	SidebarOrder string
+	// SidebarAccountsOpen is which accounts' folders the mail sidebar shows,
+	// by account ID, as the user left them; an account not in it takes the
+	// default (only the first is open).
+	SidebarAccountsOpen map[int64]bool
 	// ListRowOrder is what leads a mail list row: ListRowSender (the default; "" too)
 	// puts who it is with first, ListRowSubject the subject.
 	ListRowOrder string
