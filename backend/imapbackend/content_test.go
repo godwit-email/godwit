@@ -6,9 +6,11 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/godwit-email/godwit/backend"
 )
 
 func headerSection() *imap.FetchItemBodySection {
@@ -134,5 +136,66 @@ func TestFlagsOf(t *testing.T) {
 	got := flagsOf([]imap.Flag{imap.FlagSeen, "\\Recent", imap.FlagDeleted, "$Label1"})
 	if !got.Seen || got.Flagged || len(got.Keywords) != 2 || got.Keywords[0] != `\Deleted` || got.Keywords[1] != "$Label1" {
 		t.Fatalf("flags %+v", got)
+	}
+}
+
+// stallOnce fails one Read with a timeout, as a read deadline does when the
+// network stalls (a proxy in front of Gmail here), after its first after
+// reads; the conn itself stays usable, as a net.Conn does after a deadline.
+type stallOnce struct {
+	net.Conn
+	after, reads int
+}
+
+type stallErr struct{}
+
+func (stallErr) Error() string   { return "i/o timeout" }
+func (stallErr) Timeout() bool   { return true }
+func (stallErr) Temporary() bool { return true }
+
+func (c *stallOnce) Read(b []byte) (int, error) {
+	if c.reads++; c.reads == c.after+1 {
+		return 0, stallErr{}
+	}
+	return c.Conn.Read(b)
+}
+
+// A text part's literal cut short by a stalled read fails the sync's
+// connection: the go-imap fork stops parsing there rather than read the rest
+// of the mail as server responses, which made a Gmail sync fail with
+// "expected atom, got \"(\"" (a bump that loses the patch fails here).
+func TestFetchTextsLiteralStall(t *testing.T) {
+	cc, sc := net.Pipe()
+	defer sc.Close()
+	text := "abcde)\r\n* 99 EXISTS\r\n"
+	go func() {
+		fmt.Fprint(sc, "* OK hi\r\n")
+		line, _ := bufio.NewReader(sc).ReadString('\n')
+		tag := strings.Fields(line)[0]
+		fmt.Fprintf(sc, "* 1 FETCH (UID 7 BODY[1]<0> {%d}\r\n%s", len(text), text[:5])
+		fmt.Fprintf(sc, "%s)\r\n%s OK done\r\n", text[5:], tag)
+	}()
+	injected := make(chan struct{}, 1)
+	c := imapclient.New(&stallOnce{Conn: cc, after: 2}, &imapclient.Options{
+		UnilateralDataHandler: &imapclient.UnilateralDataHandler{Mailbox: func(d *imapclient.UnilateralDataMailbox) {
+			if d.NumMessages != nil && *d.NumMessages == 99 {
+				injected <- struct{}{}
+			}
+		}},
+	})
+	defer c.Close()
+	msgs := []fetched{{m: &imapclient.FetchMessageBuffer{UID: 7}, texts: []backend.PartRef{"1"}}}
+	if _, err := fetchTexts(c, msgs, 1<<20); err == nil {
+		t.Fatal("fetchTexts succeeded with a text cut short")
+	}
+	select {
+	case <-c.Closed():
+	case <-time.After(5 * time.Second):
+		t.Fatal("the connection stays open after a literal was cut short")
+	}
+	select {
+	case <-injected:
+		t.Fatal("the mail's text was read as a server response")
+	default:
 	}
 }
