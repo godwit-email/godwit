@@ -43,13 +43,13 @@ type aiRun struct {
 }
 
 // fetch is a read for the reader: done once it succeeded; a failure keeps
-// err for a retry. gen is the reader gen of the last attempt.
+// err for a retry. at is the session of the last attempt.
 type fetch[T any] struct {
 	latest // only the newest read lands
 	v      T
 	done   bool
 	err    error
-	gen    uint64
+	at     *session
 }
 
 // fetchInto reads into f unless it is read, being read, or (without force)
@@ -62,17 +62,17 @@ func (f *fetch[T]) restart() {
 }
 
 func fetchInto[T any](r *reader, f *fetch[T], force bool, get func(context.Context) (T, error), failed func(error)) {
-	if f.done || f.loading && f.gen == r.gen || !force && f.gen == r.gen {
+	if f.done || f.loading && f.at == r.session || !force && f.at == r.session {
 		return
 	}
-	gen, ctx := r.gen, r.aiContext() // stopAI cancels it; a restart does not
-	f.gen, f.err = gen, nil
+	s, ctx := r.session, r.aiContext() // stopAI cancels it; a restart does not
+	f.at, f.err = s, nil
 	var v T
 	f.Run(r.p.a, func(context.Context) (err error) {
 		v, err = get(ctx)
 		return err
 	}, func(err error) {
-		if gen != r.gen {
+		if !r.has(s) {
 			return
 		}
 		if err != nil {
@@ -175,7 +175,7 @@ func (r *reader) trShown(st *msgAI) bool {
 	return st.showTr && st.translation != nil && st.translation.lang == r.readingLang()
 }
 
-// aiContext is the context of the AI work for the key shown.
+// aiContext is the context of the session's AI work.
 func (r *reader) aiContext() context.Context {
 	if r.aiCtx == nil {
 		r.aiCtx, r.aiStop = context.WithCancel(r.p.a.ctx)
@@ -183,13 +183,14 @@ func (r *reader) aiContext() context.Context {
 	return r.aiCtx
 }
 
-// stopAI cancels the AI work of the key shown and forgets unfinished runs,
-// so coming back starts them again; the menu is read again then too.
+// stopAI cancels the session's AI work, as it goes, and forgets unfinished
+// runs, so coming back starts them again; the menu is read again then too.
+// What the session still starts runs cancelled.
 func (r *reader) stopAI() {
-	if r.aiStop != nil {
-		r.aiStop()
+	if r.aiStop == nil {
+		r.aiCtx, r.aiStop = context.WithCancel(r.p.a.ctx)
 	}
-	r.aiCtx, r.aiStop = nil, nil
+	r.aiStop()
 	for _, s := range r.ai {
 		if s.summary != nil && s.summary.running {
 			s.summary, s.sumShown = nil, nil // the next Summary click runs it again
@@ -202,7 +203,6 @@ func (r *reader) stopAI() {
 		}
 	}
 	r.skills.done, r.actions.done = false, false
-	r.egressDlg = false
 }
 
 // startFor starts what an expanded message shows by itself: its summary
@@ -400,7 +400,7 @@ func (r *reader) runMenuSkill(sk core.SkillInfo) {
 // action is a command, so switching mail does not cancel it as it does the
 // reader's AI work.
 func (r *reader) runAction(id, title string, msgID int64, approve bool) {
-	a, gen, ctx := r.p.a, r.gen, r.p.a.ctx
+	a, s, ctx := r.p.a, r.session, r.p.a.ctx
 	st := r.state(msgID)
 	res := &aiResult{title: title, run: &aiRun{running: true}}
 	st.result = res
@@ -415,7 +415,8 @@ func (r *reader) runAction(id, title string, msgID int64, approve bool) {
 	}, func(err error) {
 		run := res.run
 		run.running = false
-		current := gen == r.gen && st.result == res
+		current := r.has(s) && st.result == res
+
 		if err == nil && out.DraftID != 0 {
 			if current {
 				st.result = nil

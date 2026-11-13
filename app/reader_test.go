@@ -1440,7 +1440,7 @@ func TestReaderAvatarMoveToJunk(t *testing.T) {
 	}
 	b := r.bodies[m.ID]
 	h.see("1 张图片未加载")
-	h.until("junk body metadata", func() bool { return b.msg.InJunk && !b.trusted && !b.loading })
+	h.until("junk body metadata", func() bool { return b.msg.InJunk && !b.trusted && !b.read.loading })
 	if b.msg.RemoteImagesBlocked != 0 || h.tt.HasText("始终信任此发件人") {
 		t.Fatal("junk notice has stale body policy")
 	}
@@ -1514,7 +1514,7 @@ func TestReaderAvatarMoveDropsOldBodyRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.app.refresh(nil)
-	h.until("current junk policy", func() bool { return b.msg.InJunk && !b.loading && b.avatar == nil && b.avatarBlocked })
+	h.until("current junk policy", func() bool { return b.msg.InJunk && !b.read.loading && b.avatar == nil && b.avatarBlocked })
 	h.see("1 张图片未加载")
 	release <- struct{}{}
 	<-finished

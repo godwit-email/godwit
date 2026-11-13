@@ -190,7 +190,7 @@ func TestReaderSwitchDropsKeptThreadsReads(t *testing.T) {
 
 	switchTo(h, b.ThreadID)
 	vb := unseenBody(h, b.ID)
-	h.post(func() { r.prev.expand(msgs[0].ID) }) // work the kept thread has under way as it goes
+	h.post(func() { r.on(r.prev).expand(msgs[0].ID) }) // work the kept thread has under way as it goes
 	h.drain()
 	h.post(func() { h.app.BodyHeight(vb, b.ID, 120) })
 	h.until("the kept thread gone", func() bool { return r.prev == nil })

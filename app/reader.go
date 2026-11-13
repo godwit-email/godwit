@@ -33,15 +33,18 @@ import (
 
 // reader shows the thread the route names, or only its message when the
 // route names one: older read messages fold to a line, unread ones and the
-// newest open. All its state lives on the UI thread.
+// newest open. It is the pane, which stays, and the session it shows,
+// which a switch replaces whole (on). All its state lives on the UI thread.
 type reader struct {
-	copiedCard string // the card button that just copied (message/plugin/button), shown as Copied for a moment
-	p          *mailPage
+	*readerPane
+	*session
+}
 
-	key     [2]int64        // the route's ThreadID and MessageID shown
-	why     core.ViewReason // why it is in the view shown
-	gen     uint64          // bumped per key; older results are dropped
-	readGen uint64          // bumped per thread read; only the newest read applies
+// readerPane is what the reading pane keeps whichever thread it shows.
+type readerPane struct {
+	p *mailPage
+
+	read latest // the thread's read: the one shown again, or the one to switch to
 	// next is the thread being read to replace the one shown (switching):
 	// what shows stays until it is read, rather than a blank pane between
 	// (#667). Zero while none is.
@@ -50,8 +53,37 @@ type reader struct {
 	// new one's newest body builds unseen under it, until its page reports
 	// its height (waiting) or prevStop's time is up: no blank body between
 	// (#667). Nil while none is.
-	prev     *reader
+	prev     *session
 	prevStop func()
+
+	ai        map[int64]*msgAI         // by message; kept across switches so a summary runs once
+	skills    fetch[[]core.SkillInfo]  // the skill menu: skills on messages but summarize and translate
+	actions   fetch[[]core.ActionInfo] // and plugin actions on messages
+	barTop    float32                  // the floating toolbar's height as the last frame laid it out: the messages start under it
+	barBottom float32                  // the reply bar's, likewise: the messages end above it
+	pane      ui.Rect                  // the messages' scroll box as the last frame laid it out, in the window: the bars float at its top and bottom
+
+	getThread  func(ctx context.Context, id int64) (core.Thread, error)                       // tests wrap it
+	getMessage func(ctx context.Context, id int64, remote bool) (core.Message, error)         // tests wrap it
+	getAvatar  func(context.Context, int64, bool) (core.Avatar, error)                        // tests wrap it
+	runSkill   func(ctx context.Context, name string, t core.Target) (<-chan ai.Event, error) // tests wrap it
+	cardsFn    func(ctx context.Context, messageID int64) ([]core.Card, error)                // tests wrap it
+	tagsFn     func(ctx context.Context, messageID int64) ([]core.Tag, error)
+	quickFn    func(ctx context.Context, messageID int64) ([]core.QuickReply, error) // tests wrap it
+	gistFn     func(ctx context.Context, messageID int64) (string, error)            // tests wrap it
+	skillsFn   func(ctx context.Context) ([]core.SkillInfo, error)                   // tests wrap it
+	actionsFn  func(ctx context.Context, kind string) ([]core.ActionInfo, error)     // tests wrap it
+}
+
+// session is the thread, or message, the pane shows: from the route naming
+// it until another replaces it. Dropping it drops all of it, and what was
+// started for it lands nowhere once it is closed or no longer the one shown
+// (reader.has).
+type session struct {
+	closed bool // replaced or gone: its pages are closed
+
+	key [2]int64        // the route's ThreadID and MessageID shown
+	why core.ViewReason // why it is in the view shown
 	// entered is whether the thread's parts were drawn: a part that comes
 	// after enters with its motion; the thread itself comes at once (#667).
 	entered bool
@@ -72,46 +104,49 @@ type reader struct {
 	bodies       map[int64]*msgBody
 	scroll       ui.ScrollState // the messages' scrolling: the wheel and touchpad over a body's page scroll it (ScrollToContainer)
 
-	ai             map[int64]*msgAI         // by message; kept across switches so a summary runs once
-	aiCtx          context.Context          // the AI work of the key shown; nil until some starts
-	aiStop         context.CancelFunc       // cancels aiCtx
-	skills         fetch[[]core.SkillInfo]  // the skill menu: skills on messages but summarize and translate
-	actions        fetch[[]core.ActionInfo] // and plugin actions on messages
-	egress         egressAsk                // the action waiting for egress approval
-	egressDlg      bool                     // its dialog shows
-	unsubAsk       int64                    // the message whose one-click unsubscribe waits to be confirmed
-	unsubDlg       bool                     // its dialog shows
-	attConflict    attConflictAsk           // batch attachment save waiting on same-name conflict choice
-	attConflictDlg bool                     // its dialog shows
-	detailsOpen    bool                     // the recipients' details popover shows
-	detailsID      int64                    // which message's details popover is open
-	barTop         float32                  // the floating toolbar's height as the last frame laid it out: the messages start under it
-	barBottom      float32                  // the reply bar's, likewise: the messages end above it
-	pane           ui.Rect                  // the messages' scroll box as the last frame laid it out, in the window: the bars float at its top and bottom
-	replyAsk       string                   // the reply bar's question to Wit, until it is asked
-
-	getThread  func(ctx context.Context, id int64) (core.Thread, error)                       // tests wrap it
-	getMessage func(ctx context.Context, id int64, remote bool) (core.Message, error)         // tests wrap it
-	getAvatar  func(context.Context, int64, bool) (core.Avatar, error)                        // tests wrap it
-	runSkill   func(ctx context.Context, name string, t core.Target) (<-chan ai.Event, error) // tests wrap it
-	cardsFn    func(ctx context.Context, messageID int64) ([]core.Card, error)                // tests wrap it
-	tagsFn     func(ctx context.Context, messageID int64) ([]core.Tag, error)
-	quickFn    func(ctx context.Context, messageID int64) ([]core.QuickReply, error) // tests wrap it
-	gistFn     func(ctx context.Context, messageID int64) (string, error)            // tests wrap it
-	skillsFn   func(ctx context.Context) ([]core.SkillInfo, error)                   // tests wrap it
-	actionsFn  func(ctx context.Context, kind string) ([]core.ActionInfo, error)     // tests wrap it
+	aiCtx          context.Context    // its AI work; nil until some starts, cancelled as it goes (stopAI)
+	aiStop         context.CancelFunc // cancels aiCtx
+	egress         egressAsk          // the action waiting for egress approval
+	egressDlg      bool               // its dialog shows
+	unsubAsk       int64              // the message whose one-click unsubscribe waits to be confirmed
+	unsubDlg       bool               // its dialog shows
+	attConflict    attConflictAsk     // batch attachment save waiting on same-name conflict choice
+	attConflictDlg bool               // its dialog shows
+	detailsOpen    bool               // the recipients' details popover shows
+	detailsID      int64              // which message's details popover is open
+	replyAsk       string             // the reply bar's question to Wit, until it is asked
+	copiedCard     string             // the card button that just copied (message/plugin/button), shown as Copied for a moment
 }
+
+func newSession(k [2]int64) *session {
+	return &session{key: k, open: map[int64]bool{}, historyOpen: map[int64]bool{}, bodies: map[int64]*msgBody{}}
+}
+
+// close closes the session's pages and drops what it has under way.
+func (s *session) close() {
+	s.closed = true
+	for _, b := range s.bodies {
+		b.drop()
+	}
+}
+
+// on is a reader of r's pane showing s: the thread kept from before a
+// switch, for its drawing and its pages' calls.
+func (r *reader) on(s *session) *reader { return &reader{r.readerPane, s} }
+
+// has reports whether s is the session r shows and is still open: what was
+// started for it lands only then.
+func (r *reader) has(s *session) bool { return r.session == s && !s.closed }
 
 // msgBody is a message read in full, for its header, notices and
 // attachments; its body shows in a page of its own (Platform.NewBodyView)
 // while the message is expanded.
 type msgBody struct {
-	msg     core.Message
-	cut     bool // the page's body is only the start (ReaderBody.Cut, told by BodyBuilt)
-	loading bool
-	bodyGen uint64 // older reads cannot restore policy after a same-message folder move
-	ready   bool
-	err     error // the last read, or making the page, failed; a retry reads again
+	msg   core.Message
+	cut   bool   // the page's body is only the start (ReaderBody.Cut, told by BodyBuilt)
+	read  latest // reading it; a read again (a same-message folder move) drops the one before
+	ready bool
+	err   error // the last read, or making the page, failed; a retry reads again
 
 	view        ui.NativeWebView // the body's page; nil while folded, not read yet, or when it could not be made
 	close       func()           // closes view: unbinds and destroys it
@@ -147,9 +182,9 @@ type msgBody struct {
 }
 
 func newReader(p *mailPage) *reader {
-	return &reader{p: p, open: map[int64]bool{}, bodies: map[int64]*msgBody{}, ai: map[int64]*msgAI{},
+	return &reader{session: newSession([2]int64{}), readerPane: &readerPane{p: p, ai: map[int64]*msgAI{},
 		getThread: p.a.svc.GetThread, getMessage: p.a.svc.GetMessageLazyImages, getAvatar: p.a.svc.SenderAvatar, runSkill: p.a.svc.RunSkill,
-		cardsFn: p.a.svc.PluginCards, tagsFn: p.a.svc.PluginTags, quickFn: p.a.svc.QuickReplies, gistFn: p.a.svc.MessageGist, skillsFn: p.a.svc.ListSkills, actionsFn: p.a.svc.ListActions}
+		cardsFn: p.a.svc.PluginCards, tagsFn: p.a.svc.PluginTags, quickFn: p.a.svc.QuickReplies, gistFn: p.a.svc.MessageGist, skillsFn: p.a.svc.ListSkills, actionsFn: p.a.svc.ListActions}}
 }
 
 func isSeen(m core.MessageSummary) bool { return slices.Contains(m.Flags, `\Seen`) }
@@ -166,7 +201,7 @@ func (r *reader) sync(reread bool) {
 	switch {
 	case k == r.key && r.next != [2]int64{}: // back to the one shown before the switch was read
 		r.next = [2]int64{}
-		r.readGen++ // drops the switch's read
+		r.read.Stop() // drops the switch's read
 		if !reread {
 			return
 		}
@@ -192,22 +227,11 @@ func (r *reader) sync(reread bool) {
 	r.loadWhy()
 }
 
-// reset forgets what was shown and closes its pages; the next thread
-// starts at its top.
+// reset closes the session shown and starts thread k's, at its top.
 func (r *reader) reset(k [2]int64) {
-	for _, b := range r.bodies {
-		b.stopAvatar()
-		b.closeView()
-	}
 	r.stopAI()
-	r.key, r.loaded, r.entered, r.subject, r.msgs, r.focus = k, false, false, "", nil, 0
-	r.threadIDs, r.labels = nil, nil
-	r.replyAsk = "" // a question is for the thread it was typed in
-	r.detailsOpen, r.detailsID, r.why = false, 0, core.ViewReason{}
-	r.attConflict, r.attConflictDlg = attConflictAsk{}, false
-	r.open, r.historyOpen, r.historyShown, r.revealID, r.bodies = map[int64]bool{}, map[int64]bool{}, false, 0, map[int64]*msgBody{}
-	r.scroll.X, r.scroll.Y = 0, 0
-	r.gen++
+	r.session.close()
+	r.session = newSession(k)
 }
 
 // prevWait is how long the thread before a switch stays at most, for a
@@ -219,15 +243,15 @@ const prevWait = time.Second
 // while one is under way keeps the prev shown and closes the unseen pages.
 func (r *reader) retire(k [2]int64) {
 	if r.prev == nil {
-		prev := *r
-		r.prev = &prev
-		r.bodies = nil // prev's now: reset leaves its pages open
+		r.stopAI()
+		r.prev, r.session = r.session, newSession(k)
+	} else {
+		r.reset(k)
 	}
 	if r.prevStop != nil {
 		r.prevStop()
 	}
 	r.prevStop = r.p.a.after(prevWait, r.dropPrev)
-	r.reset(k)
 }
 
 // dropPrev closes the thread kept from before a switch, if any.
@@ -239,11 +263,7 @@ func (r *reader) dropPrev() {
 	if r.prev == nil {
 		return
 	}
-	r.prev.gen++ // what it still had under way is dropped, not applied to a reader no one sees
-	for _, b := range r.prev.bodies {
-		b.stopAvatar()
-		b.closeView()
-	}
+	r.prev.close() // what it still had under way is dropped, not applied to a session no one sees
 	r.prev = nil
 }
 
@@ -260,12 +280,11 @@ func (r *reader) waiting() bool {
 // load reads thread k: the one shown again, or the one to switch to
 // (r.next), which replaces what shows once read.
 func (r *reader) load(k [2]int64) {
-	r.readGen++
-	a, gen, read, get := r.p.a, r.gen, r.readGen, r.getThread
+	a, s, get := r.p.a, r.session, r.getThread
 	route := k
 	var th core.Thread
 	var labels map[int64][]core.AppliedLabel
-	a.do(func(ctx context.Context) (err error) {
+	r.read.Run(a, func(ctx context.Context) (err error) {
 		if th, err = get(ctx, k[0]); err != nil {
 			return err
 		}
@@ -279,7 +298,7 @@ func (r *reader) load(k [2]int64) {
 		labels, err = a.svc.ThreadLabels(ctx, []int64{k[0]})
 		return err
 	}, func(err error) {
-		if gen != r.gen || read != r.readGen {
+		if !r.has(s) {
 			return
 		}
 		if switching := r.next == route; switching { // what showed stays drawn till this one's body is sized
@@ -310,8 +329,7 @@ func (r *reader) load(k [2]int64) {
 		r.loaded, r.subject, r.msgs = true, th.Subject, msgs
 		for id, b := range r.bodies { // gone from the thread: its page goes too
 			if !slices.ContainsFunc(msgs, func(m core.MessageSummary) bool { return m.ID == id }) {
-				b.stopAvatar()
-				b.closeView()
+				b.drop()
 				delete(r.open, id)
 				delete(r.bodies, id)
 			}
@@ -328,7 +346,7 @@ func (r *reader) load(k [2]int64) {
 							b.stopAvatar()
 							b.avatar, b.avatarSource, b.avatarDone, b.avatarBlocked = nil, "", false, true
 						}
-						b.loading = false
+						b.read.Stop()
 						r.loadBody(m.ID)
 					} else if prev.sec != m.Security.Status {
 						b.msg.Security = m.Security
@@ -409,32 +427,29 @@ func (r *reader) toggle(id int64) {
 // loadBody reads the message off the UI thread (remote images blocked:
 // its page asks for them itself), then makes its page.
 func (r *reader) loadBody(id int64) {
-	a, gen, get := r.p.a, r.gen, r.getMessage
+	a, s, get := r.p.a, r.session, r.getMessage
 	b := r.bodies[id]
 	if b == nil {
 		b = &msgBody{}
 		r.bodies[id] = b
 	}
-	if b.loading {
+	if b.read.loading {
 		return
 	}
-	b.loading, b.err = true, nil
+	b.err = nil
 	b.timing.begin()
-	b.bodyGen++
-	read := b.bodyGen
 	var m core.Message
 	var trusted bool
-	a.do(func(ctx context.Context) (err error) {
+	b.read.Run(a, func(ctx context.Context) (err error) {
 		if m, err = get(ctx, id, false); err != nil {
 			return err
 		}
 		trusted, err = a.svc.ImagesAllowed(ctx, id)
 		return err
 	}, func(err error) {
-		if gen != r.gen || r.bodies[id] != b || read != b.bodyGen {
+		if !r.has(s) {
 			return
 		}
-		b.loading = false
 		if err != nil {
 			b.err = err
 			return
@@ -452,16 +467,16 @@ func (r *reader) loadBody(id int64) {
 // an older message's headers may be fetched from its server first. Until
 // it answers, or when it fails, there is no 退订.
 func (r *reader) loadUnsubscribe(id int64) {
-	a, gen, b := r.p.a, r.gen, r.bodies[id]
+	a, s, b := r.p.a, r.session, r.bodies[id]
 	if b == nil { // opening its page may already have switched the reader away
 		return
 	}
 	var u core.Unsubscribe
-	a.do(func(ctx context.Context) (err error) {
+	b.read.Also(a, func(ctx context.Context) (err error) { // dropped with the body's read
 		u, err = a.svc.UnsubscribeMethod(ctx, id)
 		return err
 	}, func(err error) {
-		if err == nil && gen == r.gen && r.bodies[id] == b {
+		if err == nil && r.has(s) {
 			b.unsub = u
 		}
 	})
@@ -475,7 +490,7 @@ func (r *reader) loadAvatar(id int64, manual bool) {
 		return
 	}
 	b.stopAvatar()
-	a, gen, seq, get := r.p.a, r.gen, b.avatarGen, r.getAvatar
+	a, s, seq, get := r.p.a, r.session, b.avatarGen, r.getAvatar
 	b.avatarAllow, b.avatarDone = manual, false
 	if !manual && a.settingsVer != a.settingsSavedVer {
 		b.avatar, b.avatarSource, b.avatarBlocked = nil, "", true
@@ -523,7 +538,7 @@ func (r *reader) loadAvatar(id int64, manual bool) {
 		return err
 	}, func(err error) {
 		defer stop()
-		if gen != r.gen || r.bodies[id] != b || seq != b.avatarGen || ctx.Err() != nil {
+		if !r.has(s) || r.bodies[id] != b || seq != b.avatarGen || ctx.Err() != nil {
 			return
 		}
 		b.avatarStop, b.avatarDone = nil, true
@@ -587,9 +602,9 @@ func (r *reader) openView(id int64) {
 	if pb := r.prev; pb != nil && pb.bodies[id] != nil && pb.bodies[id].view != nil {
 		r.dropPrev() // a message has one page: a second would share, and outlive, the first's grants
 	}
-	gen, made := r.gen, time.Now()
+	s, made := r.session, time.Now()
 	v, closeView, err := r.p.a.plat.NewBodyView(id)
-	if gen != r.gen || r.bodies[id] != b || !r.open[id] || b.view != nil || r.p.a.ctx.Err() != nil {
+	if !r.has(s) || r.bodies[id] != b || !r.open[id] || b.view != nil || r.p.a.ctx.Err() != nil {
 		if err == nil {
 			closeView()
 		}
@@ -606,7 +621,15 @@ func (r *reader) openView(id int64) {
 	}
 }
 
+// drop closes b's page and drops its reads: it leaves the session.
+func (b *msgBody) drop() {
+	b.read.Stop()
+	b.stopAvatar()
+	b.closeView()
+}
+
 // closeView closes b's page, if it has one; what the page told goes with
+
 // it (the user's 加载图片 stays).
 func (b *msgBody) closeView() {
 	if b.close != nil {
@@ -1062,7 +1085,7 @@ func (r *reader) saveAttachments(msgID int64, items []core.AttachmentInfo) {
 		return
 	}
 	items = slices.Clone(items)
-	a, plat, gen := r.p.a, r.p.a.plat, r.gen
+	a, plat, s := r.p.a, r.p.a.plat, r.session
 	var (
 		dir       string
 		conflicts []string
@@ -1103,7 +1126,7 @@ func (r *reader) saveAttachments(msgID int64, items []core.AttachmentInfo) {
 			return
 		}
 		if len(conflicts) > 0 {
-			if gen != r.gen {
+			if !r.has(s) {
 				return
 			}
 			r.attConflict = attConflictAsk{
@@ -1192,7 +1215,7 @@ func (r *reader) view(c *ui.Context) {
 		r.dropPrev()
 	}
 	if r.prev != nil {
-		r.prev.draw(c, r)
+		r.on(r.prev).draw(c, r.session)
 		return
 	}
 	r.draw(c, nil)
@@ -1201,14 +1224,14 @@ func (r *reader) view(c *ui.Context) {
 // unseenBody lays out the newest body at the width it will show, unseen:
 // faded out, it is placed but cuts no hole in the window, so its page
 // builds and reports its height under the thread shown.
-func (r *reader) unseenBody(c *ui.Context) {
-	if b := r.bodies[r.msgs[len(r.msgs)-1].ID]; b != nil && b.view != nil {
+func (s *session) unseenBody(c *ui.Context) {
+	if b := s.bodies[s.msgs[len(s.msgs)-1].ID]; b != nil && b.view != nil {
 		kit.WebView(c, b.view).FillWidth().Height(c.Theme().Space(6)).Opacity(0)
 	}
 }
 
 // draw is view's pane of r, under it next's unseen body when not nil.
-func (r *reader) draw(c *ui.Context, next *reader) {
+func (r *reader) draw(c *ui.Context, next *session) {
 	t, th := theme.Of(c), c.Theme()
 	col := ui.Column(c).Grow(1).Shrink(1)
 	if r.key[0] == 0 { // nothing chosen: the bird
@@ -1873,7 +1896,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 			r.aiArea(c, m)
 			r.cards(c, m)
 			switch {
-			case b != nil && b.err != nil && !b.loading:
+			case b != nil && b.err != nil && !b.read.loading:
 				kit.Alert(c, kit.Danger, humanize(b.err), func() {
 					kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 						OnClick(func() { r.loadBody(m.ID) })
@@ -1964,7 +1987,7 @@ func (r *reader) imagesNote(c *ui.Context, m core.MessageSummary, b *msgBody, ad
 		return
 	}
 	kit.TextLink(c, i18n.T("reader.load"), t.Foreground, t.Text.Sm).OnClick(func() { r.allowImages(m.ID) })
-	if addr != "" && !b.loading && !b.msg.InJunk && r.p.a.settings.RemoteImages != "ask" { // core never trusts junk, and "ask" ignores trust
+	if addr != "" && !b.read.loading && !b.msg.InJunk && r.p.a.settings.RemoteImages != "ask" { // core never trusts junk, and "ask" ignores trust
 		kit.TextLink(c, i18n.T("reader.trust"), t.Foreground, t.Text.Sm).OnClick(func() { r.trustSender(b.msg.From, addr) })
 	}
 }
@@ -2159,17 +2182,17 @@ func (r *reader) loadImages(id int64, manual bool) {
 // and loads them in its messages shown. Core gets the From as sent: a quoted
 // local part parses there, its bare address does not.
 func (r *reader) trustSender(from, addr string) {
-	a, gen := r.p.a, r.gen
+	a, s := r.p.a, r.session
 	a.do(func(ctx context.Context) error { return a.svc.TrustImageSender(ctx, from) }, func(err error) {
 		if err != nil {
 			a.toastErr(err)
 			return
 		}
-		if gen != r.gen {
+		if !r.has(s) {
 			return
 		}
 		for id, b := range r.bodies {
-			if _, from := sender(b.msg.From); strings.EqualFold(from, addr) && !b.loading && !b.msg.InJunk { // as core: never junk
+			if _, from := sender(b.msg.From); strings.EqualFold(from, addr) && !b.read.loading && !b.msg.InJunk { // as core: never junk
 				r.loadImages(id, false)
 			}
 		}
@@ -2183,14 +2206,15 @@ func (r *reader) trustSender(from, addr string) {
 // readerOf is the reader whose bodies hold page v: the one shown, or the
 // thread kept on screen while a switch's body builds (#667).
 func (a *App) readerOf(v ui.NativeWebView) *reader {
-	if p := a.mail.reader.prev; p != nil {
+	r := a.mail.reader
+	if p := r.prev; p != nil {
 		for _, b := range p.bodies {
 			if b.view != nil && b.view == v {
-				return p
+				return r.on(p)
 			}
 		}
 	}
-	return a.mail.reader
+	return r
 }
 
 // BodyHeight is told the height, in CSS pixels, of message's body as its

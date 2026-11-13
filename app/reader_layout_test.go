@@ -205,10 +205,10 @@ func TestFitQuickLabels(t *testing.T) {
 func TestShownAvatar(t *testing.T) {
 	own, theirs := &ui.Bitmap{}, &ui.Bitmap{}
 	msg := func(id int64, from string) core.MessageSummary { return core.MessageSummary{ID: id, From: from} }
-	r := &reader{bodies: map[int64]*msgBody{
+	r := &reader{readerPane: &readerPane{}, session: &session{bodies: map[int64]*msgBody{
 		1: {msg: core.Message{MessageSummary: msg(1, "Google <no-reply@accounts.google.com>")}, avatar: theirs},
 		2: {msg: core.Message{MessageSummary: msg(2, "no-reply@accounts.google.com")}, avatar: own},
-	}}
+	}}}
 	if got := r.shownAvatar(msg(2, "no-reply@accounts.google.com")); got != own {
 		t.Error("not its own avatar")
 	}
