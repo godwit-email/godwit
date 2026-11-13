@@ -468,6 +468,61 @@ func TestIMAPTencentExmail(t *testing.T) {
 	assert.Equal(t, "Subject: hi\r\nFrom: a@example.com\r\n\r\n", string(msgs[0].FindBodySection(sec)))
 }
 
+// TestIMAPICloudDoubleSpace fakes imap.mail.me.com: a forwarded message part
+// whose BODYSTRUCTURE has two SPs before the MD5 (#747). The fetch used to fail
+// with "expected body" and close the connection, so the folder never synced.
+func TestIMAPICloudDoubleSpace(t *testing.T) {
+	e := fake(t, func(c net.Conn) {
+		c.Write([]byte("* OK [CAPABILITY IMAP4rev1] hi\r\n"))
+		r := bufio.NewReader(c)
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				return
+			}
+			f := strings.Fields(line)
+			if len(f) < 2 {
+				return
+			}
+			switch strings.ToUpper(f[1]) {
+			case "LOGIN":
+				c.Write([]byte(f[0] + " OK [CAPABILITY IMAP4rev1] logged in\r\n"))
+			case "SELECT":
+				c.Write([]byte("* 1 EXISTS\r\n* OK [UIDVALIDITY 1] ok\r\n" + f[0] + " OK [READ-ONLY] selected\r\n"))
+			case "FETCH", "UID":
+				c.Write([]byte(`* 1 FETCH (UID 803 BODYSTRUCTURE (("TEXT" "PLAIN" ("CHARSET" "utf-8") NIL NIL "7BIT" 12 1 NIL NIL NIL NIL)` +
+					`("MESSAGE" "RFC822" NIL NIL NIL "7BIT" 4351 (NIL "hi" NIL NIL NIL NIL NIL NIL NIL NIL) ` +
+					`(("TEXT" "PLAIN" ("CHARSET" "utf-8") NIL NIL "QUOTED-PRINTABLE" 400 10 NIL NIL NIL NIL)("TEXT" "HTML" ("CHARSET" "utf-8") NIL NIL "QUOTED-PRINTABLE" 3000 60 NIL NIL NIL NIL) "ALTERNATIVE" ("BOUNDARY" "Apple-Mail-1") NIL NIL NIL) ` +
+					`4351  NIL ("ATTACHMENT" ("FILENAME" "mime-attachment")) NIL NIL) "MIXED" ("BOUNDARY" "Apple-Mail-0") NIL NIL NIL))` + "\r\n" +
+					f[0] + " OK FETCH Completed\r\n"))
+			case "LOGOUT":
+				c.Write([]byte("* BYE\r\n" + f[0] + " OK bye\r\n"))
+				return
+			default:
+				c.Write([]byte(f[0] + " OK done\r\n"))
+			}
+		}
+	})
+	c, err := conn.DialIMAP(context.Background(), e)
+	require.NoError(t, err)
+	defer c.Close()
+	_, err = c.Select("Sent Messages", &imap.SelectOptions{ReadOnly: true}).Wait()
+	require.NoError(t, err)
+	msgs, err := c.Fetch(imap.SeqSetNum(1), &imap.FetchOptions{
+		UID:           true,
+		BodyStructure: &imap.FetchItemBodyStructure{Extended: true},
+	}).Collect()
+	require.NoError(t, err)
+	require.Len(t, msgs, 1)
+	assert.Equal(t, imap.UID(803), msgs[0].UID)
+	mp, ok := msgs[0].BodyStructure.(*imap.BodyStructureMultiPart)
+	require.True(t, ok)
+	require.Len(t, mp.Children, 2)
+	fwd := mp.Children[1].(*imap.BodyStructureSinglePart)
+	assert.True(t, strings.EqualFold(fwd.Disposition().Value, "attachment"))
+	require.NoError(t, c.Noop().Wait()) // the connection stays usable
+}
+
 // TestLogTraceOnParseError fakes the #450 failure, a "* (" line where a
 // response type belongs: the log gets the masked traffic before it, without
 // the login or the mail's words.

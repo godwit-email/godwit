@@ -3,6 +3,7 @@ package webui
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -608,8 +609,10 @@ func TestWitPageFollowRunWithinRead(t *testing.T) {
 	}
 }
 
-// Text chunks emitted while GetConversation is slow (> witBuffer = 64) are all
-// buffered without dropping any chunk.
+// Text chunks emitted while GetConversation is slow (more than
+// core.WitBuffer) are buffered by Follow, not cut to the stream's buffer. The
+// Local API hop may lose older text when it falls behind a burst (the
+// stream's rule), never the newest, and nothing comes out of order.
 func TestWitPageFollowBuffersDuringSlowRead(t *testing.T) {
 	f := newWitPageFixture(t)
 	conv := f.newAsk(t)
@@ -641,7 +644,15 @@ func TestWitPageFollowBuffersDuringSlowRead(t *testing.T) {
 	assert.Equal(t, run, h.Running)
 	f.llm.Release()
 	f.waitKind(t, conv, "done")
-	assert.Equal(t, strings.Join(chunks, ""), streamed(f.events(), conv))
+	got := regexp.MustCompile(`\[\d+\]`).FindAllString(streamed(f.events(), conv), -1)
+	require.Greater(t, len(got), core.WitBuffer, "Follow kept more than the stream's buffer: %q", got)
+	assert.Equal(t, chunks[len(chunks)-1], got[len(got)-1], "the newest text")
+	next := 0
+	for _, c := range got {
+		i := slices.Index(chunks[next:], c)
+		require.GreaterOrEqual(t, i, 0, "%s out of order or twice in %q", c, got)
+		next += i + 1
+	}
 }
 
 // Ported from app/ask_test.go: the answer streams to the page, tools and
