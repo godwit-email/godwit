@@ -181,7 +181,7 @@ func (s *Service) insertOriginal(ctx context.Context, accountID, folderID int64,
 	}
 	// A mislabeled charset must not fail the insert in SQLite, as in sync.
 	p.Text, p.HTML = string(mail.ValidText([]byte(p.Text), "", false)), string(mail.ValidText([]byte(p.HTML), "", true))
-	if p.Text == "" && p.HTML != "" {
+	if p.HTML != "" && (p.Text == "" || mail.LooksLikeHTML(p.Text)) { // none, or the HTML again as the text
 		p.Text = mail.HTMLToText(p.HTML)
 	}
 	dst := s.archivePath(accountID, hash)

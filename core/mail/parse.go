@@ -429,6 +429,9 @@ func ParseStructure(p *backend.Part) (textParts []Attachment, atts []Attachment)
 // word (a soft hyphen); the joiners only at a word's ends, as inside one they
 // shape it (Persian's non-joiner, an emoji's joiner).
 func Snippet(text string) string {
+	if LooksLikeHTML(text) { // markup sent as the plain text: its text, not its tags
+		text = HTMLToText(text)
+	}
 	words := strings.Fields(StripInvisible(text))
 	kept := words[:0]
 	for _, w := range words {
@@ -441,6 +444,14 @@ func Snippet(text string) string {
 		s = string(r[:200])
 	}
 	return s
+}
+
+// LooksLikeHTML reports whether text, sent as plain text, is HTML markup: it
+// starts with a tag and closes one. Some senders put their HTML part in the
+// text/plain part as well.
+func LooksLikeHTML(text string) bool {
+	text = strings.TrimSpace(text)
+	return strings.HasPrefix(text, "<") && strings.Contains(text, "</")
 }
 
 // StripInvisible drops the characters of text that show nothing (invisible),

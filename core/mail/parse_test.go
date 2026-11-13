@@ -123,6 +123,9 @@ func TestSnippet(t *testing.T) {
 	assert.Equal(t, "incredible", mail.Snippet("in\u00adcredible"))
 	assert.Equal(t, "می\u200cخواهم", mail.Snippet("می\u200cخواهم"))
 	assert.Len(t, []rune(mail.Snippet(strings.Repeat("好", 300))), 200)
+	// HTML sent as the plain text (and a stored snippet of it, cut mid-markup): its text
+	assert.Equal(t, "wang.baran, 感谢您进行Bitfinex身份认证。 提醒您，开通所需三十分钟。", mail.Snippet("<p>wang.baran, 感谢您进行Bitfinex身份认证。 </p><p>提醒您，开通所需三十分钟。 </p><a href=“https://cs."))
+	assert.Equal(t, "if a < b then </p> stays", mail.Snippet("if a < b then </p> stays"), "text that only mentions a tag is not markup")
 }
 
 func TestParseTruncationRuneBoundary(t *testing.T) {

@@ -781,6 +781,7 @@ func toParsed(c *backend.Content) *mail.Parsed {
 			if p.Date.IsZero() {
 				p.Date = c.Date
 			}
+			textFromHTML(p)
 			return p
 		}
 	}
@@ -817,10 +818,16 @@ func toParsed(c *backend.Content) *mail.Parsed {
 		b = mail.ValidText(b, tp.Charset, html) // a mislabeled charset must not fail the folder's sync in SQLite
 		p.Truncated = appendCapped(dst, b) || p.Truncated
 	}
-	if p.Text == "" && p.HTML != "" {
+	textFromHTML(p)
+	return p
+}
+
+// textFromHTML makes p's text from its HTML when it has none, or its text is
+// the HTML again (some senders put it in both parts).
+func textFromHTML(p *mail.Parsed) {
+	if p.HTML != "" && (p.Text == "" || mail.LooksLikeHTML(p.Text)) {
 		p.Text = mail.HTMLToText(p.HTML)
 	}
-	return p
 }
 
 // appendCapped appends b to *dst, cutting at a rune boundary so *dst stays within
