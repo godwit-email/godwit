@@ -134,15 +134,14 @@ func (p *mailPage) viewsKnownCounts() map[string]int {
 // viewMore loads the next page of group, unless a page is loading already.
 func (p *mailPage) viewMore(group string) {
 	i := slices.IndexFunc(p.viewGroups, func(g viewGroupState) bool { return g.id == group })
-	if i < 0 || p.viewGroups[i].cursor == "" || p.loading || p.stalled {
+	if i < 0 || p.viewGroups[i].cursor == "" || p.list.loading || p.stalled {
 		return
 	}
 	a := p.a
-	p.loading = true
-	gen, id, cursor := p.gen, p.savedViewID(), p.viewGroups[i].cursor
+	id, cursor := p.savedViewID(), p.viewGroups[i].cursor
 	var page core.ViewGroupPage
 	var got []mailItem
-	a.do(func(ctx context.Context) (err error) {
+	p.list.Run(a, func(ctx context.Context) (err error) {
 		if page, err = a.svc.ViewGroupPage(ctx, id, group, cursor, pageSize); err != nil {
 			return err
 		}
@@ -151,10 +150,6 @@ func (p *mailPage) viewMore(group string) {
 		}
 		return withLabels(ctx, a.svc, got)
 	}, func(err error) {
-		if gen != p.gen {
-			return
-		}
-		p.loading = false
 		if err != nil {
 			p.stalled = true
 			a.toastErr(err)

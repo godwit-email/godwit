@@ -318,10 +318,10 @@ func TestPaletteReopenKeepsGeneration(t *testing.T) {
 	h, _ := invoices(t)
 	h.typeText("invoice")
 	h.see("邮件 · 4")
-	before := h.app.palette.gen
+	before := h.app.palette.finding.Gen()
 	h.post(func() { h.app.openPalette() })
 	h.until("the reopened palette's first search counted past the old ones", func() bool {
-		return h.app.palette.started && h.app.palette.gen > before
+		return h.app.palette.started && h.app.palette.finding.Gen() > before
 	})
 }
 

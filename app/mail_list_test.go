@@ -27,7 +27,7 @@ func mailHarness(t *testing.T, opts []coretest.Option, emails ...string) (*harne
 			accs = append(accs, e.AddAccount(t, em))
 		}
 	})
-	h.until("the mail page", func() bool { return h.app.loaded && h.app.route.Page == PageMail && !h.app.mail.loading })
+	h.until("the mail page", func() bool { return h.app.loaded && h.app.route.Page == PageMail && !h.app.mail.list.loading })
 	return h, accs
 }
 
@@ -1039,7 +1039,7 @@ func TestSearchDropsStaleResults(t *testing.T) {
 	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Lunch Plans", "eat"))
 	h.syncNow(accs[0])
 	h.waitMail("two threads", func() bool {
-		return len(h.items()) == 2 && h.app.accountsGen == h.app.loadGen && !h.app.mail.loading
+		return len(h.items()) == 2 && h.app.accountsGen == h.app.loads.Gen() && !h.app.mail.list.loading
 	})
 	h.settle() // nothing else is posted from here on
 	p := h.app.mail
@@ -1231,11 +1231,11 @@ func TestLoadOlderCancelledLeavingMail(t *testing.T) {
 	cancelled := false
 	h.post(func() {
 		o := &h.app.mail.older
-		o.busy, o.cancel = true, func() { cancelled = true }
+		o.read.loading, o.read.cancel = true, func() { cancelled = true }
 		h.app.navigate(Route{Page: PageSettings, Settings: "general"})
 	})
 	h.drain()
-	if !cancelled || h.app.mail.older.busy {
+	if !cancelled || h.app.mail.older.read.loading {
 		t.Fatalf("still fetching after leaving: cancelled %v, %+v", cancelled, h.app.mail.older)
 	}
 }
@@ -1266,7 +1266,7 @@ func TestLoadOlderInFolder(t *testing.T) {
 	h.env.IMAP(acc.ID).SetPassword("secret")
 	h.click("重试")
 	h.waitMail("the older mail", func() bool { return len(h.items()) == 3 })
-	h.until("the folder's end", func() bool { return h.app.mail.older.done[f.ID] && !h.app.mail.older.busy })
+	h.until("the folder's end", func() bool { return h.app.mail.older.done[f.ID] && !h.app.mail.older.read.loading })
 	h.advance(refreshEvery)
 	if h.tt.HasText("正在加载更早的邮件…") || slices.ContainsFunc(h.tt.Texts(), func(s string) bool { return strings.HasPrefix(s, "没能加载") }) {
 		t.Fatalf("a row after the end: %q", h.tt.Texts())
@@ -1275,7 +1275,7 @@ func TestLoadOlderInFolder(t *testing.T) {
 	// Another view drops a fetch under way; the unified inbox never fetches.
 	h.post(func() { h.app.navigate(Route{Page: PageMail, View: core.View{Unified: "inbox"}}) })
 	h.advance(refreshEvery)
-	if h.app.mail.older.busy || h.app.mail.olderFolder() != 0 {
+	if h.app.mail.older.read.loading || h.app.mail.olderFolder() != 0 {
 		t.Fatalf("unified inbox fetches: %+v", h.app.mail.older)
 	}
 }
@@ -1287,8 +1287,8 @@ func TestEmptyFolderLoadingOlder(t *testing.T) {
 	h.syncNow(accs[0])
 	f := h.folderOf(accs[0], "trash")
 	h.post(func() { h.app.navigate(Route{Page: PageMail, View: core.View{FolderID: f.ID}}) })
-	h.until("the folder", func() bool { return h.app.mail.view.FolderID == f.ID && !h.app.mail.loading })
-	h.post(func() { h.app.mail.older.busy = true })
+	h.until("the folder", func() bool { return h.app.mail.view.FolderID == f.ID && !h.app.mail.list.loading })
+	h.post(func() { h.app.mail.older.read.loading = true })
 	h.advance(refreshEvery)
 	for _, s := range h.tt.Texts() {
 		if s == "没有邮件" || strings.HasPrefix(s, "正在加载更早") {

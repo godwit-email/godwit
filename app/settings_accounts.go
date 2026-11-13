@@ -35,7 +35,7 @@ type accountForm struct {
 	name, alias, ai string
 	sync, okSync    core.SyncRange // the sync range shown, and the account's
 	ok              core.Account   // the values last confirmed
-	okAt            uint64         // a.loadGen when ok was confirmed; older loads are stale
+	okAt            uint64         // a.loads.Gen() when ok was confirmed; older loads are stale
 	edits           [3]fieldEdit   // fieldName, fieldAlias, fieldAI
 	syncBusy        int            // sync-range writes in flight
 }
@@ -226,7 +226,7 @@ func (p *settingsPage) saveField(id int64, f *accountForm, i int) {
 	gen := e.gen
 	p.write(id, fieldPatch(i, *f.field(i)), func(saved core.Account, err error) {
 		if err == nil {
-			f.ok, f.okAt = saved, a.loadGen
+			f.ok, f.okAt = saved, a.loads.Gen()
 		}
 		if gen != e.gen {
 			return
