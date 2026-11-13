@@ -192,6 +192,24 @@ func TestMainCloseHidesThenExits(t *testing.T) {
 	}
 }
 
+// A download or import the interface runs keeps it hidden a round more each
+// time the timer fires, then it exits once that work is done.
+func TestMainCloseWaitsForBusy(t *testing.T) {
+	h := newMainCloseHarness(true)
+	busy := true
+	h.m.busy = func() bool { return busy }
+	h.m.close()
+	h.timer.fire()
+	if h.last() != closeHide || h.timer.f == nil || h.timer.started != 2 {
+		t.Fatalf("timer fired while busy: did %v, timers %d; want a hide and a new wait", h.did, h.timer.started)
+	}
+	busy = false
+	h.timer.fire()
+	if h.last() != closeExit {
+		t.Errorf("timer fired once idle: did %v, want the interface's exit", h.did)
+	}
+}
+
 // Showing the window again before the timer fires cancels it: the same
 // interface stays, and a later close starts a fresh wait.
 func TestMainCloseReopenCancels(t *testing.T) {

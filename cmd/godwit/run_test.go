@@ -105,19 +105,46 @@ func startHeadless(t *testing.T, dir string) (c *rpc.Client, stderr *syncBuf, st
 	return dialWait(t, dir), stderr, stop
 }
 
-// With no interface in front, a backend's rounds follow 后台同步 from the
-// start: a login start under 一直继续 may never see an interface report.
+// With no interface in front, a backend the interface started follows 后台同步
+// from the start: a login start under 一直继续 may never see an interface
+// report. The user's --headless, which has no window, syncs every folder.
 func TestHeadlessStartsNarrowed(t *testing.T) {
-	dir := shortDir(t)
-	startHeadless(t, dir)
-	ui, err := rpc.Dial(dir, rpc.RoleUI, "ui-test", rpcbind.NewCodec())
-	if err != nil {
-		t.Fatal(err)
+	inboxOnly := func(dir string) bool {
+		t.Helper()
+		ui, err := rpc.Dial(dir, rpc.RoleUI, "ui-test", rpcbind.NewCodec())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ui.Close()
+		var on bool
+		if err := ui.Call(context.Background(), "InboxOnly", &on); err != nil {
+			t.Fatal(err)
+		}
+		return on
 	}
-	defer ui.Close()
-	var on bool
-	if err := ui.Call(context.Background(), "InboxOnly", &on); err != nil || !on {
-		t.Fatalf("InboxOnly = %v, %v; want true before any foreground report", on, err)
+
+	dir := shortDir(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan int, 1)
+	go func() {
+		done <- run(ctx, []string{"--headless", "--data-dir", dir, "--" + uiStartedFlag}, nil, &syncBuf{}, &syncBuf{})
+	}()
+	t.Cleanup(func() { cancel(); <-done })
+	waitCond(t, "the interface's backend to answer", func() bool {
+		c, err := rpc.Dial(dir, rpc.RoleUI, "ui-test", rpcbind.NewCodec())
+		if err == nil {
+			c.Close()
+		}
+		return err == nil
+	})
+	if !inboxOnly(dir) {
+		t.Error("the interface's backend syncs every folder before any foreground report")
+	}
+
+	user := shortDir(t)
+	startHeadless(t, user)
+	if inboxOnly(user) {
+		t.Error("the user's --headless syncs the inbox only")
 	}
 }
 

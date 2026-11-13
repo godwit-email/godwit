@@ -589,6 +589,12 @@ func (s *Service) StopUIBackend(ctx context.Context) error {
 	if st, err := s.GetSettings(ctx); err == nil && st.BackgroundReceive == BackgroundReceiveAlways {
 		return errors.New("background receiving is always on; the backend keeps running")
 	}
+	s.uiMu.Lock()
+	others := len(s.uiSessions) > 1 // the caller's own session is one
+	s.uiMu.Unlock()
+	if others {
+		return errors.New("another interface is connected; the backend keeps running")
+	}
 	s.opts.StopUIBackend()
 	return nil
 }

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -69,8 +70,9 @@ type Approval struct {
 	// update_selection), which the compose window shows in place.
 	DraftEdit bool
 	// Form is the form an MCP server asks the user to fill (formView JSON),
-	// nil for none: AnswerQuestion answers it.
-	Form json.RawMessage
+	// nil for none: AnswerQuestion answers it. Left out of the JSON when
+	// none, so it stays nil over the Local API rather than null.
+	Form json.RawMessage `json:",omitempty"`
 }
 
 // ErrNotGrantable: the approval's tool cannot be allowed for the whole conversation.
@@ -343,13 +345,18 @@ func (s *Service) ResolveApproval(ctx context.Context, id int64, accept bool) er
 	return s.cleanError(s.resolveApproval(ctx, id, accept))
 }
 
-// ResolveApprovalWithArgs accepts or rejects pending approval id with edited arguments args.
+// ResolveApprovalWithArgs accepts or rejects pending approval id with edited
+// arguments args; none (empty or null, as nil crosses the Local API) is
+// ResolveApproval's.
 func (s *Service) ResolveApprovalWithArgs(ctx context.Context, id int64, accept bool, args json.RawMessage) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return err
 	}
 	defer end()
+	if a := bytes.TrimSpace(args); len(a) == 0 || string(a) == "null" {
+		args = nil
+	}
 	return s.cleanError(s.decide(ctx, id, accept, args, true))
 }
 

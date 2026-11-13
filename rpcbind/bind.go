@@ -288,7 +288,6 @@ func ListenWith(dataDir string, svc *core.Service, opts ListenOptions) (*rpc.Ser
 		return nil, err
 	}
 	return rpc.Listen(dataDir, d, rpc.ServerOptions{
-		Conn:            rpc.ConnOptions{MaxActive: 256},
 		Version:         opts.Version,
 		DisableExternal: !opts.External,
 		UIStarted:       opts.UIStarted,

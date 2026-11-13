@@ -220,10 +220,11 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 		slog.SetDefault(old)
 	}
 
-	// No interface is in front yet: background rounds follow 后台同步 until one
-	// reports foreground (a login start under 一直继续 may never get one).
+	// No interface is in front yet: a backend the interface started follows
+	// 后台同步 until one reports foreground (a login start under 一直继续 may
+	// never get one). The user's --headless has no window to be behind.
 	st, stErr := svc.GetSettings(ctx)
-	if stErr == nil {
+	if stErr == nil && uiStarted {
 		svc.SetInboxOnly(st.BackgroundSync != core.BackgroundSyncAll)
 	}
 	external := true

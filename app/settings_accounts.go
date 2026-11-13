@@ -414,7 +414,7 @@ func (p *settingsPage) startReauth(acc core.Account, client core.OAuthClient) {
 
 // accountProvider is the account's provider, or "other IMAP".
 func accountProvider(a *App, acc core.Account) auth.Provider {
-	for _, pr := range a.svc.ListProviders() {
+	for _, pr := range auth.ListProviders() { // the same binary's table: no round trip while drawing
 		if pr.ID == acc.Provider {
 			return pr
 		}
@@ -740,7 +740,8 @@ func (p *settingsPage) closeImportDialog() {
 
 func importServersLabel(e core.AccountImportEntry) string {
 	recv := strings.ToUpper(e.ReceivingProtocol) + " " + net.JoinHostPort(e.ReceivingHost, strconv.Itoa(e.ReceivingPort))
-	if e.ReceiveOnly || (e.SendingProtocol == e.ReceivingProtocol && e.SendingHost == e.ReceivingHost && e.SendingPort == e.ReceivingPort) {
+	// A receive-only entry still shows its sending server: signing in checks it with the credential.
+	if e.SendingProtocol == e.ReceivingProtocol && e.SendingHost == e.ReceivingHost && e.SendingPort == e.ReceivingPort {
 		return recv
 	}
 	return recv + " · " + strings.ToUpper(e.SendingProtocol) + " " + net.JoinHostPort(e.SendingHost, strconv.Itoa(e.SendingPort))
@@ -811,6 +812,9 @@ func (p *settingsPage) confirmAccountImport() {
 		return err
 	}, func(err error) {
 		if gen != p.importGen || !p.importOpen {
+			if err == nil {
+				a.load() // dismissed meanwhile: the accounts were written all the same
+			}
 			return
 		}
 		p.importBusy = false

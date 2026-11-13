@@ -452,11 +452,14 @@ func (s *Service) ImportAccounts(ctx context.Context, data []byte) (AccountImpor
 		s.bus.Publish(events.Event{Type: events.SignaturesChanged})
 	}
 
+	// Committed: every account gets its worker, and is read even if the caller has gone.
+	for _, idx := range insertIdxs {
+		s.startWorker(res[idx].LastInsertID)
+	}
+	ctx = context.WithoutCancel(ctx)
 	imported := make([]Account, 0, len(insertIdxs))
 	for _, idx := range insertIdxs {
-		id := res[idx].LastInsertID
-		s.startWorker(id)
-		acc, err := s.account(ctx, id)
+		acc, err := s.account(ctx, res[idx].LastInsertID)
 		if err != nil {
 			return AccountImportResult{}, err
 		}

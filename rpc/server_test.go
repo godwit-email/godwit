@@ -320,6 +320,11 @@ func TestMaxConns(t *testing.T) {
 	if _, err := rpc.Dial(dir, rpc.RoleFull, "t", nil); err == nil {
 		t.Fatal("a second connection past MaxConns was served")
 	}
+	ui, err := rpc.Dial(dir, rpc.RoleUI, "t", nil) // external clients never use the interface's room
+	if err != nil {
+		t.Fatalf("the interface was refused with MaxConns external connections open: %v", err)
+	}
+	ui.Close()
 	c.Close()
 	deadline := time.Now().Add(5 * time.Second)
 	for {

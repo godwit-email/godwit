@@ -542,6 +542,13 @@ func (a *App) load() {
 	})
 }
 
+// Busy reports whether work the user started runs in this process and ends
+// with it: a model's or 识别模型's download, a local archive's import. UI thread.
+func (a *App) Busy() bool {
+	p := a.pages[PageSettings].(*settingsPage)
+	return len(p.models.downloads) > 0 || p.recognition.download != nil || len(a.mail.imports) > 0
+}
+
 // MailReady reports whether the initial load has settled on onboarding or a
 // loaded mail list. UI thread.
 func (a *App) MailReady() bool {

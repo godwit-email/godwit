@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"slices"
 	"strconv"
 	"sync"
 )
@@ -69,7 +70,64 @@ type pending struct {
 type clientStream struct {
 	id   uint64
 	ch   chan json.RawMessage
-	drop func(json.RawMessage) bool // events that may go when ch is full; nil: none
+	drop func(json.RawMessage) bool // events that may go when full; nil: none
+
+	// A dropping stream's events wait in q (under Client.mu) and feed moves
+	// them to ch: dropping from ch itself would race its reader and reorder.
+	q         []json.RawMessage
+	kick      chan struct{} // buffered 1: q grew or the stream ended
+	ended     bool          // no more events: feed closes ch once q is empty
+	gone      chan struct{} // closed by the caller's cancel: feed stops
+	cancelled bool
+}
+
+// newStream registers stream id; Client.mu is held.
+func (c *Client) newStream(id uint64, drop func(json.RawMessage) bool) *clientStream {
+	s := &clientStream{id: id, ch: make(chan json.RawMessage, StreamBuffer), drop: drop}
+	if drop != nil {
+		s.kick, s.gone = make(chan struct{}, 1), make(chan struct{})
+		go c.feed(s)
+	}
+	c.streams[id] = s
+	return s
+}
+
+// feed hands a dropping stream's queue to its reader in order, and closes
+// ch once the stream ended and the queue is empty, or the caller cancelled.
+func (c *Client) feed(s *clientStream) {
+	defer close(s.ch)
+	for {
+		c.mu.Lock()
+		if len(s.q) == 0 {
+			ended := s.ended
+			c.mu.Unlock()
+			if ended {
+				return
+			}
+			select {
+			case <-s.kick:
+			case <-s.gone:
+				return
+			}
+			continue
+		}
+		ev := s.q[0]
+		s.q[0] = nil
+		s.q = s.q[1:]
+		c.mu.Unlock()
+		select {
+		case s.ch <- ev:
+		case <-s.gone:
+			return
+		}
+	}
+}
+
+func (s *clientStream) wake() {
+	select {
+	case s.kick <- struct{}{}:
+	default:
+	}
 }
 
 // NewClient starts reading conn.
@@ -111,9 +169,9 @@ func (c *Client) Stream(ctx context.Context, method string, args ...any) (events
 	return c.StreamDropping(ctx, method, nil, args...)
 }
 
-// StreamDropping is Stream whose reader, once StreamBuffer behind, loses the
-// oldest unread event drop lets go instead; the stream overflows only when
-// none of the buffered events may go.
+// StreamDropping is Stream whose reader, once StreamBuffer more behind,
+// loses the oldest queued event drop lets go instead, the rest in order; the
+// stream overflows only when none of the queued events may go.
 func (c *Client) StreamDropping(ctx context.Context, method string, drop func(json.RawMessage) bool, args ...any) (events <-chan json.RawMessage, cancel func(), err error) {
 	_, s, err := c.request(ctx, method, args, true, drop)
 	if err != nil {
@@ -265,7 +323,13 @@ func (c *Client) cancelStream(s *clientStream) {
 	live := c.streams[s.id] == s
 	if live {
 		delete(c.streams, s.id)
-		close(s.ch)
+		if s.drop == nil {
+			close(s.ch)
+		}
+	}
+	if s.drop != nil && !s.cancelled { // feed closes ch, even once ended with a queue left
+		s.cancelled = true
+		close(s.gone)
 	}
 	delete(c.errs, s.ch)
 	c.mu.Unlock()
@@ -277,10 +341,15 @@ func (c *Client) cancelStream(s *clientStream) {
 // endLocked closes a stream with err (nil = normal end). Caller holds c.mu.
 func (c *Client) endLocked(s *clientStream, err error) {
 	delete(c.streams, s.id)
-	close(s.ch)
 	if err != nil {
 		c.errs[s.ch] = err
 	}
+	if s.drop == nil {
+		close(s.ch)
+		return
+	}
+	s.ended = true // feed delivers what is queued, then closes ch
+	s.wake()
 }
 
 func (c *Client) readLoop() {
@@ -326,8 +395,7 @@ func (c *Client) handleResponse(id uint64, m message) {
 		if json.Unmarshal(m.Result, &r) == nil && r.Stream > 0 {
 			sid = r.Stream
 			if !p.abandoned {
-				p.s = &clientStream{id: sid, ch: make(chan json.RawMessage, StreamBuffer), drop: p.drop}
-				c.streams[sid] = p.s
+				p.s = c.newStream(sid, p.drop)
 			}
 		}
 	}
@@ -344,40 +412,27 @@ func (c *Client) handleResponse(id uint64, m message) {
 	p.ch <- m
 }
 
-// pushLocked queues ev on s, making room by dropping the oldest unread event
-// s.drop lets go; the rest keep their order. With none to drop the stream
-// overflows. Pushes happen under c.mu only, so what it takes out fits back.
+// pushLocked queues ev on s. A dropping stream's queue, once StreamBuffer
+// long, makes room by losing its oldest event s.drop lets go; the rest keep
+// their order. With none to drop the stream overflows.
 func (c *Client) pushLocked(s *clientStream, ev json.RawMessage) bool {
-	select {
-	case s.ch <- ev:
-		return true
-	default:
-	}
 	if s.drop == nil {
-		return false
-	}
-	var buf []json.RawMessage
-	for len(buf) < cap(s.ch) {
 		select {
-		case old := <-s.ch:
-			buf = append(buf, old)
-			continue
+		case s.ch <- ev:
+			return true
 		default:
+			return false
 		}
-		break
 	}
-	dropped := false
-	for _, old := range buf {
-		if !dropped && s.drop(old) {
-			dropped = true
-			continue
+	if len(s.q) >= StreamBuffer {
+		i := slices.IndexFunc(s.q, s.drop)
+		if i < 0 {
+			return false
 		}
-		s.ch <- old
+		s.q = slices.Delete(s.q, i, i+1)
 	}
-	if !dropped && len(buf) == cap(s.ch) {
-		return false
-	}
-	s.ch <- ev
+	s.q = append(s.q, ev)
+	s.wake()
 	return true
 }
 

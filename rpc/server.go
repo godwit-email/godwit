@@ -28,9 +28,11 @@ const (
 
 // ServerOptions configures a Server. Zero fields take the defaults.
 type ServerOptions struct {
-	Conn     ConnOptions // per connection; Hello and EncodeError are set by the Server
-	MaxConns int         // simultaneous connections, 16
-	Version  string      // hello answers "godwit/<Version>"
+	Conn ConnOptions // per connection; Hello and EncodeError are set by the Server
+	// MaxConns bounds simultaneous external (RoleFull, RoleMCP) connections,
+	// 16; as many again are left for the rest, so the interface always fits.
+	MaxConns int
+	Version  string // hello answers "godwit/<Version>"
 	// UIStarted: the interface started this backend; hello tells the ui role
 	// (Hello.UIStarted), which can then replace it on a version change.
 	UIStarted bool
@@ -247,7 +249,7 @@ func (s *Server) Serve(ctx context.Context) error {
 			return err
 		}
 		s.mu.Lock()
-		if s.closed || s.conns >= s.opts.MaxConns {
+		if s.closed || s.conns >= 2*s.opts.MaxConns {
 			s.mu.Unlock()
 			c.Close()
 			continue
@@ -372,12 +374,16 @@ func (s *Server) hello(ctx context.Context, c *conn, done chan struct{}, params 
 	case RoleFull, RoleMCP:
 		s.mu.Lock()
 		ok := !s.closed && s.external && s.apiToken != "" && subtle.ConstantTimeCompare([]byte(token), []byte(s.apiToken)) == 1
-		if ok && done != nil {
+		full := ok && len(s.extConns) >= s.opts.MaxConns
+		if ok && !full && done != nil {
 			s.extConns[done] = c
 		}
 		s.mu.Unlock()
 		if !ok {
 			return nil, nil, nil, unauthenticated("bad token")
+		}
+		if full {
+			return nil, nil, nil, unauthenticated("too many connections")
 		}
 		roleOK = func(string, []json.RawMessage) bool { return true }
 		if role == RoleMCP {

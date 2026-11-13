@@ -575,6 +575,7 @@ type mainClose struct {
 	action  func(expired bool) closeAction // mainCloseAction now
 	do      func(closeAction)
 	hidden  func() bool                                        // the main window is hidden or minimized
+	busy    func() bool                                        // work runs that the exit would end (App.Busy); nil: none
 	after   func(d time.Duration, f func()) (stop func() bool) // app.Clock.AfterFunc
 	closed  bool                                               // the window closed and has not shown since
 	expired bool
@@ -596,6 +597,10 @@ func (m *mainClose) close() {
 			m.stop = nil
 			if !m.hidden() { // shown without telling us
 				m.shown()
+				return
+			}
+			if m.busy != nil && m.busy() {
+				m.close() // a download or import would end with the interface: hidden another round
 				return
 			}
 			m.expired = true

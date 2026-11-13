@@ -190,20 +190,32 @@ func followConversation(ctx context.Context, svc Service, id int64) (core.Conver
 			}
 		}
 		read := map[int64]bool{}
-		seenApprovals := map[int64]bool{}
+		seenApprovals := map[int64]string{} // each pending approval in c, by its form
 		for _, t := range c.Turns {
 			for _, r := range t.Runs {
 				read[r] = true
 			}
 			for _, call := range t.Calls {
 				if call.Approval != nil {
-					seenApprovals[call.Approval.ID] = true
+					seenApprovals[call.Approval.ID] = string(call.Approval.Form)
 				}
 			}
 			for _, a := range t.Approvals {
-				seenApprovals[a.ID] = true
+				seenApprovals[a.ID] = string(a.Form)
 			}
 		}
+		// approvalIn: ev interrupts on an approval c holds (known), with the
+		// form c holds (same). askAgain re-sends a known approval with a new
+		// form, which is news.
+		approvalIn := func(ev core.WitEvent) (known, same bool) {
+			if len(ev.Approvals) == 0 {
+				return false, false
+			}
+			form, ok := seenApprovals[ev.Approvals[0].ID]
+			return ok, ok && form == string(ev.Approvals[0].Form)
+		}
+		seen := func(ev core.WitEvent) bool { _, same := approvalIn(ev); return same }
+		reasked := func(ev core.WitEvent) bool { known, same := approvalIn(ev); return known && !same }
 		last := -1
 		sawActiveStart := false
 		for i, ev := range buf {
@@ -211,7 +223,7 @@ func followConversation(ctx context.Context, svc Service, id int64) (core.Conver
 				if ev.Kind == "start" {
 					sawActiveStart = true
 				}
-				if ev.Kind == "interrupted" && (c.Awaiting || len(ev.Approvals) > 0 && seenApprovals[ev.Approvals[0].ID]) {
+				if ev.Kind == "interrupted" && (seen(ev) || c.Awaiting && !reasked(ev)) {
 					last = i
 				}
 			}
@@ -232,7 +244,7 @@ func followConversation(ctx context.Context, svc Service, id int64) (core.Conver
 					waitInterrupt = true
 					return false
 				}
-				if ev.Kind == "interrupted" && len(ev.Approvals) > 0 && seenApprovals[ev.Approvals[0].ID] {
+				if ev.Kind == "interrupted" && seen(ev) {
 					return false
 				}
 			}

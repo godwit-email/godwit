@@ -369,14 +369,19 @@ func gui(ctx context.Context, dataDir, open string) int {
 				}
 			},
 			hidden: func() bool { return !win.IsVisible() || win.IsMinimized() },
+			busy:   a.Busy,
 			after: func(d time.Duration, f func()) func() bool {
 				return time.AfterFunc(d, func() { a.OnUI(f) }).Stop
 			},
 		}
 		win.OnFocus(func() {
 			mc.shown() // every way back (tray, Dock, notification, App.Open) shows and focuses it
+			if !quitAsked {
+				// A quit the user kept (a failed save asked) is over. The focus a
+				// quit's own question brings (BeforeClose shows the window) is not.
+				leaveBackend.Store(false)
+			}
 			quitAsked = false
-			leaveBackend.Store(false) // a quit the user kept (a failed save asked) is over
 			a.SetForeground(true)
 		})
 		win.OnBlur(func() { a.SetForeground(false) })
