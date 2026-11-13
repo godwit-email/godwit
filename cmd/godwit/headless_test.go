@@ -1212,3 +1212,55 @@ func TestUIArgv(t *testing.T) {
 		}
 	}
 }
+
+// A development build's interface previews the sign-in code card, which is
+// the backend tray's: the backend shows it, even with the interface in front.
+func TestHeadlessTrayPreviewsSignInCode(t *testing.T) {
+	env := coretest.New(t, coretest.WithoutAutoSync())
+	sink := &recordingSink{supported: true, bannerSupported: true}
+	withHeadlessDesktop(t, func() *headlessDesktop {
+		return &headlessDesktop{
+			clock:       newStepClock(time.Now()),
+			newPlatform: func(string, *core.Service) headlessPlatform { return sink },
+			run: func(ctx context.Context, ready func(stop func())) (bool, error) {
+				loopCtx, stop := context.WithCancel(ctx)
+				defer stop()
+				ready(stop)
+				<-loopCtx.Done()
+				return true, nil
+			},
+		}
+	})
+	dir := shortDir(t)
+	c, _, _ := startHeadless(t, dir)
+	ctx := context.Background()
+	ui, err := rpc.Dial(dir, rpc.RoleUI, "ui-test", rpcbind.NewCodec())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ui.Close()
+	if err := ui.Call(ctx, "SetUIForeground", nil, true); err != nil {
+		t.Fatal(err)
+	}
+	_, deliver := addTestAccount(t, env, c)
+	deliver("From: Login <login@example.com>\r\nTo: alice@example.com\r\nSubject: Verification code: 615204\r\nMessage-ID: <p@example.com>\r\n\r\nYour verification code is 615204.\r\n")
+	var id int64
+	waitCond(t, "the code in the tray", func() bool {
+		codes, ok := sink.LastCodes()
+		if ok && len(codes) == 1 {
+			id = codes[0].MessageID
+		}
+		return id != 0
+	})
+	for _, link := range []bool{false, true} {
+		before := len(sink.Banners())
+		if err := ui.Call(ctx, "DevPreviewSignInCode", nil, id, link); err != nil {
+			t.Fatal(err)
+		}
+		waitCond(t, "the preview card", func() bool {
+			return slices.ContainsFunc(sink.Banners()[before:], func(b *core.SignInCode) bool {
+				return b != nil && b.MessageID == id && (link && b.Link != "" || !link && b.Code == "615204")
+			})
+		})
+	}
+}

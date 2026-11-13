@@ -34,13 +34,17 @@ const (
 	// main window, or a new compose window.
 	OpenRequested    = "open.requested"
 	ComposeRequested = "compose.requested"
+	// SignInCodePreview: a development build's interface asked to preview
+	// MessageIDs[0]'s sign-in code card (Kind "link": its sign-in link card);
+	// the backend's tray, which the card belongs to, shows it.
+	SignInCodePreview = "signin_code.preview"
 )
 
 // Command reports whether an event of type t asks the interface to do
 // something (a click, the tray's Open, Compose or Quit) rather than telling it
 // what changed: a reader that falls behind may lose the latter only.
 func Command(t string) bool {
-	return t == NotificationClicked || t == QuitRequested || t == OpenRequested || t == ComposeRequested
+	return t == NotificationClicked || t == QuitRequested || t == OpenRequested || t == ComposeRequested || t == SignInCodePreview
 }
 
 // subscriberBuffer is the per-subscriber queue capacity.

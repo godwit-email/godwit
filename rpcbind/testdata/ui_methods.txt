@@ -5,6 +5,7 @@ CachedImage
 CachedImageDims
 CancelTrayQuit
 ContactAvatar
+DevPreviewSignInCode
 DownloadRecognitionModelStream
 ExportAccountsFile
 FetchAttachmentsStream

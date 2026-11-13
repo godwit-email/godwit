@@ -259,6 +259,8 @@ var uiOnly = map[string]bool{
 	"StopUIBackend": true, "ReplaceUIBackend": true,
 	// The interface's user cancelled a quit the tray's 退出并停止收信 began.
 	"CancelTrayQuit": true,
+	// A development build's preview of the backend tray's sign-in code card.
+	"DevPreviewSignInCode": true,
 	// Whether the backend's tray shows its icon: the interface's window hides only where it can come back.
 	"TrayShown": true,
 }

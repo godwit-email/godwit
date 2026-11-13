@@ -1879,9 +1879,10 @@ func (p *mailPage) undoPurge(ids []int64) {
 // devSignIn shows the sign-in banner for the message, with its own code or
 // link when it has one, else a sample, so the banner can be seen without
 // waiting for real sign-in mail. Dev builds only.
+// devSignIn previews the sign-in code card of it's newest message (link: its
+// sign-in link card): the card is the backend tray's, so the backend shows it.
 func (p *mailPage) devSignIn(it mailItem, link bool) {
 	a := p.a
-	var code core.SignInCode
 	a.do(func(ctx context.Context) error {
 		id := it.ID
 		if it.Thread {
@@ -1891,25 +1892,10 @@ func (p *mailPage) devSignIn(it mailItem, link bool) {
 			}
 			id = t.Messages[len(t.Messages)-1].ID
 		}
-		m, err := a.svc.GetMessage(ctx, id, false)
-		if err != nil {
-			return err
-		}
-		code = core.SignInCode{MessageID: id, From: m.From, ReceivedAt: a.clock.Now()}
-		if link {
-			code.Link, code.LinkKind = gomail.ActionLink(m.Subject, m.Text, m.HTML)
-			if code.Link == "" {
-				code.Link, code.LinkKind = "https://example.com/magic-link", gomail.LinkSignIn
-			}
-		} else {
-			code.Code = cmp.Or(gomail.SignInCode(m.Subject, m.Text, m.HTML), "482913")
-		}
-		return nil
+		return a.svc.DevPreviewSignInCode(ctx, id, link)
 	}, func(err error) {
 		if err != nil {
 			a.toastErr(err)
-		} else if code.MessageID != 0 {
-			a.plat.ShowSignInCode(&code)
 		}
 	})
 }
@@ -1930,7 +1916,11 @@ func (p *mailPage) devHTML(it mailItem) {
 			id = t.Messages[len(t.Messages)-1].ID
 		}
 		var html string
-		if raw, err := rawMessage(ctx, a.svc, id); err == nil {
+		// The original waits for the account's lock, which a long sync holds: the stored HTML after a while.
+		rctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		raw, err := rawMessage(rctx, a.svc, id)
+		cancel()
+		if err == nil {
 			parsed, err := gomail.Parse(raw)
 			if err != nil {
 				return err
