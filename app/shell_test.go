@@ -263,6 +263,52 @@ func TestSyncAllWhileInFlight(t *testing.T) {
 	}
 }
 
+// TestSyncNowWhileRetrying: with the account failing and the worker waiting to
+// retry, 立即同步 syncs at once. Until that sync returns the row says 同步中… in
+// place of 自动重试中 and the button is off, so another click starts no second
+// sync (#755: the button was sometimes grey, sometimes clickable to no effect).
+func TestSyncNowWhileRetrying(t *testing.T) {
+	var acc core.Account
+	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) { acc = e.AddAccount(t, "alice@example.com") })
+	h.until("initial load", func() bool { return h.app.loaded })
+	h.openSettings(accountRoute(acc.ID))
+	h.post(func() {
+		h.app.onEvent(events.Event{Type: events.SyncFailed, AccountID: acc.ID, Error: "imap connect imap.example.com:993: context deadline exceeded", Kind: "timeout"})
+	})
+	h.see("自动重试中")
+	if h.app.syncBusy(acc.ID) {
+		t.Fatal("busy while only waiting to retry: 立即同步 must be clickable")
+	}
+	logins := h.env.IMAP(acc.ID).Logins()
+	entered, release := h.env.IMAP(acc.ID).BlockLogin()
+	defer release()
+
+	h.click("立即同步")
+	if !h.app.syncBusy(acc.ID) { // before any event from the backend
+		t.Fatal("not busy right after the click")
+	}
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("login not held")
+	}
+	h.see("同步中…")
+	if h.tt.HasText("自动重试中") {
+		t.Fatalf("the row still says retrying while the sync runs; texts %q", h.tt.Texts())
+	}
+	if hs := h.app.syncHealths(); hs[0].level != syncRetrying || !hs[0].actions[0].disabled {
+		t.Fatalf("the failure hidden, or 立即重试 left on: %+v", hs[0])
+	}
+	h.click("立即同步") // disabled: starts nothing
+
+	release()
+	h.see("已同步 · 刚刚")
+	h.until("the click's sync returned", func() bool { return !h.app.syncBusy(acc.ID) })
+	if n := h.env.IMAP(acc.ID).Logins() - logins; n != 1 {
+		t.Fatalf("%d logins, want 1", n)
+	}
+}
+
 // TestSyncAllAccountRemoved: an account removed mid-batch neither holds the Sync
 // All open nor fails it.
 func TestSyncAllAccountRemoved(t *testing.T) {

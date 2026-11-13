@@ -33,6 +33,9 @@ func (a *api) ListAccounts() []string { return []string{"a@example.com"} }
 func (a *api) Send(id int64) error    { a.sent.Add(1); return nil }
 func (a *api) Fail(mode string) error { return fmt.Errorf("bad mode %q", mode) }
 func (a *api) InboxOnly() bool        { return true }
+func (a *api) Sync(host string) error {
+	return fmt.Errorf("imap connect %s:993: %w", host, context.DeadlineExceeded)
+}
 func (a *api) Watch(ctx context.Context) (<-chan int, func()) {
 	ch := make(chan int)
 	go func() { <-ctx.Done(); close(ch) }()
@@ -412,6 +415,34 @@ func TestUnregisteredErrorTextForUI(t *testing.T) {
 		var we *rpc.WireError
 		if err := c.Call(context.Background(), "Fail", nil, "pw hunter2"); !errors.As(err, &we) || we.Code != rpc.CodeInternal || we.Message != want {
 			t.Errorf("%s Fail = %v, want %q", role, err, want)
+		}
+		c.Close()
+	}
+}
+
+// A sentinel that crosses to Godwit's own interface keeps what wrapped it, the
+// step and the host that failed, and is still the sentinel there. Without it a
+// sync that timed out showed as the bare "context deadline exceeded" (#755).
+// An external client gets the sentinel's fixed text.
+func TestSentinelTextForUI(t *testing.T) {
+	codec := &rpc.Codec{}
+	codec.RegisterSentinel("deadline", context.DeadlineExceeded, context.DeadlineExceeded.Error())
+	dir := shortDir(t)
+	startServer(t, dir, rpc.ServerOptions{
+		Codec:  codec,
+		Redact: func(s string) string { return strings.ReplaceAll(s, "hunter2", "[redacted]") },
+	})
+	for role, want := range map[string]string{
+		rpc.RoleUI:   "imap connect [redacted].example.com:993: context deadline exceeded",
+		rpc.RoleFull: "context deadline exceeded",
+	} {
+		c, err := rpc.Dial(dir, role, "t", codec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = c.Call(context.Background(), "Sync", nil, "hunter2.example.com")
+		if !errors.Is(err, context.DeadlineExceeded) || err.Error() != want {
+			t.Errorf("%s Sync = %v, want the deadline sentinel as %q", role, err, want)
 		}
 		c.Close()
 	}

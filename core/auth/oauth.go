@@ -314,20 +314,27 @@ var tokenMessages = map[string]string{
 var errBadTokenResponse = errors.New("oauth: the token endpoint returned an invalid response")
 
 // tokenError maps x/oauth2's errors, which quote the response body, to fixed ones.
-// Context cancellation and deadlines still match with errors.Is.
+// Context cancellation and deadlines still match with errors.Is. A transport
+// failure names the endpoint's host, the one thing kept of the request.
 func tokenError(err error) error {
 	var re *oauth2.RetrieveError
+	var ue *url.Error
+	host := ""
+	if errors.As(err, &ue) {
+		if u, perr := url.Parse(ue.URL); perr == nil && u.Host != "" {
+			host = " " + u.Host
+		}
+	}
 	switch {
 	case errors.Is(err, context.Canceled):
-		return fmt.Errorf("oauth: token request: %w", context.Canceled)
+		return fmt.Errorf("oauth: token request%s: %w", host, context.Canceled)
 	case errors.Is(err, context.DeadlineExceeded):
-		return fmt.Errorf("oauth: token request: %w", context.DeadlineExceeded)
+		return fmt.Errorf("oauth: token request%s: %w", host, context.DeadlineExceeded)
 	case errors.As(err, &re):
 		return tokenCodeError(re.ErrorCode)
 	}
-	var ue *url.Error
-	if errors.As(err, &ue) { // transport failure: the request never got an answer
-		return errors.New("oauth: could not reach the token endpoint")
+	if ue != nil { // transport failure: the request never got an answer
+		return errors.New("oauth: could not reach the token endpoint" + host)
 	}
 	return errBadTokenResponse
 }

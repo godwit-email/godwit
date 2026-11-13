@@ -118,9 +118,9 @@ func loginErr(ctx context.Context, proto string, e Endpoint, err error) error {
 	var ne net.Error
 	switch {
 	case ctx.Err() != nil:
-		return fmt.Errorf("%s login: %w", proto, ctx.Err())
+		return fmt.Errorf("%s login %s: %w", proto, e.addr(), ctx.Err())
 	case errors.As(err, &ne), errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF), errors.Is(err, net.ErrClosed):
-		return fmt.Errorf("%s login: %w", proto, err)
+		return fmt.Errorf("%s login %s: %w", proto, e.addr(), err)
 	}
 	if se, ok := errors.AsType[*smtp.SMTPError](err); ok && se.EnhancedCode == (smtp.EnhancedCode{5, 7, 139}) {
 		return fmt.Errorf("%s: %w: %w", proto, ErrSMTPAuthDisabled, backend.ErrAuthFailed)
@@ -242,7 +242,7 @@ func dialIMAP(ctx context.Context, e Endpoint, h *imapclient.UnilateralDataHandl
 			// itself. A failed ID is not a failed login.
 			c.ID(&imap.IDData{Name: "Godwit", Version: ClientVersion}).Wait()
 			if cctx.Err() != nil {
-				err = fmt.Errorf("imap id: %w", cctx.Err())
+				err = fmt.Errorf("imap id %s: %w", e.addr(), cctx.Err())
 			}
 		}
 	} else {

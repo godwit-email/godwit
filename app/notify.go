@@ -132,6 +132,27 @@ func (a *App) Open(what string) {
 // Compose starts a new draft in a compose window, as the sidebar's button does.
 func (a *App) Compose() { a.mail.compose() }
 
+// syncNow syncs the account now. Until it returns the account is busy
+// (syncBusy), so the click shows at once, before the backend takes the
+// account's lock and says SyncStarted, and a second click queues no second sync.
+func (a *App) syncNow(id int64) {
+	if a.syncAsked[id] {
+		return
+	}
+	a.syncAsked[id] = true
+	a.do(func(ctx context.Context) error { return a.svc.SyncNow(ctx, id) }, func(err error) {
+		delete(a.syncAsked, id)
+		a.toastErr(err)
+	})
+}
+
+// syncBusy reports whether a sync of the account runs or is asked for: any
+// the backend started, this window's own, or a Sync All's. The worker waiting
+// to retry is not one: a click then syncs at once.
+func (a *App) syncBusy(id int64) bool {
+	return a.syncing[id] || a.syncAsked[id] || a.batchPending(id)
+}
+
 // SyncAll syncs every account now. The status shows syncing until the last one
 // returns; a click while that batch is in flight starts nothing more.
 func (a *App) SyncAll() {
