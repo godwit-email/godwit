@@ -43,13 +43,14 @@ type aiRun struct {
 }
 
 // fetch is a read for the reader: done once it succeeded; a failure keeps
-// err for a retry. at is the session of the last attempt.
+// err for a retry. at is the session of the last attempt, by its visit:
+// the fetch outlives sessions, so it must not hold one.
 type fetch[T any] struct {
 	latest // only the newest read lands
 	v      T
 	done   bool
 	err    error
-	at     *session
+	at     uint64
 }
 
 // fetchInto reads into f unless it is read, being read, or (without force)
@@ -62,11 +63,12 @@ func (f *fetch[T]) restart() {
 }
 
 func fetchInto[T any](r *reader, f *fetch[T], force bool, get func(context.Context) (T, error), failed func(error)) {
-	if f.done || f.loading && f.at == r.session || !force && f.at == r.session {
+	if f.done || f.loading && f.at == r.visit || !force && f.at == r.visit {
 		return
 	}
 	s, ctx := r.session, r.aiContext() // stopAI cancels it; a restart does not
-	f.at, f.err = s, nil
+	f.at, f.err = s.visit, nil
+
 	var v T
 	f.Run(r.p.a, func(context.Context) (err error) {
 		v, err = get(ctx)

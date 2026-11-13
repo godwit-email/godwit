@@ -55,6 +55,7 @@ type readerPane struct {
 	// (#667). Nil while none is.
 	prev     *session
 	prevStop func()
+	visits   uint64 // the sessions it has shown, numbering each (session.visit)
 
 	ai        map[int64]*msgAI         // by message; kept across switches so a summary runs once
 	skills    fetch[[]core.SkillInfo]  // the skill menu: skills on messages but summarize and translate
@@ -80,7 +81,8 @@ type readerPane struct {
 // started for it lands nowhere once it is closed or no longer the one shown
 // (reader.has).
 type session struct {
-	closed bool // replaced or gone: its pages are closed
+	closed bool   // replaced or gone: its pages are closed
+	visit  uint64 // its number in the pane: what outlives it tells it by this, not holding it
 
 	key [2]int64        // the route's ThreadID and MessageID shown
 	why core.ViewReason // why it is in the view shown
@@ -118,8 +120,10 @@ type session struct {
 	copiedCard     string             // the card button that just copied (message/plugin/button), shown as Copied for a moment
 }
 
-func newSession(k [2]int64) *session {
-	return &session{key: k, open: map[int64]bool{}, historyOpen: map[int64]bool{}, bodies: map[int64]*msgBody{}}
+// newSession starts the session of thread k.
+func (p *readerPane) newSession(k [2]int64) *session {
+	p.visits++
+	return &session{visit: p.visits, key: k, open: map[int64]bool{}, historyOpen: map[int64]bool{}, bodies: map[int64]*msgBody{}}
 }
 
 // close closes the session's pages and drops what it has under way.
@@ -178,9 +182,11 @@ type msgBody struct {
 }
 
 func newReader(p *mailPage) *reader {
-	return &reader{session: newSession([2]int64{}), readerPane: &readerPane{p: p, ai: map[int64]*msgAI{},
+	r := &reader{readerPane: &readerPane{p: p, ai: map[int64]*msgAI{},
 		getThread: p.a.svc.GetThread, getMessage: p.a.svc.GetMessageLazyImages, getAvatar: p.a.svc.SenderAvatar, runSkill: p.a.svc.RunSkill,
 		cardsFn: p.a.svc.PluginCards, tagsFn: p.a.svc.PluginTags, quickFn: p.a.svc.QuickReplies, gistFn: p.a.svc.MessageGist, skillsFn: p.a.svc.ListSkills, actionsFn: p.a.svc.ListActions}}
+	r.session = r.newSession([2]int64{})
+	return r
 }
 
 func isSeen(m core.MessageSummary) bool { return slices.Contains(m.Flags, `\Seen`) }
@@ -227,7 +233,7 @@ func (r *reader) sync(reread bool) {
 func (r *reader) reset(k [2]int64) {
 	r.stopAI()
 	r.session.close()
-	r.session = newSession(k)
+	r.session = r.newSession(k)
 }
 
 // prevWait is how long the thread before a switch stays at most, for a
@@ -240,7 +246,8 @@ const prevWait = time.Second
 func (r *reader) retire(k [2]int64) {
 	if r.prev == nil {
 		r.stopAI()
-		r.prev, r.session = r.session, newSession(k)
+		r.prev, r.session = r.session, r.newSession(k)
+
 	} else {
 		r.reset(k)
 	}
