@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.36.0](https://github.com/godwit-email/godwit/compare/v1.35.0...v1.36.0) (2026-11-13)
+
+
+### Features
+
+* **contacts:** read-only CardDAV address book sync ([#712](https://github.com/godwit-email/godwit/issues/712)) ([44fcd09](https://github.com/godwit-email/godwit/commit/44fcd094199d4beda234b3135c339dd9a6edc74f))
+* move mail engine into backend process and turn UI into Local API client ([#714](https://github.com/godwit-email/godwit/issues/714)) ([#742](https://github.com/godwit-email/godwit/issues/742)) ([1c37767](https://github.com/godwit-email/godwit/commit/1c37767373da2d00eacc820561558ebb4598b252))
+* **reader:** display valid inline data:image bitmaps in mail bodies ([#743](https://github.com/godwit-email/godwit/issues/743)) ([b590914](https://github.com/godwit-email/godwit/commit/b5909144bcc3264db70b411aaf6459ad96e74e43)), closes [#706](https://github.com/godwit-email/godwit/issues/706)
+
+
+### Bug Fixes
+
+* **imap:** fail the connection when a FETCH literal read stalls ([#752](https://github.com/godwit-email/godwit/issues/752)) ([205db1b](https://github.com/godwit-email/godwit/commit/205db1b05ef5a983803483ce269d1979e8ae5176))
+* **imap:** parse iCloud body structures with a double space ([#748](https://github.com/godwit-email/godwit/issues/748)) ([77b2928](https://github.com/godwit-email/godwit/commit/77b292838784f2a34ae249c75aedcfcc9f21f43d))
+* **imap:** preserve connection errors after ID list replies ([#753](https://github.com/godwit-email/godwit/issues/753)) ([db7debd](https://github.com/godwit-email/godwit/commit/db7debddaf86ddbd3fcb9fc09d8103f39b2e20f3))
+* issues found regressing main after the backend split ([#754](https://github.com/godwit-email/godwit/issues/754)) ([2fb74c1](https://github.com/godwit-email/godwit/commit/2fb74c1abe1ed399640d58fb33be7d4d348fdf5b))
+* **reader:** load body images and avatars on windows ([#751](https://github.com/godwit-email/godwit/issues/751)) ([decc222](https://github.com/godwit-email/godwit/commit/decc2223b3cf2857262d7561f899794c89edd435))
+
 ## [1.35.0](https://github.com/godwit-email/godwit/compare/v1.34.0...v1.35.0) (2026-11-12)
 
 
