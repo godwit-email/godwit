@@ -10,7 +10,7 @@ status: proposed
 
 ## 接缝
 
-- 界面用本机 API 新增的 **`ui` 角色**：`full` 的全部方法，加上今天在 `hidden` 里、只有界面用得着的几条——窗口收窄开关（`SetInboxOnly`/`InboxOnly`）、阅读器的两步取图（`GetMessageLazyImages` 与流式的 `InlineImagesStream`/`FetchAttachmentsStream`）、头像（`SenderAvatar`/`ModelServiceAvatar`/`PluginReadme`）、带进度回调的三条（同样以 `*Stream` 形式）。`InlineImages`、`FetchAttachments` 与带回调的进程内形式，以及 `Close`、`Redact`、`AuditExternal`、`Proxy`、`FollowConversation` 继续不上 wire（后者客户端有 `SubscribeConversation`）。事件走 `Subscribe` 这条流——它已经在 wire 上，带背压。
+- 界面用本机 API 新增的 **`ui` 角色**：`full` 的全部方法，加上只给界面的方法（全部钉在 `rpcbind/testdata/ui_methods.txt`）。其中一部分是今天在 `hidden` 里、只有界面用得着的几条——窗口收窄开关（`SetInboxOnly`/`InboxOnly`）、阅读器的两步取图（`GetMessageLazyImages` 与流式的 `InlineImagesStream`/`FetchAttachmentsStream`）、头像（`SenderAvatar`/`ModelServiceAvatar`/`PluginReadme`）、带进度回调的三条（同样以 `*Stream` 形式）。`InlineImages`、`FetchAttachments` 与带回调的进程内形式，以及 `Close`、`Redact`、`AuditExternal`、`Proxy`、`FollowConversation` 继续不上 wire（后者客户端有 `SubscribeConversation`）。另一部分是这次新加的：界面状态上报（`SetUIForeground`、`SetUIReady`、`SetComposeOpen`）、生命周期（`StopUIBackend`、`ReplaceUIBackend`、`TrayShown`）、放不进一条响应的结果改成数据目录里的 0600 文件交接（`RawMessageFile`、`ExportAccountsFile`），以及图片缓存、最近日志、Store 版本检查等界面专用的几条。事件走 `Subscribe` 这条流——它已经在 wire 上；读得慢的界面丢最旧的变化通知，不丢点击与托盘请求。
 - **本机 API 从此常开**，因为界面就要用它；「智能 › 接入 AI 应用」开关的含义收窄成「外部客户端（`full`/`mcp`）能不能连」。信任边界不变：同一个系统用户（[0002](0002-single-owner-local-api.md)）。这个开关只管外部角色；同一用户下的程序也能出示 `ui-token`（同用户信任边界，[0002](0002-single-owner-local-api.md)），所以 `ui` 角色的发信、转发规则、授权与放宽通过 MCP 发送同样记审计（来源 `ui`），只是不按外部来源拦截。
 - **附件与图片不过 wire**：同机，界面直接读数据目录里的文件路径。
 - 界面把「我在前台」报给后端（一条 `ui` 角色方法）；后端据此抑制通知、并把后台轮次收窄到收件箱——今天这个判断在 `app.App.foreground` 里。
@@ -24,11 +24,11 @@ status: proposed
 - **退出默认连后端一起退出**；设置里的「后台收信」三态取代 `KeepInBackground`：关窗后停止 / 关窗后继续、退出即停止（默认）/ 一直继续。选「一直继续」时由系统的登录项拉起（macOS 的 `SMAppService.mainAppService`、Windows 非商店包的注册表 `Run` 或 MSIX 的 `uap5:StartupTask`），托盘菜单里另设「退出并停止收信」。
 - 托盘图标与菜单归后端：打开窗口、立即同步、退出并停止收信（及现有的写邮件、最近登录验证码）。
 - **单实例锁只给界面**：`mygo.App.RequestSingleInstanceLock()` 按 `bundleIdentifier + 应用名` 建锁，只由界面调用（二次启动把参数转交给已在运行的界面并聚焦窗口）；后端进程不调它，只靠数据目录上的 `ownerlock` 保证单一拥有者，两者互不抢锁。
-- **通知由后端发**，身份就是 Godwit：
+- **通知由后端发**，身份就是 Godwit（例外：界面在时，MCP 发送请求的通知由界面发，点它直接打开确认卡片）：
   - macOS 上后端就是 `Godwit.app/Contents/MacOS/Godwit --headless`，`NSBundle.mainBundle` 仍是 `Godwit.app`（`email.godwit.app`），通知授权弹窗与系统设置条目只出现一次，签名构建下共享嵌入描述文件与 `INSendMessageIntent` 通信通知权限（可带发件人头像）。原先以为点通知一定由系统唤起界面，实际后端跑着 AppKit 循环并挂了 `UNUserNotificationCenterDelegate` 时，点击回调既可能落到后端也可能落到界面（界面未运行时直接回调后端，系统不会另起一个不带 `--headless` 的进程）——改为**后端和界面都处理 `OnNotificationClick` 并按通知 `id` 去重**：后端收到时，若有 `ui` 连接就发事件让界面聚焦定位，没有就拉起界面进程打开目标项。
   - Windows 上原先以为要靠 MSIX 包内第二个进程借主应用的 AUMID 发 WinRT Toast；核对 `mygo` 源码后确认它实际走 `Shell_NotifyIconW` 托盘气泡（Windows 10/11 渲染为横幅），直接挂在后端自己的托盘图标上，点击产生 `ninBalloonUserClick` 回到后端进程——根本没有跨可执行文件的 AUMID 问题，后端收到点击后同样通知或拉起界面。
 - **界面不在时的确认**：MCP 发送留在待确认里（`mcp_sends` 那套已经绑 revision、有 TTL、有上限），并发一条通知；点通知唤起界面并跳到那张卡片。Wit 的运行与插件的待批动作不排队——没有界面就不该开始。
-- **升级**：界面连上先对版本，不一致就让后端干净退出（走既有的关闭路径，发件箱与「最多发一次」的语义不变）再重新拉起；不做跨版本兼容。
+- **升级**：界面连上先对版本，不一致就让它拉起的后端干净退出（走既有的关闭路径，发件箱与「最多发一次」的语义不变）再重新拉起，「一直继续」下也是；用户自己用 `--headless` 起的后端不替换，界面告诉用户先停掉它。不做跨版本兼容。
 
 ## 平台与真机核实（#719）
 
@@ -63,7 +63,7 @@ macOS 与 Windows 做全套（托盘、原生通知、登录启动），Linux �
 - `hidden` 里那几条从「不上 wire」改成「只给 `ui` 角色」；`rpcbind/testdata/full_methods.txt`、`hidden` 的注释与 `TestMCPAllowlistContents` 一起更新（AGENTS.md：一个名字就是承诺）。
 - 通知的展示逻辑（合并 1 秒、跳过被拦截的发件人、前台不提醒）从 `app/notify.go` 搬到后端；`cmd/godwit/notify_*.go` 的平台细节留在原地。
 - 后端传与界面相同的 `core.Options`（`AutoSync`、`LabelMail`、`SecurityMail` 都开，和今天的 `gui.go:255` 一样）；跑不跑由用户设置决定（labeler 每批都读 `Settings.AutoLabel`），不新增「常驻时跑什么」的开关——「界面不在」不该改变用户已经做过的选择。
-- 事件总线是 lossy 的（满了丢最旧的）：界面重连后重新全量拉一次状态，不靠事件补齐——它启动时本来就是全量拉。
+- 事件总线是 lossy 的（满了丢最旧的，但不丢点击、托盘的打开/写邮件/退出这类请求）：界面与后端的连接断了不重连，界面提示后退出，下次启动时全量拉一次状态，不靠事件补齐。单条结果或流事件超过发送队列一半时只让这一次调用失败（`message_too_large`），不断开连接。
 - 测试：`app/` 的测试改在 socket 上跑（`contract` 已有先例）；`coretest` 加「后端 + 界面」两级；`--headless` 的含义变成「后端进程本身」，不再是「另一个没有通知的拥有者」。
 - 先量数字再动结构（#652 的第 2 步）：一轮同步的耗时、下行字节、分配，IDLE → 通知的延迟，常驻态的内存与唤醒次数，界面冷启动耗时，都要能在本机重复跑出来。
 - 要记住的已知弱点：macOS 上 `go-keyring` 走 `/usr/bin/security`，keychain 项的 ACL 信任的是 `/usr/bin/security` 而不是 Godwit 的签名——同一用户下的任何程序都能无提示读到凭据。后端不是新增的风险面（它本来就在同一用户下跑），但这条要写进评审。

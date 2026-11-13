@@ -31,7 +31,7 @@
   "wit_skill_output_panel": "パネルに表示",
   "wit_skill_output_replace_body": "本文を置き換える",
   "wit_skill_output_replace_draft": "下書きを置き換える",
-  "app_another_owner": "このデータディレクトリではすでに Godwit（GUI または headless）が実行されています。",
+  "app_another_owner": "このデータディレクトリではすでに Godwit（アプリまたは godwit --headless）が実行されています。",
   "app_backend_lost": "Godwit のバックグラウンドプロセスが予期せず終了しました。Godwit をもう一度開くと再起動します。",
   "app_backend_version": "バックグラウンドで Godwit {arg1}（godwit --headless で起動）が実行中で、この Godwit {arg2} とバージョンが異なります。停止してから Godwit をもう一度開いてください。",
   "app_lock_failed": "Godwit はデータディレクトリを開けませんでした。",

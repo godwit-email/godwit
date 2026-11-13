@@ -113,6 +113,7 @@ var table = []Error{
 	{Code: "not_grantable", Err: core.ErrNotGrantable},
 	{Code: "needs_answer", Err: core.ErrNeedsAnswer},
 	{Code: "mcp_send_off", Err: core.ErrMCPSendOff},
+	{Code: "mcp_send_no_ui", Err: core.ErrMCPSendNoUI},
 	{Code: "mcp_send_composing", Err: core.ErrMCPSendComposing},
 	{Code: "mcp_send_busy", Err: core.ErrMCPSendBusy},
 	{Code: "no_ui", Err: core.ErrNoUI},

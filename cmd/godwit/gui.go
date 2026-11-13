@@ -74,7 +74,7 @@ func (b bestEffort) Write(p []byte) (int, error) {
 }
 
 // gui runs the desktop app on dataDir until it quits or ctx ends. On the
-// default directory a second GUI hands the first what it opens (openArg). It
+// default directory a second interface hands the first what it opens (openArg). It
 // opens open first (App.Open). It is a client of dataDir's backend (ADR
 // 0038), which it starts when none runs (connectBackend) and stops as it
 // quits unless the user started it, or the quit is closing its window while

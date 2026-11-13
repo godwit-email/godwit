@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/godwit-email/godwit/core/plugins"
-	"github.com/godwit-email/godwit/internal/imagefetch"
 )
 
 // StoreProduct is Godwit on the Microsoft Store, apps.microsoft.com/detail/9NS3Q2CGWD12.
@@ -28,7 +28,9 @@ func (s *Service) StoreLatestVersion(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	res, err := (&http.Client{Transport: imagefetch.NewTransport(false), Timeout: 15 * time.Second}).Do(req)
+	// The proxy resolves the Store's name itself: some networks resolve only there.
+	transport := &http.Transport{Proxy: func(r *http.Request) (*url.URL, error) { return s.Proxy(r.URL), nil }}
+	res, err := (&http.Client{Transport: transport, Timeout: 15 * time.Second}).Do(req)
 	if err != nil {
 		return "", err
 	}

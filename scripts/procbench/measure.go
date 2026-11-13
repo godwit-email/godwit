@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -57,6 +58,9 @@ type windowStats struct {
 	TreeContextSwitches uint64
 	OwnCPUMs            float64
 	TreeCPUMs           float64
+	// OwnExited are Godwit's processes alive at the start and gone at the
+	// end: their counters in the window are missing from the totals.
+	OwnExited []int
 }
 
 func matchProcesses(procs []procEntry, dataDir string, selfPID int) processSnapshot {
@@ -220,9 +224,15 @@ func diffSnapshots(start, end processSnapshot, dur time.Duration) windowStats {
 	st := windowStats{
 		Duration:         dur,
 		End:              end,
-		PeakOwnRSSBytes:  max(start.OwnRSSBytes, end.OwnRSSBytes),
+		PeakOwnRSSBytes:  max(start.OwnRSSBytes, end.OwnRSSBytes), // the larger of two samples, not a true peak
 		PeakTreeRSSBytes: max(start.TreeRSSBytes, end.TreeRSSBytes),
 	}
+	for pid, prev := range start.ByPID {
+		if _, ok := end.ByPID[pid]; !ok && prev.Own {
+			st.OwnExited = append(st.OwnExited, pid)
+		}
+	}
+	slices.Sort(st.OwnExited)
 	for pid, cur := range end.ByPID {
 		prev, existed := start.ByPID[pid]
 		var dWake, dCSW uint64

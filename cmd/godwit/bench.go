@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -120,7 +121,7 @@ func (b *benchProbe) listen(onCmd func(cmd string)) error {
 				return
 			}
 			_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-			line, err := bufio.NewReader(conn).ReadString('\n')
+			line, err := bufio.NewReader(io.LimitReader(conn, 256)).ReadString('\n') // a command is short; the token is checked after
 			_ = conn.Close()
 			if err != nil && line == "" {
 				continue

@@ -31,7 +31,7 @@
   "wit_skill_output_panel": "패널에 표시",
   "wit_skill_output_replace_body": "본문 바꾸기",
   "wit_skill_output_replace_draft": "초안 바꾸기",
-  "app_another_owner": "이 데이터 디렉터리에서 이미 Godwit(GUI 또는 headless)이 실행 중입니다.",
+  "app_another_owner": "이 데이터 디렉터리에서 이미 Godwit(앱 또는 godwit --headless)이 실행 중입니다.",
   "app_backend_lost": "Godwit의 백그라운드 프로세스가 예기치 않게 종료되었습니다. Godwit을 다시 열면 다시 시작됩니다.",
   "app_backend_version": "백그라운드에서 Godwit {arg1}(godwit --headless로 시작)이 실행 중이며 현재 Godwit {arg2}와 버전이 다릅니다. 중지한 다음 Godwit을 다시 여세요.",
   "app_lock_failed": "Godwit이 데이터 디렉터리를 열 수 없습니다.",

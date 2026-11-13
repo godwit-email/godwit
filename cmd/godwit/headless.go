@@ -72,7 +72,7 @@ func linuxHasDisplay(getenv func(string) string) bool {
 // mygoHeadlessDesktop runs the native event loop as an accessory process (no
 // Dock or switcher entry, no single-instance lock, no persistent window) so
 // the tray, notifications, system translation, link opening and temporary
-// hidden PDF pages work as they do in the GUI.
+// hidden PDF pages work as they do in the interface.
 func mygoHeadlessDesktop() *headlessDesktop {
 	var plat *platform
 	var svc *core.Service // main thread, as the clicks

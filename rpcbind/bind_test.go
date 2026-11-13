@@ -329,7 +329,7 @@ func TestWireCodesPinned(t *testing.T) {
 		"not_grantable":         core.ErrNotGrantable,
 		"needs_answer":          core.ErrNeedsAnswer,
 		"canceled":              context.Canceled, "deadline": context.DeadlineExceeded,
-		"mcp_send_off": core.ErrMCPSendOff, "mcp_send_composing": core.ErrMCPSendComposing, "mcp_send_busy": core.ErrMCPSendBusy, "no_ui": core.ErrNoUI,
+		"mcp_send_off": core.ErrMCPSendOff, "mcp_send_no_ui": core.ErrMCPSendNoUI, "mcp_send_composing": core.ErrMCPSendComposing, "mcp_send_busy": core.ErrMCPSendBusy, "no_ui": core.ErrNoUI,
 		"message_too_large": rpc.ErrTooLarge,
 		"no_outbox_draft":   core.ErrNoOutboxDraft,
 		"no_unsubscribe":    core.ErrNoUnsubscribe, "unsubscribe_web": core.ErrUnsubscribeWeb, "unsubscribing": core.ErrUnsubscribing, "purge_too_late": core.ErrPurgeTooLate,

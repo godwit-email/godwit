@@ -80,13 +80,17 @@ On macOS and Windows, 后台收信 › 一直继续 starts Godwit's backend when
 ```ini
 [Unit]
 Description=Godwit backend
+# After the desktop session has exported DISPLAY or WAYLAND_DISPLAY: the
+# backend decides at start whether it can show notifications and a tray.
+After=graphical-session.target
+PartOf=graphical-session.target
 
 [Service]
 ExecStart=%h/.local/bin/godwit --headless
 Restart=on-failure
 
 [Install]
-WantedBy=default.target
+WantedBy=graphical-session.target
 ```
 
 ```sh

@@ -52,11 +52,12 @@ func TestMCPSendOff(t *testing.T) {
 		name   string
 		level  string
 		window bool
-	}{{"off", MCPSendOff, true}, {"headless confirm", MCPSendConfirm, false}} {
+		want   error
+	}{{"off", MCPSendOff, true, ErrMCPSendOff}, {"headless confirm", MCPSendConfirm, false, ErrMCPSendNoUI}} {
 		t.Run(c.name, func(t *testing.T) {
 			e, d := mcpSendEnv(t, c.level, c.window)
 			_, err := e.s.RequestMCPSend(bg, d.ID, d.Revision)
-			require.ErrorIs(t, err, ErrMCPSendOff)
+			require.ErrorIs(t, err, c.want)
 			assert.Empty(t, e.pendingSends(t))
 			assert.Zero(t, e.outboxLen(t))
 		})
@@ -77,7 +78,7 @@ func TestMCPSendConfirmWhileUIConnected(t *testing.T) {
 	disconnect()
 	require.Eventually(t, func() bool { return !e.s.UIConnected() }, time.Second, time.Millisecond)
 	_, err = e.s.RequestMCPSend(bg, d.ID, d.Revision)
-	require.ErrorIs(t, err, ErrMCPSendOff)
+	require.ErrorIs(t, err, ErrMCPSendNoUI)
 }
 
 // With no ui client connected, a backend that can post notifications keeps
@@ -119,7 +120,7 @@ func TestMCPSendConfirmNotifiesWithoutUI(t *testing.T) {
 	require.NoError(t, e.s.ResolveMCPSend(bg, e.pendingSends(t)[0].ID, false))
 	posts = false
 	_, err = e.s.RequestMCPSend(bg, d.ID, d.Revision)
-	require.ErrorIs(t, err, ErrMCPSendOff)
+	require.ErrorIs(t, err, ErrMCPSendNoUI)
 	assert.Empty(t, e.pendingSends(t))
 	assert.Zero(t, e.outboxLen(t))
 }

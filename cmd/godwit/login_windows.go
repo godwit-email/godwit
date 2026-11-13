@@ -171,6 +171,10 @@ func await(op, out unsafe.Pointer) error {
 }
 
 // comCall calls slot i of COM object obj's vtable, failing on a failed HRESULT.
+// Callers pass out-parameters as uintptr(unsafe.Pointer(&local)): uintptrescapes
+// keeps those locals alive and in place until the call returns.
+//
+//go:uintptrescapes
 func comCall(obj unsafe.Pointer, i uintptr, args ...uintptr) error {
 	fn := *(*uintptr)(unsafe.Add(*(*unsafe.Pointer)(obj), i*unsafe.Sizeof(uintptr(0))))
 	if r, _, _ := syscall.SyscallN(fn, append([]uintptr{uintptr(obj)}, args...)...); int32(r) < 0 {

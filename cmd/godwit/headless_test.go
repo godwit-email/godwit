@@ -584,7 +584,7 @@ func TestHeadlessWithoutGraphicalSession(t *testing.T) {
 		t.Fatalf("PDF rule action without graphical session = %+v, want failed/%s", act, core.RuleFailNoPDF)
 	}
 
-	// RequestMCPSend under 每次确认 rejects with ErrMCPSendOff.
+	// RequestMCPSend under 每次确认 rejects with ErrMCPSendNoUI: nothing can ask the user.
 	var draft core.Draft
 	if err := c.Call(ctx, "NewDraft", &draft, acc.ID, "new", int64(0)); err != nil {
 		t.Fatalf("NewDraft: %v", err)
@@ -597,8 +597,8 @@ func TestHeadlessWithoutGraphicalSession(t *testing.T) {
 	}
 	var sent bool
 	err = c.Call(ctx, "RequestMCPSend", &sent, draft.ID, draft.Revision)
-	if !errors.Is(err, core.ErrMCPSendOff) || sent {
-		t.Fatalf("RequestMCPSend = (%v, %v), want ErrMCPSendOff", sent, err)
+	if !errors.Is(err, core.ErrMCPSendNoUI) || sent {
+		t.Fatalf("RequestMCPSend = (%v, %v), want ErrMCPSendNoUI", sent, err)
 	}
 
 	// Toggling tray settings and receiving a sign-in code without a graphical session produces no tray or errors.

@@ -418,6 +418,9 @@ func executeRun(ctx context.Context, idx int, binPath, dataDir, logPath string, 
 		return runResult{}, fmt.Errorf("end snapshot: %w", err)
 	}
 	bgStats := diffSnapshots(startSnap, endSnap, actualWindow)
+	if len(bgStats.OwnExited) > 0 { // its share of the window would silently drop out of the numbers
+		return runResult{}, fmt.Errorf("Godwit processes %v exited during the background window; use a window shorter than the interface's hidden exit", bgStats.OwnExited)
+	}
 
 	if data, err := os.ReadFile(logPath); err == nil {
 		st = parseBenchLog(string(data))
