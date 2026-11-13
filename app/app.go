@@ -508,7 +508,6 @@ func (a *App) load() {
 		}
 		a.mail.reader.avatarsChanged(avatars) // with the settings above: loadAvatar holds them while a local change is unsaved
 		a.refreshTasks()                      // skills or services may have changed too
-
 		a.inboxUnread = inbox
 		a.showUnread(inbox)
 		if first {

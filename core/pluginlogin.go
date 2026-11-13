@@ -64,13 +64,16 @@ func (s *Service) PluginLoginStatus(ctx context.Context, name string) (PluginLog
 
 // BeginPluginLogin starts signing in to the plugin's service and returns the
 // flow to poll. The plugin may download and reach its hosts from here on,
-// which is why the Local API audits this call.
+// which is why a call over the Local API is audited first (ADR 0003).
 func (s *Service) BeginPluginLogin(ctx context.Context, name string) (string, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return "", err
 	}
 	defer end()
+	if err := s.auditAPI(ctx, "BeginPluginLogin", 0); err != nil {
+		return "", err
+	}
 	var r struct {
 		Flow string `json:"flow"`
 	}

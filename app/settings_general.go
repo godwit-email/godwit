@@ -61,7 +61,6 @@ func (a *App) changeSettings(st core.Settings) {
 func (a *App) settingsEffects(old, st core.Settings) {
 	if st.RemoteImages != old.RemoteImages {
 		a.mail.reader.avatarsChanged(trustChanged)
-
 	}
 	if st.Theme != old.Theme {
 		a.plat.SetThemeSource(st.Theme)

@@ -263,7 +263,7 @@ func (s *Service) ResolveMCPSendAcknowledged(ctx context.Context, id int64, dige
 	if !send {
 		return s.endMCPSend(ctx, id, true, "rejected")
 	}
-	return s.sendMCP(ctx, id, r, func() error { return s.sendAcknowledged(ctx, r.draftID, r.revision, digest) })
+	return s.sendMCP(ctx, id, r, func() error { return s.sendAcknowledged(ctx, r.draftID, r.revision, digest, nil) })
 }
 
 // sendMCP sends claimed request id with send and ends it audited by the

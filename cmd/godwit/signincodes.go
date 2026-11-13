@@ -241,6 +241,7 @@ type signInBanner struct {
 	win                       *mygo.Window
 	timer                     *time.Timer
 	failed, copied, hovered   bool
+	lingered                  bool // the countdown found the pointer on the banner (dismissSignInBanner)
 	dragging, snapped, atHome bool
 	pressing, onButton        bool           // the pointer is down on the banner; it is over the button
 	pressOnButton             bool           // the press began over the button: a click, never a drag
@@ -414,12 +415,31 @@ func signInAvatar(ctx context.Context, svc backendService, id int64) ui.ImageSou
 	return img
 }
 
+// dismissSignInBanner is the countdown's end. The banner's process (the
+// backend, an accessory app) is never the active app, so AppKit sends it no
+// hover: the pointer itself is checked, and while it rests on the banner the
+// banner stays, its countdown starting again once the pointer leaves.
 func (p *platform) dismissSignInBanner(b *signInBanner, onMain func(func())) {
 	onMain(func() {
-		if p.codeBanner == b {
+		if p.codeBanner != b {
+			return
+		}
+		switch {
+		case !b.copied && b.win != nil && pointerOnSignInCode(b.position, mygo.Screen.CursorScreenPoint()):
+			b.lingered = true
+			b.timer.Reset(time.Second)
+		case !b.copied && b.lingered:
+			b.lingered = false
+			b.timer.Reset(12 * time.Second)
+		default:
 			p.ShowSignInCode(nil)
 		}
 	})
+}
+
+// pointerOnSignInCode reports whether cursor is on a banner at pos.
+func pointerOnSignInCode(pos, cursor mygo.Point) bool {
+	return cursor.X >= pos.X && cursor.X < pos.X+codeBannerWidth && cursor.Y >= pos.Y && cursor.Y < pos.Y+codeBannerHeight
 }
 
 // A tray flyout with Focusable=false keeps the target app's keyboard even

@@ -160,9 +160,6 @@ type conn struct {
 	streams    map[uint64]*serverStream // nil once the connection is torn down
 	nextStream uint64
 	allow      func(string, []json.RawMessage) error
-	// audit, set by hello, runs in the call's goroutine once it holds its
-	// slot and its params decoded: a row is written only for a call that runs.
-	audit func(method string, params []json.RawMessage) error
 }
 
 // ServeConn serves one connection until it closes, breaks a budget, or ctx
@@ -320,7 +317,7 @@ func (c *conn) handle(line []byte) bool {
 	c.active++
 	c.mu.Unlock()
 	c.wg.Add(1)
-	go c.run(id, m.ID, m.Method, params, meth, ctx, cancel, args)
+	go c.run(id, m.ID, meth, ctx, cancel, args)
 	return true
 }
 
@@ -384,20 +381,9 @@ func (c *conn) release() {
 	c.mu.Unlock()
 }
 
-func (c *conn) run(id uint64, rawID json.RawMessage, name string, params []json.RawMessage, meth *method, ctx context.Context, cancel context.CancelFunc, args []reflect.Value) {
+func (c *conn) run(id uint64, rawID json.RawMessage, meth *method, ctx context.Context, cancel context.CancelFunc, args []reflect.Value) {
 	defer c.wg.Done()
-	var (
-		result any
-		ch     reflect.Value
-		stop   func()
-		err    error
-	)
-	if c.audit != nil {
-		err = c.audit(name, params)
-	}
-	if err == nil {
-		result, ch, stop, err = meth.call(ctx, args)
-	}
+	result, ch, stop, err := meth.call(ctx, args)
 	if !ch.IsValid() {
 		c.mu.Lock()
 		delete(c.requests, id)

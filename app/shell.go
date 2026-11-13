@@ -137,7 +137,6 @@ func (a *App) onEvent(ev events.Event) {
 		a.contacts().avatars = nil
 	case events.AddressBooksChanged:
 		a.mail.reader.avatarsChanged(contactsChanged)
-
 		a.contacts().avatars = nil
 	case events.SyncStarted:
 		a.syncing[ev.AccountID] = true

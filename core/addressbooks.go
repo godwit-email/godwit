@@ -21,6 +21,7 @@ import (
 	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/core/gateway"
 	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/godwit-email/godwit/internal/carddav"
@@ -271,9 +272,9 @@ func normalizeAddressBookPreset(in AddressBookInput) (preset, authType, rawURL s
 	return preset, authType, rawURL, nil
 }
 
-// AddressBookEffectiveURL returns the normalized start URL that CheckAddressBook
+// addressBookEffectiveURL returns the normalized start URL that CheckAddressBook
 // and AddAddressBook dial for in, or "" if in does not resolve to a valid URL.
-func AddressBookEffectiveURL(in AddressBookInput) string {
+func addressBookEffectiveURL(in AddressBookInput) string {
 	_, _, rawURL, err := normalizeAddressBookPreset(in)
 	if err != nil {
 		return ""
@@ -283,6 +284,39 @@ func AddressBookEffectiveURL(in AddressBookInput) string {
 		return ""
 	}
 	return u.String()
+}
+
+// auditAddressBookInput audits a call that dials in's server now, by the host
+// it dials (ADR 0003).
+func (s *Service) auditAddressBookInput(ctx context.Context, action string, in AddressBookInput) error {
+	var dests []string
+	if u := addressBookEffectiveURL(in); u != "" {
+		dests = []string{u}
+	}
+	return s.auditAPI(ctx, action, 0, dests...)
+}
+
+// auditAddressBookSync audits a call that reaches address book id's server
+// now (0: every one sync-all polls), by its host, before it dials (ADR 0003).
+func (s *Service) auditAddressBookSync(ctx context.Context, action string, id int64) error {
+	if _, ok := apiAudit(ctx, action, id); !ok {
+		return nil
+	}
+	var dests []string
+	if id >= 0 {
+		q, args := "SELECT url FROM address_books ab WHERE url != '' AND id = ?", []any{id}
+		if id == 0 {
+			q, args = "SELECT url FROM address_books ab WHERE url != '' AND "+abPollable+" ORDER BY "+abPriority, nil
+		}
+		rows, err := s.db.Query(ctx, q, args...)
+		if err != nil {
+			return err
+		}
+		for _, r := range rows.Values {
+			dests = append(dests, store.Str(r[0]))
+		}
+	}
+	return s.auditAPI(ctx, action, id, dests...)
 }
 
 func defaultAddressBookName(preset string, homeURL *url.URL) string {
@@ -325,6 +359,9 @@ func (s *Service) CheckAddressBook(ctx context.Context, in AddressBookInput) ([]
 		return nil, "", err
 	}
 	defer end()
+	if err := s.auditAddressBookInput(ctx, "CheckAddressBook", in); err != nil {
+		return nil, "", err
+	}
 
 	_, authType, rawURL, err := normalizeAddressBookPreset(in)
 	if err != nil {
@@ -377,6 +414,9 @@ func (s *Service) AddAddressBook(ctx context.Context, in AddressBookInput) (Addr
 		return AddressBook{}, err
 	}
 	defer end()
+	if err := s.auditAddressBookInput(ctx, "AddAddressBook", in); err != nil {
+		return AddressBook{}, err
+	}
 
 	if err := s.KeychainStatus(ctx); err != nil {
 		return AddressBook{}, err
@@ -773,7 +813,8 @@ func (s *Service) SetAddressBookCollectionEnabled(ctx context.Context, collectio
 	defer end()
 
 	s.abWriteMu.Lock()
-	rows, err := s.db.Query(ctx, "SELECT address_book_id FROM address_book_collections WHERE id = ?", collectionID)
+	rows, err := s.db.Query(ctx, `SELECT c.address_book_id, ab.url FROM address_book_collections c
+		JOIN address_books ab ON ab.id = c.address_book_id WHERE c.id = ?`, collectionID)
 	if err != nil {
 		s.abWriteMu.Unlock()
 		return err
@@ -788,6 +829,13 @@ func (s *Service) SetAddressBookCollectionEnabled(ctx context.Context, collectio
 			SQL:  "UPDATE address_book_collections SET enabled = 1 WHERE id = ?",
 			Args: []any{collectionID},
 		}}
+		// Enabled, it is polled later, unattended (ADR 0003): audited with the update.
+		if e, ok := apiAudit(ctx, "SetAddressBookCollectionEnabled", collectionID); ok {
+			if u := store.Str(rows.Values[0][1]); u != "" {
+				e.Destinations = []string{u}
+			}
+			stmts = append(stmts, gateway.AuditChange(e, s.secrets.Redact, false))
+		}
 	} else {
 		// Odd sync_gen marks a reset collection awaiting a fresh full sync; commits advance to even.
 		stmts = []sqlite.Statement{
@@ -815,6 +863,9 @@ func (s *Service) UpdateAddressBookAuth(ctx context.Context, id int64, password,
 		return AddressBook{}, err
 	}
 	defer end()
+	if err := s.auditAddressBookSync(ctx, "UpdateAddressBookAuth", id); err != nil {
+		return AddressBook{}, err
+	}
 
 	rec, err := s.addressBookRecord(ctx, id)
 	if err != nil {
@@ -909,14 +960,17 @@ func (s *Service) UpdateAddressBookAuth(ctx context.Context, id int64, password,
 // SyncAddressBook immediately syncs one address book (id > 0) or all address books
 // that have at least one enabled collection (id == 0).
 func (s *Service) SyncAddressBook(ctx context.Context, id int64) error {
-	if id < 0 {
-		return ErrAddressBookNotFound
-	}
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return err
 	}
 	defer end()
+	if err := s.auditAddressBookSync(ctx, "SyncAddressBook", id); err != nil {
+		return err
+	}
+	if id < 0 {
+		return ErrAddressBookNotFound
+	}
 
 	if id > 0 {
 		err := s.syncOneAddressBook(ctx, id)

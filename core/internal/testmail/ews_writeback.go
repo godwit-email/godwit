@@ -22,6 +22,14 @@ func (s *EWS) OmitNewItemIds() {
 	s.omitNewIDs = true
 }
 
+// LoseMoveVerdict makes the server do the next MoveItem and close the
+// connection without answering.
+func (s *EWS) LoseMoveVerdict() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.loseMove = true
+}
+
 // Items is the ItemIds of the mail in the folder at path, in order.
 func (s *EWS) Items(path string) []string {
 	s.mu.Lock()
@@ -97,6 +105,12 @@ func (s *EWS) moveItem(w http.ResponseWriter, req ewsRequest) {
 			items = fmt.Sprintf(`<m:Items><t:Message><t:ItemId Id="%s" ChangeKey="CQAAAA=="/></t:Message></m:Items>`, moved.id)
 		}
 		msgs.WriteString(message(req.op, "", items))
+	}
+	if req.op == "MoveItem" && s.loseMove { // moved, but the client never hears so
+		s.loseMove = false
+		c, _, _ := http.NewResponseController(w).Hijack()
+		c.Close()
+		return
 	}
 	s.respond(w, styleDefaultNS, req.op, "<m:ResponseMessages>"+msgs.String()+"</m:ResponseMessages>")
 }
