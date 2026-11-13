@@ -258,8 +258,22 @@ func (h *harness) click(label string) {
 		h.tt.Scroll(900, 400, 0, r.Y-400)
 		h.tt.Frame()
 	}
-	if err := h.tt.Click(label); err != nil {
-		h.t.Fatal(err)
+	// Something passing over it (a sheet or dialog still animating in or out)
+	// can take the input for a few frames: retry until it is the target, so
+	// only an element that stays covered fails.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		err := h.tt.Click(label)
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			h.t.Fatal(err)
+		}
+		h.drain()
+		h.tt.Frame()
+		h.tt.Advance(time.Second / 60)
+		time.Sleep(2 * time.Millisecond)
 	}
 	h.drain()
 	h.tt.Frame()

@@ -308,10 +308,25 @@ func (s *Server) chat(kind string, w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// hang waits for Release or the client; false means the client left.
-func (s *Server) hang(r *http.Request) bool {
+// Rearm makes turns hang again after a Release: a test that releases one
+// run can hold the next.
+func (s *Server) Rearm() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	select {
 	case <-s.release:
+		s.release = make(chan struct{})
+	default:
+	}
+}
+
+// hang waits for Release or the client; false means the client left.
+func (s *Server) hang(r *http.Request) bool {
+	s.mu.Lock()
+	release := s.release
+	s.mu.Unlock()
+	select {
+	case <-release:
 		return true
 	case <-r.Context().Done():
 		return false

@@ -14,6 +14,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/theme"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,7 +29,9 @@ func TestReaderThreadHeader(t *testing.T) {
 	m := h.deliverOne(acc, coretest.Msg("dave@example.com", acc.Email, "Alone", "just one"))
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
-	if h.tt.HasText("封往来") {
+	// Its own count would be 1; the list's other thread has a "2 封往来" badge,
+	// shown once the list has loaded, so look for this message's count only.
+	if h.tt.HasText(i18n.Tf("reader.thread_count", 1)) {
 		t.Fatalf("a message alone counts messages: %q", h.tt.Texts())
 	}
 	if _, ok := h.tt.Find("收起"); ok {
