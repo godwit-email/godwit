@@ -11,10 +11,8 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"net/mail"
-	"net/url"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/conn"
@@ -26,15 +24,11 @@ const SendURL = "https://graph.microsoft.com/v1.0/me/sendMail"
 // graphMaxBody is Graph's 4 MB request limit, which the base64 body must fit.
 const graphMaxBody = 4 << 20
 
-// graphClient goes through the proxy mail goes through. A Graph or proxy that
-// stops answering must not hold the outbox (and the sync after it) forever: a
-// timeout once the request is written is ErrUncertain, like any lost answer.
-var graphClient = &http.Client{Timeout: 5 * time.Minute, Transport: func() *http.Transport {
-	t := http.DefaultTransport.(*http.Transport).Clone()
-	t.Proxy = func(r *http.Request) (*url.URL, error) { return conn.SystemProxy(r.URL), nil }
-	t.ResponseHeaderTimeout = time.Minute
-	return t
-}()}
+// graphClient is the receiving backend's kind of client. A Graph or proxy
+// that stops answering must not hold the outbox (and the sync after it)
+// forever: a timeout once the request is written is ErrUncertain, like any
+// lost answer.
+var graphClient = conn.NewHTTPClient(conn.HTTPTransport(), nil)
 
 // Sender submits through Graph's sendMail with the Token its credentials
 // give. Graph files the sent copy itself (saveToSentItems).

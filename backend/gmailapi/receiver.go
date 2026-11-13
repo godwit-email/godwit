@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/conn"
 )
 
 // AllMailRef is the synthetic All Mail folder: Gmail's labels.list has no
@@ -37,7 +38,7 @@ type Receiver struct {
 var _ backend.Receiver = (*Receiver)(nil)
 
 // New returns a Receiver for the Gmail account cfg reaches.
-func New(cfg Config) *Receiver { return &Receiver{c: newClient(cfg, requestTimeout)} }
+func New(cfg Config) *Receiver { return &Receiver{c: newClient(cfg)} }
 
 // Close implements backend.Receiver.
 func (r *Receiver) Close() error {
@@ -1191,8 +1192,8 @@ func (r *Receiver) applyAppend(ctx context.Context, op backend.Append) (backend.
 }
 
 func mapApplyErr(err error) (backend.Result, error) {
-	var rl *rateLimitError
-	if errors.Is(err, backend.ErrNotFound) || errors.Is(err, backend.ErrAuthFailed) || errors.Is(err, ErrAPIDisabled) || errors.As(err, &rl) {
+	var busy *conn.BusyError
+	if errors.Is(err, backend.ErrNotFound) || errors.Is(err, backend.ErrAuthFailed) || errors.Is(err, ErrAPIDisabled) || errors.As(err, &busy) {
 		return backend.Result{}, err
 	}
 	var ae *apiError

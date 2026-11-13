@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/conn"
 )
 
 const busyMessage = `<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>
@@ -76,14 +77,14 @@ func TestSendTimeoutNamesStepAndHost(t *testing.T) {
 	}
 	check := func(err error, step string) {
 		t.Helper()
-		if err == nil || !strings.Contains(err.Error(), "ews "+u.Host+": "+step+": context deadline exceeded") {
+		if err == nil || !strings.Contains(err.Error(), u.Host+": "+step+": context deadline exceeded") {
 			t.Errorf("Send = %v, want the deadline under %q at %s", err, step, u.Host)
 		}
 	}
 
-	check(send(), "waiting out ErrorServerBusy") // the real back-off, 5 s, outlasts the deadline
+	check(send(), "waiting out the server's back-off") // the real back-off outlasts the deadline
 
-	release, err := acquire(t.Context(), s.c.account(cr)) // another request of the account's is running
+	release, err := conn.Acquire(t.Context(), s.c.account(cr)) // another request of the account's is running
 	if err != nil {
 		t.Fatal(err)
 	}

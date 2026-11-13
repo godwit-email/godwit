@@ -3,10 +3,12 @@ package app
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+	"weak"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -190,7 +192,7 @@ func TestReaderSwitchDropsKeptThreadsReads(t *testing.T) {
 
 	switchTo(h, b.ThreadID)
 	vb := unseenBody(h, b.ID)
-	h.post(func() { r.prev.expand(msgs[0].ID) }) // work the kept thread has under way as it goes
+	h.post(func() { r.on(r.prev).expand(msgs[0].ID) }) // work the kept thread has under way as it goes
 	h.drain()
 	h.post(func() { h.app.BodyHeight(vb, b.ID, 120) })
 	h.until("the kept thread gone", func() bool { return r.prev == nil })
@@ -265,4 +267,25 @@ func TestReaderSwitchKeptThreadTakesNoInput(t *testing.T) {
 			t.Fatalf("a click on the kept thread's reply opened a draft: %q", call)
 		}
 	}
+}
+
+// A thread switched away from is let go whole: nothing the pane keeps
+// across switches (the AI's reads by message) holds its session, with the
+// bodies, text and avatars it read.
+func TestReaderSwitchLetsSessionGo(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	a := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "First thread", "first body"))
+	b := h.deliverOne(accs[0], coretest.Msg("carol@example.com", accs[0].Email, "Second thread", "second body"))
+	c := h.deliverOne(accs[0], coretest.Msg("dave@example.com", accs[0].Email, "Third thread", "third body"))
+	r := h.app.mail.reader
+	h.openThread(a.ThreadID)
+	h.seeBody(a.ID)
+	h.until("the first thread's cards tried", func() bool { st := r.ai[a.ID]; return st != nil && !st.cards.loading })
+	first := weak.Make(r.session)
+	h.openThread(b.ThreadID)
+	h.openThread(c.ThreadID)
+	h.until("the first thread's session let go", func() bool {
+		runtime.GC()
+		return first.Value() == nil
+	})
 }
