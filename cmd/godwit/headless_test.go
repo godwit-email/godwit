@@ -200,6 +200,18 @@ func (c *stepClock) AfterFunc(d time.Duration, fn func()) func() bool {
 	}
 }
 
+// armed reports whether Advance(d) would fire a timer.
+func (c *stepClock) armed(d time.Duration) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, t := range c.timers {
+		if !t.stopped && !t.at.After(c.now.Add(d)) {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *stepClock) Advance(d time.Duration) {
 	c.mu.Lock()
 	c.now = c.now.Add(d)
@@ -1321,6 +1333,8 @@ func TestHeadlessTraySignInCodeSurfaces(t *testing.T) {
 	}
 	notified := func(desc string, want int) {
 		t.Helper()
+		// The notifier starts its timer when the arrival reaches it: a clock moved before that never fires it.
+		waitCond(t, desc+": its timer", func() bool { return clk.armed(app.NotifyWait) })
 		clk.Advance(app.NotifyWait)
 		waitCond(t, desc, func() bool { return len(sink.Notes()) >= want })
 		if notes := sink.Notes(); len(notes) != want {
