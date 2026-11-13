@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"context"
 	"errors"
-	"io"
 	"net"
 	"net/url"
 	"os"
@@ -489,7 +488,9 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 
 	if acc.Status == "reauth_required" {
 		msg := i18n.T("settings.account.reauth.unknown")
-		if acc.StatusDetail == "credentials_missing" && acc.Folders == 0 {
+		// Imported, never signed in: no folder synced yet, but for a POP3
+		// account's three local ones (Trash, Archive, Sent).
+		if acc.StatusDetail == "credentials_missing" && (acc.Folders == 0 || acc.Receiving.Protocol == auth.POP3 && acc.Folders <= 3) {
 			msg = i18n.T("settings.account.reauth.imported")
 		} else if at, ok := a.syncedAtBy[acc.ID]; ok {
 			msg = i18n.Tf("settings.account.reauth", a.ago(at))
@@ -682,10 +683,6 @@ func (p *settingsPage) exportAccounts() {
 	})
 }
 
-// accountImportMax bounds an account export file the interface reads: it
-// crosses the Local API as base64 (4/3 larger) in a message of at most 16 MiB.
-const accountImportMax = 8 << 20
-
 func (p *settingsPage) importAccounts() {
 	if p.importing {
 		return
@@ -693,31 +690,19 @@ func (p *settingsPage) importAccounts() {
 	a := p.a
 	plat := a.plat
 	p.importing = true
-	var data []byte
+	var path string
 	var preview core.AccountImportPreview
-	picked := false
 	a.do(func(ctx context.Context) error {
 		paths, err := plat.OpenFiles(false)
 		if err != nil || len(paths) == 0 {
 			return err
 		}
-		fh, err := os.Open(paths[0])
+		// The backend reads it: an export can outgrow one Local API message.
+		preview, err = a.svc.PreviewAccountImportFile(ctx, paths[0])
 		if err != nil {
 			return err
 		}
-		defer fh.Close()
-		data, err = io.ReadAll(io.LimitReader(fh, accountImportMax+1))
-		if err != nil {
-			return err
-		}
-		if len(data) > accountImportMax {
-			return core.ErrBadAccountExport
-		}
-		preview, err = a.svc.PreviewAccountImport(ctx, data)
-		if err != nil {
-			return err
-		}
-		picked = true
+		path = paths[0]
 		return nil
 	}, func(err error) {
 		p.importing = false
@@ -725,21 +710,21 @@ func (p *settingsPage) importAccounts() {
 			a.toastErr(err)
 			return
 		}
-		if !picked {
+		if path == "" {
 			return
 		}
 		if a.addAccount != nil {
 			a.closeAddAccount()
 		}
 		p.importGen++
-		p.importData, p.importPreview = data, preview
+		p.importPath, p.importPreview = path, preview
 		p.importOpen, p.importBusy, p.importErr = true, false, nil
 	})
 }
 
 func (p *settingsPage) closeImportDialog() {
 	p.importOpen, p.importBusy, p.importErr = false, false, nil
-	p.importData, p.importPreview = nil, core.AccountImportPreview{}
+	p.importPath, p.importPreview = "", core.AccountImportPreview{}
 }
 
 func importServersLabel(e core.AccountImportEntry) string {
@@ -752,7 +737,7 @@ func importServersLabel(e core.AccountImportEntry) string {
 }
 
 func (p *settingsPage) importDialog(c *ui.Context) {
-	if p.importData == nil {
+	if p.importPath == "" {
 		return
 	}
 	if !p.importOpen {
@@ -780,12 +765,21 @@ func (p *settingsPage) importDialog(c *ui.Context) {
 								if entry.ReceiveOnly {
 									kit.Badge(c, i18n.T("settings.account.receive_only"))
 								}
+								if entry.AIInstructions { // text Wit reads on every run of the account
+									kit.Badge(c, i18n.T("settings.account.import.ai_instructions"))
+								}
+								if entry.Signature != "" { // added to every mail sent
+									kit.Badge(c, i18n.Tf("settings.account.import.signature", entry.Signature))
+								}
 								if entry.ExistingProtocol != "" {
 									kit.Badge(c, i18n.Tf("settings.account.import.protocol", strings.ToUpper(entry.ExistingProtocol)))
 								} else if entry.Existing {
 									kit.Badge(c, i18n.T("settings.account.import.existing"))
 								}
 							})
+							if entry.Username != "" && entry.Username != entry.Email {
+								kit.Text(c, i18n.Tf("settings.account.import.username", entry.Username), t.Text.Sm).TextColor(t.Muted)
+							}
 							kit.Text(c, importServersLabel(entry), t.Text.Sm).Font(theme.Mono).TextColor(t.Muted)
 						})
 					}
@@ -809,10 +803,10 @@ func (p *settingsPage) confirmAccountImport() {
 	}
 	a := p.a
 	p.importBusy, p.importErr = true, nil
-	gen, data := p.importGen, p.importData
+	gen, path, digest := p.importGen, p.importPath, p.importPreview.Digest
 	var res core.AccountImportResult
 	a.do(func(ctx context.Context) (err error) {
-		res, err = a.svc.ImportAccounts(ctx, data)
+		res, err = a.svc.ImportAccountsFile(ctx, path, digest)
 		return err
 	}, func(err error) {
 		if gen != p.importGen || !p.importOpen {

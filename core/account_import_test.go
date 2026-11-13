@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -103,6 +105,8 @@ func TestPreviewAndImportAccountsRoundTrip(t *testing.T) {
 			SendingHost:       jh,
 			SendingPort:       jp,
 			Auth:              AuthAPIToken,
+			Username:          "bob-login",
+			Signature:         "Bob",
 			Existing:          false,
 		},
 		{
@@ -115,6 +119,9 @@ func TestPreviewAndImportAccountsRoundTrip(t *testing.T) {
 			SendingHost:       sh,
 			SendingPort:       sp,
 			Auth:              AuthOAuth,
+			Username:          "alice@example.com",
+			AIInstructions:    true,
+			Signature:         "Work Sig",
 			Existing:          false,
 		},
 		{
@@ -128,11 +135,22 @@ func TestPreviewAndImportAccountsRoundTrip(t *testing.T) {
 			SendingPort:       1,
 			ReceiveOnly:       true,
 			Auth:              AuthPassword,
+			Username:          "alice",
 			Existing:          false,
 		},
 	}, preview.Accounts)
 
-	res, err := dst.ImportAccounts(bg, exported)
+	// By path, as the interface does: the preview binds the import to its bytes.
+	file := filepath.Join(t.TempDir(), "accounts.json")
+	require.NoError(t, os.WriteFile(file, exported, 0o600))
+	byPath, err := dst.PreviewAccountImportFile(bg, file)
+	require.NoError(t, err)
+	assert.Equal(t, preview.Accounts, byPath.Accounts)
+	require.NoError(t, os.WriteFile(file, append(exported, ' '), 0o600))
+	_, err = dst.ImportAccountsFile(bg, file, byPath.Digest)
+	require.ErrorIs(t, err, ErrBadAccountExport, "the file changed since its preview")
+	require.NoError(t, os.WriteFile(file, exported, 0o600))
+	res, err := dst.ImportAccountsFile(bg, file, byPath.Digest)
 	require.NoError(t, err)
 	require.Len(t, res.Imported, 3)
 	assert.Empty(t, res.Skipped)
@@ -637,4 +655,42 @@ func TestImportedAccountsParkWithZeroLoginsUntilReauthorized(t *testing.T) {
 	reqsBefore := oa.TokenRequests()
 	require.NoError(t, dst.SyncNow(bg, ownOAuthAcc.ID))
 	assert.Equal(t, reqsBefore+1, oa.TokenRequests())
+}
+
+// An imported account whose SMTP server refuses the receiving password signs
+// in to receive with it; its own sending password is then asked for apart,
+// and once given it sends again.
+func TestImportedAccountSendPasswordApart(t *testing.T) {
+	keyring.MockInit()
+	s, err := New(bg, Options{DataDir: t.TempDir(), ImageClient: loopbackImageClient()})
+	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
+	im := testmail.StartIMAP(t)
+	smtpAddr, smtp := testmail.StartSMTP(t)
+	smtp.RejectAuth(true)
+	ih, ip := splitAddr(t, im.Addr)
+	sh, sp := splitAddr(t, smtpAddr)
+	data, err := json.Marshal(AccountExport{Version: AccountExportVersion, Accounts: []ExportedAccount{{
+		Email: "alice@example.com", Username: "alice",
+		Receiving: ExportedServer{Protocol: auth.IMAP, Host: ih, Port: ip, Security: SecurityNone, Auth: AuthPassword},
+		Sending:   ExportedServer{Protocol: auth.SMTP, Host: sh, Port: sp, Security: SecurityNone, Auth: AuthPassword},
+	}}})
+	require.NoError(t, err)
+	res, err := s.ImportAccounts(bg, data)
+	require.NoError(t, err)
+	require.Len(t, res.Imported, 1)
+	id := res.Imported[0].ID
+
+	require.NoError(t, s.UpdatePassword(bg, id, "secret"), "receiving signs in")
+	acc, err := s.account(bg, id)
+	require.NoError(t, err)
+	assert.True(t, acc.SendRefused, "the sending password is asked for apart")
+	assert.False(t, acc.ReceiveOnly)
+
+	smtp.RejectAuth(false)
+	require.NoError(t, s.UpdateSendPassword(bg, id, "secret"))
+	acc, err = s.account(bg, id)
+	require.NoError(t, err)
+	assert.Equal(t, "ok", acc.Status)
+	assert.False(t, acc.SendRefused)
 }

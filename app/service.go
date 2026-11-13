@@ -73,7 +73,7 @@ type Service interface {
 	GrantPermission(ctx context.Context, name string) error
 	ImageCacheSize() int64
 	ImagesAllowed(ctx context.Context, message int64) (bool, error)
-	ImportAccounts(ctx context.Context, data []byte) (core.AccountImportResult, error)
+	ImportAccountsFile(ctx context.Context, path, digest string) (core.AccountImportResult, error)
 	ImportEML(ctx context.Context, accountID, folderID int64, paths []string) (core.ImportSummary, error)
 	InlineSignatureImages(ctx context.Context, html string) (string, error)
 	InstallPlugin(ctx context.Context, srcDir string) (core.PluginInfo, error)
@@ -118,7 +118,7 @@ type Service interface {
 	PluginTags(ctx context.Context, messageID int64) ([]core.Tag, error)
 	PollPluginLogin(ctx context.Context, name, flow string) (core.PluginLoginState, error)
 	PrepareModelWithProgress(ctx context.Context, ref string, progress func(core.ModelStatus)) (core.ModelStatus, error)
-	PreviewAccountImport(ctx context.Context, data []byte) (core.AccountImportPreview, error)
+	PreviewAccountImportFile(ctx context.Context, path string) (core.AccountImportPreview, error)
 	PreviewMasking(ctx context.Context, st core.Settings, text string) (string, error)
 	PreviewRule(ctx context.Context, d core.RuleDoc, limit int) (core.RulePreview, error)
 	PreviewView(ctx context.Context, d core.SavedViewDoc, viewID int64, limit int) (core.ViewContents, error)

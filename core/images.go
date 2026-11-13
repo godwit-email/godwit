@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"sync"
 	"time"
@@ -43,6 +44,14 @@ func (s *Service) CachedImage(ctx context.Context, src string) (CachedImageFile,
 	}
 	defer end()
 	path, format, w, h, err := s.images.GetFile(ctx, src)
+	var ns *imagecache.NotStoredError
+	if errors.As(err, &ns) { // shown all the same, as in process
+		// shortcut: the file stays in raw-out until the next start; serve the bytes over the wire if disk-full turns out common.
+		img := ns.Image
+		if path, err = s.outFile(img.Data, "*.img"); err == nil {
+			return CachedImageFile{Path: path, Format: img.Format, Width: img.Width, Height: img.Height}, nil
+		}
+	}
 	if err != nil {
 		return CachedImageFile{}, err
 	}

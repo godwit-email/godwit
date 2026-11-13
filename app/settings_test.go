@@ -2017,13 +2017,23 @@ func TestSettingsAccountExport(t *testing.T) {
 	}
 }
 
-// A file too big to cross the Local API as base64 is refused before it is
-// sent: a request over the message limit would drop the connection, which
-// the interface takes for the backend's loss.
-func TestSettingsAccountImportTooBig(t *testing.T) {
+// An export bigger than one Local API message (signatures repeat per
+// account) is read by the backend from its path: the preview opens, and
+// the connection survives.
+func TestSettingsAccountImportBigFile(t *testing.T) {
 	h, alice := withAccount(t)
+	exp := core.AccountExport{Version: core.AccountExportVersion, Accounts: []core.ExportedAccount{{
+		Email: "carol@example.com", Username: "carol@example.com",
+		Receiving: core.ExportedServer{Protocol: "imap", Host: "imap.example.com", Port: 993, Security: core.SecurityTLS, Auth: core.AuthPassword},
+		Sending:   core.ExportedServer{Protocol: "smtp", Host: "smtp.example.com", Port: 465, Security: core.SecurityTLS, Auth: core.AuthPassword},
+	}}}
+	data, err := json.Marshal(exp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = append(data, bytes.Repeat([]byte(" "), 20<<20)...) // over the 16 MiB message as it is
 	big := filepath.Join(t.TempDir(), "big.json")
-	if err := os.WriteFile(big, bytes.Repeat([]byte(" "), accountImportMax+1), 0o600); err != nil {
+	if err := os.WriteFile(big, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	h.plat.mu.Lock()
@@ -2031,12 +2041,10 @@ func TestSettingsAccountImportTooBig(t *testing.T) {
 	h.plat.mu.Unlock()
 	h.openSettings(accountRoute(alice.ID))
 	h.click(i18n.T("settings.account.import.button"))
-	h.see(i18n.T("error.bad_account_export"))
+	h.see(i18n.T("settings.account.import.desc"))
+	h.see("carol@example.com")
 	if _, err := h.ui.ListAccounts(context.Background()); err != nil {
 		t.Fatalf("the connection did not survive: %v", err)
-	}
-	if enc := (accountImportMax + 2) / 3 * 4; enc+(1<<20) > 16<<20 {
-		t.Fatalf("accountImportMax %d encodes to %d bytes, over the Local API's 16 MiB message", accountImportMax, enc)
 	}
 }
 

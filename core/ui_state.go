@@ -227,3 +227,14 @@ func (s *Service) SetComposeOpen(ctx context.Context, draftIDs []int64) error {
 	}
 	return nil
 }
+
+// runCaller is ctx for a Wit run's call. The interface's (a ui session) is
+// detached, as its pages asked in process: a page or the interface going does
+// not end the run, only CancelRun or the Service closing. Other callers' end
+// it with their ctx.
+func runCaller(ctx context.Context) context.Context {
+	if uiSessionFromContext(ctx) != nil {
+		return context.WithoutCancel(ctx)
+	}
+	return ctx
+}

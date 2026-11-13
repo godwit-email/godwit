@@ -325,8 +325,8 @@ func (cl *Client) ImagesAllowed(ctx context.Context, message int64) (bool, error
 	return call[bool](cl, ctx, "ImagesAllowed", message)
 }
 
-func (cl *Client) ImportAccounts(ctx context.Context, data []byte) (core.AccountImportResult, error) {
-	return call[core.AccountImportResult](cl, ctx, "ImportAccounts", data)
+func (cl *Client) ImportAccountsFile(ctx context.Context, path string, digest string) (core.AccountImportResult, error) {
+	return call[core.AccountImportResult](cl, ctx, "ImportAccountsFile", path, digest)
 }
 
 func (cl *Client) ImportEML(ctx context.Context, accountID int64, folderID int64, paths []string) (core.ImportSummary, error) {
@@ -521,8 +521,8 @@ func (cl *Client) PollPluginLogin(ctx context.Context, name string, flow string)
 	return call[core.PluginLoginState](cl, ctx, "PollPluginLogin", name, flow)
 }
 
-func (cl *Client) PreviewAccountImport(ctx context.Context, data []byte) (core.AccountImportPreview, error) {
-	return call[core.AccountImportPreview](cl, ctx, "PreviewAccountImport", data)
+func (cl *Client) PreviewAccountImportFile(ctx context.Context, path string) (core.AccountImportPreview, error) {
+	return call[core.AccountImportPreview](cl, ctx, "PreviewAccountImportFile", path)
 }
 
 func (cl *Client) PreviewMasking(ctx context.Context, st core.Settings, text string) (string, error) {

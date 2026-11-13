@@ -9,12 +9,14 @@ ExportAccountsFile
 FetchAttachmentsStream
 ForgetImageFailure
 GetMessageLazyImages
+ImportAccountsFile
 InboxOnly
 InlineImagesStream
 InstallPluginFromRegistryStream
 ModelServiceAvatar
 PluginReadme
 PrepareModelStream
+PreviewAccountImportFile
 RawMessageFile
 RecentLog
 ReplaceUIBackend

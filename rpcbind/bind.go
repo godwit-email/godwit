@@ -242,6 +242,9 @@ var uiOnly = map[string]bool{
 	// Results too large for one response, written as 0600 files in the data directory: a
 	// message's original (up to MaxMessageBytes) and the account export.
 	"RawMessageFile": true, "ExportAccountsFile": true,
+	// Account import from the file the interface's user picked, read by the backend: an export
+	// can outgrow one request. The preview's digest binds the import to the bytes shown.
+	"PreviewAccountImportFile": true, "ImportAccountsFile": true,
 	// Wire helper for the operating system's installed translation languages.
 	"SystemTranslatorLanguages": true,
 	// The Store package's About check: egress to the Store's catalog, through the user's proxy.

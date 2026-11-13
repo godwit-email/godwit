@@ -64,7 +64,7 @@ type settingsPage struct {
 	importOpen    bool                                                                           // the import confirmation dialog shows
 	importBusy    bool                                                                           // ImportAccounts runs
 	importGen     uint64                                                                         // bumped per import dialog opened
-	importData    []byte                                                                         // the file bytes waiting for confirmation
+	importPath    string                                                                         // the file waiting for confirmation
 	importPreview core.AccountImportPreview                                                      // the preview shown in the dialog
 	importErr     error                                                                          // ImportAccounts's failure
 	update        func(ctx context.Context, id int64, p core.AccountPatch) (core.Account, error) // tests swap it

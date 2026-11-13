@@ -1265,3 +1265,22 @@ func TestAskSearchContacts(t *testing.T) {
 	assert.Contains(t, outStr, `suspect=\"true\"`)
 	assert.Equal(t, 1, e.count(t, "SELECT COUNT(*) FROM audit_log WHERE source = 'wit' AND tool = 'search_contacts' AND decision = 'allow'"))
 }
+
+// The interface's call (a ui session) does not end its run as it goes: its
+// pages asked in process, where only CancelRun ended one.
+func TestAskFromInterfaceOutlivesCaller(t *testing.T) {
+	e := newSkillEnv(t)
+	conv := e.askConv(t)
+	e.srv.Script(testllm.Turn{Text: []string{"half an ans"}, Hang: true})
+	ctx, cancel := context.WithCancel(t.Context())
+	ch, err := e.s.Ask(WithUISession(ctx, e.s), conv.ID, "q1")
+	require.NoError(t, err)
+	start := <-ch
+	require.Equal(t, "start", start.Kind)
+	require.Equal(t, "text", (<-ch).Kind)
+	cancel() // the interface went
+	time.Sleep(100 * time.Millisecond)
+	e.waitRunOf(t, start.RunID, "running")
+	require.NoError(t, e.s.CancelRun(t.Context(), start.RunID))
+	e.waitRunOf(t, start.RunID, "cancelled")
+}

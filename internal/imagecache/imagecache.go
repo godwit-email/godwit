@@ -448,8 +448,14 @@ func (c *Cache) Get(ctx context.Context, src string) (Image, error) {
 	return c.get(ctx, Key(src), src, "", 0)
 }
 
+// NotStoredError is GetFile's image that downloaded but could not be stored
+// (a full disk, a Clear meanwhile): its bytes are here, with no file.
+type NotStoredError struct{ Image Image }
+
+func (e *NotStoredError) Error() string { return "image not in cache" }
+
 // GetFile is Get returning the cached file's path on disk instead of reading
-// its bytes on every hit.
+// its bytes on every hit; *NotStoredError when it could not be stored.
 func (c *Cache) GetFile(ctx context.Context, src string) (path, format string, width, height int, err error) {
 	key := Key(src)
 	c.mu.Lock()
@@ -478,7 +484,7 @@ func (c *Cache) GetFile(ctx context.Context, src string) (path, format string, w
 	e := c.files[key]
 	c.mu.Unlock()
 	if e == nil {
-		return "", "", 0, 0, errors.New("image not in cache")
+		return "", "", 0, 0, &NotStoredError{Image: img}
 	}
 	p, err := filepath.Abs(filepath.Join(c.dir, e.name))
 	if err != nil {

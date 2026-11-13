@@ -170,7 +170,7 @@ func (s *Service) AssistWith(ctx context.Context, draftID int64, input string, q
 	if strings.TrimSpace(input) == "" {
 		return nil, errors.New("the request is empty")
 	}
-	ctx, end, err := s.begin(ctx, 0)
+	ctx, end, err := s.begin(runCaller(ctx), 0)
 	if err != nil {
 		return nil, err
 	}
@@ -684,7 +684,7 @@ func (s *Service) RewriteSelection(ctx context.Context, draftID int64, sel Selec
 	if strings.TrimSpace(instruction) == "" {
 		return nil, errors.New("the instruction is empty")
 	}
-	ctx, end, err := s.begin(ctx, 0)
+	ctx, end, err := s.begin(runCaller(ctx), 0)
 	if err != nil {
 		return nil, err
 	}
@@ -751,7 +751,7 @@ func (s *Service) rewriteSelection(ctx context.Context, end func(), draftID int6
 // once). The conversation's history is left as it is. The channel streams
 // the skill's text and ends with interrupted (the proposal) or error.
 func (s *Service) AssistSkill(ctx context.Context, draftID int64, skill string, opts SkillOptions) (<-chan WitEvent, error) {
-	ctx, end, err := s.begin(ctx, 0)
+	ctx, end, err := s.begin(runCaller(ctx), 0)
 	if err != nil {
 		return nil, err
 	}

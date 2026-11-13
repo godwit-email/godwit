@@ -3,11 +3,14 @@ package core
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/mail"
+	"os"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -28,6 +31,9 @@ var (
 // AccountImportPreview describes the accounts in an export file before ImportAccounts writes them.
 type AccountImportPreview struct {
 	Accounts []AccountImportEntry `json:"accounts"`
+	// Digest is the previewed file's SHA-256 (PreviewAccountImportFile):
+	// ImportAccountsFile imports it only while the file still has it.
+	Digest string `json:"digest,omitempty"`
 }
 
 // AccountImportEntry is one account in an AccountImportPreview.
@@ -42,6 +48,12 @@ type AccountImportEntry struct {
 	SendingPort       int    `json:"sending_port"`
 	ReceiveOnly       bool   `json:"receive_only,omitempty"`
 	Auth              string `json:"auth"`
+	// Username is the sign-in name, the address when the file gives none.
+	Username string `json:"username"`
+	// AIInstructions and Signature are what the account would carry from the
+	// file: text Wit reads on every run, and HTML added to every mail sent.
+	AIInstructions bool   `json:"ai_instructions,omitempty"`
+	Signature      string `json:"signature,omitempty"` // its name; "" for none
 	// Existing marks an address already on this device or earlier in the file: ImportAccounts skips it.
 	Existing bool `json:"existing,omitempty"`
 	// ExistingProtocol is the local account's receiving protocol when it differs from the file's.
@@ -312,6 +324,9 @@ func (s *Service) PreviewAccountImport(ctx context.Context, data []byte) (Accoun
 			SendingPort:       ea.Sending.Port,
 			ReceiveOnly:       ea.ReceiveOnly,
 			Auth:              ea.Receiving.Auth,
+			Username:          ea.Username,
+			AIInstructions:    ea.AIInstructions != "",
+			Signature:         signatureName(ea.Signature),
 			Existing:          already,
 			ExistingProtocol:  other,
 		})
@@ -466,4 +481,60 @@ func (s *Service) ImportAccounts(ctx context.Context, data []byte) (AccountImpor
 		imported = append(imported, acc)
 	}
 	return AccountImportResult{Imported: imported, Skipped: skipped}, nil
+}
+
+func signatureName(sig *ExportedSignature) string {
+	if sig == nil {
+		return ""
+	}
+	return sig.Name
+}
+
+// maxAccountImportFile bounds an account export file read by path: signatures
+// with images repeat per account, so a large set outgrows one Local API message.
+const maxAccountImportFile = 64 << 20
+
+// readAccountImportFile reads path and its SHA-256, refusing more than
+// maxAccountImportFile as a bad export.
+func readAccountImportFile(path string) ([]byte, string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, "", err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxAccountImportFile+1))
+	if err != nil {
+		return nil, "", err
+	}
+	if len(data) > maxAccountImportFile {
+		return nil, "", fmt.Errorf("%w: over %d MiB", ErrBadAccountExport, maxAccountImportFile>>20)
+	}
+	sum := sha256.Sum256(data)
+	return data, hex.EncodeToString(sum[:]), nil
+}
+
+// PreviewAccountImportFile is PreviewAccountImport of the file at path, which
+// the interface's user picked: read here, the file need not fit one Local API
+// message. Its Digest binds ImportAccountsFile to these bytes.
+func (s *Service) PreviewAccountImportFile(ctx context.Context, path string) (AccountImportPreview, error) {
+	data, digest, err := readAccountImportFile(path)
+	if err != nil {
+		return AccountImportPreview{}, err
+	}
+	p, err := s.PreviewAccountImport(ctx, data)
+	p.Digest = digest
+	return p, err
+}
+
+// ImportAccountsFile is ImportAccounts of the file at path, refusing it as a
+// bad export unless it still has digest, the one its preview showed.
+func (s *Service) ImportAccountsFile(ctx context.Context, path, digest string) (AccountImportResult, error) {
+	data, got, err := readAccountImportFile(path)
+	if err != nil {
+		return AccountImportResult{}, err
+	}
+	if got != digest {
+		return AccountImportResult{}, fmt.Errorf("%w: the file changed since its preview", ErrBadAccountExport)
+	}
+	return s.ImportAccounts(ctx, data)
 }
