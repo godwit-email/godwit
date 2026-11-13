@@ -37,7 +37,7 @@ type palette struct {
 	asked     string
 	askedKind int
 	started   bool
-	gen       uint64
+	finding   latest
 	res       core.FindResult
 	hl        string // the text res answers
 	hf        bool   // res answers filters
@@ -81,8 +81,8 @@ type palGroup struct {
 
 // openPalette shows the palette afresh, as ⌘K, ⌘F and the search buttons do.
 func (a *App) openPalette() {
-	// gen carries on: an answer still on its way from before must not match a new search
-	a.palette = palette{a: a, open: true, hover: -1, gen: a.palette.gen}
+	// finding carries on: an answer still on its way from before must not match a new search
+	a.palette = palette{a: a, open: true, hover: -1, finding: a.palette.finding}
 }
 
 // view builds the palette (closed, it fades out), searching again when the
@@ -295,7 +295,6 @@ func (p *palette) choose(i int) {
 // each kind's first page in its own tab.
 func (p *palette) find() {
 	a := p.a
-	p.gen++
 	p.asked, p.askedKind, p.started, p.sel = p.query, p.kind, true, 0
 	p.m.open = false
 	sf := p.sf()
@@ -306,15 +305,11 @@ func (p *palette) find() {
 	if q.Kind == "" {
 		q.Limit = paletteFew
 	}
-	gen := p.gen
 	var res core.FindResult
-	a.do(func(ctx context.Context) (err error) {
+	p.finding.Run(a, func(ctx context.Context) (err error) {
 		res, err = a.svc.Find(ctx, q)
 		return err
 	}, func(err error) {
-		if gen != p.gen {
-			return
-		}
 		p.res, p.err, p.hl, p.hf = res, err, q.Text, q.Filtered()
 		p.m.open, p.m.labeling = false, false // a menu opened on the old rows would act on another hit
 	})

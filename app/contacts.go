@@ -34,10 +34,9 @@ type contactsPage struct {
 	cat      int    // contactCats index
 	query    string
 	list     *ui.ListState
-	cur      int // the row chosen, as the list keeps it; -1 none
-	loading  bool
+	cur      int    // the row chosen, as the list keeps it; -1 none
+	read     latest // the contacts and the detail; a load drops the one before and its next page
 	syncing  bool
-	gen      uint64 // bumped per load; older results are dropped
 
 	unsub    core.Unsubscribe // a one-click unsubscribe from unsubID, waiting to be confirmed
 	unsubID  int64
@@ -153,8 +152,7 @@ const contactMailPage = 50
 // was read before.
 func (p *contactsPage) load() {
 	a := p.a
-	p.gen++
-	gen, asked := p.gen, a.route.Contact
+	asked := a.route.Contact
 	addr := asked
 	want := 0
 	if addr == p.detailOf {
@@ -162,14 +160,13 @@ func (p *contactsPage) load() {
 	} else if ct, idx := findContact(p.all, addr); idx >= 0 && ct.Address == p.detailOf {
 		want = len(p.mail)
 	}
-	p.loading = true
 	var (
 		all    []core.Contact
 		d      core.ContactDetail
 		mail   []core.MessageSummary
 		cursor string
 	)
-	a.do(func(ctx context.Context) (err error) {
+	p.read.Run(a, func(ctx context.Context) (err error) {
 		if all, err = a.svc.Contacts(ctx); err != nil {
 			return err
 		}
@@ -195,10 +192,6 @@ func (p *contactsPage) load() {
 		}
 		return nil
 	}, func(err error) {
-		if gen != p.gen {
-			return
-		}
-		p.loading = false
 		if err != nil {
 			a.toastErr(err)
 			return
@@ -215,20 +208,17 @@ func (p *contactsPage) load() {
 
 // loadMore reads the next page of the contact's mail, one read at a time.
 func (p *contactsPage) loadMore() {
-	if p.more || p.cursor == "" || p.loading {
+	if p.more || p.cursor == "" || p.read.loading {
 		return
 	}
 	a := p.a
-	gen, addr, cursor := p.gen, p.detailOf, p.cursor
+	addr, cursor := p.detailOf, p.cursor
 	p.more = true
 	var page core.MessagePage
-	a.do(func(ctx context.Context) (err error) {
+	p.read.Also(a, func(ctx context.Context) (err error) {
 		page, err = a.svc.ContactMail(ctx, addr, cursor, contactMailPage)
 		return err
 	}, func(err error) {
-		if gen != p.gen {
-			return
-		}
 		p.more = false
 		if err != nil {
 			a.toastErr(err)
@@ -350,7 +340,7 @@ func (p *contactsPage) listView(c *ui.Context) {
 	p.list.Selected = &p.cur
 	l := kit.List(c, p.list, len(rows), func(i int) { p.row(c, rows[i]) }).Grow(1).Padding(0, th.Space(2)).Gap(theme.Stroke)
 	l.Children(func() {
-		if len(rows) == 0 && !p.loading {
+		if len(rows) == 0 && !p.read.loading {
 			msg := i18n.T("contacts.empty")
 			if strings.TrimSpace(p.query) != "" {
 				msg = i18n.T("contacts.no_match")
@@ -408,7 +398,7 @@ func (p *contactsPage) detailView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	ct, ok := p.current()
 	if !ok {
-		if !p.loading {
+		if !p.read.loading {
 			ui.Column(c).Grow(1).Center().Children(func() { ui.Text(c, i18n.T("contacts.empty")).TextColor(t.Muted) })
 		}
 		return

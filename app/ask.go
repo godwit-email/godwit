@@ -20,8 +20,8 @@ import (
 type askPage struct {
 	a       *App
 	convs   []core.Conversation
-	listGen uint64
-	version int64 // the Wit page's snapshot as of the last navigation here
+	list    latest // the conversations; only the newest read applies
+	version int64  // the Wit page's snapshot as of the last navigation here
 }
 
 func newAskPage(a *App) *askPage { return &askPage{a: a} }
@@ -39,16 +39,12 @@ func (p *askPage) refresh(hints []events.Event) {
 }
 
 func (p *askPage) load() {
-	p.listGen++
-	a, gen := p.a, p.listGen
+	a := p.a
 	var cs []core.Conversation
-	a.do(func(ctx context.Context) (err error) {
+	p.list.Run(a, func(ctx context.Context) (err error) {
 		cs, err = a.svc.ListConversations(ctx, "ask")
 		return err
 	}, func(err error) {
-		if gen != p.listGen {
-			return
-		}
 		if err != nil {
 			a.toastErr(err)
 			return

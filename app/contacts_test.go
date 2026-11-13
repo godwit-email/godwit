@@ -222,7 +222,7 @@ func TestContactsSidebarRefreshAndZeroMail(t *testing.T) {
 	h.see("通讯录 · 1")
 	h.click("zero@example.com")
 	h.until("Zero Person chosen and Bob gone from list and detail", func() bool {
-		return h.app.contacts().detailOf == "zero@example.com" && !h.app.contacts().loading && !h.tt.HasText("bob@example.com")
+		return h.app.contacts().detailOf == "zero@example.com" && !h.app.contacts().read.loading && !h.tt.HasText("bob@example.com")
 	})
 	// Zero-mail contact omits row timestamp (never renders 1970/0001), shows "—" in last stat,
 	// disables 全部归档, and loads its CardDAV PHOTO even with Latest == 0.
