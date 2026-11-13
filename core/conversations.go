@@ -277,18 +277,20 @@ func (s *Service) GetConversation(ctx context.Context, id int64) (Conversation, 
 	// and a new one waits for the user: the reads settle.
 	for {
 		before, err := s.runStates(ctx, id)
-		var c Conversation
-		if err == nil {
-			c, err = s.readConversation(ctx, id)
+		if err != nil {
+			return Conversation{}, err
 		}
-		var after string
-		if err == nil {
-			after, err = s.runStates(ctx, id)
-		}
+		// A run saving meanwhile can also fail the read (its messages half
+		// written): that counts as a moved read, read again, not an error.
+		c, readErr := s.readConversation(ctx, id)
+		after, err := s.runStates(ctx, id)
 		if err != nil {
 			return Conversation{}, err
 		}
 		if after == before {
+			if readErr != nil {
+				return Conversation{}, readErr
+			}
 			return c, nil
 		}
 		if err := ctx.Err(); err != nil {

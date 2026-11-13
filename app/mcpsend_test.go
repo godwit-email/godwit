@@ -9,9 +9,11 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/core/events"
 )
 
 // mcpSendHarness has an account and a draft to bob, with plan.pdf attached,
@@ -156,9 +158,19 @@ func TestMCPSendConfirmWarnsCancel(t *testing.T) {
 	h.see("发送这封邮件？")
 	h.click("发送")
 	h.see("发送前检查：check before sending: Quarterly plan")
+	evs, unsub := h.env.Svc.Subscribe()
+	defer unsub()
 	h.click("取消")
 	h.until("the dialog gone", func() bool { return !h.tt.HasText("仍然发送") })
-	h.drain()
+	// The cancel reaches the backend off the UI thread, over the socket.
+	for ended := false; !ended; {
+		select {
+		case ev := <-evs:
+			ended = ev.Type == events.MCPSendsChanged
+		case <-time.After(10 * time.Second):
+			t.Fatal("the cancel never reached the backend")
+		}
+	}
 	if err := h.env.Svc.ResolveMCPSendAcknowledged(context.Background(), h.app.mcpSend.warnID, h.app.mcpSend.warnings.Digest, true); !errors.Is(err, core.ErrInvalidState) {
 		t.Fatalf("the request was not ended: %v", err)
 	}
