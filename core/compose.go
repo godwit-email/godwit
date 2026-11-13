@@ -19,6 +19,7 @@ import (
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/core/gateway"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/store"
 )
@@ -99,6 +100,9 @@ func nullID(id int64) any {
 // its non-inline attachments, downloading them if needed. The account signature
 // ends the body.
 func (s *Service) NewDraft(ctx context.Context, accountID int64, mode string, sourceMessageID int64) (Draft, error) {
+	if err := s.auditMCPDraft(ctx, "NewDraft", sourceMessageID); err != nil {
+		return Draft{}, err
+	}
 	// From reading the signature to storing the draft, no signature change
 	// can clean up the images the draft is about to show.
 	sourceMessageID, err := s.resolveID(ctx, sourceMessageID)
@@ -108,7 +112,7 @@ func (s *Service) NewDraft(ctx context.Context, accountID int64, mode string, so
 	s.sigMu.Lock()
 	d, err := s.buildDraft(ctx, accountID, mode, sourceMessageID)
 	if err == nil {
-		d, err = s.SaveDraft(ctx, d)
+		d, err = s.saveDraft(ctx, d)
 	}
 	s.sigMu.Unlock()
 	if err != nil {
@@ -263,6 +267,23 @@ func (s *Service) copyAttachments(ctx context.Context, draftID, messageID int64)
 // HTML is sanitized for composing (no scripts, handlers or remote resources).
 // Attachments are changed with AddAttachment and RemoveAttachment.
 func (s *Service) SaveDraft(ctx context.Context, d Draft) (Draft, error) {
+	if err := s.auditMCPDraft(ctx, "SaveDraft", d.ID); err != nil {
+		return Draft{}, err
+	}
+	return s.saveDraft(ctx, d)
+}
+
+// auditMCPDraft audits godwit mcp's draft calls (the mcp role) before they
+// run; drafts by the other roles and the engine are not audited.
+func (s *Service) auditMCPDraft(ctx context.Context, action string, target int64) error {
+	if e, ok := apiAudit(ctx, action, target); ok && e.Source == AuditMCP {
+		return s.gateway().Record(ctx, e)
+	}
+	return nil
+}
+
+// saveDraft is SaveDraft, unaudited.
+func (s *Service) saveDraft(ctx context.Context, d Draft) (Draft, error) {
 	// Draft changes and Send never interleave.
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
@@ -562,7 +583,16 @@ func (s *Service) Send(ctx context.Context, draftID int64) error {
 		return err
 	}
 	defer end()
-	return s.send(ctx, draftID, -1, nil)
+	return s.send(ctx, draftID, -1, apiSend(ctx, "Send", draftID, s.secrets.Redact))
+}
+
+// apiSend is a send over the Local API: queued, the mail leaves unattended,
+// so its audit row (apiAudit) goes in with the outbox item; nil for none.
+func apiSend(ctx context.Context, action string, draftID int64, redact func(string) string) *ruleSend {
+	if e, ok := apiAudit(ctx, action, draftID); ok {
+		return &ruleSend{stmts: []sqlite.Statement{gateway.Audit(e, redact)}}
+	}
+	return nil
 }
 
 // send is Send inside a begun call. A want >= 0 sends only that revision:
@@ -678,7 +708,10 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 		To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, HTML: d.HTML, Related: related}
 	var stmts []sqlite.Statement
 	if rs != nil {
-		o.Header, stmts = map[string]string{mail.RuleHeader: strconv.FormatInt(rs.ruleID, 10)}, rs.stmts
+		stmts = rs.stmts
+	}
+	if rs != nil && rs.ruleID != 0 {
+		o.Header = map[string]string{mail.RuleHeader: strconv.FormatInt(rs.ruleID, 10)}
 	}
 	if d.SourceMessageID != 0 && (d.Mode == "reply" || d.Mode == "reply_all" || d.Mode == "forward") {
 		rows, err := s.db.Query(ctx, "SELECT message_id, refs FROM messages WHERE id = ?", d.SourceMessageID)

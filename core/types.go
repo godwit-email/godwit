@@ -40,9 +40,8 @@ type AccountInput struct {
 	oauthClientID  string // the flow's own client, set by AddAccount
 	// graph checks a stored OAuth account can send through Microsoft Graph, for
 	// a check whose SMTP AUTH is disabled; a flow's check makes its own.
-	graph         func(context.Context) error
-	allowPOP3     bool // a POP3 receiving slot is accepted: a stored account's, or ExperimentalPOP3 is on
-	allowGmailAPI bool // a Gmail API receiving slot is accepted: a stored account's, or ExperimentalGmailAPI is on
+	graph   func(context.Context) error
+	allowed bool // the receiving protocol may be added: a stored account's, or not experimental, or its setting is on
 }
 
 // Account is a stored account. The password lives only in the system keychain.

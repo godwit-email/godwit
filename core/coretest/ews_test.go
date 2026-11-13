@@ -256,6 +256,31 @@ func TestEWSMove(t *testing.T) {
 	assert.Equal(t, archive, ms[0].FolderID)
 }
 
+// A move whose answer was lost is not sent twice: the retry finds the item
+// gone from the inbox, and the next sync claims it in Archive as the same
+// message rather than storing it as new mail.
+func TestEWSMoveReplyLost(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc, srv := addEWS(t, e)
+	srv.Deliver("INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Move me", "body", coretest.MessageID("move@x")))
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	ms, err := e.Svc.Search(t.Context(), acc.ID, "Move", 10)
+	require.NoError(t, err)
+	require.Len(t, ms, 1)
+	archive := folderID(t, e, acc.ID, "Archive")
+
+	srv.LoseMoveVerdict()
+	require.NoError(t, e.Svc.Move(t.Context(), []int64{ms[0].ID}, archive))
+	require.Error(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	require.Len(t, srv.Items("Archive"), 1, "the server moved it")
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	got, err := e.Svc.Search(t.Context(), acc.ID, "Move", 10)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, ms[0].ID, got[0].ID, "the same message, not a new arrival")
+	assert.Equal(t, archive, got[0].FolderID)
+}
+
 // An EWS account's servers saved again as stored, its sending slot without
 // the path the database does not keep, pass the check; it sends through the
 // receiving slot's EWS URL.

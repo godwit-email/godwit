@@ -23,6 +23,7 @@ import (
 	"github.com/MoeForge/moejs"
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/core/gateway"
 	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/core/skills"
 	"github.com/godwit-email/godwit/core/store"
@@ -416,11 +417,16 @@ func (s *Service) GrantPermission(ctx context.Context, name string) error {
 	defer end()
 	s.pluginsMu.Lock()
 	defer s.pluginsMu.Unlock()
-	r, err := s.db.Execute(ctx, "UPDATE plugins SET granted_hash = permission_hash, trust = CASE WHEN trust = 'listed' THEN trust ELSE 'user' END WHERE name = ?", name)
+	stmts := []sqlite.Statement{{SQL: "UPDATE plugins SET granted_hash = permission_hash, trust = CASE WHEN trust = 'listed' THEN trust ELSE 'user' END WHERE name = ?", Args: []any{name}}}
+	// Granted, it reaches its hosts without asking again (ADR 0003): audited with the grant.
+	if e, ok := apiAudit(ctx, "GrantPermission", 0, name); ok {
+		stmts = append(stmts, gateway.AuditChange(e, s.secrets.Redact, false))
+	}
+	rs, err := s.db.Transaction(ctx, stmts)
 	if err != nil {
 		return err
 	}
-	if r.Changes == 0 {
+	if rs[0].Changes == 0 {
 		return ErrPluginNotFound
 	}
 	s.bus.Publish(events.Event{Type: events.PluginsChanged})

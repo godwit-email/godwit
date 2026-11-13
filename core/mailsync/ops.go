@@ -262,6 +262,9 @@ func (p *pusher) pushOp(ctx context.Context, o op) (problem string, err error) {
 			return "", err
 		}
 		return p.pushOp(ctx, o)
+	case errors.Is(err, backend.ErrNotFound) && !errors.Is(err, backend.ErrFolderReset) && o.kind == "move":
+		// Gone from the source: by this move when an earlier attempt's reply was lost (EWS).
+		return p.lostSource(ctx, o, o.attempts > 0)
 	case errors.Is(err, backend.ErrNotFound):
 		msg := fmt.Sprintf("folder %q was recreated on the server, so a change to a message in it was not applied", srcName)
 		return msg, finish(ctx, db, o, "conflict", msg)
@@ -344,10 +347,10 @@ func flagsOf(names []string) backend.Flags {
 	return f
 }
 
-// lostSource ends a move on an account of stable identity whose source
-// folder no longer has the message, or whose move gave no usable location,
-// from what Godwit knows of the server rather than by sending it again. Such
-// a server keeps a message in a folder at one location, so a known location
+// lostSource ends a move whose source folder no longer has the message (on an
+// account of location identity: the server said so), or whose move gave no
+// usable location, from what Godwit knows of the server rather than by sending
+// it again. A server keeps a message in a folder at one location, so a known location
 // in the destination means the move is done. Else, when a move of it may
 // have reached the server (sent), it awaits its claim there by ServerID;
 // when none can have, another client took it out of the source first, and

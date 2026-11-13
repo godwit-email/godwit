@@ -350,17 +350,7 @@ func TestMaxConns(t *testing.T) {
 
 func TestDialFull(t *testing.T) {
 	dir := shortDir(t)
-	var mu sync.Mutex
-	var audited []string
-	_, a, _ := startServer(t, dir, rpc.ServerOptions{Audit: func(role, method string, _ []json.RawMessage) error {
-		mu.Lock()
-		defer mu.Unlock()
-		audited = append(audited, role+" "+method)
-		if method == "ListAccounts" && role == rpc.RoleMCP {
-			return errors.New("audit log unavailable")
-		}
-		return nil
-	}})
+	_, a, _ := startServer(t, dir, rpc.ServerOptions{})
 	c, err := rpc.Dial(dir, rpc.RoleFull, "t", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -383,15 +373,8 @@ func TestDialFull(t *testing.T) {
 	if err := m.Call(context.Background(), "Send", nil, 7); !errors.As(err, &we) || we.Code != rpc.CodeForbidden {
 		t.Fatalf("mcp Send = %v, want forbidden", err)
 	}
-	// An audit that cannot be written stops the call as an internal error.
-	if err := m.Call(context.Background(), "ListAccounts", nil); !errors.As(err, &we) || we.Code != rpc.CodeInternal {
-		t.Fatalf("mcp ListAccounts with a failing audit = %v, want internal error", err)
-	}
-	want := "full ListAccounts,full Send,mcp ListAccounts" // a forbidden call is not audited
-	mu.Lock()
-	defer mu.Unlock()
-	if got := strings.Join(audited, ","); got != want {
-		t.Fatalf("audited %s, want %s", got, want)
+	if a.sent.Load() != 1 {
+		t.Fatal("mcp Send ran")
 	}
 }
 
@@ -414,48 +397,21 @@ type writerFunc func([]byte) (int, error)
 
 func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
 
-// A failing audit runs nothing and answers "internal error"; the server log
-// has the cause, redacted.
-func TestAuditFailure(t *testing.T) {
-	logged := logs(t)
-	dir := shortDir(t)
-	_, a, _ := startServer(t, dir, rpc.ServerOptions{
-		Redact: func(s string) string { return strings.ReplaceAll(s, "hunter2", "[redacted]") },
-		Audit:  func(string, string, []json.RawMessage) error { return errors.New("audit db down, pw hunter2") },
-	})
-	c, err := rpc.Dial(dir, rpc.RoleFull, "t", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer c.Close()
-	var we *rpc.WireError
-	if err := c.Call(context.Background(), "Send", nil, 7); !errors.As(err, &we) || we.Code != rpc.CodeInternal || we.Message != "internal error" {
-		t.Fatalf("Send = %v, want internal error", err)
-	}
-	if a.sent.Load() != 0 {
-		t.Fatal("Send ran although its audit failed")
-	}
-	if l := logged(); !strings.Contains(l, "audit db down") || strings.Contains(l, "hunter2") {
-		t.Fatalf("log = %q, want the redacted cause", l)
-	}
-}
-
 // Godwit's own interface gets an unregistered error's text, redacted, to show
 // it; an external client still gets "internal error".
 func TestUnregisteredErrorTextForUI(t *testing.T) {
 	dir := shortDir(t)
 	startServer(t, dir, rpc.ServerOptions{
 		Redact: func(s string) string { return strings.ReplaceAll(s, "hunter2", "[redacted]") },
-		Audit:  func(string, string, []json.RawMessage) error { return errors.New("config plan: bad, pw hunter2") },
 	})
-	for role, want := range map[string]string{rpc.RoleUI: "config plan: bad, pw [redacted]", rpc.RoleFull: "internal error"} {
+	for role, want := range map[string]string{rpc.RoleUI: `bad mode "pw [redacted]"`, rpc.RoleFull: "internal error"} {
 		c, err := rpc.Dial(dir, role, "t", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		var we *rpc.WireError
-		if err := c.Call(context.Background(), "Send", nil, 7); !errors.As(err, &we) || we.Code != rpc.CodeInternal || we.Message != want {
-			t.Errorf("%s Send = %v, want %q", role, err, want)
+		if err := c.Call(context.Background(), "Fail", nil, "pw hunter2"); !errors.As(err, &we) || we.Code != rpc.CodeInternal || we.Message != want {
+			t.Errorf("%s Fail = %v, want %q", role, err, want)
 		}
 		c.Close()
 	}

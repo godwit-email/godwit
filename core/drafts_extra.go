@@ -104,14 +104,14 @@ func (s *Service) SendRevision(ctx context.Context, draftID, revision int64) err
 		return err
 	}
 	defer end()
-	return s.send(ctx, draftID, max(revision, 0), nil) // a negative one would mean any
+	return s.send(ctx, draftID, max(revision, 0), apiSend(ctx, "SendRevision", draftID, s.secrets.Redact)) // a negative one would mean any
 }
 
 // SendAcknowledgedRevision is SendAcknowledged for exactly that revision of
 // the draft: if the stored one differs, nothing is sent and the error is
 // ErrStaleDraft.
 func (s *Service) SendAcknowledgedRevision(ctx context.Context, draftID, revision int64, digest string) error {
-	return s.sendAcknowledged(ctx, draftID, max(revision, 0), digest)
+	return s.sendAcknowledged(ctx, draftID, max(revision, 0), digest, apiSend(ctx, "SendAcknowledgedRevision", draftID, s.secrets.Redact))
 }
 
 // DeleteDraftIfEmpty deletes the draft, as DeleteDraft, if it is still at

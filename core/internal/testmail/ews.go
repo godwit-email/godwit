@@ -29,7 +29,7 @@ import (
 // Hooks change the mailbox as another client would (MarkRead, MarkFlagged,
 // MarkAnswered, Remove, RenameFolder, RemoveFolder) or inject faults
 // (RejectAuth, SetVersion, Reset, Busy, Refuse, LoseVerdict, GarbleVerdict,
-// RejectNextSendAuth, DropNextChallenge, OmitNewItemIds, LoseSubscriptions,
+// RejectNextSendAuth, DropNextChallenge, OmitNewItemIds, LoseMoveVerdict, LoseSubscriptions,
 // DropStreams, Advance).
 //
 // Every change takes the next sequence number, and deleted items and
@@ -55,6 +55,7 @@ type EWS struct {
 	next             int          // the last id given
 	seq              int          // the last change's sequence number
 	omitNewIDs       bool         // MoveItem and CopyItem answer without the new ItemIds
+	loseMove         bool         // drop the next MoveItem's answer
 	findLimit        int          // the most items a FindItem page holds
 	sent             []EWSSent
 	refused          map[string]bool // recipients refused

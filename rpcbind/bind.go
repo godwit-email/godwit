@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/mail"
 	"strings"
 
 	"github.com/godwit-email/godwit/backend"
@@ -211,11 +210,10 @@ func NewCodec() *rpc.Codec {
 // hidden are the exported *core.Service methods kept off the Local API for
 // every role, each for its reason.
 var hidden = map[string]bool{
-	"Close":         true, // the owner's lifetime, not a client's
-	"Publish":       true, // the owner's own events; a client could forge a click or a quit
-	"Redact":        true, // a client could test guesses of the owner's secrets against it
-	"AuditExternal": true, // writes audit rows; only the owner records what clients did
-	"Proxy":         true, // a custom proxy's URL carries its password
+	"Close":   true, // the owner's lifetime, not a client's
+	"Publish": true, // the owner's own events; a client could forge a click or a quit
+	"Redact":  true, // a client could test guesses of the owner's secrets against it
+	"Proxy":   true, // a custom proxy's URL carries its password
 	// Owner-side UI presence queries; RoleUI reports state via SetUIForeground and SetComposeOpen.
 	"UIConnected": true, "UIForeground": true, "UIReady": true, "IsComposeOpen": true,
 	// The owner tray's 退出并停止收信 (a stop func).
@@ -293,10 +291,10 @@ func Listen(dataDir string, svc *core.Service, version string) (*rpc.Server, err
 // ListenWith serves svc's exposed methods on <dataDir>/godwit.sock (see
 // rpc.Listen; the caller holds the owner lock). Errors go out through
 // NewCodec; the UI and API tokens and svc's secrets are redacted from them and
-// from the log. Sends, forwarding rules and grants by the full and ui roles and
-// drafts by the mcp role are audited before they are dispatched (ui's under its
-// own source, with no external-source gating); SetSettings widening MCPSend is
-// audited atomically with the save under settingsMu.
+// from the log. Each connection's context carries its role's audit source
+// (core.AuditLocalAPI, core.AuditUI, core.AuditMCP): the core methods that send
+// or leave state that egresses later write their own audit rows from it (ADR
+// 0003), ui's with no external-source gating.
 func ListenWith(dataDir string, svc *core.Service, opts ListenOptions) (*rpc.Server, error) {
 	d, err := rpc.NewDispatcher(svc, Expose)
 	if err != nil {
@@ -313,234 +311,16 @@ func ListenWith(dataDir string, svc *core.Service, opts ListenOptions) (*rpc.Ser
 		Codec:           NewCodec(),
 		Redact:          svc.Redact,
 		UIDispatcher:    ui,
-		Audit:           func(role, method string, params []json.RawMessage) error { return audit(svc, role, method, params) },
 		Context: func(ctx context.Context, role string) context.Context {
 			switch role {
 			case rpc.RoleFull:
 				return core.WithExternalSource(ctx, core.AuditLocalAPI)
+			case rpc.RoleMCP:
+				return core.WithExternalSource(ctx, core.AuditMCP)
 			case rpc.RoleUI:
 				return core.WithUISession(ctx, svc)
 			}
 			return ctx
 		},
 	})
-}
-
-// audit records full's and ui's Send, SendAcknowledged and their Revision forms (by draft),
-// ResolveOutbox "resend" (by outbox item), Unsubscribe (by message), BeginPluginLogin, the rule
-// calls that make a rule forward (ruleForward), the extension grants (egressGrant:
-// GrantMCPServer, SetMCPToolTrusted turning trust on, GrantPermission), and the CardDAV calls that
-// reach or schedule polling of an address-book host (addressBookEgress); and mcp's NewDraft (by
-// source message) and SaveDraft (by draft); SetSettings widening MCPSend is audited inside
-// SetSettings in the same transaction as the write, and nothing else is audited. full's rows are
-// local_api, ui's are ui: a same-user program can present ui-token (ADR 0002). A row it cannot
-// write stops the call.
-func audit(svc *core.Service, role, method string, params []json.RawMessage) error {
-	source := map[string]string{rpc.RoleFull: core.AuditLocalAPI, rpc.RoleUI: core.AuditUI, rpc.RoleMCP: core.AuditMCP}[role]
-	if role == rpc.RoleFull || role == rpc.RoleUI {
-		for _, check := range []func(*core.Service, string, []json.RawMessage) (int64, []string, bool, error){ruleForward, egressGrant, addressBookEgress} {
-			target, dests, ok, err := check(svc, method, params)
-			if err != nil {
-				return err
-			}
-			if ok {
-				return svc.AuditExternal(context.Background(), source, method, target, dests...)
-			}
-		}
-	}
-	switch {
-	case (role == rpc.RoleFull || role == rpc.RoleUI) && (method == "Send" || method == "SendAcknowledged" || method == "SendRevision" || method == "SendAcknowledgedRevision" ||
-		method == "ResolveOutbox" && isResend(params) || method == "Unsubscribe" || method == "BeginPluginLogin"):
-	case role == rpc.RoleMCP && (method == "NewDraft" || method == "SaveDraft"):
-	default:
-		return nil
-	}
-	var target int64
-	switch {
-	case method == "NewDraft" && len(params) == 3:
-		json.Unmarshal(params[2], &target)
-	case method == "SaveDraft" && len(params) == 1:
-		var d struct{ ID int64 }
-		json.Unmarshal(params[0], &d)
-		target = d.ID
-	case len(params) > 0:
-		json.Unmarshal(params[0], &target)
-	}
-	return svc.AuditExternal(context.Background(), source, method, target)
-}
-
-// ruleForward reports whether a full call leaves a rule that forwards mail
-// later, unattended, which ADR 0003 counts as egress; target and dests are
-// what its audit row records. They are SaveRule of a rule with a forward
-// (target: its id, 0 for a new one, whose id does not exist before the call
-// runs; dests: its recipients' domains, which name it in the log), SetRuleEnabled
-// turning such a rule on (target: the rule), and every RetryRuleRun (target:
-// the run): a retry may forward now, and which actions it reruns is known
-// only inside it. RunRuleOnExisting drops forwards and ProposedRuleSaved only
-// closes an approval, so neither is here. Params that do not decode are not
-// audited: the dispatcher decodes them the same way and refuses the call.
-func ruleForward(svc *core.Service, method string, params []json.RawMessage) (target int64, dests []string, ok bool, err error) {
-	switch method {
-	case "SaveRule":
-		var r core.Rule
-		if len(params) != 1 || json.Unmarshal(params[0], &r) != nil {
-			return 0, nil, false, nil
-		}
-		dests = forwards(r.Doc)
-		return r.ID, dests, len(dests) > 0, nil
-	case "SetRuleEnabled":
-		var id int64
-		var on bool
-		if len(params) != 2 || json.Unmarshal(params[0], &id) != nil || json.Unmarshal(params[1], &on) != nil || !on {
-			return 0, nil, false, nil
-		}
-		rules, err := svc.Rules(context.Background())
-		if err != nil {
-			return 0, nil, false, err
-		}
-		for _, r := range rules {
-			if r.ID == id {
-				dests = forwards(r.Doc)
-			}
-		}
-		return id, dests, len(dests) > 0, nil
-	case "RetryRuleRun":
-		if len(params) != 1 || json.Unmarshal(params[0], &target) != nil {
-			return 0, nil, false, nil
-		}
-		return target, nil, true, nil
-	}
-	return 0, nil, false, nil
-}
-
-// forwards are the domains d forwards to. They are cut here, not by
-// gateway.Host: a local part may hold '/', '?' or '#', where Host cuts a URL.
-// A recipient that does not parse is left out, its text kept off the log:
-// SaveRule refuses a rule with one, so it never forwards.
-func forwards(d core.RuleDoc) []string {
-	var out []string
-	for _, a := range d.Actions {
-		if p, err := mail.ParseAddress(a.To); a.Kind == core.ActionForward && err == nil {
-			out = append(out, p.Address[strings.LastIndexByte(p.Address, '@')+1:])
-		}
-	}
-	return out
-}
-
-// isResend: ResolveOutbox's params ask to send the item again.
-func isResend(params []json.RawMessage) bool {
-	var action string
-	return len(params) == 2 && json.Unmarshal(params[1], &action) == nil && action == "resend"
-}
-
-// egressGrant reports whether a full call grants an extension or MCP tool to
-// run without approval, which ADR 0003 counts as egress; target and dests are
-// what its audit row records (SetSettings widening MCPSend is audited inside
-// core.Service.SetSettings under settingsMu). Params that do not decode are not
-// audited: the dispatcher decodes them the same way and refuses the call.
-func egressGrant(_ *core.Service, method string, params []json.RawMessage) (target int64, dests []string, ok bool, err error) {
-	switch method {
-	case "GrantMCPServer":
-		if len(params) != 1 || json.Unmarshal(params[0], &target) != nil {
-			return 0, nil, false, nil
-		}
-		return target, nil, true, nil
-	case "SetMCPToolTrusted":
-		var tool string
-		var trusted bool
-		if len(params) != 3 || json.Unmarshal(params[0], &target) != nil || json.Unmarshal(params[1], &tool) != nil ||
-			json.Unmarshal(params[2], &trusted) != nil || !trusted {
-			return 0, nil, false, nil
-		}
-		return target, []string{tool}, true, nil
-	case "GrantPermission":
-		var name string
-		if len(params) != 1 || json.Unmarshal(params[0], &name) != nil {
-			return 0, nil, false, nil
-		}
-		return 0, []string{name}, true, nil
-	}
-	return 0, nil, false, nil
-}
-
-// addressBookEgress reports whether a full call reaches a CardDAV server now or
-// leaves an enabled collection that background polling reaches later (ADR 0003).
-// Params that do not decode are left to the dispatcher to refuse.
-func addressBookEgress(svc *core.Service, method string, params []json.RawMessage) (target int64, dests []string, ok bool, err error) {
-	switch method {
-	case "AddAddressBook", "CheckAddressBook":
-		var in core.AddressBookInput
-		if len(params) != 1 || json.Unmarshal(params[0], &in) != nil {
-			return 0, nil, false, nil
-		}
-		if effective := core.AddressBookEffectiveURL(in); effective != "" {
-			dests = []string{effective}
-		}
-		return 0, dests, true, nil
-	case "UpdateAddressBookAuth":
-		var pw, flow string
-		var client core.OAuthClient
-		if len(params) != 4 || json.Unmarshal(params[0], &target) != nil || json.Unmarshal(params[1], &pw) != nil ||
-			json.Unmarshal(params[2], &flow) != nil || json.Unmarshal(params[3], &client) != nil {
-			return 0, nil, false, nil
-		}
-		books, err := svc.ListAddressBooks(context.Background())
-		if err != nil {
-			return 0, nil, false, err
-		}
-		for _, ab := range books {
-			if ab.ID == target && ab.URL != "" {
-				dests = []string{ab.URL}
-				break
-			}
-		}
-		return target, dests, true, nil
-	case "SyncAddressBook":
-		if len(params) != 1 || json.Unmarshal(params[0], &target) != nil {
-			return 0, nil, false, nil
-		}
-		books, err := svc.ListAddressBooks(context.Background())
-		if err != nil {
-			return 0, nil, false, err
-		}
-		for _, ab := range books {
-			if ab.URL == "" {
-				continue
-			}
-			if target > 0 && ab.ID == target {
-				dests = []string{ab.URL}
-				break
-			}
-			if target == 0 {
-				if len(ab.Collections) == 0 { // none left: sync-all still rediscovers it (core abPollable)
-					dests = append(dests, ab.URL)
-				}
-				for _, col := range ab.Collections {
-					if col.Enabled {
-						dests = append(dests, ab.URL)
-						break
-					}
-				}
-			}
-		}
-		return target, dests, true, nil
-	case "SetAddressBookCollectionEnabled":
-		var on bool
-		if len(params) != 2 || json.Unmarshal(params[0], &target) != nil || json.Unmarshal(params[1], &on) != nil || !on {
-			return 0, nil, false, nil
-		}
-		books, err := svc.ListAddressBooks(context.Background())
-		if err != nil {
-			return 0, nil, false, err
-		}
-		for _, ab := range books {
-			for _, col := range ab.Collections {
-				if col.ID == target && ab.URL != "" {
-					return target, []string{ab.URL}, true, nil
-				}
-			}
-		}
-		return target, nil, true, nil
-	}
-	return 0, nil, false, nil
 }
