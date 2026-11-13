@@ -5,9 +5,9 @@ package mailsync_test
 // backend is backendtest.Fake, the store a real SQLite file.
 //
 // Where state cannot be made through mailsync's interface the tests write the
-// tables themselves, as core does: the account row, and queued ops (core's
-// Service queues them, mailsync only pushes them). Those writes are marked
-// "core's part".
+// tables themselves, as core does: the account row, and a change's local
+// side (flags, ShowIn) in the transaction that queues it through the op
+// queue's Queue* statements. Those writes are marked "core's part".
 
 import (
 	"context"
@@ -131,8 +131,7 @@ func (e *env) queueFlags(mid string, flags string, add ...string) int64 {
 	msg := e.id(mid)
 	res, err := e.db.Transaction(e.ctx, []sqlite.Statement{
 		{SQL: "UPDATE messages SET flags = ? WHERE id = ?", Args: []any{flags, msg}},
-		{SQL: `INSERT INTO ops(account_id, message_id, kind, payload, created_at) VALUES (?, ?, 'flags', ?, unixepoch())`,
-			Args: []any{acct, msg, fmt.Sprintf(`{"add":[%q]}`, strings.Join(add, `","`))}},
+		mailsync.QueueFlags(acct, msg, add, nil),
 	})
 	require.NoError(e.t, err)
 	return res[1].LastInsertID
@@ -142,9 +141,7 @@ func (e *env) queueFlags(mid string, flags string, add ...string) int64 {
 func (e *env) queueMove(mid, from, to string) int64 {
 	e.t.Helper()
 	msg, src, dst := e.id(mid), e.folder(from), e.folder(to)
-	res, err := e.db.Transaction(e.ctx, append(mailsync.ShowIn(msg, dst, []int64{src}),
-		sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, src_folder_id, dst_folder_id, payload, created_at)
-			VALUES (?, ?, 'move', ?, ?, '{}', unixepoch())`, Args: []any{acct, msg, src, dst}}))
+	res, err := e.db.Transaction(e.ctx, append(mailsync.ShowIn(msg, dst, []int64{src}), mailsync.QueueMove(acct, msg, src, dst, time.Time{})))
 	require.NoError(e.t, err)
 	return res[len(res)-1].LastInsertID
 }
@@ -368,8 +365,7 @@ func TestUnlocatedMoveAmongTwinsConflicts(t *testing.T) {
 	moved := store.Int(inbox[0][0])
 	msg, src, dst := moved, e.folder("INBOX"), e.folder("Archive")
 	res, err := e.db.Transaction(e.ctx, append(mailsync.ShowIn(msg, dst, []int64{src}), // core's part, as queueMove
-		sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, src_folder_id, dst_folder_id, payload, created_at)
-			VALUES (?, ?, 'move', ?, ?, '{}', unixepoch())`, Args: []any{acct, msg, src, dst}}))
+		mailsync.QueueMove(acct, msg, src, dst, time.Time{})))
 	require.NoError(t, err)
 	op := res[len(res)-1].LastInsertID
 	e.fake.OnApply = func(_ backend.Op, apply func() (backend.Result, error)) (backend.Result, error) {

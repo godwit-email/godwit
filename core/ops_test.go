@@ -7,6 +7,7 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/godwit-email/godwit/core/mailsync"
@@ -51,6 +52,14 @@ func (e *syncEnv) ops(t *testing.T) []Op {
 	ops, err := e.s.PendingOps(bg, e.acc.ID)
 	require.NoError(t, err)
 	return ops
+}
+
+// markSent leaves every queued op as a push cut off after sending does.
+func (e *syncEnv) markSent(t *testing.T, before *backend.MoveBaseline) {
+	t.Helper()
+	for _, o := range e.ops(t) {
+		require.NoError(t, mailsync.MarkSent(bg, e.s.db, o.ID, before))
+	}
 }
 
 func (e *syncEnv) opStates(t *testing.T) []string {
@@ -368,10 +377,9 @@ func TestUncertainMoveNotRepeated(t *testing.T) {
 	id := e.idOf(t, "m@x")
 	require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Archive")))
 	// The MOVE went out and reached the server, then the connection dropped.
-	_, err := e.s.db.Execute(bg, "UPDATE ops SET attempts = 1")
-	require.NoError(t, err)
+	e.markSent(t, nil)
 	c := e.dial(t)
-	_, err = c.Select("INBOX", nil).Wait()
+	_, err := c.Select("INBOX", nil).Wait()
 	require.NoError(t, err)
 	_, err = c.Move(imap.UIDSetNum(1), "Archive").Wait()
 	require.NoError(t, err)
@@ -442,10 +450,9 @@ func TestUncertainCopyMoveDeletedElsewhere(t *testing.T) {
 	id := e.idOf(t, "m@x")
 	require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Archive")))
 	// The last attempt failed before its COPY; another client then set \Deleted.
-	_, err := e.s.db.Execute(bg, "UPDATE ops SET attempts = 1")
-	require.NoError(t, err)
+	e.markSent(t, nil)
 	c := e.dial(t)
-	_, err = c.Select("INBOX", nil).Wait()
+	_, err := c.Select("INBOX", nil).Wait()
 	require.NoError(t, err)
 	require.NoError(t, c.Store(imap.UIDSetNum(1), &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close())
 	e.sync(t)
@@ -475,10 +482,9 @@ func uncertainCopyMoveWithTwin(t *testing.T, twin string) {
 	e.sync(t)
 	id := e.rows(t, "SELECT id FROM messages WHERE "+shownCol+" = ?", e.folderID(t, "INBOX"))[0][0].(int64)
 	require.NoError(t, e.s.Move(bg, []int64{id}, e.folderID(t, "Archive")))
-	_, err := e.s.db.Execute(bg, `UPDATE ops SET attempts = 1, payload = '{"before":{"cursor":"0000000001:0000000000"}}'`)
-	require.NoError(t, err)
+	e.markSent(t, &backend.MoveBaseline{Cursor: "0000000001:0000000000"})
 	c := e.dial(t)
-	_, err = c.Select("INBOX", nil).Wait()
+	_, err := c.Select("INBOX", nil).Wait()
 	require.NoError(t, err)
 	require.NoError(t, c.Store(imap.UIDSetNum(1), &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close())
 	e.sync(t)

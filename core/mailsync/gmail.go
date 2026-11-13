@@ -76,7 +76,7 @@ func (s *syncRun) locate(ctx context.Context, f *folder, ms []backend.MessageApp
 				SELECT id, ?, ` + notMoving + `, ?, unixepoch(), date FROM messages WHERE id = ?
 				ON CONFLICT(message_id, folder_id) DO UPDATE SET server_ref = excluded.server_ref`,
 			Args: []any{f.id, string(m.Ref), id},
-		}, sqlite.Statement{SQL: "UPDATE ops SET state = 'done', last_error = NULL WHERE message_id = ? AND state = 'awaiting_claim' AND dst_folder_id = ?", Args: []any{id, f.id}})
+		}, opsTo(opDone, fromAwaiting, "last_error = NULL", "message_id = ? AND dst_folder_id = ?", id, f.id))
 		if !s.lost[m.ServerID] {
 			stmts = append(stmts, sqlite.Statement{SQL: "UPDATE messages SET flags = ? WHERE id = ? AND flags != ? AND NOT " + pendingFlags, Args: []any{fl, id, fl}})
 		}
@@ -97,4 +97,4 @@ func (s *syncRun) locate(ctx context.Context, f *folder, ms []backend.MessageApp
 
 // notMoving is true for a messages row (unaliased) with no move or purge of
 // it waiting: a folder the server adds it to shows it only then.
-const notMoving = "NOT EXISTS (SELECT 1 FROM ops WHERE message_id = messages.id AND kind IN ('move', 'purge') AND state IN ('pending', 'awaiting_claim'))"
+const notMoving = "NOT EXISTS (SELECT 1 FROM ops WHERE message_id = messages.id AND kind IN ('move', 'purge') AND state IN " + unfinished + ")"

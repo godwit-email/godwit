@@ -43,7 +43,7 @@ func ShowIn(msg, folder int64, out []int64) []sqlite.Statement {
 // where the server has it, it shows there only when it shows nowhere. A
 // message the server has nowhere keeps showing where it does.
 func settle(msg int64) []sqlite.Statement {
-	const settled = "NOT EXISTS (SELECT 1 FROM ops WHERE message_id = message_locations.message_id AND kind = 'move' AND state IN ('pending', 'awaiting_claim'))"
+	const settled = "NOT EXISTS (SELECT 1 FROM ops WHERE message_id = message_locations.message_id AND kind = 'move' AND state IN " + unfinished + ")"
 	return []sqlite.Statement{
 		{SQL: `UPDATE message_locations SET shown = 0 WHERE message_id = ? AND shown AND server_ref IS NULL
 			AND EXISTS (SELECT 1 FROM message_locations c WHERE c.message_id = message_locations.message_id AND c.server_ref IS NOT NULL) AND ` + settled,

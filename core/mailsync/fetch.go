@@ -633,10 +633,9 @@ func resetFolder(ctx context.Context, db *store.DB, stable bool, accountID int64
 		return err
 	}
 	stmts := []sqlite.Statement{
-		{SQL: `UPDATE ops SET state = 'conflict' WHERE state = 'pending' AND account_id = ?
-			AND message_id IN (SELECT id FROM messages WHERE ` + serverIn + `) AND (src_folder_id = ?
+		opsTo(opConflict, fromPending, "", `account_id = ? AND message_id IN (SELECT id FROM messages WHERE `+serverIn+`) AND (src_folder_id = ?
 				OR NOT EXISTS (SELECT 1 FROM message_locations WHERE message_id = ops.message_id AND folder_id != ? AND server_ref IS NOT NULL))`,
-			Args: []any{accountID, f.id, f.id, f.id}},
+			accountID, f.id, f.id, f.id),
 		{SQL: "DELETE FROM message_locations WHERE folder_id = ? AND server_ref IS NOT NULL", Args: []any{f.id}},
 		{SQL: "UPDATE folders SET cursor = NULL, synced = 0, filled_since = NULL WHERE id = ?", Args: []any{f.id}},
 	}
