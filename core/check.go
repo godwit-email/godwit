@@ -19,6 +19,7 @@ import (
 	"github.com/godwit-email/godwit/backend/imapbackend"
 	"github.com/godwit-email/godwit/backend/jmap"
 	"github.com/godwit-email/godwit/backend/pop3"
+	"github.com/godwit-email/godwit/backend/smtpbackend"
 	"github.com/godwit-email/godwit/core/auth"
 )
 
@@ -105,10 +106,7 @@ func (s *Service) CheckAccount(ctx context.Context, in AccountInput) (CheckRepor
 		return CheckReport{}, err
 	}
 	defer end()
-	if err := s.allowPOP3(ctx, &in); err != nil {
-		return CheckReport{}, err
-	}
-	if err := s.allowGmailAPI(ctx, &in); err != nil {
+	if err := s.allowProtocol(ctx, &in); err != nil {
 		return CheckReport{}, err
 	}
 	r, _ := s.check(ctx, in, "")
@@ -213,10 +211,10 @@ func (s *Service) check(ctx context.Context, in AccountInput, token string) (Che
 			return conn.Classify(err), err
 		},
 	}
-	switch in.receiving() {
-	case auth.EWS, auth.Graph, auth.GmailAPI:
+	switch receivingProtocol(in.receiving()).sendStep {
+	case "":
 		r.Steps, steps = r.Steps[:2], steps[:2]
-	case auth.JMAP: // it sends through the session it signed in to
+	case "jmap_send": // it sends through the session it signed in to
 		r.Steps[2].Name = "jmap_send"
 		steps[2] = func() (conn.FailureKind, error) { return conn.Classify(noSend), noSend }
 	}
@@ -283,21 +281,117 @@ func ewsSlot(u string) (Server, error) {
 	return srv, nil
 }
 
+// protocol is what core asks of one protocol (auth.IMAP, auth.SMTP, ...): how
+// to build its backends, which protocol its accounts send with, what the
+// check's sending step is, and the setting that offers it.
+type protocol struct {
+	// receiver builds the receiving backend of srv for the account email;
+	// nil: not a receiving protocol.
+	receiver func(srv Server, email string, creds backend.CredentialsFunc) backend.Receiver
+	// sender builds acc's sending backend, filing into sent where the
+	// protocol does that itself; nil: not a sending protocol.
+	sender func(acc Account, creds backend.CredentialsFunc, sent *backend.FolderRef) backend.Sender
+	// sends is the protocol a receiving protocol's accounts send with:
+	// auth.SMTP, or itself when they send through the receiving server
+	// (whose slot is then their sending slot too). Graph is stored as the
+	// sending protocol of an SMTP account later, after SMTP refused AUTH.
+	sends string
+	// sendStep is the check's step after receiving: "smtp", "jmap_send"
+	// (the session may submit), or "" when signing in to receive is the
+	// whole check.
+	sendStep string
+	// setting is the experimental setting that must be on to add an account
+	// of it (nil: none), and off the refusal while it is not. checkRefuses:
+	// the check refuses it too, as an unsupported protocol, unless the
+	// account is a stored one.
+	setting      func(Settings) bool
+	off          error
+	checkRefuses bool
+}
+
+var protocols = map[string]protocol{
+	auth.IMAP: {sends: auth.SMTP, sendStep: "smtp",
+		receiver: func(srv Server, _ string, creds backend.CredentialsFunc) backend.Receiver {
+			return imapbackend.New(imapbackend.Config{Host: srv.Host, Port: srv.Port, Security: srv.Security, Credentials: creds})
+		}},
+	auth.POP3: {sends: auth.SMTP, sendStep: "smtp",
+		setting: func(s Settings) bool { return s.ExperimentalPOP3 }, off: errPOP3Off, checkRefuses: true,
+		receiver: func(srv Server, _ string, creds backend.CredentialsFunc) backend.Receiver {
+			return pop3.New(pop3.Config{Host: srv.Host, Port: srv.Port, Security: srv.Security, Credentials: creds})
+		}},
+	auth.SMTP: {
+		sender: func(acc Account, creds backend.CredentialsFunc, _ *backend.FolderRef) backend.Sender {
+			return smtpSender(acc.Sending, creds)
+		}},
+	auth.JMAP: {sends: auth.JMAP, sendStep: "jmap_send",
+		setting: func(s Settings) bool { return s.ExperimentalJMAP }, off: ErrJMAPOff,
+		receiver: func(srv Server, _ string, creds backend.CredentialsFunc) backend.Receiver {
+			return jmap.New(jmap.Config{SessionURL: sessionURL(srv), Credentials: creds})
+		},
+		sender: func(acc Account, creds backend.CredentialsFunc, sent *backend.FolderRef) backend.Sender {
+			return jmap.NewSender(jmap.Config{SessionURL: sessionURL(acc.Receiving), Credentials: creds, SentFolder: sent})
+		}},
+	auth.EWS: {sends: auth.EWS,
+		setting: func(s Settings) bool { return s.ExperimentalEWS }, off: ErrEWSOff,
+		receiver: func(srv Server, email string, creds backend.CredentialsFunc) backend.Receiver {
+			return ews.New(ews.Config{URL: slotURL(srv, srv.Path), Address: email, Credentials: creds})
+		},
+		sender: func(acc Account, creds backend.CredentialsFunc, _ *backend.FolderRef) backend.Sender {
+			return ews.NewSender(ews.Config{URL: ewsURL(acc), Credentials: creds})
+		}},
+	auth.Graph: {sends: auth.Graph,
+		setting: func(s Settings) bool { return s.ExperimentalGraph }, off: ErrGraphOff,
+		receiver: func(srv Server, _ string, creds backend.CredentialsFunc) backend.Receiver {
+			return graph.NewReceiver(graph.Config{URL: graphURL(srv), Credentials: creds})
+		},
+		sender: func(acc Account, creds backend.CredentialsFunc, _ *backend.FolderRef) backend.Sender {
+			u := graphSendURL
+			if acc.Receiving.Protocol == auth.Graph {
+				u = graphURL(acc.Receiving) + "/me/sendMail"
+			}
+			return graph.New(u, creds)
+		}},
+	auth.GmailAPI: {sends: auth.GmailAPI,
+		setting: func(s Settings) bool { return s.ExperimentalGmailAPI }, off: errGmailAPIOff, checkRefuses: true,
+		receiver: func(srv Server, _ string, creds backend.CredentialsFunc) backend.Receiver {
+			return gmailapi.New(gmailapi.Config{BaseURL: slotURL(srv, srv.Path), Credentials: creds})
+		},
+		sender: func(acc Account, creds backend.CredentialsFunc, _ *backend.FolderRef) backend.Sender {
+			return gmailapi.NewSender(gmailapi.Config{BaseURL: slotURL(acc.Receiving, acc.Receiving.Path), Credentials: creds})
+		}},
+}
+
+// receivingProtocol is p's entry as a receiving protocol; one that is none
+// (empty, or refused by the check) is read as IMAP.
+func receivingProtocol(p string) protocol {
+	if e := protocols[p]; e.receiver != nil {
+		return e
+	}
+	return protocols[auth.IMAP]
+}
+
+// sendsViaReceiving reports that p sends through the server it receives
+// from (EWS, JMAP, Graph, Gmail API), not through SMTP.
+func sendsViaReceiving(p string) bool { return p != "" && protocols[p].sends == p }
+
 // newReceiver is the receiving backend of srv for the account email, signing in with creds.
 func newReceiver(srv Server, email string, creds backend.CredentialsFunc) backend.Receiver {
-	switch srv.Protocol {
-	case auth.JMAP:
-		return jmap.New(jmap.Config{SessionURL: sessionURL(srv), Credentials: creds})
-	case auth.EWS:
-		return ews.New(ews.Config{URL: slotURL(srv, srv.Path), Address: email, Credentials: creds})
-	case auth.POP3:
-		return pop3.New(pop3.Config{Host: srv.Host, Port: srv.Port, Security: srv.Security, Credentials: creds})
-	case auth.Graph:
-		return graph.NewReceiver(graph.Config{URL: graphURL(srv), Credentials: creds})
-	case auth.GmailAPI:
-		return gmailapi.New(gmailapi.Config{BaseURL: slotURL(srv, srv.Path), Credentials: creds})
+	return receivingProtocol(srv.Protocol).receiver(srv, email, creds)
+}
+
+// newSender is acc's sending backend, signing in with creds and filing into
+// sent where it does that itself; one that is none is read as SMTP.
+func newSender(acc Account, creds backend.CredentialsFunc, sent *backend.FolderRef) backend.Sender {
+	p := protocols[acc.Sending.Protocol]
+	if p.sender == nil {
+		p = protocols[auth.SMTP]
 	}
-	return imapbackend.New(imapbackend.Config{Host: srv.Host, Port: srv.Port, Security: srv.Security, Credentials: creds})
+	return p.sender(acc, creds, sent)
+}
+
+// smtpSender is the SMTP sending backend of srv.
+func smtpSender(srv Server, creds backend.CredentialsFunc) *smtpbackend.Sender {
+	return smtpbackend.New(smtpbackend.Config{Host: srv.Host, Port: srv.Port, Security: srv.Security, Credentials: creds})
 }
 
 // graphURL is a Graph slot's API root (/v1.0 by default).

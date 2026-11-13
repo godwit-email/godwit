@@ -14,11 +14,7 @@ import (
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/conn"
-	"github.com/godwit-email/godwit/backend/ews"
-	"github.com/godwit-email/godwit/backend/gmailapi"
 	"github.com/godwit-email/godwit/backend/graph"
-	"github.com/godwit-email/godwit/backend/jmap"
-	"github.com/godwit-email/godwit/backend/smtpbackend"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/mailsync"
@@ -441,29 +437,7 @@ func (a *sendAuth) credentials(ctx context.Context) (backend.Credentials, error)
 }
 
 // sender is the account's sending backend.
-func (a *sendAuth) sender() backend.Sender {
-	switch a.acc.Sending.Protocol {
-	case auth.Graph:
-		u := graphSendURL
-		if a.acc.Receiving.Protocol == auth.Graph {
-			u = graphURL(a.acc.Receiving) + "/me/sendMail"
-		}
-		return graph.New(u, a.credentials)
-	case auth.EWS:
-		return ews.NewSender(ews.Config{URL: ewsURL(a.acc), Credentials: a.credentials})
-	case auth.GmailAPI:
-		return gmailapi.NewSender(gmailapi.Config{BaseURL: slotURL(a.acc.Receiving, a.acc.Receiving.Path), Credentials: a.credentials})
-	case auth.JMAP:
-		return jmap.NewSender(jmap.Config{SessionURL: sessionURL(a.acc.Receiving), Credentials: a.credentials, SentFolder: a.sent})
-	}
-	return a.smtp()
-}
-
-// smtp is the account's SMTP sending backend.
-func (a *sendAuth) smtp() *smtpbackend.Sender {
-	return smtpbackend.New(smtpbackend.Config{Host: a.acc.Sending.Host, Port: a.acc.Sending.Port,
-		Security: a.acc.Sending.Security, Credentials: a.credentials})
-}
+func (a *sendAuth) sender() backend.Sender { return newSender(a.acc, a.credentials, a.sent) }
 
 // retry reports whether a send that failed with err is worth one more try
 // with other credentials: SMTP refused AUTH for the mailbox and the account
