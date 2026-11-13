@@ -48,9 +48,7 @@ type addressBooksView struct {
 	password   string
 	showSecret bool
 	client     clientForm
-	flowID     string
-	authURL    string
-	oauthWait  bool
+	signIn     browserLogin // Google's add
 
 	add        func(context.Context, core.AddressBookInput) (core.AddressBook, error)
 	updateAuth func(ctx context.Context, id int64, password, oauthFlowID string, client core.OAuthClient) (core.AddressBook, error)
@@ -131,12 +129,8 @@ func (p *settingsPage) entryRow(c *ui.Context, e accountEntry, selected bool, ro
 
 func (v *addressBooksView) close() {
 	v.dlgGen++
-	if v.flowID != "" {
-		id, oauth := v.flowID, v.a.oauth
-		v.flowID, v.authURL = "", ""
-		v.a.do(func(context.Context) error { oauth.Cancel(id); return nil }, nil)
-	}
-	v.dialog, v.open, v.busy, v.oauthWait, v.dlgErr = "", false, false, false, nil
+	v.signIn.Stop()
+	v.dialog, v.open, v.busy, v.dlgErr = "", false, false, nil
 	v.password, v.showSecret = "", false
 }
 
@@ -352,24 +346,15 @@ func (v *addressBooksView) link(acc core.Account) {
 func (a *App) linkAddressBook(ctx context.Context, id int64, preset, email string) error {
 	in := core.AddressBookInput{Account: id, Preset: preset, SyncLater: true}
 	if preset == core.PresetGoogle {
-		oauth, plat, pub := a.oauth, a.plat, auth.GoogleCardDAVOAuth().Public
-		var authURL string
-		var err error
 		// The mail account's own OAuth client first (a Workspace admin may allow only it); none falls back to the public one.
-		in.OAuthFlowID, authURL, err = oauth.Begin(ctx, core.ProviderGoogleCardDAV, email, core.OAuthClient{Account: id})
-		if errors.Is(err, auth.ErrOAuthNotConfigured) && pub != nil {
-			in.Client = core.OAuthClient{ID: pub.ID, Secret: pub.Secret}
-			in.OAuthFlowID, authURL, err = oauth.Begin(ctx, core.ProviderGoogleCardDAV, email, in.Client)
-		}
+		s, err := signInBrowser(ctx, a.oauth, a.plat.OpenURL, signInRequest{Provider: core.ProviderGoogleCardDAV, Hint: email,
+			Client: core.OAuthClient{Account: id}, Public: auth.GoogleCardDAVOAuth().Public}, nil)
 		if err != nil {
 			return err
 		}
-		if err := plat.OpenURL(authURL); err != nil {
-			oauth.Cancel(in.OAuthFlowID)
-			return err
-		}
-		if _, err := oauth.Await(ctx, in.OAuthFlowID); err != nil {
-			return err
+		in.OAuthFlowID = s.Flow
+		if s.Client.Account == 0 { // the public one
+			in.Client = s.Client
 		}
 	}
 	_, err := a.svc.AddAddressBook(ctx, in)
@@ -439,45 +424,21 @@ func (v *addressBooksView) reauthorize(ab core.AddressBook) {
 	if v.reauth[ab.ID] {
 		return
 	}
-	a := v.a
-	id, oauth, plat, updateAuth := ab.ID, a.oauth, a.plat, v.updateAuth
-	pub := auth.GoogleCardDAVOAuth().Public
-	v.reauth[id] = true
-	var flow string
-	var usedClient core.OAuthClient
-	a.do(func(ctx context.Context) error {
-		var authURL string
-		var err error
-		usedClient = core.OAuthClient{AddressBook: id}
-		flow, authURL, err = oauth.Begin(ctx, core.ProviderGoogleCardDAV, ab.Username, usedClient)
-		if errors.Is(err, auth.ErrOAuthNotConfigured) && pub != nil {
-			usedClient = core.OAuthClient{ID: pub.ID, Secret: pub.Secret}
-			flow, authURL, err = oauth.Begin(ctx, core.ProviderGoogleCardDAV, ab.Username, usedClient)
-		}
-		if err != nil {
-			return err
-		}
-		if err := plat.OpenURL(authURL); err != nil {
-			oauth.Cancel(flow)
-			return err
-		}
-		_, err = oauth.Await(ctx, flow)
-		return err
-	}, func(err error) {
-		if !errors.Is(err, context.Canceled) {
-			a.plat.ShowWindow()
-		}
+	a, id, updateAuth := v.a, ab.ID, v.updateAuth
+	v.reauth[id] = true // its button is disabled meanwhile: nothing supersedes this sign-in, which lands off the page too
+	req := signInRequest{Provider: core.ProviderGoogleCardDAV, Hint: ab.Username, Client: core.OAuthClient{AddressBook: id}, Public: auth.GoogleCardDAVOAuth().Public}
+	new(browserLogin).Start(a, req, func(s signIn, err error) {
 		if err != nil {
 			delete(v.reauth, id)
 			a.toastErr(err)
 			return
 		}
 		var passClient core.OAuthClient
-		if usedClient.AddressBook == 0 {
-			passClient = usedClient
+		if s.Client.AddressBook == 0 { // the public one
+			passClient = s.Client
 		}
 		a.writes.Chain("addressbooks", func(ctx context.Context) error {
-			_, err := updateAuth(ctx, id, "", flow, passClient)
+			_, err := updateAuth(ctx, id, "", s.Flow, passClient)
 			return err
 		}, func(err error) {
 			delete(v.reauth, id)
@@ -604,12 +565,12 @@ func (v *addressBooksView) addDialogView(c *ui.Context) {
 			})
 			v.client.choice(c, pub)
 			v.client.view(c, a, i18n.T("settings.account.client.secret_help"), pub)
-			if v.oauthWait {
+			if v.signIn.waiting() {
 				ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 					kit.Spinner(c)
 					kit.Text(c, i18n.T("onboarding.oauth.opened"), t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
-					if v.authURL != "" {
-						u := v.authURL
+					if v.signIn.url != "" {
+						u := v.signIn.url
 						kit.Button(c, i18n.T("onboarding.oauth.reopen"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeSm}).
 							OnClick(func() { a.do(func(context.Context) error { return a.plat.OpenURL(u) }, a.toastErr) })
 					}
@@ -688,7 +649,7 @@ func (v *addressBooksView) addDialogView(c *ui.Context) {
 			client := v.client.client(pub)
 			incomplete := client.ID == "" || client.Secret == ""
 			kit.Button(c, i18n.T("onboarding.own_client.signin"), kit.ButtonOpts{
-				Disabled: v.busy || v.oauthWait || incomplete,
+				Disabled: v.busy || v.signIn.waiting() || incomplete,
 			}).OnClick(func() { v.submitGoogleAdd(client) })
 			return
 		}
@@ -793,40 +754,17 @@ func (v *addressBooksView) submitPasswordAdd() {
 }
 
 func (v *addressBooksView) submitGoogleAdd(client core.OAuthClient) {
-	if v.busy || v.oauthWait {
+	if v.busy || v.signIn.waiting() {
 		return
 	}
-	a := v.a
-	oauth, plat, add := a.oauth, a.plat, v.add
+	a, add := v.a, v.add
 	name := strings.TrimSpace(v.name)
 	v.dlgGen++
 	gen := v.dlgGen
-	v.oauthWait, v.dlgErr = true, nil
-	var flow, email string
-	a.do(func(ctx context.Context) error {
-		fid, authURL, err := oauth.Begin(ctx, core.ProviderGoogleCardDAV, "", client)
-		if err != nil {
-			return err
-		}
-		a.onUI(func() {
-			if gen == v.dlgGen {
-				v.flowID, v.authURL = fid, authURL
-			}
-		})
-		if err := plat.OpenURL(authURL); err != nil {
-			oauth.Cancel(fid)
-			return err
-		}
-		flow = fid
-		email, err = oauth.Await(ctx, fid)
-		return err
-	}, func(err error) {
+	v.dlgErr = nil
+	v.signIn.Start(a, signInRequest{Provider: core.ProviderGoogleCardDAV, Client: client}, func(s signIn, err error) {
 		if gen != v.dlgGen || v.dialog != "add" {
 			return
-		}
-		v.oauthWait, v.flowID, v.authURL = false, "", ""
-		if !errors.Is(err, context.Canceled) {
-			a.plat.ShowWindow()
 		}
 		if err != nil {
 			if !errors.Is(err, context.Canceled) {
@@ -838,8 +776,8 @@ func (v *addressBooksView) submitGoogleAdd(client core.OAuthClient) {
 		in := core.AddressBookInput{
 			Preset:      core.PresetGoogle,
 			Name:        name,
-			Username:    email,
-			OAuthFlowID: flow,
+			Username:    s.Email,
+			OAuthFlowID: s.Flow,
 			Client:      client,
 			SyncLater:   true,
 		}
