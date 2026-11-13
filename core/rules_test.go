@@ -609,6 +609,23 @@ func TestSetRuleEnabledNotFound(t *testing.T) {
 	assert.EqualError(t, e.s.SetRuleEnabled(bg, 999, false), "rule 999 not found")
 }
 
+// A forward saved between SetRuleEnabled's read of the rule and its update is
+// not turned on unaudited: the update holds only for the rule as read, so the
+// rule is read again and turning it on is audited with its recipient's domain.
+func TestSetRuleEnabledAuditsForwardSavedMeanwhile(t *testing.T) {
+	e := newRulesEnv(t)
+	id := e.saveRule(t, rule(RuleAction{Kind: ActionStar}), false)
+	afterRuleRead = func() {
+		afterRuleRead = nil
+		_, err := e.s.SaveRule(bg, Rule{ID: id, Doc: rule(RuleAction{Kind: ActionForward, To: "carol@example.org"})})
+		require.NoError(t, err)
+	}
+	t.Cleanup(func() { afterRuleRead = nil })
+	require.NoError(t, e.s.SetRuleEnabled(WithExternalSource(bg, AuditLocalAPI), id, true))
+	assert.Equal(t, [][]any{{"local_api", "SetRuleEnabled", id, "example.org"}},
+		e.rows(t, "SELECT source, tool, target_id, destination FROM audit_log WHERE source = ?", AuditLocalAPI))
+}
+
 // Rules come in the order the user put them in, which names each once.
 func TestReorderRules(t *testing.T) {
 	e := newRulesEnv(t)

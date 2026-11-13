@@ -238,7 +238,7 @@ func TestFullSurfacePinned(t *testing.T) {
 		}
 	}
 	assert.Equal(t, fullSurface(t), exposed, "update rpcbind/testdata/full_methods.txt, or hide the method in bind.go")
-	for _, m := range []string{"Close", "Redact", "AuditExternal", "SetPluginNetForTest", "SenderAvatar", "ModelServiceAvatar", "InstallPluginFromRegistryWithProgress"} {
+	for _, m := range []string{"Close", "Redact", "SetPluginNetForTest", "SenderAvatar", "ModelServiceAvatar", "InstallPluginFromRegistryWithProgress"} {
 		assert.False(t, rpcbind.Expose(m), m)
 	}
 }
@@ -282,7 +282,7 @@ func TestUISurfacePinned(t *testing.T) {
 	assert.Equal(t, wantAll, gotAll)
 
 	for _, m := range []string{
-		"Close", "Publish", "Redact", "AuditExternal", "Proxy", "FollowConversation",
+		"Close", "Publish", "Redact", "Proxy", "FollowConversation",
 		"UIConnected", "UIForeground", "IsComposeOpen",
 		"InlineImages", "FetchAttachments",
 		"InstallPluginFromRegistryWithProgress", "PrepareModelWithProgress", "DownloadRecognitionModel",
