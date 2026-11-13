@@ -371,35 +371,19 @@ func (p *settingsPage) reauthorize(acc core.Account) {
 }
 
 // startReauth signs in again in the browser with client, then gives the
-// account the new tokens after its earlier writes. ponytail: the wait has no
-// cancel button; closing the app cancels it.
+// account the new tokens after its earlier writes. The sign-in is the
+// account's, not the page's: it lands though the user left the page.
+// ponytail: the wait has no cancel button; closing the app cancels it.
 func (p *settingsPage) startReauth(acc core.Account, client core.OAuthClient) {
-	a := p.a
-	id, oauth, plat := acc.ID, a.oauth, a.plat
-	p.reauth[id] = true
-	var flow string
-	a.do(func(ctx context.Context) error {
-		var url string
-		var err error
-		if flow, url, err = oauth.Begin(ctx, acc.Provider, acc.Email, client); err != nil {
-			return err
-		}
-		if err := plat.OpenURL(url); err != nil {
-			oauth.Cancel(flow)
-			return err
-		}
-		_, err = oauth.Await(ctx, flow)
-		return err
-	}, func(err error) {
-		if !errors.Is(err, context.Canceled) {
-			a.plat.ShowWindow() // the user is in the browser; bring them back
-		}
+	a, id := p.a, acc.ID
+	p.reauth[id] = true // its button is disabled meanwhile: nothing supersedes this sign-in
+	new(browserLogin).Start(a, signInRequest{Provider: acc.Provider, Hint: acc.Email, Client: client}, func(s signIn, err error) {
 		if err != nil {
 			delete(p.reauth, id)
 			a.toastErr(err)
 			return
 		}
-		a.writes.Chain(accountRoute(id), func(ctx context.Context) error { return a.svc.Reauthorize(ctx, id, flow) }, func(err error) {
+		a.writes.Chain(accountRoute(id), func(ctx context.Context) error { return a.svc.Reauthorize(ctx, id, s.Flow) }, func(err error) {
 			delete(p.reauth, id)
 			if err != nil {
 				a.toastErr(err)

@@ -92,8 +92,8 @@ type onboarding struct {
 	ewsAdvanced          bool                // the EWS URL field is shown: opened, or Autodiscover found nothing
 	confirmed            map[string][]string // per lowercased email address: hosts outside its domain the user let Autodiscover send the password to
 	jmapAuth             int                 // how JMAP signs in: 0 a password, 1 an API token
-	flowID, authURL      string
-	oauthWaiting         bool
+	flowID               string              // a finished sign-in, until the account takes it
+	signIn               browserLogin
 	oauthErr             error
 	report               core.CheckReport
 	checking, adding     bool
@@ -138,11 +138,11 @@ func (o *onboarding) leave() {
 		o.detectStop()
 		o.detectStop = nil
 	}
+	o.signIn.Stop()
 	if o.flowID != "" {
 		o.cancelFlow(o.flowID)
-		o.flowID, o.authURL = "", ""
+		o.flowID = ""
 	}
-	o.oauthWaiting = false
 }
 
 func (o *onboarding) cancelFlow(id string) {
@@ -357,58 +357,27 @@ func (o *onboarding) choose(p auth.Provider) {
 	o.goTo(stepPassword)
 }
 
-// startOAuth begins a browser sign-in, opens it and waits for it; a finished
-// sign-in goes on to the check.
+// startOAuth signs in in the browser; a finished sign-in goes on to the check.
 func (o *onboarding) startOAuth() {
 	o.leave()
-	o.step, o.oauthWaiting, o.oauthErr = stepOAuth, true, nil
-	gen, a := o.gen, o.a
-	oauth, plat, prov, hint := a.oauth, a.plat, o.prov.ID, strings.TrimSpace(o.email)
+	o.step, o.oauthErr = stepOAuth, nil
+	gen := o.gen
 	var client core.OAuthClient
 	if o.ownClient() {
 		client = o.client.client(publicClient(o.prov))
 	}
-	var id, url string
-	var openErr error
-	a.do(func(ctx context.Context) error {
-		var err error
-		if id, url, err = oauth.Begin(ctx, prov, hint, client); err != nil {
-			return err
-		}
-		openErr = plat.OpenURL(url)
-		return nil
-	}, func(err error) {
-		if gen != o.gen {
+	o.signIn.Start(o.a, signInRequest{Provider: o.prov.ID, Hint: strings.TrimSpace(o.email), Client: client}, func(s signIn, err error) {
+		switch {
+		case gen != o.gen: // the step moved on without leave
 			if err == nil {
-				o.cancelFlow(id)
+				o.cancelFlow(s.Flow)
 			}
-			return
-		}
-		if err != nil {
+		case err != nil:
 			o.oauthErr = err
-			return
-		}
-		a.toastErr(openErr)
-		o.flowID, o.authURL = id, url
-		var email string
-		a.do(func(ctx context.Context) error {
-			var err error
-			email, err = oauth.Await(ctx, id)
-			return err
-		}, func(err error) {
-			if gen != o.gen {
-				return
-			}
-			if !errors.Is(err, context.Canceled) {
-				a.plat.ShowWindow() // the user is in the browser; bring them back
-			}
-			if err != nil {
-				o.oauthErr = err
-				return
-			}
-			o.email = email
+		default:
+			o.email, o.flowID = s.Email, s.Flow
 			o.connect()
-		})
+		}
 	})
 }
 
@@ -1306,7 +1275,7 @@ func (o *onboarding) oauthView(c *ui.Context) {
 				o.proto = protos[sel]
 			}
 		}).FontSize(t.Text.Sm).TextColor(t.Muted)
-		if !o.oauthWaiting && o.oauthErr == nil {
+		if !o.signIn.waiting() && o.oauthErr == nil {
 			primary(c, i18n.T("onboarding.own_client.signin"), false).OnClick(o.startOAuth)
 			return
 		}
@@ -1320,12 +1289,12 @@ func (o *onboarding) oauthView(c *ui.Context) {
 		}
 		kit.Spinner(c).Size(theme.IconMd, theme.IconMd).Label(i18n.T("settings.account.reauth.waiting"))
 		title := i18n.T("onboarding.oauth.opening")
-		if o.authURL != "" {
+		if o.signIn.url != "" {
 			title = i18n.T("onboarding.oauth.opened")
 		}
 		lineText(c, title, t.Text.Body).FontWeight(500)
 		kit.Text(c, i18n.T("onboarding.oauth.body"), t.Text.Base).TextColor(t.Muted).TextAlign(ui.Center).LineHeight(theme.LineProse)
-		u := o.authURL
+		u := o.signIn.url
 		kit.Button(c, i18n.T("onboarding.oauth.reopen"), kit.ButtonOpts{Variant: kit.Outline, Disabled: u == ""}).PaddingX(th.Space(3)).FontWeight(400).
 			OnClick(func() { o.openURL(u) })
 	})
