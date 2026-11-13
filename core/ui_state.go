@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"errors"
+
+	"github.com/godwit-email/godwit/core/events"
 )
 
 type uiSessionKey struct{}
@@ -130,6 +132,18 @@ func (s *Service) StopWhenUIQuits(stop func()) {
 	s.uiMu.Lock()
 	s.quitStop = stop
 	s.uiMu.Unlock()
+}
+
+// DevPreviewSignInCode asks the backend's tray to show messageID's sign-in
+// code card (link: its sign-in link card), the development build's preview
+// (SignInCodePreview); a release backend ignores it. It reads and sends nothing.
+func (s *Service) DevPreviewSignInCode(ctx context.Context, messageID int64, link bool) error {
+	kind := ""
+	if link {
+		kind = "link"
+	}
+	s.Publish(events.Event{Type: events.SignInCodePreview, MessageIDs: []int64{messageID}, Kind: kind})
+	return nil
 }
 
 // CancelTrayQuit disarms the tray's 退出并停止收信 (StopWhenUIQuits): the

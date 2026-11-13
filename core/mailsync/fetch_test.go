@@ -1,6 +1,7 @@
 package mailsync
 
 import (
+	"strings"
 	"testing"
 	"unicode/utf8"
 
@@ -31,5 +32,21 @@ func TestToParsedFromHeaders(t *testing.T) {
 	if p.MessageID != "a@x" || p.Subject != "你好" || p.Date.Year() != 2006 || p.From != "Ann <ann@x>" ||
 		len(p.To) != 2 || len(p.Cc) != 1 {
 		t.Fatalf("got %+v", p)
+	}
+}
+
+// A sender's HTML put in the text/plain part as well: the text is the HTML's
+// text, not its tags.
+func TestToParsedHTMLAsPlainText(t *testing.T) {
+	markup := []byte("<p>Thanks for verifying.</p><p>See <a href=\"https://x.example/\">x</a>.</p>")
+	p := toParsed(&backend.Content{
+		Structure: &backend.Part{ContentType: "multipart/alternative", Children: []backend.Part{
+			{Ref: "1", ContentType: "text/plain", Params: map[string]string{"charset": "utf-8"}, Size: int64(len(markup))},
+			{Ref: "2", ContentType: "text/html", Params: map[string]string{"charset": "utf-8"}, Size: int64(len(markup))},
+		}},
+		Text: map[backend.PartRef][]byte{"1": markup, "2": markup},
+	})
+	if strings.Contains(p.Text, "<p>") || !strings.Contains(p.Text, "Thanks for verifying.") {
+		t.Fatalf("text %q", p.Text)
 	}
 }

@@ -1577,6 +1577,7 @@
   "settings_account_icon_symbols": "圖示",
   "settings_account_icon_brands": "Logo",
   "error_account_icon": "帳戶圖示須為不超過 5 MB 的 PNG、JPEG、GIF、WebP 或 SVG 圖片。",
+  "error_account_exists": "這個地址已經新增過了。要重新登入，請在設定 › 帳號中開啟它。",
   "wit_tool_search_mail": "搜尋郵件",
   "wit_tool_get_account_profile": "讀取寄件人資料",
   "wit_tool_get_message": "讀取郵件",

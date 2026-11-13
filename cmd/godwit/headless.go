@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -23,6 +24,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/events"
+	gomail "github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/syslang"
 	"github.com/godwit-email/godwit/ownerlock"
@@ -621,6 +623,11 @@ func (t *backendTray) hideTrayIcon() {
 
 func (t *backendTray) HandleEvent(ev events.Event) {
 	switch ev.Type {
+	case events.SignInCodePreview:
+		if mygo.IsDev() && len(ev.MessageIDs) == 1 {
+			go t.previewCode(ev.MessageIDs[0], ev.Kind == "link")
+		}
+		return
 	case events.RunsChanged, events.ApprovalsChanged, events.MCPSendsChanged,
 		events.ImportProgress, events.SkillsChanged, events.SyncStarted,
 		events.SyncFailed, events.MCPChanged, events.ModelsChanged,
@@ -632,6 +639,27 @@ func (t *backendTray) HandleEvent(ev events.Event) {
 	if t.loadPosted.CompareAndSwap(false, true) {
 		go t.post(func() { t.loadPosted.Store(false); t.requestLoad() })
 	}
+}
+
+// previewCode shows messageID's sign-in code card (link: its sign-in link
+// card) for a development build's interface (SignInCodePreview), with a
+// made-up code or link when the message has none. Off the main thread.
+func (t *backendTray) previewCode(messageID int64, link bool) {
+	m, err := t.svc.GetMessage(t.ctx, messageID, false)
+	if err != nil {
+		t.logf("preview sign-in code: %v", err)
+		return
+	}
+	code := core.SignInCode{MessageID: messageID, From: m.From, ReceivedAt: t.clock.Now()}
+	if link {
+		code.Link, code.LinkKind = gomail.ActionLink(m.Subject, m.Text, m.HTML)
+		if code.Link == "" {
+			code.Link, code.LinkKind = "https://example.com/magic-link", gomail.LinkSignIn
+		}
+	} else {
+		code.Code = cmp.Or(gomail.SignInCode(m.Subject, m.Text, m.HTML), "482913")
+	}
+	t.post(func() { t.plat.ShowSignInCode(&code) })
 }
 
 func (t *backendTray) Close() {

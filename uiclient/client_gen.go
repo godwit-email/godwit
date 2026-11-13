@@ -241,6 +241,10 @@ func (cl *Client) DetectProvider(ctx context.Context, email string) (auth.Provid
 	return call2[auth.Provider, auth.Source](cl, ctx, "DetectProvider", email)
 }
 
+func (cl *Client) DevPreviewSignInCode(ctx context.Context, messageID int64, link bool) error {
+	return callErr(cl, ctx, "DevPreviewSignInCode", messageID, link)
+}
+
 func (cl *Client) DraftForApproval(ctx context.Context, approvalID int64) (int64, error) {
 	return call[int64](cl, ctx, "DraftForApproval", approvalID)
 }

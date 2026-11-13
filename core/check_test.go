@@ -12,7 +12,6 @@ import (
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/godwit/core"
-	"github.com/godwit-email/godwit/internal/sysproxy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -69,8 +68,9 @@ func TestCheckThroughRefusingProxy(t *testing.T) {
 			}()
 		}
 	}()
+	old := conn.SystemProxy
 	conn.SystemProxy = func(*url.URL) *url.URL { return &url.URL{Scheme: "http", Host: l.Addr().String()} }
-	t.Cleanup(func() { conn.SystemProxy = sysproxy.For })
+	t.Cleanup(func() { conn.SystemProxy = old })
 	in := input(t, im.Addr, smtpAddr, "secret")
 	in.Receiving.Host, in.Receiving.Security = "imap.example", core.SecurityStartTLS // loopback skips the proxy
 	_, err = s.AddAccount(ctx, in)

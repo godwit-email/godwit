@@ -300,6 +300,12 @@ func (s *Service) AddAccount(ctx context.Context, in AccountInput) (Account, err
 	} else if in.Receiving.Auth == AuthOAuth || in.Sending.Auth == AuthOAuth {
 		return Account{}, errors.New("an OAuth sign-in needs an OAuth flow")
 	}
+	// Before the check, and before the grant is taken (only peeked above): this refusal leaves it unused.
+	if rows, err := s.db.Query(ctx, "SELECT 1 FROM accounts WHERE email = ?", in.Email); err != nil {
+		return Account{}, err
+	} else if len(rows.Values) > 0 {
+		return Account{}, ErrAccountExists
+	}
 	recvAuth, sendAuth := slotAuth(in.Receiving), slotAuth(in.Sending)
 	if in.receiving() == auth.JMAP {
 		st, err := s.loadSettings(ctx)
@@ -553,6 +559,10 @@ const accountCols = `id, email, name, alias, COALESCE((SELECT html FROM signatur
 
 // ErrAccountNotFound is returned for an account id that does not exist.
 var ErrAccountNotFound = errors.New("account not found")
+
+// ErrAccountExists refuses to add an address that is already an account: sign
+// it in again (Reauthorize, UpdatePassword) instead.
+var ErrAccountExists = errors.New("this address is already an account")
 
 func (s *Service) account(ctx context.Context, id int64) (Account, error) {
 	rows, err := s.db.Query(ctx, "SELECT "+accountCols+" FROM accounts WHERE id = ?", id)

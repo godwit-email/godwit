@@ -1577,6 +1577,7 @@
   "settings_account_icon_symbols": "Значки",
   "settings_account_icon_brands": "Логотипы",
   "error_account_icon": "Значок аккаунта должен быть изображением PNG, JPEG, GIF, WebP или SVG размером не более 5 МБ.",
+  "error_account_exists": "Этот адрес уже добавлен. Чтобы войти снова, откройте его в Настройки › Учётные записи.",
   "wit_tool_search_mail": "Поиск в почте",
   "wit_tool_get_account_profile": "Чтение профиля отправителя",
   "wit_tool_get_message": "Чтение письма",

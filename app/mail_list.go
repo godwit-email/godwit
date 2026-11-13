@@ -1001,16 +1001,15 @@ func (p *mailPage) listView(c *ui.Context) {
 		p.a.toast(p.devPath)
 		p.devPath = ""
 	}
+	// An empty folder still fetching older mail is loading, not empty: its placeholders, not 没有邮件 above a spinner.
+	loading := p.loading || p.older.busy
 	l.Children(func() {
-		if len(rows) == 0 && p.loading { // the first load: placeholder rows
+		if len(rows) == 0 && loading { // the first load: placeholder rows
 			for range 6 {
-				ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5)).Children(func() {
-					kit.Skeleton(c, 0, t.Text.Body)
-					kit.Skeleton(c, theme.SkeletonShort, t.Text.Sm)
-				})
+				p.skeletonRow(c)
 			}
 		}
-		if len(rows) == 0 && !p.loading {
+		if len(rows) == 0 && !loading {
 			if p.searched {
 				p.noResults(c)
 			} else if p.savedViewID() != 0 {
@@ -1035,7 +1034,7 @@ func (p *mailPage) listView(c *ui.Context) {
 	if act != "" {
 		p.batch(act, target)
 	}
-	if p.older.busy || p.older.err != nil {
+	if (p.older.busy && len(rows) > 0) || p.older.err != nil {
 		p.olderRow(c)
 	}
 	first, last := ls.list.Visible()
@@ -1377,6 +1376,27 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 			kit.Text(c, it.Snippet, t.Text.Base).TextColor(t.Muted).SingleLine()
 		}
 		p.a.rowChips(c, it.Labels)
+	})
+}
+
+// skeletonRow stands in for a row while the list loads: row's padding and
+// lines (who and time, subject, snippet), each a bar as tall as its text in a
+// line as tall as row's.
+func (p *mailPage) skeletonRow(c *ui.Context) {
+	t, th := theme.Of(c), c.Theme()
+	line := func(size float32, bars func(bar func(w float32))) {
+		ui.Row(c).Height(size * t.Text.Line(size)).AlignItems(ui.Center).Children(func() {
+			bars(func(w float32) { kit.Skeleton(c, w, size) })
+		})
+	}
+	ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5)).Children(func() {
+		line(t.Text.Body, func(bar func(float32)) {
+			bar(theme.SkeletonShort * 0.75)
+			ui.Spacer(c)
+			bar(th.Space(8))
+		})
+		line(t.Text.Body, func(bar func(float32)) { bar(theme.SkeletonShort * 1.5) })
+		line(t.Text.Base, func(bar func(float32)) { bar(0) })
 	})
 }
 
@@ -1859,9 +1879,10 @@ func (p *mailPage) undoPurge(ids []int64) {
 // devSignIn shows the sign-in banner for the message, with its own code or
 // link when it has one, else a sample, so the banner can be seen without
 // waiting for real sign-in mail. Dev builds only.
+// devSignIn previews the sign-in code card of it's newest message (link: its
+// sign-in link card): the card is the backend tray's, so the backend shows it.
 func (p *mailPage) devSignIn(it mailItem, link bool) {
 	a := p.a
-	var code core.SignInCode
 	a.do(func(ctx context.Context) error {
 		id := it.ID
 		if it.Thread {
@@ -1871,25 +1892,10 @@ func (p *mailPage) devSignIn(it mailItem, link bool) {
 			}
 			id = t.Messages[len(t.Messages)-1].ID
 		}
-		m, err := a.svc.GetMessage(ctx, id, false)
-		if err != nil {
-			return err
-		}
-		code = core.SignInCode{MessageID: id, From: m.From, ReceivedAt: a.clock.Now()}
-		if link {
-			code.Link, code.LinkKind = gomail.ActionLink(m.Subject, m.Text, m.HTML)
-			if code.Link == "" {
-				code.Link, code.LinkKind = "https://example.com/magic-link", gomail.LinkSignIn
-			}
-		} else {
-			code.Code = cmp.Or(gomail.SignInCode(m.Subject, m.Text, m.HTML), "482913")
-		}
-		return nil
+		return a.svc.DevPreviewSignInCode(ctx, id, link)
 	}, func(err error) {
 		if err != nil {
 			a.toastErr(err)
-		} else if code.MessageID != 0 {
-			a.plat.ShowSignInCode(&code)
 		}
 	})
 }
@@ -1910,7 +1916,11 @@ func (p *mailPage) devHTML(it mailItem) {
 			id = t.Messages[len(t.Messages)-1].ID
 		}
 		var html string
-		if raw, err := rawMessage(ctx, a.svc, id); err == nil {
+		// The original waits for the account's lock, which a long sync holds: the stored HTML after a while.
+		rctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		raw, err := rawMessage(rctx, a.svc, id)
+		cancel()
+		if err == nil {
 			parsed, err := gomail.Parse(raw)
 			if err != nil {
 				return err

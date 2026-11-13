@@ -1276,3 +1276,20 @@ func TestLoadOlderInFolder(t *testing.T) {
 		t.Fatalf("unified inbox fetches: %+v", h.app.mail.older)
 	}
 }
+
+// An empty folder fetching older mail is loading: placeholder rows, not
+// 没有邮件 above the older-mail spinner.
+func TestEmptyFolderLoadingOlder(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.syncNow(accs[0])
+	f := h.folderOf(accs[0], "trash")
+	h.post(func() { h.app.navigate(Route{Page: PageMail, View: core.View{FolderID: f.ID}}) })
+	h.until("the folder", func() bool { return h.app.mail.view.FolderID == f.ID && !h.app.mail.loading })
+	h.post(func() { h.app.mail.older.busy = true })
+	h.advance(refreshEvery)
+	for _, s := range h.tt.Texts() {
+		if s == "没有邮件" || strings.HasPrefix(s, "正在加载更早") {
+			t.Fatalf("%q while the empty folder loads: %q", s, h.tt.Texts())
+		}
+	}
+}

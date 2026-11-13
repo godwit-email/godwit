@@ -57,6 +57,7 @@ var table = []Error{
 	{Code: "secret_not_found", Err: core.ErrSecretNotFound},
 	{Code: "wrong_account", Err: core.ErrWrongAccount},
 	{Code: "account_not_found", Err: core.ErrAccountNotFound},
+	{Code: "account_exists", Err: core.ErrAccountExists},
 	{Code: "bad_account_export", Err: core.ErrBadAccountExport},
 	{Code: "unsupported_export_version", Err: core.ErrUnsupportedExportVersion},
 	{Code: "address_book_not_found", Err: core.ErrAddressBookNotFound},
@@ -258,6 +259,8 @@ var uiOnly = map[string]bool{
 	"StopUIBackend": true, "ReplaceUIBackend": true,
 	// The interface's user cancelled a quit the tray's 退出并停止收信 began.
 	"CancelTrayQuit": true,
+	// A development build's preview of the backend tray's sign-in code card.
+	"DevPreviewSignInCode": true,
 	// Whether the backend's tray shows its icon: the interface's window hides only where it can come back.
 	"TrayShown": true,
 }

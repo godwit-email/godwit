@@ -1577,6 +1577,7 @@
   "settings_account_icon_symbols": "Icônes",
   "settings_account_icon_brands": "Logos",
   "error_account_icon": "L’icône du compte doit être une image PNG, JPEG, GIF, WebP ou SVG de 5 Mo maximum.",
+  "error_account_exists": "Cette adresse est déjà ajoutée. Pour vous reconnecter, ouvrez-la dans Réglages › Comptes.",
   "wit_tool_search_mail": "Rechercher dans les e-mails",
   "wit_tool_get_account_profile": "Lire le profil d’expéditeur",
   "wit_tool_get_message": "Lire un message",

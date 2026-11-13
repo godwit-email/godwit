@@ -1577,6 +1577,7 @@
   "settings_account_icon_symbols": "Symbole",
   "settings_account_icon_brands": "Logos",
   "error_account_icon": "Ein Kontosymbol muss ein PNG-, JPEG-, GIF-, WebP- oder SVG-Bild von höchstens 5 MB sein.",
+  "error_account_exists": "Diese Adresse ist bereits hinzugefügt. Um dich erneut anzumelden, öffne sie unter Einstellungen › Konten.",
   "wit_tool_search_mail": "E-Mails durchsuchen",
   "wit_tool_get_account_profile": "Absenderprofil lesen",
   "wit_tool_get_message": "Nachricht lesen",

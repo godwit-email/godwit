@@ -224,6 +224,7 @@ type Service interface {
 	SyncAddressBook(ctx context.Context, id int64) error
 	UpdateAddressBookAuth(ctx context.Context, id int64, password, oauthFlowID string, client core.OAuthClient) (core.AddressBook, error)
 	CancelTrayQuit(ctx context.Context) error
+	DevPreviewSignInCode(ctx context.Context, messageID int64, link bool) error
 }
 
 var _ Service = (*core.Service)(nil)
