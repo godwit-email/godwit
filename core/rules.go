@@ -435,17 +435,36 @@ func (s *Service) SaveRule(ctx context.Context, r Rule) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	res, err := s.db.Execute(ctx, st.SQL, st.Args...)
+	stmts := []sqlite.Statement{st}
+	// A forward is mail leaving later, unattended (ADR 0003): audited with the save.
+	if e, ok := apiAudit(ctx, "SaveRule", r.ID, forwardDomains(r.Doc)...); ok && len(e.Destinations) > 0 {
+		stmts = append(stmts, gateway.AuditChange(e, s.secrets.Redact, r.ID == 0))
+	}
+	rs, err := s.db.Transaction(ctx, stmts)
 	if err != nil {
 		return 0, err
 	}
 	if r.ID == 0 {
-		return res.LastInsertID, nil
+		return rs[0].LastInsertID, nil
 	}
-	if res.Changes == 0 {
+	if rs[0].Changes == 0 {
 		return 0, fmt.Errorf("rule %d not found", r.ID)
 	}
 	return r.ID, nil
+}
+
+// forwardDomains are the domains d forwards to, which name its audit row. They
+// are cut here, not by gateway.Host: a local part may hold '/', '?' or '#',
+// where Host cuts a URL. A recipient that does not parse is left out, its text
+// kept off the log: SaveRule refuses a rule with one, so it never forwards.
+func forwardDomains(d RuleDoc) []string {
+	var out []string
+	for _, a := range d.Actions {
+		if p, err := mail.ParseAddress(a.To); a.Kind == ActionForward && err == nil {
+			out = append(out, p.Address[strings.LastIndexByte(p.Address, '@')+1:])
+		}
+	}
+	return out
 }
 
 // ruleWrite is SaveRule's statement for r, validated.
@@ -489,6 +508,10 @@ func forwardRecipients(d RuleDoc) []string {
 	return out
 }
 
+// afterRuleRead, when set, runs in SetRuleEnabled right after the rule is read
+// for its audit. Tests use it to save the rule in between.
+var afterRuleRead func()
+
 // SetRuleEnabled turns a rule on or off; an off rule keeps its setup and runs on nothing.
 func (s *Service) SetRuleEnabled(ctx context.Context, id int64, on bool) error {
 	ctx, end, err := s.begin(ctx, 0)
@@ -496,13 +519,42 @@ func (s *Service) SetRuleEnabled(ctx context.Context, id int64, on bool) error {
 		return err
 	}
 	defer end()
-	// Turned on, it runs on what comes after, not on mail that came while it was off.
-	res, err := s.db.Execute(ctx, "UPDATE rules SET since_seq = CASE WHEN ? AND enabled = 0 THEN "+lastSeq+" ELSE since_seq END, enabled = ?, updated_at = ? WHERE id = ?",
-		b2i(on), b2i(on), time.Now().Unix(), id)
-	if err == nil && res.Changes == 0 {
-		err = fmt.Errorf("rule %d not found", id)
+	for {
+		// Turned on, it runs on what comes after, not on mail that came while it was off.
+		stmts := []sqlite.Statement{{SQL: "UPDATE rules SET since_seq = CASE WHEN ? AND enabled = 0 THEN " + lastSeq + " ELSE since_seq END, enabled = ?, updated_at = ? WHERE id = ?",
+			Args: []any{b2i(on), b2i(on), time.Now().Unix(), id}}}
+		// Turning on a forward is mail leaving later (ADR 0003): audited with the
+		// update, which holds only while the rule is still the one read.
+		read := false
+		if e, ok := apiAudit(ctx, "SetRuleEnabled", id); ok && on {
+			rows, err := s.db.Query(ctx, "SELECT doc FROM rules WHERE id = ?", id)
+			if err != nil {
+				return err
+			}
+			if afterRuleRead != nil {
+				afterRuleRead()
+			}
+			if read = len(rows.Values) > 0; read {
+				var d RuleDoc
+				if err := json.Unmarshal([]byte(store.Str(rows.Values[0][0])), &d); err != nil {
+					return fmt.Errorf("rule %d: %w", id, err)
+				}
+				stmts[0].SQL += " AND doc = ?"
+				stmts[0].Args = append(stmts[0].Args, rows.Values[0][0])
+				if e.Destinations = forwardDomains(d); len(e.Destinations) > 0 {
+					stmts = append(stmts, gateway.AuditChange(e, s.secrets.Redact, false))
+				}
+			}
+		}
+		rs, err := s.db.Transaction(ctx, stmts)
+		if err != nil || rs[0].Changes > 0 {
+			return err
+		}
+		if !read {
+			return fmt.Errorf("rule %d not found", id)
+		}
+		// saved again or deleted since it was read: read it again
 	}
-	return err
 }
 
 // ReorderRules puts the rules in the order of ids, which names every rule
@@ -1033,8 +1085,10 @@ func failedResults(runID int64, acts []RuleAction, i int, failure string) []sqli
 	return stmts
 }
 
-// ruleSend is a rule's forward for enqueue: the marker header names the
-// rule, and stmts (its result and audit) are written with the outbox item.
+// ruleSend is what enqueue writes with the outbox item, in one transaction:
+// a rule's forward (the marker header names the rule; stmts are its result
+// and audit), or the user's send over the Local API (ruleID 0, no header;
+// stmts is its audit row, apiSend).
 type ruleSend struct {
 	ruleID int64
 	stmts  []sqlite.Statement
@@ -1289,6 +1343,11 @@ func (s *Service) RetryRuleRun(ctx context.Context, runID int64) error {
 		return err
 	}
 	defer end()
+	// Which actions it reruns, a forward or a model call among them, is known
+	// only below: every retry is audited first.
+	if err := s.auditAPI(ctx, "RetryRuleRun", runID); err != nil {
+		return err
+	}
 	rows, err := s.db.Query(ctx, `SELECT r.rule_id, r.message_id, r.trigger FROM rule_runs r
 		WHERE r.id = ? AND r.state = ? AND r.message_id IS NOT NULL`, runID, RuleRunFailed)
 	if err != nil {

@@ -21,6 +21,7 @@ import (
 	"github.com/godwit-email/godwit/backend/smtpbackend"
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/events"
+	"github.com/godwit-email/godwit/core/gateway"
 	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/store"
 )
@@ -207,11 +208,18 @@ func (s *Service) ResolveOutbox(ctx context.Context, id int64, action string) er
 	case "confirm_sent":
 		ok, err = s.moveOutbox(ctx, o, "sent", []string{"send_uncertain", "archive_uncertain", "failed"}, "last_error = NULL, failure = NULL")
 	case "resend":
-		ok, err = s.moveOutbox(ctx, o, "queued", []string{"send_uncertain", "failed"},
-			"attempts = 0, last_error = NULL, failure = NULL, send_after = ?, next_attempt_at = NULL", s.clk().Now().UnixMilli())
-		if err == nil && !ok { // retry a queued one now
-			ok, err = s.moveOutbox(ctx, o, "queued", []string{"queued"}, "next_attempt_at = NULL")
+		// Queued, it leaves unattended (ADR 0003): audited in the transaction
+		// that queues it, which moveOutbox's would not take.
+		stmts := []sqlite.Statement{
+			{SQL: `UPDATE outbox SET state = 'queued', attempts = 0, last_error = NULL, failure = NULL, send_after = ?, next_attempt_at = NULL
+				WHERE id = ? AND state IN ('send_uncertain', 'failed')`, Args: []any{s.clk().Now().UnixMilli(), id}},
+			{SQL: "UPDATE outbox SET next_attempt_at = NULL WHERE id = ? AND state = 'queued'", Args: []any{id}}, // and retries a queued one now
 		}
+		if e, audited := apiAudit(ctx, "ResolveOutbox", id); audited {
+			stmts = append(stmts, gateway.AuditChange(e, s.secrets.Redact, false))
+		}
+		rs, terr := s.db.DurableTransaction(ctx, stmts)
+		ok, err = terr == nil && rs[1].Changes == 1, terr
 	case "discard":
 		// The draft goes with the item, in the same transaction: it is done with.
 		const decidable = "id = ? AND state IN ('send_uncertain', 'archive_uncertain', 'failed')"

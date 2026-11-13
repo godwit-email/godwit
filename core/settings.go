@@ -446,12 +446,8 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 		return Settings{}, err
 	}
 	stmts := []sqlite.Statement{stmt}
-	src, _ := ctx.Value(externalSourceKey{}).(string)
-	if uiSessionFromContext(ctx) != nil {
-		src = AuditUI
-	}
-	if (src == AuditLocalAPI || src == AuditUI) && mcpSendRank(st.MCPSend) > mcpSendRank(stored.MCPSend) {
-		stmts = append(stmts, gateway.Audit(gateway.Entry{Source: src, Tool: "SetSettings", Decision: "allow"}, s.secrets.Redact))
+	if e, ok := apiAudit(ctx, "SetSettings", 0); ok && mcpSendRank(st.MCPSend) > mcpSendRank(stored.MCPSend) {
+		stmts = append(stmts, gateway.Audit(e, s.secrets.Redact))
 	}
 	if _, err := s.db.Transaction(ctx, stmts); err != nil {
 		return Settings{}, err

@@ -159,21 +159,38 @@ func (g *Gateway) Record(ctx context.Context, e Entry) error {
 // in the same transaction as the event, such as an approval executing. Every
 // string it stores goes through redact (nil: none).
 func Audit(e Entry, redact func(string) string) sqlite.Statement {
-	if redact == nil {
-		redact = func(s string) string { return s }
-	}
 	var target any
 	if e.TargetID != 0 {
 		target = e.TargetID
+	}
+	return audit(e, redact, "?", []any{target}, "")
+}
+
+// AuditChange is Audit's row for the write just before it in the same
+// transaction: written only if that write changed a row. inserted: the write
+// inserted the target, whose new rowid is its target_id.
+func AuditChange(e Entry, redact func(string) string, inserted bool) sqlite.Statement {
+	if inserted {
+		return audit(e, redact, "last_insert_rowid()", nil, " WHERE changes() > 0")
+	}
+	st := Audit(e, redact)
+	st.SQL += " WHERE changes() > 0"
+	return st
+}
+
+func audit(e Entry, redact func(string) string, targetSQL string, targetArgs []any, where string) sqlite.Statement {
+	if redact == nil {
+		redact = func(s string) string { return s }
 	}
 	hosts := make([]string, 0, len(e.Destinations))
 	for _, d := range e.Destinations {
 		hosts = append(hosts, Host(d))
 	}
+	args := append([]any{time.Now().Unix(), redact(e.Source), redact(e.Tool), redact(e.TargetKind)}, targetArgs...)
 	return sqlite.Statement{SQL: `INSERT INTO audit_log(at, source, tool, target_kind, target_id, decision, extension, call_id,
-		destination, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		Args: []any{time.Now().Unix(), redact(e.Source), redact(e.Tool), redact(e.TargetKind), target, redact(e.Decision),
-			null(redact(e.Extension)), null(redact(e.CallID)), null(redact(strings.Join(hosts, ","))), null(redact(e.Reason))}}
+		destination, reason) SELECT ?, ?, ?, ?, ` + targetSQL + `, ?, ?, ?, ?, ?` + where,
+		Args: append(args, redact(e.Decision), null(redact(e.Extension)), null(redact(e.CallID)),
+			null(redact(strings.Join(hosts, ","))), null(redact(e.Reason)))}
 }
 
 func null(s string) any {
