@@ -350,12 +350,6 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 				})
 				ui.Text(c, i18n.T("settings.add_account"))
 			})
-			kit.SidebarItem(c, kit.SidebarItemOpts{Muted: true, OnClick: p.importAccounts}).Children(func() {
-				ui.Row(c).Width(theme.MarkSm).Justify(ui.Center).Children(func() {
-					ui.Icon(c, icons.Get("file-text")).Size(theme.IconSm, theme.IconSm)
-				})
-				ui.Text(c, i18n.T("settings.import_accounts"))
-			})
 		}
 		if len(hit.apps) > 0 {
 			group(i18n.T("settings.app"), th.Space(3), th.Space(1))
