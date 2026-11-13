@@ -233,13 +233,17 @@ func TestLabelColors(t *testing.T) {
 		}
 	}
 	for name, c := range map[string]struct{ got, want LabelColor }{
-		"light red":  {l.Label("red"), lc(p.Red500.Color(), p.Red100, p.Red200, p.Red700)},
-		"dark red":   {d.Label("red"), lc(p.Red500.Color(), p.Red950, p.Red800, p.Red300)},
-		"light gray": {l.Label("gray"), lc(l.Primary, p.Neutral100, p.Neutral200, p.Neutral700)},
-		"dark gray":  {d.Label("gray"), lc(d.Primary, p.Neutral800, p.Neutral700, p.Neutral300)},
-		"light pink": {l.Label("pink"), lc(p.Pink500.Color(), p.Pink100, p.Pink200, p.Pink700)},
-		"light teal": {l.Label("teal"), lc(p.Teal500.Color(), p.Teal100, p.Teal200, p.Teal700)},
-		"dark sky":   {d.Label("sky"), lc(p.Sky500.Color(), p.Sky950, p.Sky800, p.Sky300)},
+		"light red":     {l.Label("red"), lc(p.Red500.Color(), p.Red100, p.Red200, p.Red700)},
+		"dark red":      {d.Label("red"), lc(p.Red500.Color(), p.Red950, p.Red800, p.Red300)},
+		"light gray":    {l.Label("gray"), lc(l.Primary, p.Neutral100, p.Neutral200, p.Neutral700)},
+		"dark gray":     {d.Label("gray"), lc(d.Primary, p.Neutral800, p.Neutral700, p.Neutral300)},
+		"light pink":    {l.Label("pink"), lc(p.Pink500.Color(), p.Pink100, p.Pink200, p.Pink700)},
+		"light teal":    {l.Label("teal"), lc(p.Teal500.Color(), p.Teal100, p.Teal200, p.Teal700)},
+		"dark sky":      {d.Label("sky"), lc(p.Sky500.Color(), p.Sky950, p.Sky800, p.Sky300)},
+		"light cyan":    {l.Label("cyan"), lc(p.Cyan500.Color(), p.Cyan100, p.Cyan200, p.Cyan700)},
+		"dark indigo":   {d.Label("indigo"), lc(p.Indigo500.Color(), p.Indigo950, p.Indigo800, p.Indigo300)},
+		"light emerald": {l.Label("emerald"), lc(p.Emerald500.Color(), p.Emerald100, p.Emerald200, p.Emerald700)},
+		"dark fuchsia":  {d.Label("fuchsia"), lc(p.Fuchsia500.Color(), p.Fuchsia950, p.Fuchsia800, p.Fuchsia300)},
 	} {
 		if c.got != c.want {
 			t.Errorf("%s = %+v, want %+v", name, c.got, c.want)

@@ -264,7 +264,7 @@ func TestSettingsLabelsDescriptionTooLong(t *testing.T) {
 }
 
 // TestSettingsLabelsSwatchesFit: at either density the color swatches sit in
-// one row across the field, from its left edge (名称's) to its right (the
+// rows of eight, each from the field's left edge (名称's) to its right (the
 // right-aligned 创建 button's).
 func TestSettingsLabelsSwatchesFit(t *testing.T) {
 	for _, density := range []string{"compact", "comfortable"} {
@@ -284,26 +284,31 @@ func TestSettingsLabelsSwatchesFit(t *testing.T) {
 			h.see("创建")
 			name, _ := h.tt.Find("名称")
 			create, _ := h.tt.Find("创建")
-			var first, last ui.Rect
+			const perRow = 8
+			var rowY float32
 			for i, c := range core.LabelColors {
 				label := i18n.T("label.color." + c)
 				r, ok := h.tt.Find(label)
 				if !ok {
 					t.Fatalf("no swatch %s", label)
 				}
-				if i == 0 {
-					first = r
+				switch i % perRow {
+				case 0:
+					if i > 0 && r.Y <= rowY {
+						t.Errorf("swatch %s at y %v, want a row below %v", label, r.Y, rowY)
+					}
+					rowY = r.Y
+					if d := r.X - name.X; d < -1 || d > 1 {
+						t.Errorf("swatch %s at x %v, want the field's left edge %v", label, r.X, name.X)
+					}
+				case perRow - 1:
+					if d := r.X + r.W - (create.X + create.W); d < -1 || d > 1 {
+						t.Errorf("swatch %s ends at %v, want the field's right edge %v", label, r.X+r.W, create.X+create.W)
+					}
 				}
-				if r.Y != first.Y {
-					t.Errorf("swatch %s at y %v, want one row at %v", label, r.Y, first.Y)
+				if r.Y != rowY {
+					t.Errorf("swatch %s at y %v, want its row at %v", label, r.Y, rowY)
 				}
-				last = r
-			}
-			if d := first.X - name.X; d < -1 || d > 1 {
-				t.Errorf("first swatch at x %v, want the field's left edge %v", first.X, name.X)
-			}
-			if d := last.X + last.W - (create.X + create.W); d < -1 || d > 1 {
-				t.Errorf("last swatch ends at %v, want the field's right edge %v", last.X+last.W, create.X+create.W)
 			}
 		})
 	}
