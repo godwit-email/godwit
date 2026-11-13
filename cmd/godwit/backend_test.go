@@ -123,7 +123,8 @@ func TestUIExitLeavesBackend(t *testing.T) {
 	s := startsBackends(t)
 	dir := shortDir(t)
 	c := connect(t, dir)
-	c.Close() // gui's OnQuit with leaveBackend
+	_ = c.SetUIReady(t.Context(), false) // gui's closeApp, as every quit does
+	c.Close()                            // gui's OnQuit with leaveBackend
 	c = connect(t, dir)
 	if s.count() != 1 {
 		t.Fatalf("%d backends started: the first stopped with the interface", s.count())

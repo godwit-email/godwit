@@ -313,6 +313,32 @@ func TestStopUIBackendKeepsReceivingAlways(t *testing.T) {
 	assert.Equal(t, 1, stopped)
 }
 
+// Interfaces that quit (under 一直继续, or leaving the backend) do not keep
+// it for the next one's quit, though their connections have not ended yet.
+func TestStopUIBackendIgnoresQuittingInterface(t *testing.T) {
+	keyring.MockInit()
+	stopped := 0
+	s, err := New(t.Context(), Options{DataDir: t.TempDir(), StopUIBackend: func() { stopped++ }})
+	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
+	first := WithUISession(t.Context(), s)
+	st, _ := s.GetSettings(t.Context())
+	st.BackgroundReceive = BackgroundReceiveAlways
+	_, err = s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+	assert.Error(t, s.StopUIBackend(first)) // its connection ends after the reply
+	left := WithUISession(t.Context(), s)
+	require.NoError(t, s.SetUIReady(left, false)) // closeExit: it closes without asking
+	st.BackgroundReceive = BackgroundReceiveUntilQuit
+	_, err = s.SetSettings(t.Context(), st)
+	require.NoError(t, err)
+	second, third := WithUISession(t.Context(), s), WithUISession(t.Context(), s)
+	assert.Error(t, s.StopUIBackend(third), "the second interface is still open")
+	assert.Zero(t, stopped)
+	assert.NoError(t, s.StopUIBackend(second))
+	assert.Equal(t, 1, stopped)
+}
+
 func TestSettingsVersionStamped(t *testing.T) {
 	s := settingsService(t, t.TempDir(), "")
 	in, _ := s.GetSettings(t.Context())

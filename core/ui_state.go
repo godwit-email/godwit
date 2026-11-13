@@ -14,6 +14,7 @@ type uiSession struct {
 	foreground bool
 	ready      bool // the interface takes requests on its events (SetUIReady)
 	compose    map[int64]struct{}
+	quitting   bool // closing for a quit (SetUIReady off, StopUIBackend): not another interface
 }
 
 // WithUISession binds a fresh UI session to ctx's lifetime for a RoleUI
@@ -119,6 +120,7 @@ func (s *Service) SetUIReady(ctx context.Context, on bool) error {
 	if sess := uiSessionFromContext(ctx); sess != nil {
 		if _, ok := s.uiSessions[sess]; ok {
 			sess.ready = on
+			sess.quitting = sess.quitting || !on
 		}
 	}
 	return nil

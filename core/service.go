@@ -602,8 +602,15 @@ func (s *Service) Publish(ev events.Event) { s.bus.Publish(ev) }
 // as quitting Godwit does; it returns before the shutdown runs. A backend the
 // user started (--headless), or one whose 后台收信 is BackgroundReceiveAlways,
 // refuses and keeps running, unless the tray's 退出并停止收信 asked for it
-// (StopWhenUIQuits). So does one another interface is still connected to.
+// (StopWhenUIQuits). So does one another interface is still connected to;
+// one that is quitting (SetUIReady off, or it asked here) does not count,
+// though its connection may not have ended yet.
 func (s *Service) StopUIBackend(ctx context.Context) error {
+	s.uiMu.Lock()
+	if sess := uiSessionFromContext(ctx); sess != nil {
+		sess.quitting = true
+	}
+	s.uiMu.Unlock()
 	if stop := s.takeQuitStop(); stop != nil {
 		stop()
 		return nil
@@ -615,7 +622,10 @@ func (s *Service) StopUIBackend(ctx context.Context) error {
 		return errors.New("background receiving is always on; the backend keeps running")
 	}
 	s.uiMu.Lock()
-	others := len(s.uiSessions) > 1 // the caller's own session is one
+	others := false
+	for sess := range s.uiSessions {
+		others = others || !sess.quitting
+	}
 	s.uiMu.Unlock()
 	if others {
 		return errors.New("another interface is connected; the backend keeps running")
