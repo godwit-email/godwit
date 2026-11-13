@@ -320,9 +320,17 @@ func TestMaxConns(t *testing.T) {
 	if _, err := rpc.Dial(dir, rpc.RoleFull, "t", nil); err == nil {
 		t.Fatal("a second connection past MaxConns was served")
 	}
-	ui, err := rpc.Dial(dir, rpc.RoleUI, "t", nil) // external clients never use the interface's room
-	if err != nil {
-		t.Fatalf("the interface was refused with MaxConns external connections open: %v", err)
+	// External clients never use the interface's room. The refused connection
+	// holds an accept slot until its server goroutine ends, which can be just
+	// after the client saw the refusal, so give the interface until then.
+	var ui *rpc.Client
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if ui, err = rpc.Dial(dir, rpc.RoleUI, "t", nil); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the interface was refused with MaxConns external connections open: %v", err)
+		}
 	}
 	ui.Close()
 	c.Close()

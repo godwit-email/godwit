@@ -4,15 +4,16 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 
 // Pages make no remote request (ADR 0013): the built HTML carries this CSP. godwit-img: is Go's
-// image proxy, which serves a mail body's remote images.
+// image proxy, which serves a mail body's remote images; on Windows MyGo serves it at the loopback
+// http://<host>.godwit-img.localhost (src/shared/imageURL.ts).
 const csp =
-  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: godwit-img:; connect-src 'self'";
+  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: godwit-img: http://*.godwit-img.localhost; connect-src 'self'";
 // The dev page gets one too, loosened only for what the dev server needs: plugin-react's inline
 // refresh preamble and Vite's HMR socket on localhost. Defence in depth for pasted HTML, which
 // DOMParser parses into a document without a browsing context (no subresource fetch per the HTML
 // spec); that WebKit makes zero requests on paste is checked in the manual e2e.
 const devCsp =
-  "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: godwit-img:; connect-src 'self' ws://localhost:* http://localhost:*";
+  "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: godwit-img: http://*.godwit-img.localhost; connect-src 'self' ws://localhost:* http://localhost:*";
 // The About page's bird decodes its meshopt-compressed model with WebAssembly and fetches the
 // model's textures from blob: URLs.
 const bird = (content: string, path: string) =>

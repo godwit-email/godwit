@@ -1,5 +1,6 @@
 import type { ReaderBody, Theme } from "@/mygo";
-import { buildSrcdoc, FRAME_CSP, frameScheme, isTextHTML } from "./frame";
+import { installFake } from "@/preview/fake";
+import { buildSrcdoc, frameCSP, frameScheme, isTextHTML } from "./frame";
 
 const theme = (over: Partial<Theme> = {}): Theme => ({
   mode: "light",
@@ -66,12 +67,27 @@ test("iframe csp first: the head's first element is the CSP meta, img-src data: 
   const first = head.firstElementChild;
   expect(first?.tagName).toBe("META");
   expect(first?.getAttribute("http-equiv")).toBe("Content-Security-Policy");
-  expect(first?.getAttribute("content")).toBe(FRAME_CSP);
-  expect(FRAME_CSP).toContain("img-src data: godwit-img:");
-  expect(FRAME_CSP).not.toMatch(/https?:|\*/); // nothing reaches the network
-  expect(FRAME_CSP).toContain("default-src 'none'");
+  expect(first?.getAttribute("content")).toBe(frameCSP());
+  expect(frameCSP()).toContain("img-src data: godwit-img:");
+  expect(frameCSP()).not.toMatch(/https?:|\*/); // nothing reaches the network
+  expect(frameCSP()).toContain("default-src 'none'");
   // The CSP precedes every byte of the mail.
-  expect(s.indexOf(FRAME_CSP)).toBeLessThan(s.indexOf("Hello"));
+  expect(s.indexOf(frameCSP())).toBeLessThan(s.indexOf("Hello"));
+});
+
+test("iframe csp on Windows: the image proxy's loopback http form too, which WebView2 loads it at (#750)", () => {
+  installFake({}, "win32");
+  try {
+    const csp = frameCSP();
+    expect(csp).toBe(
+      "default-src 'none'; style-src 'unsafe-inline'; img-src data: godwit-img: http://*.godwit-img.localhost",
+    );
+    expect(
+      parse(buildSrcdoc(body(), theme())).head.firstElementChild?.getAttribute("content"),
+    ).toBe(csp);
+  } finally {
+    delete window.mygo;
+  }
 });
 
 test("hostile body stays inert: the parent adds no script, handler, javascript: or other meta", () => {

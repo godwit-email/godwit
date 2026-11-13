@@ -1056,6 +1056,9 @@ func TestSearchDropsStaleResults(t *testing.T) {
 	h.mu.Unlock()
 	h.drain()
 	h.tt.Frame()
+	// The local API can post an event of its own meanwhile, which queued
+	// counted in place of B's answer: then B lands after the reversal.
+	h.until("search B's answer", func() bool { return p.searched })
 	if !p.searched || len(p.results) != 1 || p.results[0].Subject != "Lunch Plans" {
 		t.Fatalf("searched %v, results %+v", p.searched, p.results)
 	}

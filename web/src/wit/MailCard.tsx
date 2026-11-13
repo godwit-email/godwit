@@ -3,6 +3,7 @@ import { cn } from "cn";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { T } from "@/shared/i18n";
+import { imageURL } from "@/shared/imageURL";
 import { citeDate } from "./Citations";
 
 /** The sender's name as the reader shows it: the display name, else the address. */
@@ -111,7 +112,7 @@ export function MailCard({
           {[...name][0]?.toUpperCase() ?? "?"}
           {messageId !== undefined && (
             <img
-              src={`godwit-img://a${messageId}`}
+              src={imageURL(`a${messageId}`)}
               alt=""
               onLoad={() => setAvatar(true)}
               className={cn(

@@ -188,6 +188,7 @@ func TestFollowConversationRaces(t *testing.T) {
 		beforeFollowRead = nil
 		e.srv.Release()
 		waitTerminal(t, ch)
+		e.srv.Rearm() // the second run hangs until after the read, as the asserts below expect
 		next, err := e.s.Ask(t.Context(), conv.ID, "again")
 		require.NoError(t, err)
 		second = (<-next).RunID
