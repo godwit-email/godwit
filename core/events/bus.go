@@ -36,6 +36,13 @@ const (
 	ComposeRequested = "compose.requested"
 )
 
+// Command reports whether an event of type t asks the interface to do
+// something (a click, the tray's Open, Compose or Quit) rather than telling it
+// what changed: a reader that falls behind may lose the latter only.
+func Command(t string) bool {
+	return t == NotificationClicked || t == QuitRequested || t == OpenRequested || t == ComposeRequested
+}
+
 // subscriberBuffer is the per-subscriber queue capacity.
 const subscriberBuffer = 64
 

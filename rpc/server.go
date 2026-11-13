@@ -45,7 +45,8 @@ type ServerOptions struct {
 	// then whatever Redact (nil = nothing more) finds replaced.
 	Codec  *Codec
 	Redact func(string) string
-	// Audit, if set, runs before an authorized call is dispatched, with the
+	// Audit, if set, runs before an authorized call is dispatched (decoded,
+	// within MaxActive, on the call's goroutine), with the
 	// connection's role. An error stops the call and is answered and logged
 	// like any error the call could have returned.
 	Audit func(role, method string, params []json.RawMessage) error
@@ -401,10 +402,10 @@ func (s *Server) hello(ctx context.Context, c *conn, done chan struct{}, params 
 		if !roleOK(method, params) {
 			return ErrForbidden
 		}
-		if s.opts.Audit != nil {
-			return s.opts.Audit(role, method, params)
-		}
 		return nil
+	}
+	if s.opts.Audit != nil {
+		c.audit = func(method string, params []json.RawMessage) error { return s.opts.Audit(role, method, params) }
 	}
 	result := map[string]any{"server": "godwit/" + s.opts.Version, "role": role}
 	if role == RoleUI && s.opts.UIStarted {

@@ -315,7 +315,7 @@ func gui(ctx context.Context, dataDir, open string) int {
 			defer composeMu.Unlock()
 			rctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 			defer cancel()
-			if err := client.RPC().Call(rctx, "SetComposeOpen", nil, windows.OpenDrafts()); err != nil {
+			if err := client.SetComposeOpen(rctx, windows.OpenDrafts()); err != nil {
 				log.Printf("reporting the compose windows: %v", err)
 			}
 		}

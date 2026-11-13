@@ -630,7 +630,12 @@ type witStream struct {
 	stopped sync.Once
 }
 
-const witBuffer = 64
+// WitBuffer is how many text-like events a Wit stream's reader may fall
+// behind before the oldest go; never a run's end (Terminal). uiclient keeps
+// the same rule on its side of the wire.
+const WitBuffer = 64
+
+const witBuffer = WitBuffer
 
 func newWitStream() *witStream { return startStream(nil, nil) }
 
@@ -655,6 +660,10 @@ func (s *Service) newStream() *witStream { return startStream(s.streamsEnd, &s.s
 func terminal(ev WitEvent) bool {
 	return ev.Kind == "done" || ev.Kind == "error" || ev.Kind == "interrupted"
 }
+
+// Terminal reports whether ev ends its run's events (done, error,
+// interrupted): a reader that falls behind never loses one.
+func (ev WitEvent) Terminal() bool { return terminal(ev) }
 
 func (w *witStream) push(ev WitEvent) {
 	w.mu.Lock()

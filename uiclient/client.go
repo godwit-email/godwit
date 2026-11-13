@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"slices"
 	"sync"
 
@@ -59,6 +60,18 @@ func (c *Client) StoreLatestVersion(ctx context.Context) (string, error) {
 	return call[string](c, ctx, "StoreLatestVersion")
 }
 
+// SetComposeOpen, StopUIBackend and ReplaceUIBackend are core.Service's,
+// for the GUI's lifecycle (app does not call them, so they are not generated).
+func (c *Client) SetComposeOpen(ctx context.Context, draftIDs []int64) error {
+	return callErr(c, ctx, "SetComposeOpen", draftIDs)
+}
+
+func (c *Client) StopUIBackend(ctx context.Context) error { return callErr(c, ctx, "StopUIBackend") }
+
+func (c *Client) ReplaceUIBackend(ctx context.Context) error {
+	return callErr(c, ctx, "ReplaceUIBackend")
+}
+
 // StreamErr reports why a typed stream channel returned by Client closed: nil
 // for a normal end or a caller cancel, rpc.ErrClosed on disconnect,
 // rpc.ErrStreamOverflow if the reader fell behind, or a decoded wire error.
@@ -77,20 +90,27 @@ func (c *Client) StreamErrs() []error {
 	return append([]error(nil), c.errs...)
 }
 
+// maxErrs bounds what StreamErrs keeps: the newest, for tests; every one is logged.
+const maxErrs = 64
+
 func (c *Client) fail(err error) {
+	log.Printf("local API: %v", err)
 	c.mu.Lock()
 	c.errs = append(c.errs, err)
+	if n := len(c.errs) - maxErrs; n > 0 {
+		c.errs = slices.Delete(c.errs, 0, n)
+	}
 	c.mu.Unlock()
 }
 
 func (c *Client) recordStreamErr(key any, method string, err error) {
 	wrapped := fmt.Errorf("%s: %w", method, err)
 	c.mu.Lock()
-	if key != nil && c.streamErrs[key] == nil {
+	if key != nil && c.streamErrs[key] == nil && len(c.streamErrs) < maxErrs {
 		c.streamErrs[key] = wrapped
 	}
-	c.errs = append(c.errs, wrapped)
 	c.mu.Unlock()
+	c.fail(wrapped)
 }
 
 func (c *Client) syncTimeZone(ctx context.Context) error {
@@ -160,10 +180,13 @@ func stream[T any](c *Client, ctx context.Context, method string, args ...any) (
 	case core.WitEvent: // a stalled forwarder below drops old text on the rpc side too, never a run's end
 		drop = func(b json.RawMessage) bool {
 			var ev core.WitEvent
-			return json.Unmarshal(b, &ev) == nil && witText(ev.Kind)
+			return json.Unmarshal(b, &ev) == nil && !ev.Terminal()
 		}
 	case events.Event: // lossy but live, as the bus is in process: a slow reader loses the oldest, never the stream
-		drop = func(json.RawMessage) bool { return true }
+		drop = func(b json.RawMessage) bool { // never a click or a request from the backend's tray
+			var ev events.Event
+			return json.Unmarshal(b, &ev) != nil || !events.Command(ev.Type)
+		}
 	}
 	raw, cancel, err := c.rpc.StreamDropping(ctx, method, drop, args...)
 	if err != nil {
@@ -229,23 +252,18 @@ func stream[T any](c *Client, ctx context.Context, method string, args ...any) (
 	return out, func() { stopOnce.Do(func() { close(done); record(); cancel(); <-exited }) }, nil
 }
 
-// witBuffer is core's: a Wit stream's reader that falls behind loses the
-// oldest text-like events once more than witBuffer wait, never a run's end,
-// on this side of the wire as in process.
-const witBuffer = 64
-
-// witText: a Wit event of kind k may be dropped, being no run's end.
-func witText(k string) bool { return k != "done" && k != "error" && k != "interrupted" }
-
+// dropText: a Wit stream's reader that falls behind loses the oldest
+// text-like events once more than core.WitBuffer wait, never a run's end
+// (core.WitEvent.Terminal), on this side of the wire as in process.
 func dropText[T any](q []T) []T {
-	text := func(v T) bool { return witText(any(v).(core.WitEvent).Kind) }
+	text := func(v T) bool { return !any(v).(core.WitEvent).Terminal() }
 	waiting := 0
 	for _, v := range q {
 		if text(v) {
 			waiting++
 		}
 	}
-	if waiting > witBuffer {
+	if waiting > core.WitBuffer {
 		i := slices.IndexFunc(q, text)
 		q = slices.Delete(q, i, i+1)
 	}
@@ -269,8 +287,10 @@ func streamStop[T any](c *Client, method string, args ...any) (<-chan T, func())
 	return ch, stop
 }
 
-func consumeStream[T any](c *Client, ctx context.Context, method string, fn func(T) error, args ...any) error {
-	raw, cancel, err := c.rpc.Stream(ctx, method, args...)
+// consumeStream calls fn with each event of method's stream; drop (nil: none)
+// says which raw events a reader that falls behind may lose.
+func consumeStream[T any](c *Client, ctx context.Context, method string, drop func(json.RawMessage) bool, fn func(T) error, args ...any) error {
+	raw, cancel, err := c.rpc.StreamDropping(ctx, method, drop, args...)
 	if err != nil {
 		return err
 	}

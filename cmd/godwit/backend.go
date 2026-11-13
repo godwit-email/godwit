@@ -152,16 +152,16 @@ func watchBackend(c *uiclient.Client, quitting *atomic.Bool, lost func()) {
 // stopBackend asks c's backend to stop as the interface quits, and waits a
 // little for it to go so a relaunch finds it gone. A backend the user started,
 // or one whose 后台收信 is 一直继续, refuses and keeps running.
-func stopBackend(c *uiclient.Client) { endBackend(c, "StopUIBackend") }
+func stopBackend(c *uiclient.Client) { endBackend(c, c.StopUIBackend) }
 
 // replaceBackend is stopBackend for an interface of another version: the
 // backend stops even under 一直继续 (ReplaceUIBackend).
-func replaceBackend(c *uiclient.Client) { endBackend(c, "ReplaceUIBackend") }
+func replaceBackend(c *uiclient.Client) { endBackend(c, c.ReplaceUIBackend) }
 
-func endBackend(c *uiclient.Client, method string) {
+func endBackend(c *uiclient.Client, stop func(context.Context) error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := c.RPC().Call(ctx, method, nil); err == nil {
+	if err := stop(ctx); err == nil {
 		select {
 		case <-c.Done():
 		case <-ctx.Done():

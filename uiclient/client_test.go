@@ -896,6 +896,6 @@ func TestExportAccountsFileLarge(t *testing.T) {
 	var exp core.AccountExport
 	require.NoError(t, json.Unmarshal(data, &exp))
 	require.Len(t, exp.Accounts, 1)
-	_, err = cl.ListAccounts(ctx)
+	_, err = cl.GetSettings(ctx) // ListAccounts carries the signature: too large for one result
 	require.NoError(t, err, "the connection survived")
 }

@@ -682,3 +682,18 @@ func TestStreamApplicationError(t *testing.T) {
 		t.Fatalf("StreamErr = %v, want errBadSum", serr)
 	}
 }
+
+// A result too large for the send queue fails its call alone: queued, it
+// would drop the connection, and the interface takes that for the backend's loss.
+func TestResultTooLargeKeepsConnection(t *testing.T) {
+	conn, _ := serve(t, newDispatcher(t, newTarget()), rpc.ConnOptions{QueueBytes: 4 << 10})
+	c := rpc.NewClient(conn)
+	t.Cleanup(func() { c.Close() })
+	var s string
+	if err := c.Call(context.Background(), "Echo", &s, strings.Repeat("x", 3<<10), 1); err == nil {
+		t.Fatal("a result over half the send queue was sent")
+	}
+	if err := c.Call(context.Background(), "Echo", &s, "a", 1); err != nil || s != "a1" {
+		t.Fatalf("Echo after = %q, %v; want the connection kept", s, err)
+	}
+}

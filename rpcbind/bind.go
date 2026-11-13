@@ -35,6 +35,8 @@ var table = []Error{
 	{Code: "use_assist", Err: core.ErrUseAssist},
 	{Code: "stale_approval", Err: core.ErrStaleApproval},
 	{Code: "too_large", Err: core.ErrTooLarge},
+	// The Local API's own: a request, result or stream event over one message's budget.
+	{Code: "message_too_large", Err: rpc.ErrTooLarge},
 	{Code: "link_ref", Err: core.ErrLinkRef},
 	{Code: "placeholder", Err: core.ErrPlaceholder},
 	{Code: "mask_kind", Err: core.ErrMaskKind},
@@ -230,10 +232,12 @@ var uiOnly = map[string]bool{
 	"SenderAvatar": true, "ContactAvatar": true, "ModelServiceAvatar": true, "PluginReadme": true,
 	// Progress streams for the interface's downloads and directory installs.
 	"InstallPluginFromRegistryStream": true, "PrepareModelStream": true, "DownloadRecognitionModelStream": true,
-	// The reader's two-step body load, disk-cached image helpers, and multi-attachment save stream.
+	// The reader's two-step body load, remote images downloaded into the disk cache and read
+	// from it (CachedImage fetches a caller-given URL), and the multi-attachment save stream.
 	"GetMessageLazyImages": true, "InlineImagesStream": true, "FetchAttachmentsStream": true,
 	"CachedImage": true, "CachedImageDims": true, "ForgetImageFailure": true,
-	// An original as a file: up to MaxMessageBytes would not fit one response as base64.
+	// Results too large for one response, written as 0600 files in the data directory: a
+	// message's original (up to MaxMessageBytes) and the account export.
 	"RawMessageFile": true, "ExportAccountsFile": true,
 	// Wire helper for the operating system's installed translation languages.
 	"SystemTranslatorLanguages": true,

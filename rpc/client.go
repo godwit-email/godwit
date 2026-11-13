@@ -20,9 +20,10 @@ var (
 	ErrClosed = errors.New("rpc: connection closed")
 	// ErrStreamOverflow ends a stream whose reader fell StreamBuffer behind.
 	ErrStreamOverflow = errors.New("rpc: stream reader too slow")
-	// ErrTooLarge refuses a request over MaxMessage before it is sent: the
-	// server would drop the whole connection for it.
-	ErrTooLarge = errors.New("rpc: request too large for the Local API")
+	// ErrTooLarge refuses a request over MaxMessage before it is sent, and a
+	// result or stream event the server will not queue: either would drop the
+	// whole connection.
+	ErrTooLarge = errors.New("rpc: too large for one Local API message")
 )
 
 // MaxMessage is the largest line a server reads by default (ConnOptions).
