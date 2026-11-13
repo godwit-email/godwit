@@ -175,13 +175,16 @@ func TestStartCtxStopsEventPump(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the event pump kept running after Start's ctx was cancelled")
 	}
+	h.mu.Lock()
+	before := len(h.queue) // posted before the pump stopped, and not drained yet
+	h.mu.Unlock()
 	st := h.app.settings
 	st.Theme = "dark"
 	if _, err := h.env.Svc.SetSettings(context.Background(), st); err != nil { // publishes settings.changed
 		t.Fatal(err)
 	}
 	h.mu.Lock()
-	n := len(h.queue)
+	n := len(h.queue) - before
 	h.mu.Unlock()
 	if n != 0 {
 		t.Fatalf("%d callbacks posted after the pump stopped", n)
