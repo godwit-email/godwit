@@ -145,6 +145,7 @@
   "error_stale_approval": "Это действие изменилось после того, как было предложено. Проверьте его ещё раз.",
   "error_stale_draft": "Черновик был изменён в другом месте.",
   "error_too_large": "Вложение превышает допустимый размер.",
+  "error_message_too_large": "Слишком большой объём, чтобы передать его фоновому процессу Godwit за один раз.",
   "error_link_ref": "Ссылка в этом черновике ведёт на письмо, которое больше недоступно. Замените ссылку перед отправкой.",
   "error_placeholder": "В черновике остался заполнитель вместо личных данных. Замените его настоящим текстом перед отправкой.",
   "error_translator_unavailable": "Плагин перевода не запущен. Включите его в разделе «Настройки › Расширения» или повторите перевод с помощью модели.",
@@ -1038,6 +1039,7 @@
   "settings_launch_at_login_help": "Запускает Godwit в фоновом режиме после входа в систему",
   "settings_login_item_off": "Запуск при входе отключён в настройках системы; включите его там",
   "settings_local_api": "Локальный API",
+  "settings_local_api_always": "Фоновый процесс Godwit запущен командой godwit --headless, поэтому он всегда принимает ИИ-приложения и скрипты. Остановите его и откройте Godwit, чтобы управлять этим здесь.",
   "settings_local_api_client_off": "{arg1} отключён.",
   "settings_local_api_client_on": "{arg1} подключён. Перезапустите его, чтобы пользоваться Godwit.",
   "settings_local_api_client_on_session": "{arg1} подключён. Godwit доступен в новом сеансе.",
@@ -1335,7 +1337,6 @@
   "shell_sync_syncing": "Синхронизация…",
   "toast_close": "Закрыть",
   "tray_hide": "Скрыть значок в строке меню",
-  "tray_hidden_toast": "Значок в строке меню скрыт. Вы можете включить его снова в Настройках.",
   "tray_open": "Открыть Godwit",
   "tray_quit": "Выйти",
   "tray_quit_stop": "Выйти и остановить получение",
@@ -2332,5 +2333,9 @@
   "settings_addressbooks_ssl": "Всегда подключается по HTTPS (SSL).",
   "contacts_addresses": "Адреса",
   "contacts_addresses_more": "Ещё адресов: {arg1, number, ::group-off}",
-  "contacts_address_menu": "Действия для {arg1}"
+  "contacts_address_menu": "Действия для {arg1}",
+  "error_mcp_send_no_ui": "Godwit сейчас не может запросить подтверждение: окно Godwit не открыто, а показать уведомление невозможно.",
+  "settings_account_import_ai_instructions": "Инструкции для ИИ",
+  "settings_account_import_signature": "Подпись: {arg1}",
+  "settings_account_import_username": "Вход как {arg1}"
 }

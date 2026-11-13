@@ -145,6 +145,7 @@
   "error_stale_approval": "Esta acción cambió después de proponerse. Revísala de nuevo.",
   "error_stale_draft": "El borrador se modificó en otro lugar.",
   "error_too_large": "El archivo adjunto supera el límite de tamaño.",
+  "error_message_too_large": "Es demasiado grande para pasarlo de una vez al proceso en segundo plano de Godwit.",
   "error_link_ref": "Un enlace de este borrador apunta a un correo que ya no está disponible. Sustituye el enlace antes de enviar.",
   "error_placeholder": "Este borrador aún contiene un marcador que sustituye información privada. Cámbialo por el texto real antes de enviar.",
   "error_translator_unavailable": "El plugin de traducción no se está ejecutando. Actívalo en Ajustes › Extensiones o vuelve a traducir con el modelo.",
@@ -1038,6 +1039,7 @@
   "settings_launch_at_login_help": "Inicia Godwit en segundo plano tras iniciar sesión",
   "settings_login_item_off": "El inicio al iniciar sesión está desactivado en los ajustes del sistema; actívalo allí",
   "settings_local_api": "API local",
+  "settings_local_api_always": "El proceso en segundo plano de Godwit se inició con godwit --headless, así que siempre acepta apps de IA y scripts. Deténlo y abre Godwit para controlarlo aquí.",
   "settings_local_api_client_off": "{arg1} desconectado.",
   "settings_local_api_client_on": "{arg1} conectado. Reinícialo para usar Godwit.",
   "settings_local_api_client_on_session": "{arg1} conectado. Una sesión nueva puede usar Godwit.",
@@ -1335,7 +1337,6 @@
   "shell_sync_syncing": "Sincronizando…",
   "toast_close": "Cerrar",
   "tray_hide": "Ocultar icono de la barra de menús",
-  "tray_hidden_toast": "Icono de la barra de menús ocultado. Puedes volver a activarlo en Ajustes.",
   "tray_open": "Abrir Godwit",
   "tray_quit": "Salir",
   "tray_quit_stop": "Salir y dejar de recibir",
@@ -2332,5 +2333,9 @@
   "settings_addressbooks_ssl": "Siempre se conecta por HTTPS (SSL).",
   "contacts_addresses": "Direcciones",
   "contacts_addresses_more": "{arg1, number, ::group-off} direcciones más",
-  "contacts_address_menu": "Acciones para {arg1}"
+  "contacts_address_menu": "Acciones para {arg1}",
+  "error_mcp_send_no_ui": "Godwit no puede pedirte confirmación ahora: no hay ninguna ventana de Godwit abierta y no puede mostrar una notificación.",
+  "settings_account_import_ai_instructions": "Instrucciones de IA",
+  "settings_account_import_signature": "Firma: {arg1}",
+  "settings_account_import_username": "Inicia sesión como {arg1}"
 }

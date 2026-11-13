@@ -270,12 +270,17 @@ func (p *ComposePage) Save(ctx context.Context, e ComposeEdit) (SaveResult, erro
 	if e.Revision == 0 {
 		return SaveResult{}, ErrNoRevision
 	}
-	d, err := svc.GetDraft(ctx, s.draftID) // deleted elsewhere: an error, never a new draft
-	if err != nil {
-		return SaveResult{}, err
-	}
+	// The save writes only what the edit gives, by ID: once loaded, no draft
+	// is read for it (over the Local API, each read is the whole draft).
+	// Deleted elsewhere, SaveDraft fails: never a new draft.
+	d := core.Draft{ID: s.draftID}
 	if !s.loaded { // saved before Load: keep what the draft has
-		s.adopt(d)
+		got, err := svc.GetDraft(ctx, s.draftID)
+		if err != nil {
+			return SaveResult{}, err
+		}
+		s.adopt(got)
+		d = got
 	}
 	d.To, d.Cc, d.Bcc, d.ReplyTo, d.Subject = e.To, e.Cc, e.Bcc, e.ReplyTo, e.Subject
 	// A marker in the body would pass for the quote or the signature.

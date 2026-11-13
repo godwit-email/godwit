@@ -372,6 +372,12 @@ func followLocalAPI(ctx context.Context, svc *core.Service, srv *rpc.Server) {
 	st, err := svc.GetSettings(ctx)
 	if err == nil {
 		err = srv.SetExternal(st.LocalAPI)
+		if err != nil && st.LocalAPI { // say so where it was asked for: the switch goes back off
+			st.LocalAPI = false
+			if _, serr := svc.SetSettings(ctx, st); serr != nil {
+				err = errors.Join(err, serr)
+			}
+		}
 	}
 	if err != nil && ctx.Err() == nil {
 		slog.Warn("local API: following the setting", "err", err)

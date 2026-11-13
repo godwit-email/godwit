@@ -122,24 +122,25 @@ func sendStreamFinal[T any](ctx context.Context, ch chan<- T, v T) {
 }
 
 // FetchAttachments gets each attachment's cached file over one connection,
-// downloading first if needed, and calls fn for each in order.
-func (s *Service) FetchAttachments(ctx context.Context, attachmentIDs []int64, fn func(path string, info AttachmentInfo) error) (err error) {
-	f := s.newAttachmentFetcher(ctx)
-	defer func() {
-		if cerr := f.close(); err == nil {
-			err = cerr
+// downloading first if needed, and calls fn for each in order: the
+// FetchAttachmentsStream that the interface reads over the Local API, taken
+// in process.
+func (s *Service) FetchAttachments(ctx context.Context, attachmentIDs []int64, fn func(path string, info AttachmentInfo) error) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel() // ends the stream's fetcher when fn stops early
+	ch, err := s.FetchAttachmentsStream(ctx, attachmentIDs)
+	if err != nil {
+		return err
+	}
+	for a := range ch {
+		if a.Err != nil {
+			return a.Err
 		}
-	}()
-	for _, id := range attachmentIDs {
-		path, info, gerr := f.get(id)
-		if gerr != nil {
-			return gerr
-		}
-		if ferr := fn(path, info); ferr != nil {
-			return ferr
+		if err := fn(a.Path, a.Info); err != nil {
+			return err
 		}
 	}
-	return nil
+	return ctx.Err()
 }
 
 // FetchAttachmentsStream streams each attachment's cached file path and info in

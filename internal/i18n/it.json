@@ -145,6 +145,7 @@
   "error_stale_approval": "Questa azione è cambiata dopo essere stata proposta. Rivedila di nuovo.",
   "error_stale_draft": "La bozza è stata modificata altrove.",
   "error_too_large": "L’allegato supera il limite di dimensione.",
+  "error_message_too_large": "È troppo grande per essere passato in una sola volta al processo in background di Godwit.",
   "error_link_ref": "Un link in questa bozza rimanda a un’email non più disponibile. Sostituisci il link prima di inviare.",
   "error_placeholder": "Questa bozza contiene ancora un segnaposto al posto di un’informazione privata. Sostituiscilo con il testo reale prima di inviare.",
   "error_translator_unavailable": "Il plugin di traduzione non è in esecuzione. Abilitalo in Impostazioni › Estensioni oppure traduci di nuovo con il modello.",
@@ -1038,6 +1039,7 @@
   "settings_launch_at_login_help": "Avvia Godwit in background dopo l’accesso",
   "settings_login_item_off": "L'avvio all'accesso è disattivato nelle impostazioni di sistema; riattivalo lì",
   "settings_local_api": "API locale",
+  "settings_local_api_always": "Il processo in background di Godwit è stato avviato con godwit --headless, quindi accetta sempre app di IA e script. Interrompilo e apri Godwit per controllarlo qui.",
   "settings_local_api_client_off": "{arg1} scollegato.",
   "settings_local_api_client_on": "{arg1} collegato. Riavvialo per usare Godwit.",
   "settings_local_api_client_on_session": "{arg1} collegato. Una nuova sessione può usare Godwit.",
@@ -1335,7 +1337,6 @@
   "shell_sync_syncing": "Sincronizzazione…",
   "toast_close": "Chiudi",
   "tray_hide": "Nascondi icona nella barra dei menu",
-  "tray_hidden_toast": "Icona della barra dei menu nascosta. Puoi riattivarla nelle Impostazioni.",
   "tray_open": "Apri Godwit",
   "tray_quit": "Esci",
   "tray_quit_stop": "Esci e interrompi la ricezione",
@@ -2332,5 +2333,9 @@
   "settings_addressbooks_ssl": "Si connette sempre tramite HTTPS (SSL).",
   "contacts_addresses": "Indirizzi",
   "contacts_addresses_more": "Altri {arg1, number, ::group-off} indirizzi",
-  "contacts_address_menu": "Azioni per {arg1}"
+  "contacts_address_menu": "Azioni per {arg1}",
+  "error_mcp_send_no_ui": "Godwit non può chiederti conferma adesso: nessuna finestra di Godwit è aperta e non può mostrare una notifica.",
+  "settings_account_import_ai_instructions": "Istruzioni IA",
+  "settings_account_import_signature": "Firma: {arg1}",
+  "settings_account_import_username": "Accede come {arg1}"
 }

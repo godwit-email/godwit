@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/godwit-email/godwit/core"
-	"github.com/godwit-email/godwit/internal/i18n"
 )
 
 // noteDedupe is how long a taken click hides the same one given again.
@@ -141,21 +140,6 @@ func (a *App) Open(what string) {
 
 // Compose starts a new draft in a compose window, as the sidebar's button does.
 func (a *App) Compose() { a.mail.compose() }
-
-// HideTrayIcon hides the menu bar icon by updating the setting. Its menu is
-// mostly used with the window hidden, so the window comes up to show the toast.
-func (a *App) HideTrayIcon() {
-	a.onUI(func() {
-		st := a.settings
-		if !st.ShowTrayIcon {
-			return
-		}
-		st.ShowTrayIcon = false
-		a.changeSettings(st)
-		a.plat.ShowWindow()
-		a.toast(i18n.T("tray.hidden_toast"))
-	})
-}
 
 // SyncAll syncs every account now. The status shows syncing until the last one
 // returns; a click while that batch is in flight starts nothing more.

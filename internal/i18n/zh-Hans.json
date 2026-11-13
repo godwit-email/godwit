@@ -145,6 +145,7 @@
   "error_stale_approval": "这项操作在提出后有变化，请重新确认。",
   "error_stale_draft": "草稿在别处被修改。",
   "error_too_large": "附件超过了大小上限。",
+  "error_message_too_large": "内容太大，无法一次交给 Godwit 的后台进程。",
   "error_link_ref": "草稿里有一个链接指向的邮件已不存在，请先替换这个链接再发送。",
   "error_placeholder": "草稿里还有一个替代隐私信息的占位符，请先换成原文再发送。",
   "error_translator_unavailable": "翻译插件没有运行，到设置 › 扩展里启用它，或换回模型翻译。",
@@ -1038,6 +1039,7 @@
   "settings_launch_at_login_help": "登录后在后台启动 Godwit",
   "settings_login_item_off": "系统设置里已关闭 Godwit 的登录启动；请在那里重新开启",
   "settings_local_api": "本机 API",
+  "settings_local_api_always": "Godwit 的后台进程是用 godwit --headless 启动的，始终接受 AI 应用和脚本接入。要在这里控制，请先停止它，再打开 Godwit。",
   "settings_local_api_client_off": "已断开 {arg1}。",
   "settings_local_api_client_on": "已接入 {arg1}，重启它后生效。",
   "settings_local_api_client_on_session": "已接入 {arg1}，新开一个会话后生效。",
@@ -1335,7 +1337,6 @@
   "shell_sync_syncing": "同步中…",
   "toast_close": "关闭",
   "tray_hide": "隐藏菜单栏图标",
-  "tray_hidden_toast": "已隐藏菜单栏图标。你可以在设置中重新开启。",
   "tray_open": "打开 Godwit",
   "tray_quit": "退出",
   "tray_quit_stop": "退出并停止收信",
@@ -2332,5 +2333,9 @@
   "settings_addressbooks_ssl": "始终通过 HTTPS（SSL）加密连接。",
   "contacts_addresses": "地址",
   "contacts_addresses_more": "另外 {arg1, number, ::group-off} 个地址",
-  "contacts_address_menu": "{arg1} 的操作"
+  "contacts_address_menu": "{arg1} 的操作",
+  "error_mcp_send_no_ui": "Godwit 现在没法请你确认：没有打开的 Godwit 窗口，也发不出通知。",
+  "settings_account_import_ai_instructions": "含 AI 指令",
+  "settings_account_import_signature": "签名：{arg1}",
+  "settings_account_import_username": "登录名：{arg1}"
 }

@@ -227,7 +227,7 @@ func (a *App) toastErr(err error) {
 		errText := err.Error()
 		a.toasts = append(a.toasts, ui.Toast{ID: msg, Title: msg, Type: kit.ToastError,
 			Action: i18n.T("error.report"), OnAction: func() {
-				a.do(func(context.Context) error { return a.plat.OpenURL(issueURL(errText, reportLog(a.svc.RecentLog()))) }, a.toastErr)
+				a.do(func(context.Context) error { return a.plat.OpenURL(issueURL(errText, a.svc.RecentLog())) }, a.toastErr)
 			}})
 	default:
 		a.toastAs(kit.ToastError, msg)
@@ -648,14 +648,3 @@ func (a *App) closeDialog(c *ui.Context) {
 	})
 }
 
-// reportLog is what an error report carries of the logs: the backend's recent
-// lines (redacted there), then this process's own, where the interface's
-// failures are. issueURL drops addresses and hosts from both, and the oldest
-// lines first when the link grows long.
-func reportLog(backend string) string {
-	mine := RecentLog.String()
-	if mine == "" {
-		return backend
-	}
-	return backend + "\n-- interface --\n" + mine
-}

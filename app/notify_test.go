@@ -382,7 +382,11 @@ func TestTrayUnreadClearedWithIcon(t *testing.T) {
 	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", acc.Email, "One", "1"))
 	h.waitMail("tray shows 1", func() bool { return slices.Contains(h.plat.Calls(), "SetTrayUnread 1") })
 
-	h.app.HideTrayIcon()
+	st := h.app.settings
+	st.ShowTrayIcon = false // the backend tray's Hide saves this
+	if _, err := h.env.Svc.SetSettings(context.Background(), st); err != nil {
+		t.Fatal(err)
+	}
 	h.waitMail("tray cleared", func() bool { return slices.Contains(h.plat.Calls(), "SetTrayUnread 0") })
 	if !h.app.settings.UnreadInMenuBar {
 		t.Fatal("hiding the icon changed the unread setting")

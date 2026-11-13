@@ -145,6 +145,7 @@
   "error_stale_approval": "Bu işlem önerildikten sonra değişti. Tekrar gözden geçirin.",
   "error_stale_draft": "Taslak başka bir yerde değiştirildi.",
   "error_too_large": "Ek, boyut sınırını aşıyor.",
+  "error_message_too_large": "Bu, Godwit’in arka plan işlemine tek seferde aktarılamayacak kadar büyük.",
   "error_link_ref": "Bu taslaktaki bir bağlantı artık mevcut olmayan bir e-postayı gösteriyor. Göndermeden önce bağlantıyı değiştirin.",
   "error_placeholder": "Bu taslakta hâlâ özel bir bilginin yerini tutan bir yer tutucu var. Göndermeden önce gerçek metinle değiştirin.",
   "error_translator_unavailable": "Çeviri eklentisi çalışmıyor. Ayarlar › Uzantılar bölümünden etkinleştirin veya modelle yeniden çevirin.",
@@ -1038,6 +1039,7 @@
   "settings_launch_at_login_help": "Oturum açıldıktan sonra Godwit’i arka planda başlatır",
   "settings_login_item_off": "Oturum açılışında başlatma sistem ayarlarında kapalı; oradan yeniden açın",
   "settings_local_api": "Yerel API",
+  "settings_local_api_always": "Godwit’in arka plan işlemi godwit --headless ile başlatıldı, bu yüzden yapay zekâ uygulamalarını ve betikleri her zaman kabul eder. Buradan yönetmek için onu durdurun ve Godwit’i açın.",
   "settings_local_api_client_off": "{arg1} bağlantısı kesildi.",
   "settings_local_api_client_on": "{arg1} bağlandı. Godwit’i kullanmak için yeniden başlatın.",
   "settings_local_api_client_on_session": "{arg1} bağlandı. Yeni bir oturum Godwit’i kullanabilir.",
@@ -1335,7 +1337,6 @@
   "shell_sync_syncing": "Eşitleniyor…",
   "toast_close": "Kapat",
   "tray_hide": "Menü çubuğu simgesini gizle",
-  "tray_hidden_toast": "Menü çubuğu simgesi gizlendi. Ayarlar'dan tekrar açabilirsiniz.",
   "tray_open": "Godwit’i aç",
   "tray_quit": "Çık",
   "tray_quit_stop": "Çık ve almayı durdur",
@@ -2332,5 +2333,9 @@
   "settings_addressbooks_ssl": "Her zaman HTTPS (SSL) ile bağlanır.",
   "contacts_addresses": "Adresler",
   "contacts_addresses_more": "{arg1, number, ::group-off} adres daha",
-  "contacts_address_menu": "{arg1} için işlemler"
+  "contacts_address_menu": "{arg1} için işlemler",
+  "error_mcp_send_no_ui": "Godwit şu anda onay isteyemiyor: açık bir Godwit penceresi yok ve bildirim gösteremiyor.",
+  "settings_account_import_ai_instructions": "Yapay zekâ talimatları",
+  "settings_account_import_signature": "İmza: {arg1}",
+  "settings_account_import_username": "{arg1} olarak oturum açar"
 }

@@ -145,6 +145,7 @@
   "error_stale_approval": "提案後にこの操作の内容が変更されました。もう一度確認してください。",
   "error_stale_draft": "下書きが別の場所で変更されました。",
   "error_too_large": "添付ファイルがサイズ上限を超えています。",
+  "error_message_too_large": "大きすぎるため、Godwit のバックグラウンドプロセスに一度に渡せません。",
   "error_link_ref": "下書き内のリンクが参照するメールはもう利用できません。送信する前にリンクを置き換えてください。",
   "error_placeholder": "下書きに個人情報の代わりのプレースホルダーが残っています。送信する前に元の内容に置き換えてください。",
   "error_translator_unavailable": "翻訳プラグインが実行されていません。「設定 › 拡張機能」で有効にするか、モデルによる翻訳に切り替えてください。",
@@ -1038,6 +1039,7 @@
   "settings_launch_at_login_help": "ログイン後にバックグラウンドで Godwit を起動します",
   "settings_login_item_off": "システム設定で Godwit のログイン時の起動がオフになっています。そこでオンに戻してください",
   "settings_local_api": "ローカル API",
+  "settings_local_api_always": "Godwit のバックグラウンドプロセスは godwit --headless で起動されたため、AI アプリやスクリプトを常に受け付けます。ここで設定するには、停止してから Godwit を開いてください。",
   "settings_local_api_client_off": "{arg1} を切断しました。",
   "settings_local_api_client_on": "{arg1} を接続しました。再起動すると Godwit を使えます。",
   "settings_local_api_client_on_session": "{arg1} を接続しました。新しいセッションで Godwit を使えます。",
@@ -1335,7 +1337,6 @@
   "shell_sync_syncing": "同期中…",
   "toast_close": "閉じる",
   "tray_hide": "メニューバーアイコンを非表示",
-  "tray_hidden_toast": "メニューバーアイコンを非表示にしました。設定で再度有効にできます。",
   "tray_open": "Godwit を開く",
   "tray_quit": "終了",
   "tray_quit_stop": "終了して受信を停止",
@@ -2332,5 +2333,9 @@
   "settings_addressbooks_ssl": "常に HTTPS（SSL）で暗号化して接続します。",
   "contacts_addresses": "アドレス",
   "contacts_addresses_more": "ほか {arg1, number, ::group-off} 件のアドレス",
-  "contacts_address_menu": "{arg1} の操作"
+  "contacts_address_menu": "{arg1} の操作",
+  "error_mcp_send_no_ui": "Godwit は今は確認を求められません。Godwit のウインドウが開いておらず、通知も表示できません。",
+  "settings_account_import_ai_instructions": "AI への指示あり",
+  "settings_account_import_signature": "署名: {arg1}",
+  "settings_account_import_username": "ログイン名: {arg1}"
 }

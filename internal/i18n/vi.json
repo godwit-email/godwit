@@ -145,6 +145,7 @@
   "error_stale_approval": "Thao tác này đã thay đổi sau khi được đề xuất. Hãy xem xét lại.",
   "error_stale_draft": "Thư nháp đã được thay đổi ở nơi khác.",
   "error_too_large": "Tệp đính kèm vượt quá giới hạn dung lượng.",
+  "error_message_too_large": "Nội dung quá lớn để chuyển một lần cho tiến trình nền của Godwit.",
   "error_link_ref": "Một liên kết trong bản nháp trỏ đến email không còn khả dụng. Hãy thay liên kết trước khi gửi.",
   "error_placeholder": "Bản nháp vẫn còn một ký hiệu giữ chỗ thay cho thông tin riêng tư. Hãy thay bằng nội dung thật trước khi gửi.",
   "error_translator_unavailable": "Plugin dịch thuật hiện không chạy. Hãy bật trong Cài đặt › Tiện ích mở rộng, hoặc dịch lại bằng mô hình.",
@@ -1038,6 +1039,7 @@
   "settings_launch_at_login_help": "Khởi động Godwit trong nền sau khi bạn đăng nhập",
   "settings_login_item_off": "Khởi động khi đăng nhập đã bị tắt trong cài đặt hệ thống; hãy bật lại ở đó",
   "settings_local_api": "Local API",
+  "settings_local_api_always": "Tiến trình nền của Godwit được khởi động bằng godwit --headless nên luôn chấp nhận ứng dụng AI và tập lệnh. Hãy dừng nó rồi mở Godwit để điều khiển tại đây.",
   "settings_local_api_client_off": "Đã ngắt kết nối {arg1}.",
   "settings_local_api_client_on": "Đã kết nối {arg1}. Khởi động lại để dùng Godwit.",
   "settings_local_api_client_on_session": "Đã kết nối {arg1}. Phiên mới có thể dùng Godwit.",
@@ -1335,7 +1337,6 @@
   "shell_sync_syncing": "Đang đồng bộ…",
   "toast_close": "Đóng",
   "tray_hide": "Ẩn biểu tượng trên thanh menu",
-  "tray_hidden_toast": "Đã ẩn biểu tượng trên thanh menu. Bạn có thể bật lại trong Cài đặt.",
   "tray_open": "Mở Godwit",
   "tray_quit": "Thoát",
   "tray_quit_stop": "Thoát và dừng nhận thư",
@@ -2332,5 +2333,9 @@
   "settings_addressbooks_ssl": "Luôn kết nối qua HTTPS (SSL).",
   "contacts_addresses": "Địa chỉ",
   "contacts_addresses_more": "Thêm {arg1, number, ::group-off} địa chỉ",
-  "contacts_address_menu": "Thao tác cho {arg1}"
+  "contacts_address_menu": "Thao tác cho {arg1}",
+  "error_mcp_send_no_ui": "Godwit hiện không thể yêu cầu bạn xác nhận: không có cửa sổ Godwit nào đang mở và không thể hiện thông báo.",
+  "settings_account_import_ai_instructions": "Có chỉ dẫn AI",
+  "settings_account_import_signature": "Chữ ký: {arg1}",
+  "settings_account_import_username": "Đăng nhập với {arg1}"
 }

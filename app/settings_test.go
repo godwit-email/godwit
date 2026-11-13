@@ -500,19 +500,6 @@ func TestSettingsTrayIconToggle(t *testing.T) {
 	h.see(i18n.T("settings.unread_in_menu_bar"))
 }
 
-// The tray's own menu hides it: the window comes up, so the toast is seen.
-func TestHideTrayIcon(t *testing.T) {
-	h, _ := withAccount(t)
-	h.app.HideTrayIcon()
-	h.called("SetTrayVisible false")
-	h.until("tray hidden by HideTrayIcon", func() bool {
-		st, err := h.env.Svc.GetSettings(context.Background())
-		return err == nil && !st.ShowTrayIcon
-	})
-	h.called("ShowWindow")
-	h.see(i18n.T("tray.hidden_toast"))
-}
-
 func TestSettingsRapidTogglesOrdered(t *testing.T) {
 	h, _ := withAccount(t)
 	release := make(chan struct{})

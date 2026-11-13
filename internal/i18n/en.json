@@ -247,6 +247,7 @@
   "error_stale_approval": "This action changed after it was proposed. Review it again.",
   "error_stale_draft": "The draft was changed elsewhere.",
   "error_too_large": "The attachment exceeds the size limit.",
+  "error_message_too_large": "This is too large to pass to Godwit’s background process in one go.",
   "error_link_ref": "A link in this draft points to an email that is no longer available. Replace the link before sending.",
   "error_placeholder": "This draft still holds a placeholder that stood in for private information. Replace it with the real text before sending.",
   "error_translator_unavailable": "The translation plugin is not running. Enable it in Settings › Extensions, or translate with the model again.",
@@ -1945,6 +1946,7 @@
   "settings_launch_at_login_help": "Starts Godwit in the background after login",
   "settings_login_item_off": "Login startup is off for Godwit in your system's settings; turn it back on there",
   "settings_local_api": "Local API",
+  "settings_local_api_always": "Godwit’s background process was started with godwit --headless, so it always accepts AI apps and scripts. Stop it and open Godwit to control this here.",
   "settings_local_api_client_off": "Disconnected {arg1}.",
   "settings_local_api_client_on": "Connected {arg1}. Restart it to use Godwit.",
   "settings_local_api_client_on_session": "Connected {arg1}. A new session can use Godwit.",
@@ -2448,7 +2450,6 @@
   "shell_sync_syncing": "Syncing…",
   "toast_close": "Close",
   "tray_hide": "Hide menu bar icon",
-  "tray_hidden_toast": "Menu bar icon hidden. You can turn it back on in Settings.",
   "tray_open": "Open Godwit",
   "tray_quit": "Quit",
   "tray_quit_stop": "Quit and Stop Receiving",
@@ -4105,5 +4106,9 @@
   "settings_addressbooks_ssl": "Always connects over HTTPS (SSL).",
   "contacts_addresses": "Addresses",
   "contacts_addresses_more": "{arg1, plural, one {{arg1, number, ::group-off} more address} other {{arg1, number, ::group-off} more addresses}}",
-  "contacts_address_menu": "Actions for {arg1}"
+  "contacts_address_menu": "Actions for {arg1}",
+  "error_mcp_send_no_ui": "Godwit cannot ask you to confirm right now: no Godwit window is open and it cannot show a notification.",
+  "settings_account_import_ai_instructions": "AI instructions",
+  "settings_account_import_signature": "Signature: {arg1}",
+  "settings_account_import_username": "Signs in as {arg1}"
 }

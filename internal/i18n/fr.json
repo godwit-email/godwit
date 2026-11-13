@@ -145,6 +145,7 @@
   "error_stale_approval": "Cette action a changé après avoir été proposée. Veuillez la vérifier à nouveau.",
   "error_stale_draft": "Le brouillon a été modifié ailleurs.",
   "error_too_large": "La pièce jointe dépasse la taille maximale autorisée.",
+  "error_message_too_large": "C’est trop volumineux pour être transmis en une fois au processus d’arrière-plan de Godwit.",
   "error_link_ref": "Un lien de ce brouillon renvoie à un e-mail qui n’est plus disponible. Remplacez le lien avant l’envoi.",
   "error_placeholder": "Ce brouillon contient encore un espace réservé qui remplace une information privée. Remplacez-le par le vrai texte avant l’envoi.",
   "error_translator_unavailable": "Le plugin de traduction n’est pas actif. Activez-le dans Réglages › Extensions, ou traduisez à nouveau avec le modèle.",
@@ -1038,6 +1039,7 @@
   "settings_launch_at_login_help": "Démarre Godwit en arrière-plan après l’ouverture de session",
   "settings_login_item_off": "Le lancement à l'ouverture de session est désactivé dans les réglages du système ; réactivez-le là",
   "settings_local_api": "API locale",
+  "settings_local_api_always": "Le processus d’arrière-plan de Godwit a été lancé avec godwit --headless : il accepte donc toujours les apps d’IA et les scripts. Arrêtez-le et ouvrez Godwit pour le contrôler ici.",
   "settings_local_api_client_off": "{arg1} déconnecté.",
   "settings_local_api_client_on": "{arg1} connecté. Redémarrez-le pour utiliser Godwit.",
   "settings_local_api_client_on_session": "{arg1} connecté. Une nouvelle session peut utiliser Godwit.",
@@ -1335,7 +1337,6 @@
   "shell_sync_syncing": "Synchronisation…",
   "toast_close": "Fermer",
   "tray_hide": "Masquer l'icône de la barre des menus",
-  "tray_hidden_toast": "Icône de la barre des menus masquée. Vous pouvez la réactiver dans Paramètres.",
   "tray_open": "Ouvrir Godwit",
   "tray_quit": "Quitter",
   "tray_quit_stop": "Quitter et arrêter la réception",
@@ -2332,5 +2333,9 @@
   "settings_addressbooks_ssl": "Se connecte toujours en HTTPS (SSL).",
   "contacts_addresses": "Adresses",
   "contacts_addresses_more": "{arg1, number, ::group-off} autres adresses",
-  "contacts_address_menu": "Actions pour {arg1}"
+  "contacts_address_menu": "Actions pour {arg1}",
+  "error_mcp_send_no_ui": "Godwit ne peut pas vous demander de confirmer pour l’instant : aucune fenêtre Godwit n’est ouverte et il ne peut pas afficher de notification.",
+  "settings_account_import_ai_instructions": "Instructions IA",
+  "settings_account_import_signature": "Signature : {arg1}",
+  "settings_account_import_username": "Connexion en tant que {arg1}"
 }

@@ -57,8 +57,8 @@ func uiLocale(preference, system string) string {
 	return preference
 }
 
-// logOutput is where the GUI's log goes: RecentLog, for an error report, and
-// stderr. A Windows release is a GUI program (-H windowsgui) without a
+// logOutput is where the backend's log goes: RecentLog, for an error report
+// (Service.RecentLog redacts it), and stderr. A Windows release is a GUI program (-H windowsgui) without a
 // stderr, so writing it fails; that must not stop io.MultiWriter before
 // RecentLog, so RecentLog comes first and stderr's failures are dropped.
 func logOutput(stderr io.Writer) io.Writer {
@@ -82,7 +82,10 @@ func (b bestEffort) Write(p []byte) (int, error) {
 // cannot start it says why in an error dialog, exiting 2 if another process
 // owns dataDir, and when the backend goes away it says so and exits.
 func gui(ctx context.Context, dataDir, open string) int {
-	log.SetOutput(logOutput(os.Stderr)) // and slog, while its default is unset; an error report carries the recent lines
+	// And slog, while its default is unset. An error report carries the
+	// backend's recent lines, redacted there; this process knows no secret to
+	// redact its own by, so it keeps none for one.
+	log.SetOutput(bestEffort{os.Stderr})
 	mygo.App.SetName("Godwit")
 	if !packaged() { // the Microsoft Store updates the MSIX
 		mygo.Use(updater.Plugin) // checks GitHub releases daily; a no-op in dev builds

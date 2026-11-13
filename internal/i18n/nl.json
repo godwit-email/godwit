@@ -145,6 +145,7 @@
   "error_stale_approval": "Deze actie is gewijzigd nadat deze werd voorgesteld. Controleer haar opnieuw.",
   "error_stale_draft": "Het concept is ergens anders gewijzigd.",
   "error_too_large": "De bijlage overschrijdt de maximale grootte.",
+  "error_message_too_large": "Dit is te groot om in één keer aan het achtergrondproces van Godwit door te geven.",
   "error_link_ref": "Een link in dit concept verwijst naar een e-mail die niet meer beschikbaar is. Vervang de link voordat je verzendt.",
   "error_placeholder": "Dit concept bevat nog een plaatsaanduiding voor privégegevens. Vervang die door de echte tekst voordat je verzendt.",
   "error_translator_unavailable": "De vertaalplug-in is niet actief. Schakel deze in via Instellingen › Extensies, of vertaal opnieuw met het model.",
@@ -1038,6 +1039,7 @@
   "settings_launch_at_login_help": "Start Godwit op de achtergrond na het inloggen",
   "settings_login_item_off": "Starten bij inloggen staat uit in de systeeminstellingen; zet het daar weer aan",
   "settings_local_api": "Lokale API",
+  "settings_local_api_always": "Het achtergrondproces van Godwit is gestart met godwit --headless en accepteert daarom altijd AI-apps en scripts. Stop het en open Godwit om dit hier te regelen.",
   "settings_local_api_client_off": "{arg1} losgekoppeld.",
   "settings_local_api_client_on": "{arg1} verbonden. Start het opnieuw om Godwit te gebruiken.",
   "settings_local_api_client_on_session": "{arg1} verbonden. Een nieuwe sessie kan Godwit gebruiken.",
@@ -1335,7 +1337,6 @@
   "shell_sync_syncing": "Synchroniseren…",
   "toast_close": "Sluiten",
   "tray_hide": "Menubalkpictogram verbergen",
-  "tray_hidden_toast": "Menubalkpictogram verborgen. Je kunt het weer inschakelen in Instellingen.",
   "tray_open": "Godwit openen",
   "tray_quit": "Afsluiten",
   "tray_quit_stop": "Stoppen en ontvangen beëindigen",
@@ -2332,5 +2333,9 @@
   "settings_addressbooks_ssl": "Maakt altijd verbinding via HTTPS (SSL).",
   "contacts_addresses": "Adressen",
   "contacts_addresses_more": "Nog {arg1, number, ::group-off} adressen",
-  "contacts_address_menu": "Acties voor {arg1}"
+  "contacts_address_menu": "Acties voor {arg1}",
+  "error_mcp_send_no_ui": "Godwit kan je nu niet om bevestiging vragen: er is geen Godwit-venster open en het kan geen melding tonen.",
+  "settings_account_import_ai_instructions": "AI-instructies",
+  "settings_account_import_signature": "Handtekening: {arg1}",
+  "settings_account_import_username": "Logt in als {arg1}"
 }

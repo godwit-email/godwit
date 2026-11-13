@@ -594,26 +594,21 @@ func (s *Service) inlineImageRefs(ctx context.Context, id int64) ([]inlineImageR
 }
 
 // InlineImages calls each with the inline images message id's body shows,
-// downloading the missing ones in turn over one connection. One that cannot be
-// had is left out, so its image stays blocked; the error is for the database or
-// an ended ctx.
+// downloading the missing ones in turn over one connection: the
+// InlineImagesStream the interface reads over the Local API, its files read
+// in process. One that cannot be had is left out, so its image stays
+// blocked; the error is for the database or an ended ctx.
 func (s *Service) InlineImages(ctx context.Context, id int64, each func(cid string, a gomail.Attachment)) error {
-	items, err := s.inlineImageRefs(ctx, id)
+	ch, err := s.InlineImagesStream(ctx, id)
 	if err != nil {
 		return err
 	}
-	fetcher := s.newAttachmentFetcher(ctx)
-	defer fetcher.close()
-	for _, it := range items {
-		path, _, err := fetcher.get(it.attID)
-		if err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			continue // image stays blocked; the message is still readable
+	for it := range ch {
+		if it.Err != nil {
+			return it.Err
 		}
-		if data, err := readFile(path); err == nil {
-			each(it.cid, gomail.Attachment{Data: data, ContentType: it.contentType})
+		if data, err := readFile(it.Path); err == nil {
+			each(it.CID, gomail.Attachment{Data: data, ContentType: it.ContentType})
 		}
 	}
 	return ctx.Err()
