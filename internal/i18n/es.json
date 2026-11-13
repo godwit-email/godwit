@@ -1577,6 +1577,7 @@
   "settings_account_icon_symbols": "Iconos",
   "settings_account_icon_brands": "Logotipos",
   "error_account_icon": "El icono de la cuenta debe ser una imagen PNG, JPEG, GIF, WebP o SVG de 5 MB como máximo.",
+  "error_account_exists": "Esta dirección ya está añadida. Para volver a iniciar sesión, ábrela en Ajustes › Cuentas.",
   "wit_tool_search_mail": "Buscar correo",
   "wit_tool_get_account_profile": "Leer el perfil del remitente",
   "wit_tool_get_message": "Leer un mensaje",

@@ -1577,6 +1577,7 @@
   "settings_account_icon_symbols": "アイコン",
   "settings_account_icon_brands": "ロゴ",
   "error_account_icon": "アカウントアイコンは 5 MB 以下の PNG、JPEG、GIF、WebP、SVG 画像にしてください。",
+  "error_account_exists": "このアドレスはすでに追加されています。再度サインインするには、設定 › アカウントで開いてください。",
   "wit_tool_search_mail": "メールを検索",
   "wit_tool_get_account_profile": "差出人プロフィールを読む",
   "wit_tool_get_message": "メールを読む",

@@ -57,6 +57,7 @@ var table = []Error{
 	{Code: "secret_not_found", Err: core.ErrSecretNotFound},
 	{Code: "wrong_account", Err: core.ErrWrongAccount},
 	{Code: "account_not_found", Err: core.ErrAccountNotFound},
+	{Code: "account_exists", Err: core.ErrAccountExists},
 	{Code: "bad_account_export", Err: core.ErrBadAccountExport},
 	{Code: "unsupported_export_version", Err: core.ErrUnsupportedExportVersion},
 	{Code: "address_book_not_found", Err: core.ErrAddressBookNotFound},

@@ -1577,6 +1577,7 @@
   "settings_account_icon_symbols": "Simgeler",
   "settings_account_icon_brands": "Logolar",
   "error_account_icon": "Hesap simgesi en fazla 5 MB boyutunda PNG, JPEG, GIF, WebP veya SVG görseli olmalıdır.",
+  "error_account_exists": "Bu adres zaten eklenmiş. Yeniden oturum açmak için Ayarlar › Hesaplar'da açın.",
   "wit_tool_search_mail": "Postalarda ara",
   "wit_tool_get_account_profile": "Gönderen profilini oku",
   "wit_tool_get_message": "İleti oku",

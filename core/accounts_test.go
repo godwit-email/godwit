@@ -75,6 +75,9 @@ func TestAddAccount(t *testing.T) {
 	acc2, err := s.AddAccount(ctx, in2)
 	require.NoError(t, err)
 	assert.False(t, acc2.IsDefault)
+
+	_, err = s.AddAccount(ctx, in2)
+	assert.ErrorIs(t, err, core.ErrAccountExists, "an address already added is signed in again, not added twice")
 }
 
 func TestReorderAccounts(t *testing.T) {

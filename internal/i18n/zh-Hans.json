@@ -1577,6 +1577,7 @@
   "settings_account_icon_symbols": "图标",
   "settings_account_icon_brands": "Logo",
   "error_account_icon": "账户图标须为不超过 5 MB 的 PNG、JPEG、GIF、WebP 或 SVG 图片。",
+  "error_account_exists": "这个地址已经添加过了。要重新登录，请在设置 › 账户中打开它。",
   "wit_tool_search_mail": "搜索邮件",
   "wit_tool_get_account_profile": "读取发件人资料",
   "wit_tool_get_message": "读取邮件",

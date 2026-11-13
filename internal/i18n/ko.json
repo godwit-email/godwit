@@ -1577,6 +1577,7 @@
   "settings_account_icon_symbols": "아이콘",
   "settings_account_icon_brands": "로고",
   "error_account_icon": "계정 아이콘은 5MB 이하의 PNG, JPEG, GIF, WebP 또는 SVG 이미지여야 합니다.",
+  "error_account_exists": "이 주소는 이미 추가되어 있습니다. 다시 로그인하려면 설정 › 계정에서 여세요.",
   "wit_tool_search_mail": "메일 검색",
   "wit_tool_get_account_profile": "보내는 사람 프로필 읽기",
   "wit_tool_get_message": "메일 읽기",

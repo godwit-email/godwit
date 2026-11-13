@@ -2952,6 +2952,7 @@
   "settings_account_icon_symbols": "Icons",
   "settings_account_icon_brands": "Logos",
   "error_account_icon": "An account icon must be a PNG, JPEG, GIF, WebP or SVG image of at most 5 MB.",
+  "error_account_exists": "This address is already added. To sign in again, open it in Settings › Accounts.",
   "wit_tool_search_mail": "Search mail",
   "wit_tool_get_account_profile": "Read the sender profile",
   "wit_tool_get_message": "Read a message",
