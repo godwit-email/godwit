@@ -98,10 +98,14 @@ func gui(ctx context.Context, dataDir, open string) int {
 		err error
 	}
 	backendc := make(chan connected, 1)
-	go func() { // while the native app launches: the two start-ups overlap
-		c, err := connectBackend(dataDir, backendWait)
-		backendc <- connected{c, err}
-	}()
+	// mygo generate runs this only to write the TypeScript client: a backend
+	// it started would inherit MYGO_GENERATE and overwrite that client.
+	if os.Getenv("MYGO_GENERATE") == "" {
+		go func() { // while the native app launches: the two start-ups overlap
+			c, err := connectBackend(dataDir, backendWait)
+			backendc <- connected{c, err}
+		}()
+	}
 	bench := newBenchProbe(os.Getenv("GODWIT_BENCH_LOG"))
 	bench.initApp(dataDir)
 	defer bench.close()

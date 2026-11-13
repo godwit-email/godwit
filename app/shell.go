@@ -647,4 +647,3 @@ func (a *App) closeDialog(c *ui.Context) {
 		})
 	})
 }
-
