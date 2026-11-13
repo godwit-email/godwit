@@ -268,6 +268,13 @@ type Service struct {
 	closeErr  error
 }
 
+var (
+	proxyOwner atomic.Pointer[Service]
+	proxyHooks sync.Once
+)
+
+func ownerProxy(u *url.URL) *url.URL { return proxyOwner.Load().Proxy(u) }
+
 // New creates DataDir if needed and opens DataDir/godwit.db.
 func New(ctx context.Context, opts Options) (*Service, error) {
 	if opts.GuardCoreML != "" {
@@ -319,8 +326,10 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		slog.Warn("proxy settings unreadable, following the system proxy", "err", err)
 		s.setProxy(defaultSettings(), "")
 	}
-	// the hooks are package-wide: the last Service started owns them
-	conn.SystemProxy, imagefetch.SystemProxy = s.Proxy, s.Proxy
+	// the hooks are package-wide: the last Service started owns them; they are
+	// set once and read the owner atomically, as an earlier Service's dial may still run
+	proxyOwner.Store(s)
+	proxyHooks.Do(func() { conn.SystemProxy, imagefetch.SystemProxy = ownerProxy, ownerProxy })
 	if opts.ImageClient == nil {
 		s.opts.ImageClient = imagefetch.NewClient(false)
 		if opts.LookupTXT == nil {
