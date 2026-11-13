@@ -23,8 +23,6 @@ import (
 	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/backend/conn"
 	"github.com/godwit-email/godwit/backend/ews"
-	"github.com/godwit-email/godwit/backend/gmailapi"
-	"github.com/godwit-email/godwit/backend/jmap"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/ai/mask/guard"
@@ -949,27 +947,17 @@ func (s *Service) checkSMTP(ctx context.Context, accountID int64, explicit bool)
 	}
 	sa := &sendAuth{s: s, acc: acc}
 	login := func() error {
-		switch sa.acc.Sending.Protocol {
-		case auth.Graph:
+		switch p := sa.acc.Sending.Protocol; {
+		case p == auth.Graph:
 			_, err := sa.credentials(ctx) // a Graph token in hand is the check
 			return err
-		case auth.EWS: // an EWS account sends through EWS: sign in there, never to SMTP
-			r := ews.New(ews.Config{URL: ewsURL(sa.acc), Credentials: sa.credentials})
-			defer r.Close()
-			_, err := r.Check(ctx)
-			return err
-		case auth.GmailAPI:
-			r := gmailapi.New(gmailapi.Config{BaseURL: slotURL(sa.acc.Receiving, sa.acc.Receiving.Path), Credentials: sa.credentials})
-			defer r.Close()
-			_, err := r.Check(ctx)
-			return err
-		case auth.JMAP: // a JMAP account sends through JMAP: sign in there, never to SMTP
-			r := jmap.New(jmap.Config{SessionURL: sessionURL(sa.acc.Receiving), Credentials: sa.credentials})
+		case sendsViaReceiving(p): // it sends through the receiving server: sign in there, never to SMTP
+			r := newReceiver(sa.acc.Receiving, sa.acc.Email, sa.credentials)
 			defer r.Close()
 			_, err := r.Check(ctx)
 			return err
 		}
-		return sa.smtp().Check(ctx)
+		return smtpSender(sa.acc.Sending, sa.credentials).Check(ctx)
 	}
 	if err = login(); err != nil && sa.retry(ctx, err) {
 		err = login()
