@@ -572,9 +572,9 @@ func TestTrayQuitCancelledKeepsBackend(t *testing.T) {
 	if stopped.Load() {
 		t.Fatal("the backend stopped under an interface that stayed")
 	}
-	// The user kept the quit: back in front, the interface's own quit later
-	// is an ordinary one, which 后台收信 decides.
-	if err := ui.SetUIForeground(t.Context(), true); err != nil {
+	// The user cancelled the quit: the interface's own quit later is an
+	// ordinary one, which 后台收信 decides.
+	if err := ui.CancelTrayQuit(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	ui.Close()
