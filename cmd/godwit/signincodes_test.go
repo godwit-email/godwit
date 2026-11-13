@@ -232,6 +232,23 @@ func TestSnapSignInCode(t *testing.T) {
 	}
 }
 
+func TestPointerOnSignInCode(t *testing.T) {
+	pos := mygo.Point{X: 560, Y: 803}
+	for _, tc := range []struct {
+		cursor mygo.Point
+		on     bool
+	}{
+		{pos, true},
+		{mygo.Point{X: pos.X + codeBannerWidth - 1, Y: pos.Y + codeBannerHeight - 1}, true},
+		{mygo.Point{X: pos.X + codeBannerWidth, Y: pos.Y + 10}, false},
+		{mygo.Point{X: pos.X + 10, Y: pos.Y - 1}, false},
+	} {
+		if got := pointerOnSignInCode(pos, tc.cursor); got != tc.on {
+			t.Errorf("pointerOnSignInCode(%+v, %+v) = %v, want %v", pos, tc.cursor, got, tc.on)
+		}
+	}
+}
+
 type fakePlatformSvc struct {
 	avatar func(ctx context.Context, id int64, allowRemote bool) (core.Avatar, error)
 }
