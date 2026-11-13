@@ -1,6 +1,6 @@
 import type { ReaderBody, Theme } from "@/mygo";
 import { installFake } from "@/preview/fake";
-import { buildSrcdoc, frameCSP, frameScheme, isTextHTML } from "./frame";
+import { buildSrcdoc, foldQuotes, frameCSP, frameScheme, isTextHTML } from "./frame";
 
 const theme = (over: Partial<Theme> = {}): Theme => ({
   mode: "light",
@@ -259,10 +259,17 @@ test("plain text is transparent in the theme's colour scheme", () => {
 });
 
 // Quoted text: a reply folds what it replies to behind a button, and keeps what its sender wrote.
-const folded = (over: Partial<ReaderBody>) =>
-  parse(buildSrcdoc(body({ collapseQuotes: true, ...over }), theme())).getElementById(
-    "godwit-body",
-  );
+// An HTML body folds once rendered (Body's attach), so its styles, the mail's sheet included, apply.
+const folded = (over: Partial<ReaderBody>) => {
+  const b = body({ collapseQuotes: true, ...over });
+  const doc = parse(buildSrcdoc(b, theme()));
+  const w = doc.getElementById("godwit-body") as HTMLElement;
+  if (b.html === "") return w;
+  document.head.replaceChildren(document.adoptNode(doc.querySelector("style") as HTMLStyleElement));
+  document.body.replaceChildren(document.adoptNode(w));
+  foldQuotes(w);
+  return w;
+};
 
 test("a reply's quoted text folds behind a pill and hairline rule", () => {
   const w = folded({
@@ -531,30 +538,37 @@ test("a message that is nothing but quotes stays open, including sibling quotes"
   ).toBeNull();
 });
 
-test("folded HTML quotes preserve inherited white-space from ancestors", () => {
-  const doc = parse(
-    buildSrcdoc(
-      body({
-        collapseQuotes: true,
-        html: '<div style="white-space:pre-wrap"><p>Reply</p><blockquote id="q">a\n  b</blockquote></div>',
-      }),
-      theme(),
-    ),
-  );
-  const style = document.createElement("style");
-  style.textContent = doc.querySelector("style")?.textContent ?? "";
-  const host = doc.body.cloneNode(true) as HTMLElement;
-  document.head.append(style);
-  document.body.append(host);
-  try {
-    const q = host.querySelector("#q") as HTMLElement;
-    expect(getComputedStyle(q).whiteSpace).toBe("pre-wrap");
-    const summary = host.querySelector("details.godwit-quote-fold > summary") as HTMLElement;
-    expect(getComputedStyle(summary).whiteSpace).toBe("normal");
-  } finally {
-    style.remove();
-    host.remove();
+test("the mail's stylesheet decides what reads as the sender's text and as a line (#713)", () => {
+  // A preheader the stylesheet hides is not sender prose: a quote-only forward stays open.
+  for (const rule of ["display:none", "visibility:hidden", "font-size:0"]) {
+    expect(
+      folded({
+        html: `<style>.pre{${rule}}</style><div class="pre">preview text</div><blockquote>Original message</blockquote>`,
+      })?.querySelector("details"),
+    ).toBeNull();
   }
+  // A span the stylesheet makes a block is a line of its own: the attribution folds with the quote.
+  const blockLead = folded({
+    html: '<style>.attr{display:block}</style><p>Thanks!</p><span class="attr">On Tue, Bob wrote:</span><blockquote>Old request</blockquote>',
+  });
+  expect(blockLead?.querySelector("details")?.textContent).toContain("On Tue, Bob wrote:");
+  expect(blockLead?.querySelector("details")?.textContent).not.toContain("Thanks!");
+  // Lines the stylesheet preserves are two lines, not one attribution: the prose stays out.
+  const preLead = folded({
+    html: '<style>.ws{white-space:pre-wrap}</style><p>Hi</p><div class="ws">Do not pay yet.\nOn Tue, Bob wrote:</div><blockquote>Old request</blockquote>',
+  });
+  expect(preLead?.querySelector("details")?.textContent).not.toContain("Do not pay yet.");
+  expect(preLead?.textContent).toContain("Do not pay yet.");
+});
+
+test("folded HTML quotes preserve inherited white-space from ancestors", () => {
+  const host = folded({
+    html: '<div style="white-space:pre-wrap"><p>Reply</p><blockquote id="q">a\n  b</blockquote></div>',
+  });
+  const q = host.querySelector("#q") as HTMLElement;
+  expect(getComputedStyle(q).whiteSpace).toBe("pre-wrap");
+  const summary = host.querySelector("details.godwit-quote-fold > summary") as HTMLElement;
+  expect(getComputedStyle(summary).whiteSpace).toBe("normal");
 });
 
 test("folding is off unless asked, and leaves the markup as it came", () => {

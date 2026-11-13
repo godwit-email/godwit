@@ -6,7 +6,7 @@ import { useT } from "@/shared/i18n";
 import { forwardShortcuts } from "@/shared/shortcuts";
 import { applyTheme, type Theme as PageTheme } from "@/shared/theme";
 import { adaptDarkMode, brightness, type Color, over, parse } from "./dark";
-import { buildSrcdoc, frameScheme, isDark } from "./frame";
+import { buildSrcdoc, foldQuotes, frameScheme, isDark } from "./frame";
 
 const ignore = () => {};
 let nextDocument = 0;
@@ -172,9 +172,10 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
   );
 
   const dark = isDark(theme, systemDark);
+  const fold = body.collapseQuotes && body.html !== ""; // plain text folds in its srcdoc
   const wire = useCallback(
-    (f: HTMLIFrameElement) => attach(f, theme, dark, labels, setTip),
-    [theme, dark, labels],
+    (f: HTMLIFrameElement) => attach(f, theme, dark, labels, setTip, fold),
+    [theme, dark, labels, fold],
   );
   useEffect(() => {
     const f = frame.current;
@@ -250,11 +251,19 @@ function attach(
   darkCanvas: boolean,
   labels: { expand: string; collapse: string },
   setTip: (tip: QuoteTip | null) => void,
+  fold: boolean,
 ): () => void {
   const doc = frame.contentDocument;
   const win = frame.contentWindow;
   const wrap = doc?.getElementById("godwit-body");
   if (!doc || !win || !wrap) return ignore; // the initial about:blank
+  // On the rendered document, where the mail's stylesheet applies; before the dark pass reads the
+  // light baseline and before the first height. godwit-auto only hides the body until that dark
+  // pass, which drops it first thing in this same task: the fold must see the text it hides.
+  if (fold) {
+    wrap.classList.remove("godwit-auto");
+    foldQuotes(wrap);
+  }
   let live = true;
   const offs: (() => void)[] = [adaptDarkMode(frame, theme)];
   const on = <E extends Event>(
