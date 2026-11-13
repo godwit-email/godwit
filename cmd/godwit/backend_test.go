@@ -477,6 +477,13 @@ func TestBackendShowsUI(t *testing.T) {
 	evs, stop := ui.Subscribe()
 	defer stop()
 	waitCond(t, "the interface connected", svc.UIConnected)
+	showUI(svc, dir, "message:3") // connected, still starting: another one is started, and hands it on
+	if n := len(l.all()); n != 4 {
+		t.Fatalf("%d interfaces started for a request a starting one would drop, want 4", n)
+	}
+	if err := ui.SetUIReady(t.Context(), true); err != nil {
+		t.Fatal(err)
+	}
 	for _, what := range []string{app.OpenWindow, app.OpenCompose, "message:2"} {
 		showUI(svc, dir, what)
 	}
@@ -496,8 +503,8 @@ func TestBackendShowsUI(t *testing.T) {
 		got[2].Type != events.NotificationClicked || got[2].Notification != "message:2" {
 		t.Fatalf("the interface got %+v", got)
 	}
-	if n := len(l.all()); n != 3 {
-		t.Fatalf("%d interfaces started beside the connected one", n-3)
+	if n := len(l.all()); n != 4 {
+		t.Fatalf("%d interfaces started beside the connected one", n-4)
 	}
 }
 
@@ -541,9 +548,6 @@ func TestTrayQuitAsksInterfaceFirst(t *testing.T) {
 // An interface that cancels the tray's Quit (unsaved edits) stays connected:
 // the backend must not stop under it, which would end it and lose the edits.
 func TestTrayQuitCancelledKeepsBackend(t *testing.T) {
-	old := quitWait
-	quitWait = 200 * time.Millisecond
-	t.Cleanup(func() { quitWait = old })
 	dir := shortDir(t)
 	svc, err := core.New(context.Background(), core.Options{DataDir: dir})
 	if err != nil {
@@ -564,8 +568,57 @@ func TestTrayQuitCancelledKeepsBackend(t *testing.T) {
 	waitCond(t, "the interface connected", svc.UIConnected)
 	var stopped atomic.Bool
 	quitFromTray(svc, func() { stopped.Store(true) })
-	time.Sleep(4 * quitWait)
+	time.Sleep(300 * time.Millisecond)
 	if stopped.Load() {
 		t.Fatal("the backend stopped under an interface that stayed")
+	}
+	// The user kept the quit: back in front, the interface's own quit later
+	// is an ordinary one, which 后台收信 decides.
+	if err := ui.SetUIForeground(t.Context(), true); err != nil {
+		t.Fatal(err)
+	}
+	ui.Close()
+	time.Sleep(300 * time.Millisecond)
+	if stopped.Load() {
+		t.Fatal("a quit the user kept stopped the backend later")
+	}
+}
+
+// Under 一直继续 the interface's stop is refused, except after the tray's
+// 退出并停止收信: the interface quits first, and its stop ends the backend.
+func TestTrayQuitStopsUnderAlways(t *testing.T) {
+	dir := shortDir(t)
+	svc, err := core.New(context.Background(), core.Options{DataDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { svc.Close() })
+	st, err := svc.GetSettings(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.BackgroundReceive = core.BackgroundReceiveAlways
+	if _, err := svc.SetSettings(t.Context(), st); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := rpcbind.ListenWith(dir, svc, rpcbind.ListenOptions{Version: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve(context.Background())
+	t.Cleanup(func() { srv.Close() })
+	ui, err := uiclient.Dial(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ui.Close()
+	waitCond(t, "the interface connected", svc.UIConnected)
+	var stopped atomic.Bool
+	quitFromTray(svc, func() { stopped.Store(true) })
+	if err := ui.StopUIBackend(t.Context()); err != nil {
+		t.Fatalf("the interface's stop after 退出并停止收信: %v", err)
+	}
+	if !stopped.Load() {
+		t.Fatal("the backend kept running after 退出并停止收信")
 	}
 }

@@ -546,7 +546,9 @@ func TestUIInboxOnlyAndSystemTranslator(t *testing.T) {
 
 func TestUIStateReport(t *testing.T) {
 	runUIContract(t, nil, func(t *testing.T, api contract.UIAPI, env *coretest.Env) any {
-		ctx := t.Context()
+		// In process, the call is the interface's connection's (over the socket the
+		// connection has its own, and this one only stands by).
+		ctx := core.WithUISession(t.Context(), env.Svc)
 		acc := env.AddAccount(t, "alice@example.com")
 
 		st, err := api.GetSettings(ctx)

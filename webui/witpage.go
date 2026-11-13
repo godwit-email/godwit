@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/godwit-email/godwit/core"
@@ -215,8 +216,12 @@ func (w *Wit) SettingsChanged(st core.Settings) { w.d.State(w.state(st)) }
 
 func (w *Wit) state(st core.Settings) WitPageState {
 	w.mu.Lock()
-	defer w.mu.Unlock()
-	return WitPageState{Conversation: w.conv, Version: w.version, Model: modelLabel(context.Background(), w.svc, st.DefaultModel), Locale: i18n.Language(), Theme: ThemeOf(st)}
+	svc, conv, version := w.svc, w.conv, w.version
+	w.mu.Unlock()
+	// A call to the backend, maybe from the UI thread: not under w.mu, and bounded.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return WitPageState{Conversation: conv, Version: version, Model: modelLabel(ctx, svc, st.DefaultModel), Locale: i18n.Language(), Theme: ThemeOf(st)}
 }
 
 // modelLabel is a default model's label: its display name (svc nil: none),
@@ -267,17 +272,27 @@ func (w *Wit) followConv(t Target, svc Service, conv int64, sel uint64) (*follow
 		return nil, errSuperseded
 	}
 	old := w.f
-	if old != nil && old.conv == conv {
+	if old != nil && old.conv == conv && old.live() {
 		w.mu.Unlock()
 		return old, nil
 	}
+	w.mu.Unlock()
 	var f *follow
 	var ch <-chan core.WitEvent
-	if conv != 0 {
+	if conv != 0 { // a call to the backend: not under w.mu, which the page's calls take
 		var stop func()
 		ch, stop = svc.SubscribeConversation(conv)
 		f = &follow{conv: conv, stop: stop}
 	}
+	w.mu.Lock()
+	if sel != w.sel {
+		w.mu.Unlock()
+		if f != nil {
+			f.stop()
+		}
+		return nil, errSuperseded
+	}
+	old = w.f
 	w.f = f
 	w.mu.Unlock()
 	if old != nil {

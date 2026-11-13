@@ -152,6 +152,7 @@ type Service interface {
 	RuleHits(ctx context.Context, ruleID int64) ([]core.RuleHit, error)
 	Rules(ctx context.Context) ([]core.Rule, error)
 	RulesInBackground(ctx context.Context) (bool, error)
+	TrayShown(ctx context.Context) (bool, error)
 	RunAction(ctx context.Context, id string, t core.Target, opts core.RunActionOptions) (core.ActionResult, error)
 	RunRuleOnExisting(ctx context.Context, ruleID int64) (int, error)
 	RunSkill(ctx context.Context, name string, t core.Target) (<-chan ai.Event, error)

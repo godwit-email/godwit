@@ -584,6 +584,10 @@ func (p *settingsPage) localAPIView(c *ui.Context) {
 		a.toastAs(kit.ToastSuccess, i18n.T("settings.local_api.copied"))
 	}
 	rows := []func(){func() {
+		if a.externalAlways { // the switch would say off while clients connect
+			settingBlock(c, func() { kit.Alert(c, kit.Info, i18n.T("settings.local_api.always"), nil) })
+			return
+		}
 		kit.SwitchRow(c, &p.st.LocalAPI, i18n.T("settings.local_api.on"), i18n.T("settings.local_api.help"))
 	}}
 	if err := a.localAPIErr; err != nil {
@@ -596,7 +600,7 @@ func (p *settingsPage) localAPIView(c *ui.Context) {
 			})
 		})
 	}
-	if a.settings.LocalAPI && a.localAPIPath != "" {
+	if a.localAPIPath != "" { // served: the setting's, or the user's --headless
 		rows = append(rows, func() { p.clientsRow(c, copied) })
 	}
 	rows = append(rows, func() {
@@ -616,7 +620,7 @@ func (p *settingsPage) localAPIView(c *ui.Context) {
 			settingBlock(c, func() { kit.Alert(c, kit.Warning, i18n.T("settings.local_api.send.risk"), nil) })
 		}
 	})
-	if a.settings.LocalAPI && a.localAPIPath != "" {
+	if a.localAPIPath != "" {
 		rows = append(rows, func() {
 			t := theme.Of(c)
 			settingRow(c, i18n.T("settings.local_api.path"), "", func() {

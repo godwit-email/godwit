@@ -235,15 +235,12 @@ func (r *Reader) unbind(key any) {
 // message no page shows is left alone. It returns at once: the body is
 // read on a goroutine.
 func (r *Reader) Allow(message int64) {
+	var urls []string
 	r.reload(message, func(st *bodyOf) {
-		var urls []string
 		for token := range st.failed { // a retry: try them again now
 			if u := st.tokens[token]; u != "" {
 				urls = append(urls, u)
 			}
-		}
-		if len(urls) > 0 && r.svc != nil {
-			r.svc.ForgetImageFailure(urls)
 		}
 		st.allowed, st.failed = true, nil
 		// Inline images missed are tried again; those had come from the attachment cache.
@@ -251,6 +248,10 @@ func (r *Reader) Allow(message int64) {
 			st.stopInline()
 		}
 		st.inline, st.stopInline = nil, nil
+	}, func(svc Service) { // a call to the backend: off the UI thread and r.mu, before the new body's images load
+		if len(urls) > 0 {
+			svc.ForgetImageFailure(urls)
+		}
 	})
 }
 
@@ -334,7 +335,7 @@ func translateBody(b ReaderBody, texts map[string]string) ReaderBody {
 	return b
 }
 
-func (r *Reader) reload(message int64, change func(*bodyOf)) {
+func (r *Reader) reload(message int64, change func(*bodyOf), prep func(Service)) {
 	r.mu.Lock()
 	st := r.msgs[message]
 	svc := r.svc
@@ -349,6 +350,9 @@ func (r *Reader) reload(message int64, change func(*bodyOf)) {
 	st.generation, st.body = v, nil
 	r.mu.Unlock()
 	go func() {
+		if prep != nil {
+			prep(svc)
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
 		b, err := r.build(ctx, svc, message, v, allowed)

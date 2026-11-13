@@ -288,6 +288,9 @@ func (ws *Windows) Closed(winID int) {
 			ws.mu.Unlock()
 			if reopen {
 				if ws.c.exists(x.draft) {
+					if ws.OnOpening != nil { // as Open does: whoever must know, first
+						ws.OnOpening()
+					}
 					ws.make(x.draft)
 				} else {
 					ws.mu.Lock()

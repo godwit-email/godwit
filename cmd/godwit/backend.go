@@ -30,8 +30,9 @@ const (
 
 // backendWait bounds how long the interface waits for its backend to answer:
 // opening the database may migrate it. ownerWait bounds it once a started
-// backend found another owner, which is quitting or about to answer.
-const backendWait, ownerWait = time.Minute, 10 * time.Second
+// backend found another owner, which is quitting (a slow disk, a send in
+// flight) or about to answer; each started backend waits ownerRetry for it.
+const backendWait, ownerWait, ownerRetry = time.Minute, 30 * time.Second, time.Second
 
 // backendCmd is the backend the interface starts on dataDir: this
 // executable, headless and marked as the interface's, outliving it

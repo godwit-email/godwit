@@ -893,6 +893,10 @@ func (cl *Client) ThreadLabels(ctx context.Context, threadIDs []int64) (map[int6
 	return call[map[int64][]core.AppliedLabel](cl, ctx, "ThreadLabels", threadIDs)
 }
 
+func (cl *Client) TrayShown(ctx context.Context) (bool, error) {
+	return call[bool](cl, ctx, "TrayShown")
+}
+
 func (cl *Client) TrustImageSender(ctx context.Context, from string) error {
 	return callErr(cl, ctx, "TrustImageSender", from)
 }

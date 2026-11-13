@@ -3,13 +3,18 @@ package app
 import (
 	"context"
 	"errors"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
 )
+
+// noteDedupe is how long a taken click hides the same one given again.
+const noteDedupe = 5 * time.Second
 
 // NotificationClicked shows the window with what a notification was about:
 // its message, the account's inbox for a gathered one, or the confirmation
@@ -29,7 +34,9 @@ func (a *App) NotificationClicked(id string) {
 		a.loadMCPSends()
 		return
 	}
-	if a.noteSeen[id] {
+	// One click may reach both processes, within moments; the same
+	// notification opened again later is the user's.
+	if at, ok := a.noteSeen[id]; ok && a.clock.Now().Sub(at) < noteDedupe {
 		return
 	}
 	a.plat.ShowWindow()
@@ -38,9 +45,11 @@ func (a *App) NotificationClicked(id string) {
 		return
 	}
 	if a.noteSeen == nil {
-		a.noteSeen = map[string]bool{}
+		a.noteSeen = map[string]time.Time{}
 	}
-	a.noteSeen[id] = true
+	now := a.clock.Now()
+	maps.DeleteFunc(a.noteSeen, func(_ string, at time.Time) bool { return now.Sub(at) >= noteDedupe })
+	a.noteSeen[id] = now
 	a.noteGen++
 	gen, look := a.noteGen, a.noteRoute
 	var r Route
@@ -197,8 +206,17 @@ func (a *App) finishBatch() {
 // batchPending reports whether the Sync All in flight still waits on the account.
 func (a *App) batchPending(id int64) bool { return a.syncBatch != nil && a.syncBatch.pending[id] }
 
-// TrayIconShown reports whether the tray shows Godwit's icon (ShowTrayIcon).
-func (a *App) TrayIconShown() bool { return a.settings.ShowTrayIcon }
+// TrayIconShown reports whether the backend's tray shows Godwit's icon: the
+// setting asks for it, but the system may have no tray. Asked as the window
+// closes, on the UI thread: bounded, the setting standing in when it cannot.
+func (a *App) TrayIconShown() bool {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if shown, err := a.svc.TrayShown(ctx); err == nil {
+		return shown
+	}
+	return a.settings.ShowTrayIcon
+}
 
 // KeepInBackground reports whether the backend keeps receiving once the
 // window closes: 后台收信 is past 关窗后停止, or an enabled rule runs in the
@@ -207,6 +225,10 @@ func (a *App) KeepInBackground() bool {
 	if a.settings.BackgroundReceive != core.BackgroundReceiveStopOnClose {
 		return true
 	}
-	on, _ := a.svc.RulesInBackground(context.Background()) // an error quits, as with no such rule
-	return on
+	// Asked as the window closes, on the UI thread: bounded, and a backend
+	// that cannot say keeps the window's work rather than stopping a rule.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	on, err := a.svc.RulesInBackground(ctx)
+	return on || err != nil
 }

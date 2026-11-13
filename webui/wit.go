@@ -133,11 +133,25 @@ func (c *Compose) follow(win int, s *session, svc Service, conv int64, emit func
 		return nil, ErrNoDraft
 	}
 	old := c.follows[win]
-	if old != nil && old.conv == conv && !old.direct {
+	if old != nil && old.conv == conv && !old.direct && old.live() {
 		c.mu.Unlock()
 		return old, nil
 	}
+	c.mu.Unlock()
+	// A call to the backend: not under c.mu, which every window's calls take.
 	ch, stop := svc.SubscribeConversation(conv)
+	c.mu.Lock()
+	if c.sessions[win] != s {
+		c.mu.Unlock()
+		stop()
+		return nil, ErrNoDraft
+	}
+	if cur := c.follows[win]; cur != old && cur != nil && cur.conv == conv && !cur.direct && cur.live() {
+		c.mu.Unlock() // another call followed it meanwhile
+		stop()
+		return cur, nil
+	}
+	old = c.follows[win]
 	f := &follow{conv: conv, stop: stop}
 	c.follows[win] = f
 	c.mu.Unlock()

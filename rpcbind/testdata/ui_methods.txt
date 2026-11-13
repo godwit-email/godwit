@@ -23,6 +23,8 @@ SetComposeOpen
 SetInboxOnly
 SetTimeZone
 SetUIForeground
+SetUIReady
 StopUIBackend
 StoreLatestVersion
 SystemTranslatorLanguages
+TrayShown

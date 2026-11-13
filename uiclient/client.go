@@ -66,6 +66,12 @@ func (c *Client) SetComposeOpen(ctx context.Context, draftIDs []int64) error {
 	return callErr(c, ctx, "SetComposeOpen", draftIDs)
 }
 
+// SetUIReady tells the backend whether this interface takes requests on its
+// events (tray, notification clicks): a starting or quitting one does not.
+func (c *Client) SetUIReady(ctx context.Context, on bool) error {
+	return callErr(c, ctx, "SetUIReady", on)
+}
+
 func (c *Client) StopUIBackend(ctx context.Context) error { return callErr(c, ctx, "StopUIBackend") }
 
 func (c *Client) ReplaceUIBackend(ctx context.Context) error {

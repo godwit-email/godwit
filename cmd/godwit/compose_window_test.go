@@ -28,13 +28,13 @@ func TestQuitHookWebThenNative(t *testing.T) {
 	t.Cleanup(func() { quitApp = old })
 	natives := 0
 	ws := &fakeWindows{n: 2}
-	resets := 0
-	hook := quitHook(ws, func(*mygo.QuitEvent) { natives++ }, func() { resets++ })
+	resets, kept := 0, 0
+	hook := quitHook(ws, func(*mygo.QuitEvent) { natives++ }, func() { resets++ }, func() { kept++ })
 
 	e := &mygo.QuitEvent{}
 	hook(e)
-	if !e.DefaultPrevented() || natives != 0 || quits != 0 {
-		t.Fatalf("a window kept: prevented %v, native %d, quit %d", e.DefaultPrevented(), natives, quits)
+	if !e.DefaultPrevented() || natives != 0 || quits != 0 || kept != 1 {
+		t.Fatalf("a window kept: prevented %v, native %d, quit %d, kept %d", e.DefaultPrevented(), natives, quits, kept)
 	}
 
 	ws.ok = true
@@ -61,7 +61,7 @@ func TestQuitCancelledThenNativeFlushesAgain(t *testing.T) {
 	flushes, closes, quits := 0, 0, 0
 	nq := &nativeQuit{beforeClose: func(p func()) { flushes++; proceed = p }, close: func() { closes++ }, quit: func() { quits++ }}
 	ws := &fakeWindows{}
-	hook := quitHook(ws, nq.onQuit, nq.reset)
+	hook := quitHook(ws, nq.onQuit, nq.reset, nil)
 
 	e := &mygo.QuitEvent{} // e.g. the main window's close: no compose window yet
 	hook(e)
@@ -191,7 +191,7 @@ func TestComposeWindowCascade(t *testing.T) {
 }
 
 func TestQuitHookIsNotARelaunch(t *testing.T) {
-	quitHook(&fakeWindows{}, func(*mygo.QuitEvent) {}, func() {})(&mygo.QuitEvent{})
+	quitHook(&fakeWindows{}, func(*mygo.QuitEvent) {}, func() {}, nil)(&mygo.QuitEvent{})
 	if relaunching.Load() {
 		t.Fatal("a plain quit counted as a relaunch")
 	}

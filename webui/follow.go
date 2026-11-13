@@ -119,6 +119,14 @@ type follow struct {
 	stop    func()
 	mu      sync.Mutex // held while emitting, so nothing is emitted once ended
 	stopped bool
+	dead    bool // its events ended by themselves (the stream failed or overflowed): not to be reused
+}
+
+// live reports whether f still delivers events: a following call may reuse it.
+func (f *follow) live() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return !f.dead && !f.stopped
 }
 
 func (f *follow) end() {
@@ -138,6 +146,9 @@ func (f *follow) pump(t Target, ch <-chan core.WitEvent, emit func(Target, WitEv
 		}
 		f.mu.Unlock()
 	}
+	f.mu.Lock()
+	f.dead = true // over the Local API a stream can end by itself: the next follow subscribes again
+	f.mu.Unlock()
 }
 
 // followConversation is conversation id as it is now (GetConversation) and its

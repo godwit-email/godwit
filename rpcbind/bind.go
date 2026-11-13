@@ -215,7 +215,9 @@ var hidden = map[string]bool{
 	"AuditExternal": true, // writes audit rows; only the owner records what clients did
 	"Proxy":         true, // a custom proxy's URL carries its password
 	// Owner-side UI presence queries; RoleUI reports state via SetUIForeground and SetComposeOpen.
-	"UIConnected": true, "UIForeground": true, "IsComposeOpen": true,
+	"UIConnected": true, "UIForeground": true, "UIReady": true, "IsComposeOpen": true,
+	// The owner tray's 退出并停止收信 (a stop func).
+	"StopWhenUIQuits": true,
 	// A channel and a stop func; RPC clients have SubscribeConversation.
 	"FollowConversation": true,
 	// In-process callback forms; RoleUI has the *Stream counterparts in uiOnly.
@@ -246,10 +248,12 @@ var uiOnly = map[string]bool{
 	// Redacted recent log lines for bug reports, and the interface's IANA time zone for Wit runs.
 	"RecentLog": true, "SetTimeZone": true,
 	// Window foreground, open compose drafts, and background-round narrowing; external clients use SyncNow.
-	"SetUIForeground": true, "SetComposeOpen": true, "SetInboxOnly": true, "InboxOnly": true,
+	"SetUIForeground": true, "SetUIReady": true, "SetComposeOpen": true, "SetInboxOnly": true, "InboxOnly": true,
 	// Quitting Godwit stops the backend its interface started; a user-started one refuses.
 	// Replace stops it for an interface of another version, even under 一直继续.
 	"StopUIBackend": true, "ReplaceUIBackend": true,
+	// Whether the backend's tray shows its icon: the interface's window hides only where it can come back.
+	"TrayShown": true,
 }
 
 // Expose picks the *core.Service methods callable by the full role: every

@@ -7,10 +7,10 @@ import (
 
 type uiSessionKey struct{}
 
-// uiSession holds the UI state reported by one RoleUI connection (or localUI
-// when called directly in-process).
+// uiSession holds the UI state reported by one RoleUI connection.
 type uiSession struct {
 	foreground bool
+	ready      bool // the interface takes requests on its events (SetUIReady)
 	compose    map[int64]struct{}
 }
 
@@ -38,7 +38,15 @@ func (s *Service) removeUISession(sess *uiSession) {
 	prevFG := s.uiForegroundLocked()
 	delete(s.uiSessions, sess)
 	nextFG := s.uiForegroundLocked()
+	var stop func()
+	if len(s.uiSessions) == 0 {
+		stop, s.quitStop = s.quitStop, nil // the tray's 退出并停止收信: the interface has quit
+	}
 	s.uiMu.Unlock()
+	if stop != nil {
+		stop()
+		return
+	}
 	if prevFG == nextFG {
 		return
 	}
@@ -58,9 +66,14 @@ func (s *Service) removeUISession(sess *uiSession) {
 
 func (s *Service) applyUIBackgroundSync(st Settings) {
 	s.uiMu.Lock()
-	fg := s.uiForegroundLocked()
-	s.SetInboxOnly(!fg && st.BackgroundSync != BackgroundSyncAll)
+	s.applyUIBackgroundSyncLocked(st)
 	s.uiMu.Unlock()
+}
+
+// applyUIBackgroundSyncLocked narrows background rounds to the inbox while
+// no interface is in front, unless 后台同步 syncs every folder; uiMu is held.
+func (s *Service) applyUIBackgroundSyncLocked(st Settings) {
+	s.SetInboxOnly(!s.uiForegroundLocked() && st.BackgroundSync != BackgroundSyncAll)
 }
 
 // ErrNoUI: a Wit run or a plugin action that waits on the user's approval,
@@ -83,8 +96,52 @@ func (s *Service) UIConnected() bool {
 	return len(s.uiSessions) > 0
 }
 
-// UIForeground reports whether any connected RoleUI client (or an in-process UI
-// caller) has its main window in the foreground.
+// UIReady reports whether a connected interface takes requests on its events
+// (SetUIReady): one still starting or already quitting would drop them.
+func (s *Service) UIReady() bool {
+	s.uiMu.Lock()
+	defer s.uiMu.Unlock()
+	for sess := range s.uiSessions {
+		if sess.ready {
+			return true
+		}
+	}
+	return false
+}
+
+// SetUIReady records whether the calling interface takes requests on its
+// events: on once it has started, off as it closes for a quit.
+func (s *Service) SetUIReady(ctx context.Context, on bool) error {
+	s.uiMu.Lock()
+	defer s.uiMu.Unlock()
+	if sess := uiSessionFromContext(ctx); sess != nil {
+		if _, ok := s.uiSessions[sess]; ok {
+			sess.ready = on
+		}
+	}
+	return nil
+}
+
+// StopWhenUIQuits arms the tray's 退出并停止收信 while an interface quits
+// first: stop runs once the last interface has gone or asks to stop the
+// backend (StopUIBackend), whatever 后台收信 says or who started the backend.
+// An interface that comes back to the front kept its quit and disarms it.
+func (s *Service) StopWhenUIQuits(stop func()) {
+	s.uiMu.Lock()
+	s.quitStop = stop
+	s.uiMu.Unlock()
+}
+
+func (s *Service) takeQuitStop() func() {
+	s.uiMu.Lock()
+	defer s.uiMu.Unlock()
+	stop := s.quitStop
+	s.quitStop = nil
+	return stop
+}
+
+// UIForeground reports whether any connected RoleUI client has its main
+// window in the foreground.
 func (s *Service) UIForeground() bool {
 	s.uiMu.Lock()
 	defer s.uiMu.Unlock()
@@ -92,9 +149,6 @@ func (s *Service) UIForeground() bool {
 }
 
 func (s *Service) uiForegroundLocked() bool {
-	if s.localUI.foreground {
-		return true
-	}
 	for sess := range s.uiSessions {
 		if sess.foreground {
 			return true
@@ -104,16 +158,10 @@ func (s *Service) uiForegroundLocked() bool {
 }
 
 // IsComposeOpen reports whether draftID currently has an open compose window in
-// any connected RoleUI client (or in-process UI).
+// any connected RoleUI client.
 func (s *Service) IsComposeOpen(draftID int64) bool {
-	if s.opts.ComposeOpen != nil && s.opts.ComposeOpen(draftID) {
-		return true
-	}
 	s.uiMu.Lock()
 	defer s.uiMu.Unlock()
-	if _, ok := s.localUI.compose[draftID]; ok {
-		return true
-	}
 	for sess := range s.uiSessions {
 		if _, ok := sess.compose[draftID]; ok {
 			return true
@@ -123,7 +171,8 @@ func (s *Service) IsComposeOpen(draftID int64) bool {
 }
 
 // SetUIForeground records whether the calling UI session's main window is in
-// the foreground, updating background sync narrowing accordingly.
+// the foreground, updating background sync narrowing accordingly. Called
+// without a UI session it changes nothing.
 func (s *Service) SetUIForeground(ctx context.Context, on bool) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
@@ -137,23 +186,22 @@ func (s *Service) SetUIForeground(ctx context.Context, on bool) error {
 		return err
 	}
 	s.uiMu.Lock()
-	if sess := uiSessionFromContext(ctx); sess != nil {
-		if _, ok := s.uiSessions[sess]; !ok {
-			s.uiMu.Unlock()
-			return nil
-		}
-		sess.foreground = on
-	} else {
-		s.localUI.foreground = on
+	defer s.uiMu.Unlock()
+	sess := uiSessionFromContext(ctx)
+	if _, ok := s.uiSessions[sess]; sess == nil || !ok {
+		return nil
 	}
-	fg := s.uiForegroundLocked()
-	s.SetInboxOnly(!fg && st.BackgroundSync != BackgroundSyncAll)
-	s.uiMu.Unlock()
+	sess.foreground = on
+	if on {
+		s.quitStop = nil // back in front: the user kept the tray's quit
+	}
+	s.applyUIBackgroundSyncLocked(st)
 	return nil
 }
 
 // SetComposeOpen records the draft IDs with open compose windows in the calling
-// UI session, replacing that session's previous list.
+// UI session, replacing that session's previous list. Called without a UI
+// session it changes nothing.
 func (s *Service) SetComposeOpen(ctx context.Context, draftIDs []int64) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
@@ -173,12 +221,9 @@ func (s *Service) SetComposeOpen(ctx context.Context, draftIDs []int64) error {
 	s.uiMu.Lock()
 	defer s.uiMu.Unlock()
 	if sess := uiSessionFromContext(ctx); sess != nil {
-		if _, ok := s.uiSessions[sess]; !ok {
-			return nil
+		if _, ok := s.uiSessions[sess]; ok {
+			sess.compose = open
 		}
-		sess.compose = open
-	} else {
-		s.localUI.compose = open
 	}
 	return nil
 }

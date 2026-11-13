@@ -103,7 +103,7 @@ func (a *App) checkLoginItem() {
 // Requests run in order and only the newest one's result counts: when it
 // fails, the reason shows on the privacy page and the setting turns off.
 func (a *App) syncLocalAPI() {
-	on := a.settings.LocalAPI
+	on := a.settings.LocalAPI || a.externalAlways
 	if on == a.localAPIWant {
 		return
 	}

@@ -191,11 +191,12 @@ func (p *platform) signInCodeIcon(code core.SignInCode) *mygo.MenuIcon {
 }
 
 func (p *platform) SetSignInCodes(codes []core.SignInCode) {
+	had := len(p.signInCodes) > 0
 	p.signInCodes = slices.Clone(codes)
 	maps.DeleteFunc(p.codeIcons, func(id int64, _ *mygo.MenuIcon) bool {
 		return !slices.ContainsFunc(codes, func(c core.SignInCode) bool { return c.MessageID == id })
 	})
-	if p.updateTray != nil {
+	if p.updateTray != nil && (had || len(codes) > 0) { // the menu shows codes and their age; none twice is the same menu
 		p.updateTray()
 	}
 	if p.codeBanner != nil && !slices.ContainsFunc(codes, func(c core.SignInCode) bool { return c.MessageID == p.codeBanner.code.MessageID }) {

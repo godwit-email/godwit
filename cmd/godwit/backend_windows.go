@@ -5,6 +5,9 @@ import (
 	"syscall"
 )
 
+// ignoreSIGPIPE: Windows raises no SIGPIPE.
+func ignoreSIGPIPE() {}
+
 // detachedProcess is DETACHED_PROCESS: no console of the interface's.
 const detachedProcess = 0x00000008
 

@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -55,7 +56,8 @@ type platform struct {
 	codeBanner     *signInBanner
 	updateTray     func()
 	setTrayVisible func(visible bool)
-	trayQuitStop   bool // 退出并停止收信 shows; UI thread
+	trayQuitStop   bool        // 退出并停止收信 shows; UI thread
+	trayUp         atomic.Bool // tray is set: read off the UI thread (TrayShown)
 
 	dataDir      string
 	svc          backendService
@@ -229,6 +231,10 @@ func (p *platform) trayMenuItems(act trayActions, now time.Time) []*mygo.MenuIte
 	return items
 }
 
+// TrayShown reports whether the tray shows Godwit's icon: on, and the system
+// has a tray (Linux may have no indicator host). Any goroutine.
+func (p *platform) TrayShown() bool { return p.trayUp.Load() }
+
 // SetTrayQuitStop shows or hides 退出并停止收信 (BackgroundReceiveAlways).
 func (p *platform) SetTrayQuitStop(on bool) {
 	if p.trayQuitStop != on {
@@ -254,6 +260,7 @@ func (p *platform) BindTray(act trayActions) {
 			p.ShowSignInCode(nil) // the banner is a flyout of the tray
 			p.tray.Destroy()
 			p.tray = nil
+			p.trayUp.Store(false)
 			return
 		}
 		if icon, err := trayIcon(trayBoxFor(runtime.GOOS)); err != nil {
@@ -261,7 +268,7 @@ func (p *platform) BindTray(act trayActions) {
 		} else if p.tray, err = mygo.NewTray(mygo.TrayOptions{Icon: icon, IconIsTemplate: true, ToolTip: "Godwit",
 			Menu: menu()}); err != nil {
 			log.Print(err) // no tray here (Linux without an indicator host)
-		} else if runtime.GOOS == "windows" && act.open != nil {
+		} else if p.trayUp.Store(true); runtime.GOOS == "windows" && act.open != nil {
 			p.tray.OnClick(act.open) // Windows opens the app on a left click; the menu stays on the right
 		}
 	}

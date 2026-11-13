@@ -252,19 +252,18 @@ func TestMCPSendDirect(t *testing.T) {
 // list's Send and the confirmation do: its window may hold edits not saved yet.
 func TestMCPSendDirectComposing(t *testing.T) {
 	e, d := mcpSendEnv(t, MCPSendDirect, true)
-	e.s.opts.ComposeOpen = func(id int64) bool { return id == d.ID }
+	ui, cancel := context.WithCancel(bg)
+	defer cancel()
+	ui = WithUISession(ui, e.s) // the interface's connection
+	require.NoError(t, e.s.SetComposeOpen(ui, []int64{d.ID}))
 	sent, err := e.s.RequestMCPSend(bg, d.ID, d.Revision)
 	require.ErrorIs(t, err, ErrMCPSendComposing)
 	assert.False(t, sent)
 	assert.Zero(t, e.outboxLen(t))
 
-	// Reported UI compose state and Options.ComposeOpen form a union.
-	e.s.opts.ComposeOpen = func(id int64) bool { return false }
-	require.NoError(t, e.s.SetComposeOpen(bg, []int64{d.ID}))
-	sent, err = e.s.RequestMCPSend(bg, d.ID, d.Revision)
-	require.ErrorIs(t, err, ErrMCPSendComposing)
-	assert.False(t, sent)
-	assert.Zero(t, e.outboxLen(t))
+	// The interface gone, its windows go with it.
+	cancel()
+	require.Eventually(t, func() bool { return !e.s.IsComposeOpen(d.ID) }, 5*time.Second, 10*time.Millisecond)
 }
 
 // A direct send whose audit fails is still sent: the mail is queued.

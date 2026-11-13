@@ -162,6 +162,10 @@ type Deps struct {
 	// Dev: the build is a development one: the rail offers the Kit gallery.
 	Dev bool
 
+	// ExternalAlways: the backend is the user's own godwit --headless, which
+	// serves external clients whatever Settings.LocalAPI says.
+	ExternalAlways bool
+
 	// Quit quits the app as its own Quit does; the backend's tray asks for it
 	// (events.QuitRequested). nil ignores that.
 	Quit func()
@@ -235,10 +239,11 @@ type App struct {
 	sysLang          string // Deps.SystemLanguage
 	accountsGen      uint64 // the load gen that read a.accounts
 
-	localAPIWant bool   // what the last SetLocalAPI asked for
-	localAPIGen  uint64 // bumped per SetLocalAPI; only the newest one's result counts
-	localAPIPath string // the Local API's socket while it serves
-	localAPIErr  error  // why the Local API last failed; the privacy page shows it
+	localAPIWant   bool   // what the last SetLocalAPI asked for
+	localAPIGen    uint64 // bumped per SetLocalAPI; only the newest one's result counts
+	localAPIPath   string // the Local API's socket while it serves
+	externalAlways bool   // Deps.ExternalAlways
+	localAPIErr    error  // why the Local API last failed; the privacy page shows it
 
 	loginItemOff bool // the settings want the login item, but the user turned it off in the system (checkLoginItem)
 
@@ -250,7 +255,7 @@ type App struct {
 	noteRoute                            func(ctx context.Context, id string) (Route, bool, error) // where a notification leads; tests wrap it
 	noteGen                              uint64                                                    // bumped per notification click; only the newest navigates
 	noteFirst                            string                                                    // a click, or OpenCompose, that came before the first load
-	noteSeen                             map[string]bool                                           // the clicks taken: one given to both processes counts once
+	noteSeen                             map[string]time.Time                                      // when each click was taken: one given to both processes counts once
 	inboxUnread                          int                                                       // the inboxes' unread total
 	trayUnread                           int                                                       // what the tray shows
 	appUnread                            int                                                       // what the app icon shows; -1 before the first update
@@ -319,7 +324,7 @@ type App struct {
 
 // New builds an App; Start brings it up.
 func New(d Deps) *App {
-	a := &App{settings: d.Settings, settingsOK: d.Settings, setLanguage: d.SetLanguage, svc: d.Svc, plat: d.Platform, post: d.Post, clock: d.Clock, oauth: d.OAuth, sysLang: d.SystemLanguage, vibrancy: d.Vibrancy, appUnread: -1, mcpEnv: mcpclients.Local}
+	a := &App{settings: d.Settings, settingsOK: d.Settings, setLanguage: d.SetLanguage, svc: d.Svc, plat: d.Platform, post: d.Post, clock: d.Clock, oauth: d.OAuth, sysLang: d.SystemLanguage, vibrancy: d.Vibrancy, externalAlways: d.ExternalAlways, appUnread: -1, mcpEnv: mcpclients.Local}
 	kit.Glass = d.Vibrancy // dialogs frost their panels over a window on a material
 	if a.setLanguage == nil {
 		a.setLanguage = func(tag string) { i18n.SetLanguage(cmp.Or(tag, a.sysLang)) }

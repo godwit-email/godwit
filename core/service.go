@@ -92,9 +92,6 @@ type Options struct {
 	// connected to show it; false: it cannot post one, and 每次确认 refuses the
 	// send. nil: none is posted, as false.
 	NotifyMCPSend func(id int64) bool
-	// ComposeOpen reports whether draftID's compose window is open or
-	// opening; the GUI sets it, and 直接发送 leaves such a draft alone. nil: none is.
-	ComposeOpen func(draftID int64) bool
 	// OpenURL opens an external URL in the user's default browser.
 	OpenURL func(url string) error
 	// Recognizer reads for 识别模型 while it is on; nil is AstrLink Guard
@@ -117,6 +114,9 @@ type Options struct {
 	// RecentLog reads the process's recent log lines for RecentLog(); nil reads
 	// package-level RecentLog.
 	RecentLog func() string
+	// TrayShown reports whether the backend's tray shows Godwit's icon; nil:
+	// it has none (no graphical session).
+	TrayShown func() bool
 	// StopUIBackend shuts this backend down through its usual close path; set
 	// when the interface started it (ADR 0038). nil: the user started it, and
 	// the ui role's StopUIBackend is refused.
@@ -151,7 +151,7 @@ type Service struct {
 
 	uiMu       sync.Mutex              // connected RoleUI sessions and in-process UI state
 	uiSessions map[*uiSession]struct{} // live RoleUI connections (WithUISession)
-	localUI    uiSession               // direct in-process SetUIForeground / SetComposeOpen calls
+	quitStop   func()                  // the tray's 退出并停止收信 waiting for the interface to quit (StopWhenUIQuits)
 
 	callsMu     sync.Mutex
 	modelMu     sync.RWMutex // writers: a model service's row and key change together; readers see both or neither (ponytail: global, per-id if contended)
@@ -594,8 +594,13 @@ func (s *Service) Publish(ev events.Event) { s.bus.Publish(ev) }
 // StopUIBackend shuts down a backend the interface started (Options.StopUIBackend),
 // as quitting Godwit does; it returns before the shutdown runs. A backend the
 // user started (--headless), or one whose 后台收信 is BackgroundReceiveAlways,
-// refuses and keeps running.
+// refuses and keeps running, unless the tray's 退出并停止收信 asked for it
+// (StopWhenUIQuits). So does one another interface is still connected to.
 func (s *Service) StopUIBackend(ctx context.Context) error {
+	if stop := s.takeQuitStop(); stop != nil {
+		stop()
+		return nil
+	}
 	if s.opts.StopUIBackend == nil {
 		return errors.New("the user started this backend; it keeps running")
 	}
@@ -610,6 +615,12 @@ func (s *Service) StopUIBackend(ctx context.Context) error {
 	}
 	s.opts.StopUIBackend()
 	return nil
+}
+
+// TrayShown reports whether this backend's tray shows Godwit's icon, for the
+// interface: closing its window hides it only where the tray can bring it back.
+func (s *Service) TrayShown(ctx context.Context) (bool, error) {
+	return s.opts.TrayShown != nil && s.opts.TrayShown(), nil
 }
 
 // ReplaceUIBackend shuts down a backend the interface started so that an

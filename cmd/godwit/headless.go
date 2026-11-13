@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -104,6 +105,14 @@ func mygoHeadlessDesktop() *headlessDesktop {
 				}
 			})
 			defer offClick()
+			// Godwit opened again (Dock, Finder) while only this backend runs:
+			// the system may hand the reopen to it, the same bundle.
+			offActivate := mygo.App.OnActivate(func(visible bool) {
+				if svc != nil && !visible {
+					showUI(svc, dataDir, app.OpenWindow)
+				}
+			})
+			defer offActivate()
 			defer context.AfterFunc(ctx, mygo.App.Quit)()
 			started := false
 			mygo.App.WhenReady(func() {
@@ -128,8 +137,18 @@ func mygoHeadlessDesktop() *headlessDesktop {
 // outlives any interface. A failed start exits with the code the interface
 // tells the user by (exitAnotherOwner, exitLockFailed, exitOpenDenied, else 1).
 func headless(ctx context.Context, dataDir string, stderr io.Writer, uiStarted bool) int {
-	lang := syslang.Detect()
+	ignoreSIGPIPE()
+	detect := sync.OnceValue(syslang.Detect) // macOS asks a subprocess: meanwhile the lock is taken
+	go detect()
 	release, err := ownerlock.Acquire(dataDir)
+	// The interface's backend waits a little for one still quitting (a
+	// version replacement, a quit just before) before it exits for the
+	// interface to start another (connectBackend, up to ownerWait).
+	for wait := time.Now().Add(ownerRetry); uiStarted && errors.Is(err, ownerlock.ErrAnotherOwner) && time.Now().Before(wait) && ctx.Err() == nil; {
+		time.Sleep(100 * time.Millisecond)
+		release, err = ownerlock.Acquire(dataDir)
+	}
+	lang := detect()
 	if errors.Is(err, ownerlock.ErrAnotherOwner) {
 		i18n.SetLanguage(lang)
 		fmt.Fprintln(stderr, i18n.T("app.another_owner"))
@@ -198,9 +217,11 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 		opts.OpenURL = d.openURL
 		opts.PrintPDF = d.printPDF
 	}
+	var trayShown func() bool // set with the platform, before the Local API serves
 	if uiStarted {
 		opts.StopUIBackend = onStop
 	}
+	opts.TrayShown = func() bool { return trayShown != nil && trayShown() }
 	var notifyMCP func(id int64) bool // set with the platform, before the Local API serves
 	if d != nil && d.newPlatform != nil {
 		opts.NotifyMCPSend = func(id int64) bool { return notifyMCP != nil && notifyMCP(id) }
@@ -258,6 +279,9 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 			if plat := d.newPlatform(dataDir, svc); plat != nil {
 				sink = plat
 				notifyMCP = func(id int64) bool { return notifyMCPSend(plat, id) }
+				if ts, ok := plat.(interface{ TrayShown() bool }); ok {
+					trayShown = ts.TrayShown
+				}
 				tray = newBackendTray(svc, plat, lang, post, clock, logWarn, func(what string) { showUI(svc, dataDir, what) },
 					func() { quitFromTray(svc, onStop) })
 			}
@@ -281,7 +305,7 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 		defer close(pumpDone)
 		for ev := range ch {
 			if uiStarted && ev.Type == events.SettingsChanged {
-				followLocalAPI(ctx, svc, srv)
+				go followLocalAPI(ctx, svc, srv) // it may wait for dropped clients' calls: not on the pump
 			}
 			notifier.HandleEvent(ev)
 			if tray != nil {
@@ -337,9 +361,14 @@ func notifyMCPSend(sink app.NotificationSink, id int64) bool {
 	return err == nil
 }
 
+// followMu keeps followLocalAPI's turns in order.
+var followMu sync.Mutex
+
 // followLocalAPI turns external access on srv on or off as Settings.LocalAPI
 // now says (接入 AI 应用), for a backend the interface started.
 func followLocalAPI(ctx context.Context, svc *core.Service, srv *rpc.Server) {
+	followMu.Lock()
+	defer followMu.Unlock()
 	st, err := svc.GetSettings(ctx)
 	if err == nil {
 		err = srv.SetExternal(st.LocalAPI)
@@ -349,16 +378,12 @@ func followLocalAPI(ctx context.Context, svc *core.Service, srv *rpc.Server) {
 	}
 }
 
-// quitWait bounds how long the tray's Quit waits for the interface to quit
-// first. Tests shorten it.
-var quitWait = 2 * time.Minute
-
-// quitFromTray is the tray's Quit: with an interface connected, it asks it to
-// quit first (QuitRequested), so it saves what it holds, then stops once it has
-// gone; stop is the backend's usual close path. An interface still connected
-// after quitWait cancelled its quit (or is stuck asking about unsaved edits),
-// so the backend keeps running: stopping it would end that interface and lose
-// the edits.
+// quitFromTray is the tray's 退出并停止收信: with an interface connected, it
+// asks it to quit first (QuitRequested), so it saves what it holds, and the
+// backend stops once it has quit (Service.StopWhenUIQuits); stop is the
+// backend's usual close path. An interface that cancels its quit (unsaved
+// edits kept) comes back to the front and the backend keeps running:
+// stopping it would end that interface and lose the edits.
 func quitFromTray(svc *core.Service, stop func()) {
 	if stop == nil {
 		return
@@ -367,18 +392,8 @@ func quitFromTray(svc *core.Service, stop func()) {
 		stop()
 		return
 	}
+	svc.StopWhenUIQuits(stop)
 	svc.Publish(events.Event{Type: events.QuitRequested})
-	end := time.Now().Add(quitWait)
-	go func() {
-		for svc.UIConnected() {
-			if time.Now().After(end) {
-				slog.Info("tray quit: the interface did not quit; the backend keeps running")
-				return
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
-		stop()
-	}()
 }
 
 // uiCmd is the interface the backend starts on dataDir to open what: this
@@ -411,7 +426,7 @@ func uiArgv(goos, exe string, args ...string) []string {
 // to it as well; a second interface started meanwhile hands its --open to the
 // first (OnSecondInstance).
 func showUI(svc *core.Service, dataDir, what string) {
-	if svc.UIConnected() {
+	if svc.UIReady() { // one starting or quitting would drop the request: another is started, and hands it on
 		ev := events.Event{Type: events.NotificationClicked, Notification: what}
 		switch what {
 		case app.OpenWindow:
@@ -462,6 +477,8 @@ type backendTray struct {
 
 	timerMu   sync.Mutex
 	codesStop func() bool
+
+	loadPosted atomic.Bool // a requestLoad is posted and has not run yet
 
 	settings     core.Settings
 	trayUnread   int
@@ -604,7 +621,11 @@ func (t *backendTray) HandleEvent(ev events.Event) {
 		events.OutboxChanged, events.SignaturesChanged:
 		return
 	}
-	t.post(t.requestLoad)
+	// Coalesced, and off the pump: post waits for the main thread, and the
+	// pump's subscription drops what waits too long.
+	if t.loadPosted.CompareAndSwap(false, true) {
+		go t.post(func() { t.loadPosted.Store(false); t.requestLoad() })
+	}
 }
 
 func (t *backendTray) Close() {
@@ -630,6 +651,9 @@ func (t *backendTray) scheduleCodesTimer() {
 	t.stopCodesTimer()
 	if t.closed || t.ctx.Err() != nil {
 		return
+	}
+	if len(t.codes) == 0 {
+		return // new codes come with new mail, an event; the timer only ages shown ones out
 	}
 	wait := 30 * time.Second
 	now := t.clock.Now()
