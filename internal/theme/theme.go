@@ -200,6 +200,8 @@ const (
 	SyncMenuWidth         = 320 // the top bar's sync status list: compact, fitted popover
 	SecurityCardWidth     = 320 // the reader's security explanation card
 	LabelStrip            = 28  // the label color strip's height
+	LabelThumb            = 35  // its thumb's height; it is as much wider than a cell
+	LabelThumbRing        = 2   // the ring of the background the thumb sits on
 	LabelIconCell         = 36  // a cell of the label icon grid
 	ToastMaxWidth         = 420
 	ToastMax              = 3  // toasts shown at once

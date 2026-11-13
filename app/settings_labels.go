@@ -219,7 +219,8 @@ func (v *labelsView) dialog(c *ui.Context) {
 			last := len(core.LabelColors) - 1
 			strip := ui.SliderBase(c, &v.colorAt, 0, float64(last)).Step(1).FillWidth().Height(theme.LabelStrip).MarginY(th.Space(1)).Radius(t.Radius.Md)
 			cell := strip.LayoutBounds().W / float32(len(core.LabelColors))
-			strip.PaddingX(cell / 2)
+			half := cell / 2
+			strip.PaddingX(half)
 			if strip.Changed() {
 				v.color = core.LabelColors[max(0, min(last, int(math.Round(v.colorAt))))]
 			} else {
@@ -246,8 +247,8 @@ func (v *labelsView) dialog(c *ui.Context) {
 					}
 				})
 				if cell > 0 { // the first frame has no width yet
-					w, h := cell*1.25, float32(theme.LabelStrip)*1.25
-					thumb := ui.Box(c).Absolute().Left(at*cell+(cell-w)/2).Top((theme.LabelStrip-h)/2).Size(w, h).Radius(t.Radius.Sm).Shadow(0, 0, 0, 2, t.Background)
+					grow := float32(theme.LabelThumb - theme.LabelStrip)
+					thumb := ui.Box(c).Absolute().Left(at*cell-grow/2).Top(-grow/2).Size(cell+grow, theme.LabelThumb).Radius(t.Radius.Sm).Shadow(0, 0, 0, theme.LabelThumbRing, t.Background)
 					thumb.Background(thumb.AnimateColor("dot", t.Label(v.color).Dot, ui.Animation{Duration: theme.MotionFast}))
 					kit.Elevate(c, thumb, theme.ShadowMd)
 				}
