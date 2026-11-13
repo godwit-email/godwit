@@ -27,6 +27,7 @@ import (
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/mcpclients"
 	"github.com/godwit-email/godwit/internal/theme"
+	"github.com/godwit-email/godwit/rpc"
 )
 
 func TestRemoteImagesAvatarSetting(t *testing.T) {
@@ -481,7 +482,6 @@ func TestSettingsTrayIconToggle(t *testing.T) {
 
 	// Toggle tray icon off
 	h.click(i18n.T("settings.show_tray_icon"))
-	h.called("SetTrayVisible false")
 	h.until("tray setting saved off", func() bool {
 		st, err := h.env.Svc.GetSettings(context.Background())
 		return err == nil && !st.ShowTrayIcon
@@ -492,7 +492,6 @@ func TestSettingsTrayIconToggle(t *testing.T) {
 
 	// Toggle tray icon back on
 	h.click(i18n.T("settings.show_tray_icon"))
-	h.called("SetTrayVisible true")
 	h.until("tray setting saved on", func() bool {
 		st, err := h.env.Svc.GetSettings(context.Background())
 		return err == nil && st.ShowTrayIcon
@@ -907,10 +906,13 @@ func TestCloseSavesSettings(t *testing.T) {
 	h.until("closed after the settings saved", func() bool { return closed })
 }
 
+// localAPISock is the socket the settings show for the harness's data
+// directory, /tmp/gw.
+var localAPISock = filepath.Join("/tmp/gw", rpc.SocketName)
+
 // localAPIHarness is withAccount with the stored settings set by edit
-// before the App starts, and the fake platform answering SetLocalAPI with
-// path or err.
-func localAPIHarness(t *testing.T, path string, err error, edit func(*core.Settings)) *harness {
+// before the App starts, and the data directory /tmp/gw.
+func localAPIHarness(t *testing.T, edit func(*core.Settings)) *harness {
 	h := newHarness(t, func(e *coretest.Env) {
 		e.AddAccount(t, "alice@example.com")
 		if edit != nil {
@@ -924,34 +926,30 @@ func localAPIHarness(t *testing.T, path string, err error, edit func(*core.Setti
 			}
 		}
 	})
-	h.plat.localAPIPath, h.plat.localAPIErr = path, err
+	h.plat.mu.Lock()
+	h.plat.dataDir = "/tmp/gw"
+	h.plat.mu.Unlock()
 	h.until("initial load", func() bool { return h.app.loaded })
 	return h
 }
 
 func TestLocalAPIDefaultOff(t *testing.T) {
-	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, nil)
+	h := localAPIHarness(t, nil)
 	if h.app.settings.LocalAPI {
 		t.Fatal("the Local API is on by default")
 	}
 	h.aiTab(aiApps)
 	h.see("允许外部应用和脚本接入")
-	for _, c := range h.plat.Calls() {
-		if strings.HasPrefix(c, "SetLocalAPI") {
-			t.Fatalf("called %s with the switch off", c)
-		}
-	}
-	if h.tt.HasText("/tmp/gw/godwit.sock") || h.tt.HasText(`"mcp"`) {
+	if h.tt.HasText(localAPISock) || h.tt.HasText(`"mcp"`) {
 		t.Fatal("the socket shows while the Local API is off")
 	}
 }
 
 func TestLocalAPISwitch(t *testing.T) {
-	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, nil)
+	h := localAPIHarness(t, nil)
 	h.aiTab(aiApps)
 	h.click("允许外部应用和脚本接入")
-	h.called("SetLocalAPI true")
-	h.see("/tmp/gw/godwit.sock")
+	h.see(localAPISock)
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -967,7 +965,7 @@ func TestLocalAPISwitch(t *testing.T) {
 	}
 	h.see("已复制")
 	h.click("复制路径")
-	if got := h.tt.Clipboard(); got != "/tmp/gw/godwit.sock" {
+	if got := h.tt.Clipboard(); got != localAPISock {
 		t.Fatalf("clipboard %q, want the socket", got)
 	}
 	h.until("saved on", func() bool {
@@ -975,40 +973,23 @@ func TestLocalAPISwitch(t *testing.T) {
 		return err == nil && st.LocalAPI
 	})
 	h.click("允许外部应用和脚本接入")
-	h.called("SetLocalAPI false")
-	h.until("the socket hides", func() bool { h.tt.Frame(); return !h.tt.HasText("/tmp/gw/godwit.sock") })
+	h.until("the socket hides", func() bool { h.tt.Frame(); return !h.tt.HasText(localAPISock) })
 	h.until("saved off", func() bool {
 		st, err := h.env.Svc.GetSettings(context.Background())
 		return err == nil && !st.LocalAPI
 	})
 }
 
-// A stored LocalAPI starts the server once the settings first load.
+// A stored LocalAPI shows the socket once the settings first load.
 func TestLocalAPIStartsOnLoad(t *testing.T) {
-	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, func(st *core.Settings) { st.LocalAPI = true })
-	h.called("SetLocalAPI true")
+	h := localAPIHarness(t, func(st *core.Settings) { st.LocalAPI = true })
 	h.aiTab(aiApps)
-	h.see("/tmp/gw/godwit.sock")
-}
-
-func TestLocalAPIFailureReverts(t *testing.T) {
-	h := localAPIHarness(t, "", errors.New("socket path too long"), nil)
-	h.aiTab(aiApps)
-	h.click("允许外部应用和脚本接入")
-	h.called("SetLocalAPI true")
-	h.see("socket path too long")
-	h.until("reverted and saved off", func() bool {
-		st, err := h.env.Svc.GetSettings(context.Background())
-		return err == nil && !st.LocalAPI && !h.app.settings.LocalAPI && h.app.writes.keys["settings"] == nil
-	})
-	if slices.Contains(h.plat.Calls(), "SetLocalAPI false") {
-		t.Fatal("stopped a server that never started")
-	}
+	h.see(localAPISock)
 }
 
 func TestLocalAPICopyWarnsFullAccess(t *testing.T) {
 	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
-	h := localAPIHarness(t, "", nil, nil)
+	h := localAPIHarness(t, nil)
 	h.aiTab(aiApps)
 	h.see("允许这台电脑上的 AI 工具（godwit mcp）和脚本（godwit call）连接 Godwit")
 	h.see("完整的本机 API 能读取邮件、发送邮件、修改账户和设置")
@@ -1020,82 +1001,9 @@ func TestLocalAPICopyWarnsFullAccess(t *testing.T) {
 	h.see("can only read mail and write drafts, and Send through MCP decides whether they can send")
 }
 
-// localAPIRace clicks the switch on, off and on while the first "on" blocks,
-// then lets it fail; last says how the third request ends. It returns
-// whether the fake server is on at the end.
-func localAPIRace(t *testing.T, last error) (*harness, func() bool) {
-	release := make(chan struct{})
-	var mu sync.Mutex
-	n, server := 0, false
-	h := localAPIHarness(t, "", nil, nil)
-	h.plat.localAPIFn = func(on bool) (string, error) {
-		mu.Lock()
-		n++
-		k := n
-		mu.Unlock()
-		if k == 1 {
-			<-release
-		}
-		mu.Lock()
-		defer mu.Unlock()
-		switch {
-		case !on:
-			server = false
-			return "", nil
-		case k == 1:
-			server = false
-			return "", errors.New("first start failed")
-		case last != nil:
-			server = false
-			return "", last
-		}
-		server = true
-		return "/tmp/gw/godwit.sock", nil
-	}
-	h.aiTab(aiApps)
-	h.click("允许外部应用和脚本接入")
-	h.called("SetLocalAPI true")
-	h.click("允许外部应用和脚本接入")
-	h.click("允许外部应用和脚本接入")
-	close(release)
-	h.until("every request done", func() bool {
-		return h.app.writes.chains["local-api"] == nil && h.app.writes.keys["settings"] == nil
-	})
-	got := slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return !strings.HasPrefix(c, "SetLocalAPI") })
-	if !slices.Equal(got, []string{"SetLocalAPI true", "SetLocalAPI false", "SetLocalAPI true"}) {
-		t.Fatalf("calls %v", got)
-	}
-	return h, func() bool { mu.Lock(); defer mu.Unlock(); return server }
-}
-
-// A stale failure of an older "on" neither reverts nor stops the newest one.
-func TestLocalAPIStaleFailureIgnored(t *testing.T) {
-	h, serverOn := localAPIRace(t, nil)
-	st, err := h.env.Svc.GetSettings(context.Background())
-	if err != nil || !st.LocalAPI || !h.app.settings.LocalAPI || !serverOn() {
-		t.Fatalf("saved %v (%v), switch %v, server %v; want all on", st.LocalAPI, err, h.app.settings.LocalAPI, serverOn())
-	}
-	h.see("/tmp/gw/godwit.sock")
-	if h.tt.HasText("first start failed") {
-		t.Fatal("a stale failure shows")
-	}
-}
-
-func TestLocalAPINewestFailureReverts(t *testing.T) {
-	h, serverOn := localAPIRace(t, errors.New("newest start failed"))
-	h.see("newest start failed")
-	h.until("saved off", func() bool {
-		st, err := h.env.Svc.GetSettings(context.Background())
-		return err == nil && !st.LocalAPI && !h.app.settings.LocalAPI
-	})
-	if serverOn() {
-		t.Fatal("the server is on with the switch off")
-	}
-}
-
 // A data directory other than the default goes into the MCP config.
 func TestLocalAPIMCPConfigDataDir(t *testing.T) {
-	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, func(st *core.Settings) { st.LocalAPI = true })
+	h := localAPIHarness(t, func(st *core.Settings) { st.LocalAPI = true })
 	h.plat.mu.Lock()
 	h.plat.dataDir, h.plat.customDir = `/tmp/gw "x"`, true
 	h.plat.mu.Unlock()
@@ -1655,7 +1563,7 @@ func TestSettingsBlockedSenders(t *testing.T) {
 // 接入 AI 应用 offers the AI apps on this computer; a click writes godwit
 // mcp into one's config, another takes it out.
 func TestConnectAIApp(t *testing.T) {
-	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, func(st *core.Settings) { st.LocalAPI = true })
+	h := localAPIHarness(t, func(st *core.Settings) { st.LocalAPI = true })
 	config := filepath.Join(h.home, ".claude.json")
 	if err := os.MkdirAll(filepath.Join(h.home, ".claude"), 0o755); err != nil {
 		t.Fatal(err)
@@ -1680,7 +1588,7 @@ func TestConnectAIApp(t *testing.T) {
 // Claude (the desktop app) is opened with Godwit's extension to install;
 // installed, only Claude can take it out.
 func TestConnectClaudeExtension(t *testing.T) {
-	h := localAPIHarness(t, "/tmp/gw/godwit.sock", nil, func(st *core.Settings) { st.LocalAPI = true })
+	h := localAPIHarness(t, func(st *core.Settings) { st.LocalAPI = true })
 	if err := os.MkdirAll(filepath.Join(h.home, "Library", "Application Support", "Claude"), 0o755); err != nil {
 		t.Fatal(err)
 	}

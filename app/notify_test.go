@@ -363,36 +363,6 @@ func TestNotificationClickBeforeLoad(t *testing.T) {
 	h.until("the message open", func() bool { return h.app.route.ThreadID != 0 && h.tt.HasText("body of Cold start") })
 }
 
-func TestTrayUnread(t *testing.T) {
-	h, acc := notifyHarness(t, func(st *core.Settings) { st.UnreadInMenuBar = true })
-	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", acc.Email, "One", "1"))
-	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", acc.Email, "Two", "2"))
-	h.waitMail("tray shows 2", func() bool { return slices.Contains(h.plat.Calls(), "SetTrayUnread 2") })
-
-	st := h.app.settings
-	st.UnreadInMenuBar = false
-	if _, err := h.env.Svc.SetSettings(context.Background(), st); err != nil {
-		t.Fatal(err)
-	}
-	h.waitMail("tray cleared", func() bool { return slices.Contains(h.plat.Calls(), "SetTrayUnread 0") })
-}
-
-func TestTrayUnreadClearedWithIcon(t *testing.T) {
-	h, acc := notifyHarness(t, func(st *core.Settings) { st.UnreadInMenuBar = true })
-	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", acc.Email, "One", "1"))
-	h.waitMail("tray shows 1", func() bool { return slices.Contains(h.plat.Calls(), "SetTrayUnread 1") })
-
-	st := h.app.settings
-	st.ShowTrayIcon = false // the backend tray's Hide saves this
-	if _, err := h.env.Svc.SetSettings(context.Background(), st); err != nil {
-		t.Fatal(err)
-	}
-	h.waitMail("tray cleared", func() bool { return slices.Contains(h.plat.Calls(), "SetTrayUnread 0") })
-	if !h.app.settings.UnreadInMenuBar {
-		t.Fatal("hiding the icon changed the unread setting")
-	}
-}
-
 func TestAppUnreadInitialClear(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -435,9 +405,6 @@ func TestAppUnread(t *testing.T) {
 		h.syncNow(acc)
 	}
 	h.waitMail("badge shows 3 inbox messages", func() bool { return slices.Contains(h.plat.Calls(), "SetAppUnread 3") })
-	if slices.Contains(h.plat.Calls(), "SetTrayUnread 3") {
-		t.Fatal("badge enabled the menu bar count")
-	}
 	for i, acc := range accs {
 		page, err := h.env.Svc.ListMessages(t.Context(), core.View{FolderID: h.folderOf(acc, "inbox").ID}, "", 200)
 		if err != nil {
@@ -469,13 +436,13 @@ func TestAppUnreadSettingIndependent(t *testing.T) {
 	h.waitMail("badge cleared", func() bool { return slices.Contains(h.plat.Calls()[start:], "SetAppUnread 0") })
 	h.until("badge preference saved", func() bool { return h.app.writes.keys["settings"] == nil })
 	h.click("在菜单栏显示未读数")
-	h.waitMail("tray shows 1", func() bool { return slices.Contains(h.plat.Calls(), "SetTrayUnread 1") })
+	h.until("menu bar preference saved", func() bool { return h.app.writes.keys["settings"] == nil })
 	start = len(h.plat.Calls())
 	h.click("在应用图标显示未读数")
 	h.waitMail("badge restored", func() bool { return slices.Contains(h.plat.Calls()[start:], "SetAppUnread 1") })
 	start = len(h.plat.Calls())
 	h.click("在菜单栏显示未读数")
-	h.waitMail("tray cleared", func() bool { return slices.Contains(h.plat.Calls()[start:], "SetTrayUnread 0") })
+	h.until("menu bar preference saved off", func() bool { return h.app.writes.keys["settings"] == nil && !h.app.settings.UnreadInMenuBar })
 	if slices.Contains(h.plat.Calls()[start:], "SetAppUnread 0") {
 		t.Fatal("disabling the menu bar count cleared the badge")
 	}

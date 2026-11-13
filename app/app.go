@@ -36,23 +36,14 @@ type Platform interface {
 	// OpenAtLogin reports whether the login item runs: false once the user
 	// turned it off in the system. Blocks: call it off the UI thread.
 	OpenAtLogin() bool
-	SetTrayVisible(visible bool)
-	SetTrayUnread(n int)              // the inboxes' unread total on the tray; 0 clears it
-	SetAppUnread(n int)               // the inboxes' unread total on the app icon; 0 clears it
-	SetSignInCodes([]core.SignInCode) // replaces the tray's recent codes; UI thread
-	ShowSignInCode(*core.SignInCode)  // a nonactivating copy card; nil dismisses it; UI thread
-	SignInCodeBannerSupported() bool  // UI thread; false keeps ordinary mail notifications
-	ShowWindow()                      // shows the window, in front
+	SetAppUnread(n int) // the inboxes' unread total on the app icon; 0 clears it
+	ShowWindow()        // shows the window, in front
 	SetThemeSource(theme string)
 	TempDir() string
 	// TypeIcon is the icon the file manager shows for files with extension
 	// ext (no dot), as a size by size pixel PNG. Blocks: call it off the UI
 	// thread.
 	TypeIcon(ext string, size int) ([]byte, error)
-	// SetLocalAPI enables (on) or disables external access to the Local API
-	// for request gen, returning its socket's path while on. Off when it
-	// fails. Blocks: call off the UI thread.
-	SetLocalAPI(gen uint64, on bool) (path string, err error)
 	// DataDir is the data directory; custom: it is not the default one.
 	DataDir() (dir string, custom bool)
 	// OpenCompose shows draftID in a compose window of its own.
@@ -239,11 +230,7 @@ type App struct {
 	sysLang          string // Deps.SystemLanguage
 	accountsGen      uint64 // the load gen that read a.accounts
 
-	localAPIWant   bool   // what the last SetLocalAPI asked for
-	localAPIGen    uint64 // bumped per SetLocalAPI; only the newest one's result counts
-	localAPIPath   string // the Local API's socket while it serves
-	externalAlways bool   // Deps.ExternalAlways
-	localAPIErr    error  // why the Local API last failed; the privacy page shows it
+	externalAlways bool // Deps.ExternalAlways
 
 	loginItemOff bool // the settings want the login item, but the user turned it off in the system (checkLoginItem)
 
@@ -251,18 +238,13 @@ type App struct {
 	vibrancy   bool   // Deps.Vibrancy
 	quit       func() // Deps.Quit
 
-	logf                                 func(format string, args ...any)
-	noteRoute                            func(ctx context.Context, id string) (Route, bool, error) // where a notification leads; tests wrap it
-	noteGen                              uint64                                                    // bumped per notification click; only the newest navigates
-	noteFirst                            string                                                    // a click, or OpenCompose, that came before the first load
-	noteSeen                             map[string]time.Time                                      // when each click was taken: one given to both processes counts once
-	inboxUnread                          int                                                       // the inboxes' unread total
-	trayUnread                           int                                                       // what the tray shows
-	appUnread                            int                                                       // what the app icon shows; -1 before the first update
-	codes                                []core.SignInCode
-	codesReady, codesLoading, codesAgain bool
-	codesStop                            func()
-	codesStarted                         time.Time
+	logf        func(format string, args ...any)
+	noteRoute   func(ctx context.Context, id string) (Route, bool, error) // where a notification leads; tests wrap it
+	noteGen     uint64                                                    // bumped per notification click; only the newest navigates
+	noteFirst   string                                                    // a click, or OpenCompose, that came before the first load
+	noteSeen    map[string]time.Time                                      // when each click was taken: one given to both processes counts once
+	inboxUnread int                                                       // the inboxes' unread total
+	appUnread   int                                                       // what the app icon shows; -1 before the first update
 
 	history, ahead []Route // navigation: routes behind and, after back, ahead
 	dev            bool
@@ -365,7 +347,6 @@ func New(d Deps) *App {
 // Start loads accounts and settings and starts the event pump. Cancelling
 // ctx closes the App's work as Close does.
 func (a *App) Start(ctx context.Context) {
-	a.codesStarted = a.clock.Now().Truncate(time.Second)
 	context.AfterFunc(ctx, a.cancel)
 	ch, unsub := a.svc.Subscribe()
 	go func() {
@@ -530,11 +511,9 @@ func (a *App) load() {
 			}
 		}
 		a.mail.reader.refreshAvatars() // after any invalidation above; loadAvatar holds them while a local change is unsaved
-		a.syncLocalAPI()
-		a.refreshTasks() // skills or services may have changed too
+		a.refreshTasks()               // skills or services may have changed too
 		a.inboxUnread = inbox
 		a.showUnread(inbox)
-		a.refreshSignInCodes()
 		if first {
 			a.setLanguage(st.UILanguage)
 			a.loadMCPSends() // asked while no interface was open: no event of them reached this one
@@ -577,10 +556,6 @@ func (a *App) MailReady() bool {
 // attachments. UI thread.
 func (a *App) Close() {
 	a.cancel() // the event pump unsubscribes as it stops
-	if a.codesStop != nil {
-		a.codesStop()
-	}
-	a.plat.ShowSignInCode(nil)
 	a.mail.reader.closeViews()
 	a.pages[PageSettings].(*settingsPage).closeSignature()
 	a.pages[PageSettings].(*settingsPage).closeBird()
@@ -675,7 +650,6 @@ func (a *App) BeforeClose(proceed func()) {
 func (a *App) SetForeground(on bool) {
 	a.foreground = on
 	if on {
-		a.plat.ShowSignInCode(nil)
 		a.checkLoginItem() // the user may come back from the system's login items
 	}
 	a.writes.Chain("ui-foreground", func(ctx context.Context) error { return a.svc.SetUIForeground(ctx, on) }, a.toastErr)

@@ -45,11 +45,6 @@ type ServerOptions struct {
 	// then whatever Redact (nil = nothing more) finds replaced.
 	Codec  *Codec
 	Redact func(string) string
-	// Audit, if set, runs before an authorized call is dispatched (decoded,
-	// within MaxActive, on the call's goroutine), with the
-	// connection's role. An error stops the call and is answered and logged
-	// like any error the call could have returned.
-	Audit func(role, method string, params []json.RawMessage) error
 	// UIDispatcher, if set, is the Dispatcher for RoleUI connections; nil uses d.
 	UIDispatcher *Dispatcher
 	// Context, if set, wraps an authenticated connection's request context for
@@ -403,9 +398,6 @@ func (s *Server) hello(ctx context.Context, c *conn, done chan struct{}, params 
 			return ErrForbidden
 		}
 		return nil
-	}
-	if s.opts.Audit != nil {
-		c.audit = func(method string, params []json.RawMessage) error { return s.opts.Audit(role, method, params) }
 	}
 	result := map[string]any{"server": "godwit/" + s.opts.Version, "role": role}
 	if role == RoleUI && s.opts.UIStarted {

@@ -158,14 +158,13 @@ func cleanExportedAccount(ea ExportedAccount) (ExportedAccount, string, error) {
 	}
 
 	send := ea.Sending
-	switch recv.Protocol {
-	case auth.JMAP, auth.EWS, auth.Graph, auth.GmailAPI:
+	if sendsViaReceiving(recv.Protocol) {
 		if send == (ExportedServer{}) {
 			send = recv
 		} else if send != recv {
 			return ExportedAccount{}, "", fmt.Errorf("sending server must match receiving server for %s", recv.Protocol)
 		}
-	default:
+	} else {
 		switch send.Protocol {
 		case auth.SMTP:
 		case auth.Graph:

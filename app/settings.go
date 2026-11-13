@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
@@ -20,6 +21,7 @@ import (
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/mcpclients"
 	"github.com/godwit-email/godwit/internal/theme"
+	"github.com/godwit-email/godwit/rpc"
 )
 
 // Version is the app's version; cmd/godwit sets it from the packaged app.
@@ -566,6 +568,16 @@ func (p *settingsPage) keychainState(c *ui.Context) {
 	})
 }
 
+// localAPIPath is the socket external clients reach while the backend serves
+// them, as the setting or the user's own --headless asks; "" while it does not.
+func (a *App) localAPIPath() string {
+	if !a.settings.LocalAPI && !a.externalAlways {
+		return ""
+	}
+	dir, _ := a.plat.DataDir()
+	return filepath.Join(dir, rpc.SocketName)
+}
+
 // localAPIView is the Local API (本机 API), the Intelligence page's 接入 AI 应用 tab: its
 // switch and what godwit mcp may send; while it runs, the MCP client config
 // and the socket to copy. What it can reach is the section's footnote.
@@ -584,17 +596,8 @@ func (p *settingsPage) localAPIView(c *ui.Context) {
 		}
 		kit.SwitchRow(c, &p.st.LocalAPI, i18n.T("settings.local_api.on"), i18n.T("settings.local_api.help"))
 	}}
-	if err := a.localAPIErr; err != nil {
-		rows = append(rows, func() {
-			settingBlock(c, func() {
-				ui.Row(c).Gap(th.Space(2)).Children(func() {
-					kit.StatusDot(c, kit.Error)
-					ui.Text(c, humanize(err)).Selectable()
-				})
-			})
-		})
-	}
-	if a.localAPIPath != "" { // served: the setting's, or the user's --headless
+	path := a.localAPIPath()
+	if path != "" {
 		rows = append(rows, func() { p.clientsRow(c, copied) })
 	}
 	rows = append(rows, func() {
@@ -614,14 +617,14 @@ func (p *settingsPage) localAPIView(c *ui.Context) {
 			settingBlock(c, func() { kit.Alert(c, kit.Warning, i18n.T("settings.local_api.send.risk"), nil) })
 		}
 	})
-	if a.localAPIPath != "" {
+	if path != "" {
 		rows = append(rows, func() {
 			t := theme.Of(c)
 			settingRow(c, i18n.T("settings.local_api.path"), "", func() {
 				ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Shrink(1).Children(func() {
-					kit.Text(c, a.localAPIPath, t.Text.Sm).Font(theme.Mono).TextColor(t.Muted).Selectable().Shrink(1)
+					kit.Text(c, path, t.Text.Sm).Font(theme.Mono).TextColor(t.Muted).Selectable().Shrink(1)
 					if settingButton(c, i18n.T("settings.local_api.copy_path"), kit.Outline, false).Clicked() {
-						copied(a.localAPIPath)
+						copied(path)
 					}
 				})
 			})

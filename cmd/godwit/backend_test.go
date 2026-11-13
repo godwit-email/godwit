@@ -393,9 +393,6 @@ func TestUIStartedBackendFollowsLocalAPI(t *testing.T) {
 	}
 	set(true)
 	waitCond(t, "external access on", func() bool { return full() == nil })
-	if path, err := (&platform{dataDir: dir}).SetLocalAPI(1, true); err != nil || path != filepath.Join(dir, rpc.SocketName) {
-		t.Fatalf("SetLocalAPI = %q, %v", path, err)
-	}
 	set(false)
 	waitCond(t, "external access off", func() bool { return full() != nil })
 	if _, err := c.ListAccounts(t.Context()); err != nil {
