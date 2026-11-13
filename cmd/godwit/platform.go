@@ -28,7 +28,6 @@ import (
 	"github.com/godwit-email/godwit/core/plugins"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/theme"
-	"github.com/godwit-email/godwit/rpc"
 	"github.com/godwit-email/godwit/webui"
 )
 
@@ -67,16 +66,6 @@ type platform struct {
 }
 
 func (p *platform) DataDir() (string, bool) { return p.dataDir, !singleInstance(p.dataDir) }
-
-// SetLocalAPI reports the socket external clients reach while on: the
-// backend the interface started turns their access on and off itself as
-// Settings.LocalAPI changes (followLocalAPI).
-func (p *platform) SetLocalAPI(_ uint64, on bool) (string, error) {
-	if !on {
-		return "", nil
-	}
-	return filepath.Join(p.dataDir, rpc.SocketName), nil
-}
 
 func (*platform) OpenURL(url string) error   { return mygo.Shell.OpenExternal(url) }
 func (*platform) OpenPath(path string) error { return mygo.Shell.OpenPath(path) }
@@ -503,9 +492,6 @@ func (p *platform) Print(message int64) {
 }
 
 func (p *platform) SettingsChanged(st core.Settings) {
-	if !st.NotifyNewMail || !st.NotifyPreview {
-		p.ShowSignInCode(nil)
-	}
 	if err := webui.ThemeChanged.Broadcast(webui.ThemeOf(st)); err != nil {
 		log.Printf("theme to the pages: %v", err)
 	}

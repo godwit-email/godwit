@@ -97,22 +97,15 @@ func (a *App) notificationRoute(ctx context.Context, id string) (Route, bool, er
 	return Route{}, false, nil
 }
 
-// showUnread updates the app icon and tray according to their settings.
+// showUnread updates the app icon according to its setting; the tray's
+// count is the backend's (ADR 0038).
 func (a *App) showUnread(inbox int) {
-	badge := inbox
 	if !a.settings.UnreadOnAppIcon {
-		badge = 0
-	}
-	if badge != a.appUnread {
-		a.appUnread = badge
-		a.plat.SetAppUnread(badge)
-	}
-	if !a.settings.UnreadInMenuBar || !a.settings.ShowTrayIcon {
 		inbox = 0
 	}
-	if inbox != a.trayUnread {
-		a.trayUnread = inbox
-		a.plat.SetTrayUnread(inbox)
+	if inbox != a.appUnread {
+		a.appUnread = inbox
+		a.plat.SetAppUnread(inbox)
 	}
 }
 

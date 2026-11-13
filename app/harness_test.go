@@ -352,9 +352,7 @@ type fakePlatform struct {
 	mu           sync.Mutex
 	calls        []string
 	notes        []Notification
-	codes        []core.SignInCode
-	codeBanners  []core.SignInCode
-	noCodeBanner bool
+	noCodeBanner bool // the mail notifier's sink has no sign-in code banner
 	latest       string // LatestVersion's answer
 	autoUpdates  bool   // UpdatesInstallThemselves' answer
 	gh           bool   // the GitHub CLI is signed in
@@ -369,10 +367,7 @@ type fakePlatform struct {
 	onNotify     func(Notification)
 	tempDir      string
 
-	localAPIPath string // SetLocalAPI(true)'s answer
-	localAPIErr  error
-	localAPIFn   func(on bool) (string, error) // answers SetLocalAPI in their place when set
-	dataDir      string                        // DataDir
+	dataDir      string // DataDir
 	customDir    bool
 
 	views     map[int64]*fakeBodyView // the body pages open, by message
@@ -617,8 +612,7 @@ func (p *fakePlatform) Notify(n Notification) error {
 	}
 	return err
 }
-func (p *fakePlatform) SetSignInCodes(codes []core.SignInCode) { p.codes = slices.Clone(codes) }
-func (p *fakePlatform) SignInCodeBannerSupported() bool        { return !p.noCodeBanner }
+func (p *fakePlatform) SignInCodeBannerSupported() bool { return !p.noCodeBanner }
 func (p *fakePlatform) NewBirdView() (ui.NativeWebView, func(), error) {
 	p.record("NewBirdView")
 	return nil, nil, errors.New("no web views here") // the About page shows the logo
@@ -646,11 +640,6 @@ func (p *fakePlatform) UpdatesInstallThemselves() bool {
 	defer p.mu.Unlock()
 	return p.autoUpdates
 }
-func (p *fakePlatform) ShowSignInCode(code *core.SignInCode) {
-	if code != nil {
-		p.codeBanners = append(p.codeBanners, *code)
-	}
-}
 func (p *fakePlatform) Notes() []Notification {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -674,27 +663,11 @@ func (p *fakePlatform) OpenAtLogin() bool {
 	defer p.mu.Unlock()
 	return p.login && !p.loginOff
 }
-func (p *fakePlatform) SetLocalAPI(_ uint64, on bool) (string, error) {
-	p.record("SetLocalAPI", on)
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if fn := p.localAPIFn; fn != nil {
-		p.mu.Unlock()
-		defer p.mu.Lock()
-		return fn(on)
-	}
-	if !on {
-		return "", nil
-	}
-	return p.localAPIPath, p.localAPIErr
-}
 func (p *fakePlatform) DataDir() (string, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.dataDir, p.customDir
 }
-func (p *fakePlatform) SetTrayVisible(visible bool) { p.record("SetTrayVisible", visible) }
-func (p *fakePlatform) SetTrayUnread(n int)         { p.record("SetTrayUnread", n) }
 func (p *fakePlatform) SetAppUnread(n int)          { p.record("SetAppUnread", n) }
 func (p *fakePlatform) ShowWindow()                 { p.record("ShowWindow") }
 func (p *fakePlatform) SetThemeSource(theme string) { p.record("SetThemeSource", theme) }

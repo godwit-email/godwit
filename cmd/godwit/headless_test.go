@@ -1264,3 +1264,122 @@ func TestHeadlessTrayPreviewsSignInCode(t *testing.T) {
 		})
 	}
 }
+
+// The backend's tray shows a code's banner once, and none while new-mail
+// notifications are off, while it has no tray to hang the banner from, or
+// while the sign-in codes plugin is off: the mail notifies as ordinary
+// mail there, and the plugin off empties the tray's recent codes too.
+func TestHeadlessTraySignInCodeSurfaces(t *testing.T) {
+	env := coretest.New(t, coretest.WithoutAutoSync())
+	clk := newStepClock(time.Now())
+	sink := &recordingSink{supported: true, bannerSupported: true}
+	withHeadlessDesktop(t, func() *headlessDesktop {
+		return &headlessDesktop{
+			clock:       clk,
+			newPlatform: func(string, *core.Service) headlessPlatform { return sink },
+			run: func(ctx context.Context, ready func(stop func())) (bool, error) {
+				loopCtx, stop := context.WithCancel(ctx)
+				defer stop()
+				ready(stop)
+				<-loopCtx.Done()
+				return true, nil
+			},
+		}
+	})
+	dir := shortDir(t)
+	c, stderr, stop := startHeadless(t, dir)
+	ctx := context.Background()
+	_, deliver := addTestAccount(t, env, c)
+	codeMail := func(n int, code string) {
+		t.Helper()
+		deliver("From: Login <login@example.com>\r\nTo: alice@example.com\r\nSubject: Verification code: " + code +
+			"\r\nMessage-ID: <surface" + strconv.Itoa(n) + "@example.com>\r\n\r\nYour verification code is " + code + ".\r\n")
+	}
+	bannersOf := func(code string) int {
+		n := 0
+		for _, b := range sink.Banners() {
+			if b != nil && b.Code == code {
+				n++
+			}
+		}
+		return n
+	}
+	codeLists := func() int { sink.mu.Lock(); defer sink.mu.Unlock(); return len(sink.codesHistory) }
+	newestCode := func(code string) func() bool {
+		return func() bool { codes, ok := sink.LastCodes(); return ok && len(codes) > 0 && codes[0].Code == code }
+	}
+	setSettings := func(edit func(*core.Settings)) {
+		t.Helper()
+		var st core.Settings
+		if err := c.Call(ctx, "GetSettings", &st); err != nil {
+			t.Fatal(err)
+		}
+		edit(&st)
+		if err := c.Call(ctx, "SetSettings", nil, st); err != nil {
+			t.Fatal(err)
+		}
+	}
+	notified := func(desc string, want int) {
+		t.Helper()
+		clk.Advance(app.NotifyWait)
+		waitCond(t, desc, func() bool { return len(sink.Notes()) >= want })
+		if notes := sink.Notes(); len(notes) != want {
+			t.Fatalf("%s: notifications %+v", desc, notes)
+		}
+	}
+
+	// Shown once: reloading with the same newest code does not show it again.
+	codeMail(1, "100001")
+	waitCond(t, "banner for 100001", func() bool { return bannersOf("100001") == 1 })
+	clk.Advance(app.NotifyWait)
+	time.Sleep(80 * time.Millisecond)
+	before := codeLists()
+	clk.Advance(30 * time.Second) // the expiry timer reloads the codes
+	waitCond(t, "codes reloaded", func() bool { return codeLists() > before })
+	if n := bannersOf("100001"); n != 1 {
+		t.Fatalf("banner for 100001 shown %d times", n)
+	}
+	if notes := sink.Notes(); len(notes) != 0 {
+		t.Fatalf("notified beside the banner: %+v", notes)
+	}
+
+	// No tray, so no banner: the code mail notifies as ordinary mail.
+	setSettings(func(st *core.Settings) { st.ShowTrayIcon = false })
+	waitCond(t, "tray hidden", func() bool { v := sink.Visibility(); return len(v) > 0 && !v[len(v)-1] })
+	codeMail(2, "200002")
+	waitCond(t, "200002 in the tray's list", newestCode("200002"))
+	notified("ordinary notification without a tray", 1)
+	if n := bannersOf("200002"); n != 0 {
+		t.Fatal("banner shown without a tray")
+	}
+	setSettings(func(st *core.Settings) { st.ShowTrayIcon = true })
+	waitCond(t, "tray shown", func() bool { v := sink.Visibility(); return len(v) > 0 && v[len(v)-1] })
+
+	// The plugin off: no recent codes, no banner, an ordinary notification;
+	// on again, the codes come back.
+	if err := c.Call(ctx, "SetPluginEnabled", nil, core.SignInCodesPlugin, false); err != nil {
+		t.Fatal(err)
+	}
+	waitCond(t, "tray codes cleared", func() bool { codes, ok := sink.LastCodes(); return ok && len(codes) == 0 })
+	codeMail(3, "300003")
+	notified("ordinary notification with the plugin off", 2)
+	if codes, _ := sink.LastCodes(); len(codes) != 0 || bannersOf("300003") != 0 {
+		t.Fatalf("tray %+v, banners %d with the plugin off", codes, bannersOf("300003"))
+	}
+	if err := c.Call(ctx, "SetPluginEnabled", nil, core.SignInCodesPlugin, true); err != nil {
+		t.Fatal(err)
+	}
+	waitCond(t, "codes back with the plugin on", newestCode("300003"))
+
+	// New-mail notifications off: the tray lists the code, no banner.
+	setSettings(func(st *core.Settings) { st.NotifyNewMail = false })
+	codeMail(4, "400004")
+	waitCond(t, "400004 in the tray", newestCode("400004"))
+	if n := bannersOf("400004"); n != 0 {
+		t.Fatal("banner shown with new-mail notifications off")
+	}
+
+	if code := stop(); code != 0 {
+		t.Fatalf("exit code %d; stderr %q", code, stderr.String())
+	}
+}
