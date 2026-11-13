@@ -107,8 +107,8 @@ func TestSkillsChangedOnlyRefreshesSkills(t *testing.T) {
 			a.onEvent(events.Event{Type: events.SkillsChanged})
 			a.clock.(*fakeClock).advance(refreshEvery)
 			next()() // the coalesced refresh
-			if a.loads.Gen() != 0 || a.mail.list.Gen() != 0 || e.gen != 0 || a.mail.reader.readGen != 0 {
-				t.Fatalf("skill event reloaded unrelated data: shell=%d mail=%d extensions=%d reader=%d", a.loads.Gen(), a.mail.list.Gen(), e.gen, a.mail.reader.readGen)
+			if a.loads.Gen() != 0 || a.mail.list.Gen() != 0 || e.list.Gen() != 0 || a.mail.reader.readGen != 0 {
+				t.Fatalf("skill event reloaded unrelated data: shell=%d mail=%d extensions=%d reader=%d", a.loads.Gen(), a.mail.list.Gen(), e.list.Gen(), a.mail.reader.readGen)
 			}
 		})
 	}
@@ -120,7 +120,7 @@ func TestSkillWriteOnlyRefreshesSkills(t *testing.T) {
 	for slices.ContainsFunc(e.skills, func(s core.SkillInfo) bool { return s.Name == "summarize" && s.Enabled }) {
 		next()()
 	}
-	if e.gen != 0 {
+	if e.list.Gen() != 0 {
 		t.Fatal("a skill write reloaded plugins, registry and MCP servers")
 	}
 }

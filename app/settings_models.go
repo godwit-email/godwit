@@ -27,7 +27,7 @@ type modelsView struct {
 	a                    *App
 	services             []core.ModelService
 	plugins              []core.PluginModels // the running plugins' models
-	listGen              uint64              // bumped per list read; only the newest applies
+	listRead             latest              // the list's reads; only the newest applies
 	form                 *modelForm          // nil until a service is chosen or added
 	defModel, smallModel string              // the 用途 selects' values; follow a.settings between frames
 	judge                string
@@ -450,27 +450,22 @@ func altGen(services []core.ModelService, id int64) *core.ModelService {
 
 func (m *modelsView) load() {
 	a := m.a
-	m.listGen++
 	m.defModel, m.smallModel, m.judge = a.settings.DefaultModel, a.settings.SmallModel, a.settings.JudgeService
-	gen := m.listGen
 	var list []core.ModelService
 	var plugs []core.PluginModels
-	a.query(func(ctx context.Context) (err error) {
+	m.listRead.Run(a, func(ctx context.Context) (err error) {
 		if list, err = a.svc.ListModelServices(ctx); err != nil {
 			return err
 		}
 		plugs, err = a.svc.ListPluginModels(ctx)
 		return err
-	}, func(err error) {
-		if gen != m.listGen {
-			return
-		}
+	}, a.here(func(err error) {
 		if err != nil {
 			a.toastErr(err)
 			return
 		}
 		m.services, m.plugins, m.loaded = list, plugs, true
-	})
+	}))
 }
 
 // testRow tests each capability service s has on, as saved, from its
