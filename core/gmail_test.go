@@ -296,8 +296,7 @@ func TestGmailLostMoveResponseReconciled(t *testing.T) {
 	id := e.idOf(t, "a@x")
 
 	require.NoError(t, e.s.MoveToRole(bg, []int64{id}, "archive"))
-	_, err := e.s.db.Execute(bg, "UPDATE ops SET attempts = 1") // sent, then the connection dropped
-	require.NoError(t, err)
+	e.markSent(t, nil) // sent, then the connection dropped
 	m.Unlabel("INBOX") // what the MOVE did
 	before := e.im.MovesAndCopies()
 	e.sync(t)

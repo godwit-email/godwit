@@ -758,9 +758,6 @@ func (s *Service) PendingOps(ctx context.Context, accountID int64) ([]Op, error)
 	return out, nil
 }
 
-// latestOp is the message's newest unfinished op, which a new op must wait for.
-const latestOp = "(SELECT max(id) FROM ops WHERE message_id = ? AND state IN ('pending', 'awaiting_claim'))"
-
 type target struct {
 	id, thread, folder int64
 	flags              string
@@ -965,10 +962,6 @@ func (s *Service) SetFlags(ctx context.Context, ids []int64, add, remove []strin
 
 // flagWrites adds then removes the (canonical) flags on ts and queues the change.
 func flagWrites(acc int64, ts []target, add, remove []string) ([]sqlite.Statement, error) {
-	payload, err := json.Marshal(mailsync.FlagsPayload{Add: add, Remove: remove})
-	if err != nil {
-		return nil, err
-	}
 	var stmts []sqlite.Statement
 	for _, m := range ts {
 		set := slices.DeleteFunc(flagSet(append(strings.Fields(m.flags), add...)), func(f string) bool {
@@ -977,8 +970,7 @@ func flagWrites(acc int64, ts []target, add, remove []string) ([]sqlite.Statemen
 		slices.Sort(set)
 		stmts = append(stmts,
 			sqlite.Statement{SQL: "UPDATE messages SET flags = ? WHERE id = ?", Args: []any{strings.Join(set, " "), m.id}},
-			sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, payload, depends_on, created_at)
-				VALUES (?, ?, 'flags', ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, m.id, string(payload), m.id}})
+			mailsync.QueueFlags(acc, m.id, add, remove))
 	}
 	return stmts, nil
 }
@@ -1061,8 +1053,7 @@ func (s *Service) DeleteForever(ctx context.Context, ids []int64) error {
 			continue
 		}
 		purged = append(purged, m)
-		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, src_folder_id, dst_folder_id, payload, depends_on, created_at)
-			VALUES (?, ?, 'purge', ?, ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, m.id, m.folder, m.folder, mailsync.PurgeNowRole(role, due), m.id}})
+		stmts = append(stmts, mailsync.QueuePurgeNow(acc, m.id, m.folder, role, due))
 	}
 	local, err := s.localArchive(ctx, acc)
 	if err != nil {
@@ -1103,15 +1094,14 @@ func (s *Service) EmptyFolder(ctx context.Context, folderID int64) ([]int64, err
 		return nil, err
 	}
 	now := s.clk().Now()
-	payload := mailsync.PurgeNowRole(role, now.Add(UndoPurgeWindow))
+	due := now.Add(UndoPurgeWindow)
 	ids := make([]int64, len(msgRows.Values))
 	ts := make([]target, len(msgRows.Values))
 	stmts := make([]sqlite.Statement, len(msgRows.Values))
 	for i, r := range msgRows.Values {
 		ids[i] = store.Int(r[0])
 		ts[i] = target{id: ids[i], thread: store.Int(r[1]), folder: folderID}
-		stmts[i] = sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, src_folder_id, dst_folder_id, payload, depends_on, created_at)
-			VALUES (?, ?, 'purge', ?, ?, ?, ` + latestOp + `, unixepoch())`, Args: []any{acc, ids[i], folderID, folderID, payload, ids[i]}}
+		stmts[i] = mailsync.QueuePurgeNow(acc, ids[i], folderID, role, due)
 	}
 	if local, err := s.localArchive(ctx, acc); err != nil || local {
 		if err == nil {
@@ -1151,7 +1141,8 @@ func (s *Service) UndoPurge(ctx context.Context, ids []int64) (gone int, err err
 	for i, id := range ids {
 		args[i] = id
 	}
-	res, err := s.db.Execute(ctx, "UPDATE ops SET state = 'cancelled' WHERE message_id IN ("+marks+") AND kind = 'purge' AND state = 'pending'", args...)
+	cancel := mailsync.CancelPurges(ids...)
+	res, err := s.db.Execute(ctx, cancel.SQL, cancel.Args...)
 	if err != nil {
 		return 0, err
 	}
@@ -1340,21 +1331,11 @@ func (s *Service) archiveUndoWrites(ctx context.Context, acc int64, ts []target,
 	}
 	var stmts []sqlite.Statement
 	for _, m := range ts {
-		var cancel int64
-		if from == 0 {
-			r, err := s.db.Query(ctx, `SELECT id FROM ops WHERE message_id = ? AND kind = 'move' AND src_folder_id = ?
-				AND dst_folder_id IS NULL AND state = 'pending' AND attempts = 0 ORDER BY id DESC LIMIT 1`, m.id, to)
-			if err != nil {
-				return nil, err
-			}
-			if len(r.Values) > 0 {
-				cancel = store.Int(r.Values[0][0])
-			}
+		restore, err := mailsync.QueueRestore(ctx, s.db, acc, m.id, to, from == 0)
+		if err != nil {
+			return nil, err
 		}
-		stmts = append(stmts, sqlite.Statement{SQL: "UPDATE ops SET state = 'cancelled' WHERE id = ? AND state = 'pending' AND attempts = 0", Args: []any{cancel}})
-		stmts = append(stmts, mailsync.ShowIn(m.id, to, []int64{})...)
-		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, dst_folder_id, depends_on, created_at)
-			SELECT ?, ?, 'move', ?, ` + latestOp + `, unixepoch() WHERE NOT EXISTS (SELECT 1 FROM ops WHERE id = ? AND state = 'cancelled')`, Args: []any{acc, m.id, to, m.id, cancel}})
+		stmts = append(append(stmts, mailsync.ShowIn(m.id, to, []int64{})...), restore...)
 	}
 	return stmts, nil
 }
@@ -1448,19 +1429,13 @@ func moveWrites(accountID int64, ts []target, from, folderID int64, binned bool,
 		}
 		stmts = append(append(stmts, mailsync.ShowIn(m.id, folderID, hide)...),
 			// A rescue beats a purge queued before it (the move would otherwise wait for it).
-			sqlite.Statement{SQL: "UPDATE ops SET state = 'cancelled' WHERE message_id = ? AND kind = 'purge' AND state = 'pending'", Args: []any{m.id}})
-		var dst any
-		if folderID != 0 {
-			dst = folderID
-		}
-		payload := "{}"
+			mailsync.CancelPurges(m.id))
+		var due time.Time
 		if folderID == 0 && len(m.in) == 1 && m.in[0].rank == 0 {
-			b, _ := json.Marshal(map[string]int64{"due_at": now.Add(UndoArchiveWindow).UnixMilli()})
-			payload = string(b)
+			due = now.Add(UndoArchiveWindow)
 		}
 		for _, src := range out {
-			stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, src_folder_id, dst_folder_id, payload, depends_on, created_at)
-				SELECT ?, ?, 'move', ?, ?, ?, ` + latestOp + `, unixepoch() WHERE NOT ` + mailsync.InboxOnly, Args: []any{accountID, m.id, src, dst, payload, m.id, accountID}})
+			stmts = append(stmts, mailsync.QueueMove(accountID, m.id, src, folderID, due))
 		}
 	}
 	return moved, stmts

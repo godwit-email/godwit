@@ -93,7 +93,7 @@ func mergedFlags(ctx context.Context, db *store.DB, keep int64, all []int64) (st
 		return "", err
 	}
 	for _, v := range ops.Values {
-		var p FlagsPayload
+		var p flagsPayload
 		if json.Unmarshal([]byte(store.Str(v[0])), &p) != nil {
 			continue // the push fails it
 		}

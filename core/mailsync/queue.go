@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/backend"
@@ -194,4 +195,172 @@ func claimPurge(ctx context.Context, db *store.DB, o *op, cond string, args []an
 	}
 	o.attempts++
 	return true, nil
+}
+
+// latestOp is message ?'s newest unfinished op, which a new op of it waits for.
+const latestOp = "(SELECT max(id) FROM ops WHERE message_id = ? AND state IN " + unfinished + ")"
+
+// flagsPayload is a flags op's payload: flags to add, then flags to remove.
+type flagsPayload struct {
+	Add    []string `json:"add,omitempty"`
+	Remove []string `json:"remove,omitempty"`
+}
+
+// movePayload is a move op's payload. DueAt (unix milliseconds, as opDue
+// reads it) ends the undo window of an archive from the message's last
+// visible Gmail location: the push leaves it until then. Before is the
+// destination's baseline its backend took before sending (saveBaseline).
+type movePayload struct {
+	DueAt  int64                 `json:"due_at,omitempty"`
+	Before *backend.MoveBaseline `json:"before,omitempty"`
+}
+
+// purgePayload is a purge op's payload: the role whose folder (dst_folder_id) it
+// empties. Now marks one the user asked for, which skips the policy's checks.
+// DueAt (unix milliseconds, as opDue reads it) ends the undo window of one the
+// user asked for: the push leaves it until then.
+type purgePayload struct {
+	Role  string `json:"role"`
+	Now   bool   `json:"now,omitempty"`
+	DueAt int64  `json:"due_at,omitempty"`
+}
+
+func payload(v any) string {
+	b, _ := json.Marshal(v) // the payloads are strings, numbers and bools
+	return string(b)
+}
+
+// opDue is the durable undo deadline of a purge or a last-location archive.
+const opDue = "CASE WHEN kind IN ('purge', 'move') THEN IFNULL(json_extract(payload, '$.due_at'), 0) ELSE 0 END"
+
+// opReady also releases a deferred archive once fetch finds another server location.
+const opReady = "(" + opDue + ` <= ? OR (kind = 'move' AND dst_folder_id IS NULL AND EXISTS
+	(SELECT 1 FROM message_locations l WHERE l.message_id = ops.message_id AND l.folder_id != ops.src_folder_id AND l.server_ref IS NOT NULL)))`
+
+// NextOpDue is the account's first undo deadline after t; zero for none.
+func NextOpDue(ctx context.Context, db *store.DB, accountID int64, t time.Time) (time.Time, error) {
+	rows, err := db.Query(ctx, `SELECT MIN(`+opDue+`) FROM ops
+		WHERE account_id = ? AND state = 'pending' AND `+opDue+` > ?`, accountID, t.UnixMilli())
+	if err != nil || len(rows.Values) == 0 || rows.Values[0][0] == nil {
+		return time.Time{}, err
+	}
+	return time.UnixMilli(store.Int(rows.Values[0][0])), nil
+}
+
+// ready is the condition that a pending op is due at ? (and, newOnly, never attempted).
+func ready(newOnly bool) string {
+	if newOnly {
+		return "state = 'pending' AND " + opReady + " AND attempts = 0"
+	}
+	return "state = 'pending' AND " + opReady
+}
+
+// readyOps are the ids of the account's ops ready to push at now, oldest first.
+func readyOps(ctx context.Context, db *store.DB, accountID int64, now time.Time, newOnly bool) ([]int64, error) {
+	rows, err := db.Query(ctx, "SELECT id FROM ops WHERE account_id = ? AND "+ready(newOnly)+" ORDER BY id", accountID, now.UnixMilli())
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]int64, len(rows.Values))
+	for i, v := range rows.Values {
+		ids[i] = store.Int(v[0])
+	}
+	return ids, nil
+}
+
+// readyOp reads op id of the account, if it is still ready at now.
+func readyOp(ctx context.Context, db *store.DB, accountID, id int64, now time.Time, newOnly bool) (op, bool, error) {
+	r, err := db.Query(ctx, `SELECT kind, message_id, src_folder_id, dst_folder_id, payload, depends_on, attempts, refusals FROM ops
+		WHERE id = ? AND `+ready(newOnly), id, now.UnixMilli())
+	if err != nil || len(r.Values) == 0 {
+		return op{}, false, err
+	}
+	v := r.Values[0]
+	return op{id: id, kind: store.Str(v[0]), msg: store.Int(v[1]), src: store.Int(v[2]), dst: store.Int(v[3]), accountID: accountID,
+		payload: store.Str(v[4]), dep: store.Int(v[5]), attempts: int(store.Int(v[6])), refusals: int(store.Int(v[7]))}, true, nil
+}
+
+// queuePolicyPurges queues a purge by the policy of role of every message
+// from (a FROM clause over messages m and purge_policies p, with args)
+// selects.
+func queuePolicyPurges(role, from string, args ...any) sqlite.Statement {
+	return sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, src_folder_id, dst_folder_id, payload, created_at)
+		SELECT m.account_id, m.id, 'purge', p.folder_id, p.folder_id, ?, unixepoch()` + from, Args: append([]any{payload(purgePayload{Role: role})}, args...)}
+}
+
+// The queue as core changes it: each Queue* statement queues one change the
+// user made locally, after the message's unfinished ops. Core runs them in
+// the transaction that makes the change locally.
+
+// QueueFlags queues adding then removing flags (canonical names) on message msg.
+func QueueFlags(accountID, msg int64, add, remove []string) sqlite.Statement {
+	return sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, payload, depends_on, created_at)
+		VALUES (?, ?, 'flags', ?, ` + latestOp + `, unixepoch())`, Args: []any{accountID, msg, payload(flagsPayload{add, remove}), msg}}
+}
+
+// QueueMove queues moving message msg out of folder src into dst; dst 0
+// only takes it out of src (Gmail's archive with All Mail hidden). A non-zero
+// due opens an undo window: the push leaves the move until then. Nothing is
+// queued on an inbox-only account, where a move is local (InboxOnly).
+func QueueMove(accountID, msg, src, dst int64, due time.Time) sqlite.Statement {
+	var p movePayload
+	if !due.IsZero() {
+		p.DueAt = due.UnixMilli()
+	}
+	return sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, src_folder_id, dst_folder_id, payload, depends_on, created_at)
+		SELECT ?, ?, 'move', ?, ?, ?, ` + latestOp + `, unixepoch() WHERE NOT ` + InboxOnly, Args: []any{accountID, msg, src, nullID(dst), payload(p), msg, accountID}}
+}
+
+// QueueRestore queues adding message msg to folder again (Gmail: its label
+// back), for one transaction. With takeBack, its archive out of folder that
+// nothing has sent yet is cancelled instead.
+func QueueRestore(ctx context.Context, db *store.DB, accountID, msg, folder int64, takeBack bool) ([]sqlite.Statement, error) {
+	var cancel int64
+	if takeBack {
+		r, err := db.Query(ctx, `SELECT id FROM ops WHERE message_id = ? AND kind = 'move' AND src_folder_id = ?
+			AND dst_folder_id IS NULL AND state = 'pending' AND attempts = 0 ORDER BY id DESC LIMIT 1`, msg, folder)
+		if err != nil {
+			return nil, err
+		}
+		if len(r.Values) > 0 {
+			cancel = store.Int(r.Values[0][0])
+		}
+	}
+	return []sqlite.Statement{
+		opsTo(opCancelled, fromPending, "", "id = ? AND attempts = 0", cancel),
+		{SQL: `INSERT INTO ops(account_id, message_id, kind, dst_folder_id, depends_on, created_at)
+			SELECT ?, ?, 'move', ?, ` + latestOp + `, unixepoch() WHERE NOT EXISTS (SELECT 1 FROM ops WHERE id = ? AND state = 'cancelled')`,
+			Args: []any{accountID, msg, folder, msg, cancel}},
+	}, nil
+}
+
+// QueuePurgeNow queues deleting message msg for good from folder, the
+// account's folder of role (trash, junk), at due, whatever the policy: until
+// then CancelPurges takes it back.
+func QueuePurgeNow(accountID, msg, folder int64, role string, due time.Time) sqlite.Statement {
+	return sqlite.Statement{SQL: `INSERT INTO ops(account_id, message_id, kind, src_folder_id, dst_folder_id, payload, depends_on, created_at)
+		VALUES (?, ?, 'purge', ?, ?, ?, ` + latestOp + `, unixepoch())`,
+		Args: []any{accountID, msg, folder, folder, payload(purgePayload{Role: role, Now: true, DueAt: due.UnixMilli()}), msg}}
+}
+
+// CancelPurges cancels the purges of the messages that wait to be pushed (a
+// rescue, an undo); its Changes count them. One being pushed still completes.
+func CancelPurges(msgs ...int64) sqlite.Statement {
+	return opsTo(opCancelled, fromPending, "", "kind = 'purge' AND message_id IN ("+marks(len(msgs))+")", anys(msgs)...)
+}
+
+// ConflictAll ends every unfinished op of the account as a conflict, with
+// reason: the server they were queued for is gone.
+func ConflictAll(accountID int64, reason string) sqlite.Statement {
+	return opsTo(opConflict, fromUnfinished, "last_error = ?", "account_id = ?", reason, accountID)
+}
+
+// MarkSent leaves op id as a push cut off after sending does: an attempt
+// counted that may have reached the server, with the destination's baseline
+// before it when before is set. Tests reproduce a lost reply with it.
+func MarkSent(ctx context.Context, db *store.DB, id int64, before *backend.MoveBaseline) error {
+	if err := count(ctx, db, &op{id: id}, 1); err != nil || before == nil {
+		return err
+	}
+	return saveBaseline(ctx, db, id, *before)
 }

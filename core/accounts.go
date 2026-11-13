@@ -1037,8 +1037,7 @@ func (s *Service) UpdateAccount(ctx context.Context, id int64, p AccountPatch) (
 		// from the start: a message it finds by identity (Gmail, JMAP) keeps
 		// its row, the rest is gone at the round's end.
 		stmts = append(stmts,
-			sqlite.Statement{SQL: `UPDATE ops SET state = 'conflict', last_error = 'the account moved to another server, so a change queued for the old one was not applied'
-				WHERE account_id = ? AND state IN ('pending', 'awaiting_claim')`, Args: []any{id}},
+			mailsync.ConflictAll(id, "the account moved to another server, so a change queued for the old one was not applied"),
 			sqlite.Statement{SQL: "UPDATE accounts SET cursor = NULL WHERE id = ?", Args: []any{id}},
 			sqlite.Statement{SQL: "UPDATE folders SET cursor = NULL, synced = 0, filled_since = NULL WHERE account_id = ?", Args: []any{id}},
 			// An inbox-only account (POP3) keeps its mail where it shows: it may exist nowhere else.

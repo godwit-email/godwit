@@ -14,12 +14,6 @@ import (
 	"github.com/godwit-email/godwit/internal/i18n"
 )
 
-// FlagsPayload is the payload of a flags op: flags to add, then flags to remove.
-type FlagsPayload struct {
-	Add    []string `json:"add,omitempty"`
-	Remove []string `json:"remove,omitempty"`
-}
-
 // OpsError lists ops that PushOps marked conflict or failed; the push went on.
 // Changed holds messages shown in a different folder because a move ended so.
 type OpsError struct {
@@ -49,7 +43,7 @@ type pusher struct {
 // back as *OpsError; any other error means the connection is unusable and the
 // push stopped.
 func PushOps(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64, now time.Time) error {
-	return push(ctx, db, recv, accountID, now, "")
+	return push(ctx, db, recv, accountID, now, false)
 }
 
 // PushNewOps is PushOps limited to ops never attempted, for a second round after
@@ -57,10 +51,10 @@ func PushOps(ctx context.Context, db *store.DB, recv backend.Receiver, accountID
 // location (a deferred archive) or that were queued meanwhile run, ones that
 // failed are not retried. Without such an op it sends nothing to the server.
 func PushNewOps(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64, now time.Time) error {
-	return push(ctx, db, recv, accountID, now, " AND attempts = 0")
+	return push(ctx, db, recv, accountID, now, true)
 }
 
-func push(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64, now time.Time, filter string) (rerr error) {
+func push(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64, now time.Time, newOnly bool) (rerr error) {
 	var problems []string
 	var changed []int64
 	rs, err := db.Transaction(ctx, []sqlite.Statement{
@@ -81,12 +75,11 @@ func push(ctx context.Context, db *store.DB, recv backend.Receiver, accountID in
 	if res.Changes > 0 {
 		problems = append(problems, fmt.Sprintf("%d change(s) not applied: the message no longer exists", res.Changes))
 	}
-	rows, err := db.Query(ctx, `SELECT id FROM ops
-		WHERE account_id = ? AND state = 'pending' AND `+opReady+filter+` ORDER BY id`, accountID, now.UnixMilli())
+	ids, err := readyOps(ctx, db, accountID, now, newOnly)
 	if err != nil {
 		return err
 	}
-	if len(rows.Values) == 0 {
+	if len(ids) == 0 {
 		if len(problems) > 0 {
 			return &OpsError{problems, changed}
 		}
@@ -97,19 +90,15 @@ func push(ctx context.Context, db *store.DB, recv backend.Receiver, accountID in
 		return err
 	}
 	p := &pusher{db: db, recv: recv, stable: d.Identity == backend.IdentityStable, inboxOnly: d.Identity == backend.IdentityInboxOnly, canPurge: d.Features[backend.FeaturePurge].Level != backend.LevelUnsupported}
-	for _, row := range rows.Values {
+	for _, id := range ids {
 		// A preceding move can merge queues or rebase the next move's source.
-		current, err := db.Query(ctx, `SELECT id, kind, message_id, src_folder_id, dst_folder_id, payload, depends_on, attempts, refusals FROM ops
-			WHERE id = ? AND state = 'pending' AND `+opReady+filter, row[0], now.UnixMilli())
+		o, ok, err := readyOp(ctx, db, accountID, id, now, newOnly)
 		if err != nil {
 			return err
 		}
-		if len(current.Values) == 0 {
+		if !ok {
 			continue
 		}
-		v := current.Values[0]
-		o := op{id: store.Int(v[0]), kind: store.Str(v[1]), msg: store.Int(v[2]), src: store.Int(v[3]), dst: store.Int(v[4]), accountID: accountID,
-			payload: store.Str(v[5]), dep: store.Int(v[6]), attempts: int(store.Int(v[7])), refusals: int(store.Int(v[8]))}
 		problem, err := p.pushOp(ctx, o)
 		if o.kind == "purge" && err == nil && problem == "" {
 			if r, qerr := db.Query(ctx, "SELECT 1 FROM ops WHERE id = ? AND state = 'done'", o.id); qerr == nil && len(r.Values) > 0 {
@@ -193,7 +182,7 @@ func (p *pusher) pushOp(ctx context.Context, o op) (problem string, err error) {
 	var dst destination
 	switch o.kind {
 	case "flags":
-		var f FlagsPayload
+		var f flagsPayload
 		if err := json.Unmarshal([]byte(o.payload), &f); o.payload != "" && err != nil {
 			msg := "unreadable flags change: " + err.Error()
 			return msg, finish(ctx, db, o, "failed", msg)
@@ -206,9 +195,7 @@ func (p *pusher) pushOp(ctx context.Context, o op) (problem string, err error) {
 			}
 			return fail(ctx, db, o, errNoDestination, false)
 		}
-		var mp struct {
-			Before *backend.MoveBaseline `json:"before,omitempty"`
-		}
+		var mp movePayload
 		if o.payload != "" {
 			_ = json.Unmarshal([]byte(o.payload), &mp)
 		}
