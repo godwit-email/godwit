@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zalando/go-keyring"
@@ -469,4 +470,26 @@ func TestExternalMCPPartialSecretsRepairedWhenTheFileGoesBack(t *testing.T) {
 	one, err := keychainGet(s.mcpSecretUser(list[0].ID, "header", "X-One"))
 	require.NoError(t, err)
 	assert.Equal(t, "secret-a1", one)
+}
+
+func TestExternalSkillsChangeNotifies(t *testing.T) {
+	s, dir := externalSvc(t)
+	ctx := t.Context()
+	s.syncExternal(ctx)
+	ch, stop := s.Subscribe()
+	defer stop()
+	d := filepath.Join(dir, externalSkills, "fresh")
+	require.NoError(t, os.MkdirAll(d, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(d, "SKILL.md"), []byte("---\nname: fresh\ndescription: new\n---\nDo it.\n"), 0o600))
+	s.syncExternal(ctx)
+	for {
+		select {
+		case ev := <-ch:
+			if ev.Type == events.SkillsChanged {
+				return
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("no skills.changed after a skill was added")
+		}
+	}
 }

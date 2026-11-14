@@ -169,6 +169,13 @@ func (s *Service) syncExternal(ctx context.Context) {
 			s.extSeen[externalModels] = mStamp
 		}
 	}
+	// Skills are read when asked for; a change only tells the interfaces to ask again.
+	if st := skillsStamp(filepath.Join(s.opts.ExternalDir, externalSkills)); st != s.extSeen[externalSkills] {
+		if _, seen := s.extSeen[externalSkills]; seen || st != "" {
+			s.bus.Publish(events.Event{Type: events.SkillsChanged})
+		}
+		s.extSeen[externalSkills] = st
+	}
 	mcp, cStamp, cChanged, cErr := s.readExternal(externalMCP)
 	if !cChanged {
 		return
@@ -225,6 +232,24 @@ func (s *Service) readExternal(name string) (data []byte, st string, changed boo
 		data, err = os.ReadFile(p)
 	}
 	return data, st, true, err
+}
+
+// skillsStamp is each skill folder's name and its SKILL.md's size and
+// modification time, a link followed; "" for no skills.
+func skillsStamp(dir string) string {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, e := range ents {
+		st, err := os.Stat(filepath.Join(dir, e.Name(), "SKILL.md"))
+		if err != nil {
+			continue
+		}
+		fmt.Fprintf(&b, "%s %d %d\n", e.Name(), st.Size(), st.ModTime().UnixNano())
+	}
+	return b.String()
 }
 
 func validManager(by string) bool {
