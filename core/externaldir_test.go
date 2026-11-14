@@ -409,3 +409,30 @@ func TestExternalDefaultOfSeveralGateways(t *testing.T) {
 	s.syncExternal(ctx)
 	assert.Empty(t, defaultModel(t, s), "the user's own: none")
 }
+
+func TestExternalStaleSnapshotKeepsTheUsersDefault(t *testing.T) {
+	s, dir := externalSvc(t)
+	ctx := t.Context()
+	_, err := s.AddModelService(ctx, ModelServiceInput{Name: "mine", Kind: "openai", BaseURL: "https://example.com/v1", APIKey: "k", Models: []string{"x"}})
+	require.NoError(t, err)
+	st, err := s.GetSettings(ctx)
+	require.NoError(t, err)
+	st.DefaultModel = "mine/x"
+	_, err = s.SetSettings(ctx, st)
+	require.NoError(t, err)
+	writeExternal(t, dir, externalModels, magpieEntry("k", "m", "m"))
+	s.syncExternal(ctx)
+
+	snapshot, err := s.GetSettings(ctx) // read while magpie chooses
+	require.NoError(t, err)
+	require.Equal(t, "magpie/m", snapshot.DefaultModel)
+	writeExternal(t, dir, externalModels, map[string]any{"magpie": map[string]any{}}) // then magpie disconnects
+	s.syncExternal(ctx)
+	snapshot.Theme = "dark" // and the snapshot is saved
+	_, err = s.SetSettings(ctx, snapshot)
+	require.NoError(t, err)
+	st, err = s.GetSettings(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "mine/x", st.DefaultModel)
+	assert.Equal(t, "dark", st.Theme)
+}

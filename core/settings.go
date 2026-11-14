@@ -455,7 +455,10 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 	if err != nil {
 		return Settings{}, err
 	}
-	if gw != "" { // the gateway's file chooses the default: changed there, never saved over the user's own
+	// A gateway's file chooses the default now, or chose it when st was read
+	// (a snapshot saved after the gateway went): changed there, never saved
+	// over the user's own.
+	if gw != "" || st.DefaultModelBy != "" {
 		st.DefaultModel = stored.DefaultModel
 	}
 	st.DefaultModelBy = ""
