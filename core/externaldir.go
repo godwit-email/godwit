@@ -104,7 +104,7 @@ func (s *Service) syncExternal(ctx context.Context) {
 	if s.extSeen == nil || s.extDirty.Swap(false) {
 		s.extSeen = map[string]string{}
 	}
-	models, mChanged, mErr := s.readExternal(externalModels)
+	models, mStamp, mChanged, mErr := s.readExternal(externalModels)
 	var services map[string]externalService
 	if mErr == nil && models != nil {
 		mErr = json.Unmarshal(models, &services)
@@ -131,12 +131,12 @@ func (s *Service) syncExternal(ctx context.Context) {
 		if mErr != nil {
 			slog.Warn("external models unreadable", "err", mErr)
 		} else if err := s.syncExternalModels(ctx, services); err != nil {
-			slog.Warn("external models", "err", err)
+			slog.Warn("external models, tried again next time", "err", err)
 		} else {
-			s.extSeen[externalModels] = s.stamp(externalModels)
+			s.extSeen[externalModels] = mStamp
 		}
 	}
-	mcp, cChanged, cErr := s.readExternal(externalMCP)
+	mcp, cStamp, cChanged, cErr := s.readExternal(externalMCP)
 	if !cChanged {
 		return
 	}
@@ -151,10 +151,10 @@ func (s *Service) syncExternal(ctx context.Context) {
 		return
 	}
 	if err := s.syncExternalMCP(ctx, servers.MCPServers, s.managedBy(true)); err != nil {
-		slog.Warn("external MCP servers", "err", err)
+		slog.Warn("external MCP servers, tried again next time", "err", err)
 		return
 	}
-	s.extSeen[externalMCP] = s.stamp(externalMCP)
+	s.extSeen[externalMCP] = cStamp
 }
 
 // stamp is a file's size and modification time, "" when it is missing.
@@ -167,14 +167,15 @@ func (s *Service) stamp(name string) string {
 }
 
 // readExternal reads file name if its stamp changed: nil data for a missing
-// file, which lists nothing.
-func (s *Service) readExternal(name string) (data []byte, changed bool, err error) {
-	st := s.stamp(name)
+// file, which lists nothing. st is the stamp taken before reading: the one to
+// record once data is applied, so a write meanwhile is seen next time.
+func (s *Service) readExternal(name string) (data []byte, st string, changed bool, err error) {
+	st = s.stamp(name)
 	if seen, ok := s.extSeen[name]; ok && seen == st {
-		return nil, false, nil
+		return nil, st, false, nil
 	}
 	if st == "" {
-		return nil, true, nil
+		return nil, st, true, nil
 	}
 	p := filepath.Join(s.opts.ExternalDir, name)
 	info, err := os.Stat(p)
@@ -184,7 +185,7 @@ func (s *Service) readExternal(name string) (data []byte, changed bool, err erro
 	if err == nil {
 		data, err = os.ReadFile(p)
 	}
-	return data, true, err
+	return data, st, true, err
 }
 
 func validManager(by string) bool {
@@ -314,8 +315,11 @@ func (s *Service) managedServices(ctx context.Context) (map[string]managedRow, e
 }
 
 // syncExternalModels makes the managed services match services. A name the
-// user's own service has is skipped: the user's always wins.
-func (s *Service) syncExternalModels(ctx context.Context, services map[string]externalService) error {
+// user's own service has is skipped: the user's always wins. What the entry
+// itself rules out is skipped until the file changes; any other failure (a
+// locked keychain) is returned, after the other entries, so the file is read
+// again.
+func (s *Service) syncExternalModels(ctx context.Context, services map[string]externalService) (failed error) {
 	have, err := s.managedServices(ctx)
 	if err != nil {
 		return err
@@ -364,6 +368,12 @@ func (s *Service) syncExternalModels(ctx context.Context, services map[string]ex
 			slog.Warn("external model service skipped: the user has a service of that name", "name", name)
 			continue
 		}
+		if !exists {
+			if err := s.checkNameFree(ctx, name, 0); err != nil {
+				slog.Warn("external model service skipped", "name", name, "err", err)
+				continue
+			}
+		}
 		in := ModelServiceInput{Name: name, Kind: e.Kind, BaseURL: e.BaseURL, APIKey: e.APIKey, KeyAction: KeyReplace,
 			Models: e.Models, Provider: ProviderOther, managedBy: e.By, ownModels: e.ownModels(),
 			managedHash: entryHash([]any{e.By, e.BaseURL, e.Kind, e.Models, e.Names, e.Context, sha256.Sum256([]byte(e.APIKey))})}
@@ -371,7 +381,7 @@ func (s *Service) syncExternalModels(ctx context.Context, services map[string]ex
 		case !exists:
 			m, err := s.AddModelService(ctx, in)
 			if err != nil {
-				slog.Warn("external model service skipped", "name", name, "err", err)
+				failed = errors.Join(failed, fmt.Errorf("add %s: %w", name, err))
 				continue
 			}
 			row = managedRow{id: m.ID, by: e.By, slug: m.Slug}
@@ -384,7 +394,7 @@ func (s *Service) syncExternalModels(ctx context.Context, services map[string]ex
 				row.by = e.By
 			}
 			if _, err := s.updateManagedService(ctx, row.id, in); err != nil {
-				slog.Warn("external model service not updated", "name", name, "err", err)
+				failed = errors.Join(failed, fmt.Errorf("update %s: %w", name, err))
 				continue
 			}
 			changed = true
@@ -393,7 +403,7 @@ func (s *Service) syncExternalModels(ctx context.Context, services map[string]ex
 			return err
 		}
 	}
-	return nil
+	return failed
 }
 
 func (s *Service) updateManagedService(ctx context.Context, id int64, in ModelServiceInput) (ModelService, error) {
@@ -443,7 +453,7 @@ func (s *Service) modelRefExists(ctx context.Context, ref string) bool {
 
 // syncExternalMCP makes the managed MCP servers match servers. New ones come
 // without a grant: the user grants each before it runs (ADR 0004).
-func (s *Service) syncExternalMCP(ctx context.Context, servers map[string]externalMCPServer, by string) error {
+func (s *Service) syncExternalMCP(ctx context.Context, servers map[string]externalMCPServer, by string) (failed error) {
 	list, err := s.mcpRows(ctx, 0)
 	if err != nil {
 		return err
@@ -475,12 +485,21 @@ func (s *Service) syncExternalMCP(ctx context.Context, servers map[string]extern
 			continue
 		}
 		old, exists := have[name]
-		switch {
-		case exists && old.ManagedBy == "":
+		var was *MCPServer
+		if exists {
+			was = &old
+		}
+		if probe := in; exists && old.ManagedBy == "" {
 			slog.Warn("external MCP server skipped: the user has a server of that name", "name", name)
+			continue
+		} else if err := checkMCPInput(&probe, was); err != nil { // the entry's own fault: skipped until the file changes
+			slog.Warn("external MCP server skipped", "name", name, "err", err)
+			continue
+		}
+		switch {
 		case !exists:
 			if _, err := s.AddMCPServer(ctx, in); err != nil {
-				slog.Warn("external MCP server skipped", "name", name, "err", err)
+				failed = errors.Join(failed, fmt.Errorf("add %s: %w", name, err))
 			}
 		case hashes[old.ID] != in.managedHash:
 			if old.ManagedBy != by {
@@ -489,11 +508,11 @@ func (s *Service) syncExternalMCP(ctx context.Context, servers map[string]extern
 				}
 			}
 			if _, err := s.UpdateMCPServer(ctx, old.ID, in); err != nil { // its grant goes: what it runs changed
-				slog.Warn("external MCP server not updated", "name", name, "err", err)
+				failed = errors.Join(failed, fmt.Errorf("update %s: %w", name, err))
 			}
 		}
 	}
-	return nil
+	return failed
 }
 
 func (s *Service) mcpHashes(ctx context.Context) (map[int64]string, error) {

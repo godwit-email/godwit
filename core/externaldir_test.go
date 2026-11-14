@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -297,4 +298,22 @@ func TestExternalSkillsAndInstructions(t *testing.T) {
 	assert.Contains(t, b, "kept in magpie")
 	assert.Less(t, len(b), maxInstructions+500)
 	assert.True(t, strings.HasSuffix(b, "</user_instructions>"))
+}
+
+func TestExternalRetriesAfterKeychainFailure(t *testing.T) {
+	s, dir := externalSvc(t)
+	ctx := t.Context()
+	orig := keyringSet
+	setFor(t, &keyringSet, func(service, user, pass string) error { return errors.New("keychain locked") })
+	writeExternal(t, dir, externalModels, magpieEntry("k", "m", "m"))
+	s.syncExternal(ctx)
+	_, ok := managedService(t, s, "magpie")
+	require.False(t, ok, "the key could not be saved")
+
+	// The keychain is back: the next poll applies the same file again.
+	setFor(t, &keyringSet, orig)
+	s.syncExternal(ctx)
+	m, ok := managedService(t, s, "magpie")
+	require.True(t, ok)
+	assert.Equal(t, "k", storedKey(t, s, m.ID))
 }
