@@ -40,7 +40,7 @@ func (p *mailPage) outboxView(c *ui.Context) {
 	ui.Scroll(c).Grow(1).Children(func() {
 		ui.Column(c).Padding(0, th.Space(4)).Gap(th.Space(3)).Children(func() {
 			if len(p.outbox) == 0 {
-				ui.Text(c, i18n.T("mail.empty")).TextColor(t.Muted)
+				listEmpty(c, "send", i18n.T("mail.empty"))
 			}
 			for _, it := range p.outbox {
 				kit.Block(c, ui.Column(c.Key(it.ID)), kit.ToneOutline).Gap(th.Space(1)).Padding(th.Space(2.5)).Children(func() {

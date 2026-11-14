@@ -1050,9 +1050,9 @@ func (p *mailPage) listView(c *ui.Context) {
 			case p.savedViewID() != 0:
 				p.viewEmpty(c)
 			case p.filter != 0:
-				ui.Text(c, i18n.T("mail.no_unread_messages")).TextColor(t.Muted).Padding(th.Space(3))
+				listEmpty(c, "mail-open", i18n.T("mail.no_unread_messages"))
 			default:
-				ui.Text(c, i18n.T("mail.empty")).TextColor(t.Muted).Padding(th.Space(3))
+				listEmpty(c, "inbox", i18n.T("mail.empty"))
 			}
 		}
 	})
@@ -1293,6 +1293,12 @@ func (a *App) openAccountSettings(acc int64) func() {
 		}
 		a.navigate(r)
 	}
+}
+
+// listEmpty is a list with nothing in it: the kit's empty state under the
+// list's top, where a search's and a view's stand.
+func listEmpty(c *ui.Context, icon, title string) {
+	kit.Empty(c, kit.EmptyOpts{Icon: icon, Title: title}).Margin(c.Theme().Space(8), c.Theme().Space(1))
 }
 
 // noResults is the list of a search that found nothing: it offers Wit and a

@@ -46,7 +46,7 @@ func (p *mailPage) draftsView(c *ui.Context) {
 		}
 	}).Grow(1).Padding(0, th.Space(2)).Children(func() {
 		if len(drafts) == 0 && !p.list.loading {
-			ui.Text(c, i18n.T("mail.empty")).TextColor(t.Muted).Padding(th.Space(3))
+			listEmpty(c, "file-pen", i18n.T("mail.empty"))
 		}
 	})
 }

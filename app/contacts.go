@@ -341,11 +341,11 @@ func (p *contactsPage) listView(c *ui.Context) {
 	l := kit.List(c, p.list, len(rows), func(i int) { p.row(c, rows[i]) }).Grow(1).Padding(0, th.Space(2)).Gap(theme.Stroke)
 	l.Children(func() {
 		if len(rows) == 0 && !p.read.loading {
-			msg := i18n.T("contacts.empty")
+			icon, msg := "contacts", i18n.T("contacts.empty")
 			if strings.TrimSpace(p.query) != "" {
-				msg = i18n.T("contacts.no_match")
+				icon, msg = "search", i18n.T("contacts.no_match")
 			}
-			ui.Text(c, msg).TextColor(t.Muted).Padding(th.Space(3))
+			listEmpty(c, icon, msg)
 		}
 	})
 	if l.Changed() && p.cur >= 0 && p.cur < len(rows) {
@@ -399,7 +399,10 @@ func (p *contactsPage) detailView(c *ui.Context) {
 	ct, ok := p.current()
 	if !ok {
 		if !p.read.loading {
-			ui.Column(c).Grow(1).Center().Children(func() { ui.Text(c, i18n.T("contacts.empty")).TextColor(t.Muted) })
+			// nothing chosen: the bird, as the reader
+			ui.Column(c).Grow(1).Center().Children(func() {
+				ui.Icon(c, icons.Bird).Size(theme.Watermark, theme.Watermark).TextColor(t.Border)
+			})
 		}
 		return
 	}
