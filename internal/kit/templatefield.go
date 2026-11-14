@@ -52,7 +52,7 @@ func TemplateField(c *ui.Context, value *string, o TemplateOpts) ui.Element {
 				}
 				l := label(s.id)
 				ui.Row(c.Key(i)).Height(th.Space(6)).AlignItems(ui.Center).Gap(th.Space(0.5)).Padding(0, th.Space(1), 0, th.Space(2)).
-					Radius(t.Radius.Sm).Background(t.Hover).Children(func() {
+					Radius(t.Radius.Sm).Background(tint(t, 1)).Children(func() {
 					Text(c, l, t.Text.Xs).TextColor(t.Foreground)
 					IconButton(c, "x", o.Remove(l), ButtonOpts{Variant: Ghost, Size: SizeMini}).
 						OnClick(func() { *value = formatTemplate(slices.Delete(slices.Clone(segs), i, i+1)) + tail })

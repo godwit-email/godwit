@@ -1272,6 +1272,27 @@ func TestTabsLook(t *testing.T) {
 	}
 }
 
+// TestTintShowsOffWhite: what stands a step off its surface is a tint of the
+// foreground, so it shows where a solid hover gray is the surface's own color
+// or lighter: a tab list's track on a dialog's frost, a badge on a gray card.
+func TestTintShowsOffWhite(t *testing.T) {
+	sel := 0
+	var tk theme.Tokens
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		tk = theme.Of(c)
+		ui.Column(c).Fill().Background(tk.Hover).Children(func() { // the hover gray itself as the surface
+			ui.Column(c).Width(300).Children(func() { TabsFill(c, &sel, "One", "Two") })
+		})
+	}), 400, 100)
+	tt.Frame()
+	tt.Advance(2 * theme.MotionBase)
+	img := tt.Image()
+	surface, track := img.RGBAAt(350, 50), img.RGBAAt(220, 4) // beside the list; the track over the unchosen tab
+	if track.R >= surface.R {
+		t.Errorf("the track %v is not darker than the surface %v it is on", track, surface)
+	}
+}
+
 func TestTabsUnderline(t *testing.T) {
 	sel := 0
 	var tk theme.Tokens

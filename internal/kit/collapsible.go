@@ -14,7 +14,7 @@ func Collapsible(c *ui.Context, open *bool, trigger, panel func()) ui.Element {
 	tr := parts.Trigger.MinHeight(th.Space(7)).PaddingX(th.Space(2)).Gap(th.Space(1.5)).Radius(controlRadius(c, th.Space(7))).FontSize(t.Text.Xs).TextColor(t.Muted).
 		Justify(ui.Start).Transition(colors(theme.MotionFast))
 	if tr.Hovered() {
-		tr.Background(t.Hover)
+		tr.Background(tint(t, 1))
 	}
 	tr.Children(func() {
 		ui.Icon(c, icons.Get("chevron-right")).Size(theme.IconSm, theme.IconSm).Rotate(90 * parts.Progress())

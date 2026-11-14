@@ -61,7 +61,7 @@ type Tone uint8
 
 const (
 	ToneCard    Tone = iota // the card gray: a region apart from the page around it
-	ToneTint                // the hover gray: one that stands out more, as a note or a group being edited
+	ToneTint                // the hover tint: one that stands out more, as a note or a group being edited
 	ToneOutline             // the background in a hairline: a region on the page's own white
 	ToneRaised              // the background, bare: a white block on a card
 	ToneWarning             // the status tints, each its -bg in a hairline of its -border under its -text: a note that warns,
@@ -93,7 +93,7 @@ func toned(e ui.Element, t theme.Tokens, tone Tone, edged bool) ui.Element {
 			e.Border(theme.Hairline, t.Border)
 		}
 	case ToneTint:
-		e.Background(t.Hover)
+		e.Background(tint(t, 1))
 	case ToneOutline:
 		e.Background(t.Background).Border(theme.Hairline, t.Border)
 	case ToneRaised:
@@ -138,7 +138,7 @@ func Pressable(c *ui.Context, o PressableOpts) ui.Element {
 		case o.Selected:
 			b.Background(t.SidebarSelected)
 		case b.Hovered():
-			b.Background(t.Hover)
+			b.Background(tint(t, 1))
 		}
 	}
 	if o.OnClick != nil && !o.Selected {

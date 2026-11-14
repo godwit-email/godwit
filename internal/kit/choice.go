@@ -93,7 +93,7 @@ func Choice(c *ui.Context, e ui.Element, on bool, o ChoiceOpts) ui.Element {
 	}
 	switch {
 	case on:
-		fill, edge = t.Hover, t.Primary
+		fill, edge = tint(t, 1), t.Primary
 	case e.Hovered():
 		fill = t.Hover.Mix(fill, 0.5)
 	}

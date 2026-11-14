@@ -3,7 +3,7 @@
 What a place shows when it has nothing yet, and how to start (`kit.Empty`, `internal/kit/empty.go`): the rules page, signatures, a saved view with no matches.
 
 - A centered column, 16 gap, 32 / 24 padding. A collection's page (rules, model services) frames it dashed: `radius-xl`, a hairline dashed `border`; a pane with nothing to show (a view, the reader) leaves it bare.
-- A 40 px tile, `radius-lg`, `hover` fill, holding the place's 20 px icon in `foreground`.
+- A 40 px tile, `radius-lg`, `hover-tint` fill, holding the place's 20 px icon in `foreground`.
 - Title in `base` (16 / 600); one or two lines in `sm` `muted` at line height 1.6, at most 400 wide, 4 below.
 - Actions, 8 apart: the primary first, then at most one outline alternative (新建规则 · 告诉 Wit 你想怎么整理).
 

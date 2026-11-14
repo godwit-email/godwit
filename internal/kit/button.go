@@ -105,9 +105,9 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 			b.Background(t.Primary.Mix(t.Background, 0.1))
 		}
 	case Secondary:
-		b.Background(t.Hover).TextColor(t.Foreground)
-		if hover { // SidebarSelected is Hover's own gray: a step of its own, half the pressed one
-			b.Background(t.Hover.Mix(t.Foreground, 0.04))
+		b.Background(tint(t, 1)).TextColor(t.Foreground)
+		if hover {
+			b.Background(tint(t, 2))
 		}
 	case Outline:
 		b.Background(t.Background).Border(theme.Stroke, t.Input).TextColor(t.Foreground)
@@ -140,7 +140,9 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 		switch o.Variant {
 		case Default:
 			b.Background(t.Primary.Mix(t.Background, 0.2))
-		case Secondary, Outline:
+		case Secondary:
+			b.Background(tint(t, 3))
+		case Outline: // over its own opaque fill
 			b.Background(t.Hover.Mix(t.Foreground, 0.08))
 		case Ghost:
 			b.Background(t.HoverTint.Alpha(2))
@@ -241,17 +243,17 @@ func RoundAction(c *ui.Context, icon, name, tip string, disabled, on bool) ui.El
 		tooltip(c, b, tip, false)
 	}
 	return b.Children(func() {
-		fg, tint := t.Foreground, t.Hover
+		fg, fill := t.Foreground, tint(t, 1)
 		switch { // as a Secondary button: a step on hover (or while on), another pressed
 		case disabled:
 			fg = t.Idle
 		case b.Pressed():
-			tint = t.Hover.Mix(t.Foreground, 0.08)
+			fill = tint(t, 3)
 		case on || b.Hovered():
-			tint = t.Hover.Mix(t.Foreground, 0.04)
+			fill = tint(t, 2)
 		}
 		ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(1.5)).TextColor(fg).Children(func() {
-			ui.Box(c).Size(th.Space(10), th.Space(10)).Radius(t.Radius.Full).Background(tint).Center().Transition(colors(theme.MotionFast)).Children(func() {
+			ui.Box(c).Size(th.Space(10), th.Space(10)).Radius(t.Radius.Full).Background(fill).Center().Transition(colors(theme.MotionFast)).Children(func() {
 				ui.Icon(c, icons.Get(icon)).Size(theme.IconMd, theme.IconMd)
 			})
 			Text(c, name, t.Text.Xs).TextAlign(ui.Center)

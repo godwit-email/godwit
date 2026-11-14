@@ -57,15 +57,15 @@ func BadgeWith(c *ui.Context, text string, o BadgeOpts) ui.Element {
 func BadgeButton(c *ui.Context, text string, o BadgeOpts) ui.Element {
 	t := theme.Of(c)
 	b := badge(c, ui.ButtonBase(c).Label(text), text, o).Transition(colors(theme.MotionFast))
-	fill := t.Hover
+	rest := float32(1) // an outline one has no fill at rest
 	if o.Tone == BadgeOutline {
-		fill = t.Background
+		rest = 0
 	}
 	switch {
 	case b.Pressed():
-		b.Background(fill.Mix(t.Foreground, 0.12))
+		b.Background(tint(t, rest+2))
 	case b.Hovered():
-		b.Background(fill.Mix(t.Foreground, 0.06))
+		b.Background(tint(t, rest+1))
 	}
 	return b
 }
@@ -79,7 +79,7 @@ func badge(c *ui.Context, e ui.Element, text string, o BadgeOpts) ui.Element {
 	}
 	switch o.Tone {
 	case BadgeNeutral:
-		b.Background(t.Hover)
+		b.Background(tint(t, 1))
 	case BadgeOutline:
 		b.Border(theme.Hairline, t.Border)
 	case BadgeSurface:
@@ -301,7 +301,7 @@ func Separator(c *ui.Context, vertical bool) ui.Element {
 // stays still under ReduceMotion, which Loop does not honor itself.
 func Skeleton(c *ui.Context, w, h float32) ui.Element {
 	t := theme.Of(c)
-	b := ui.Box(c).Height(h).Radius(t.Radius.Md).Background(t.Hover)
+	b := ui.Box(c).Height(h).Radius(t.Radius.Md).Background(tint(t, 1))
 	if w == 0 {
 		b.FillWidth()
 	} else {

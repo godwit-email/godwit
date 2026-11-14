@@ -42,7 +42,7 @@ func segmented(c *ui.Context, sel *int, fill bool, labels []string) ui.Element {
 		return e
 	}
 	track := func(e ui.Element) ui.Element { return e.Padding(th.Space(0.5)).Gap(th.Space(0.5)) }
-	return track(tabs.List).Radius(t.Radius.Lg).Background(t.Hover).Children(func() {
+	return track(tabs.List).Radius(t.Radius.Lg).Background(tint(t, 1)).Children(func() {
 		for i, l := range labels {
 			seg(tabs.Tab(i)).Label(l).Radius(t.Radius.Md).Children(func() { // its corner is the track's less that inset
 				ui.Text(c, l).Role(ui.RoleNone).Opacity(0) // sizes the tab unseen

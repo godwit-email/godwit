@@ -16,7 +16,7 @@ Four heights, and its label at 500 in every look, since it acts:
 These are shadcn Nova's, which the app's web pages draw unchanged: 10 at the sides whatever the height (8 in the smallest), and 2 less on a side that holds an icon. A page gives a button no weight, size, padding or corner of its own.
 
 - **Primary**: `primary` fill, `primary-text`. One per view: the send of a message, the page action, the save of a dialog.
-- **Secondary**: `hover` fill, `foreground` text, no outline: a quiet action that still reads as a button (a quick reply, a pressed toggle).
+- **Secondary**: `hover-tint` fill, `foreground` text, no outline: a quiet action that still reads as a button (a quick reply, a pressed toggle).
 - **Outline**: `background` fill, `input` outline, `foreground` text, `shadow-xs` (a `Flat` outline drops the shadow: settings selects, a button inside a card that already has an edge). Everything else.
 - **Ghost**: no fill or outline; `hover-tint` behind it on hover.
 - **Destructive**: ghost with `danger` text and `danger-bg` on hover. It is the confirm of a delete (删除 in a confirmation) and the 删除 on the left of an edit dialog's footer. A destructive row in settings is an outline with `danger-border` and `danger` text.
@@ -49,7 +49,7 @@ The one small label (`kit.Badge`, `kit.BadgeWith`): 20 high as a label chip, `xs
 
 | Tone | When | Look |
 | --- | --- | --- |
-| neutral | a kind, a count, a tag (订阅, 收件箱) | `hover` fill, `foreground`; `muted` text for what does not apply (不支持) |
+| neutral | a kind, a count, a tag (订阅, 收件箱) | `hover-tint` fill, `foreground`; `muted` text for what does not apply (不支持) |
 | outline | a state of the row it is in (编辑中) | hairline `border`, no fill |
 | surface | a badge on a card or a tinted row (a service's capabilities) | `background` fill |
 | success, warning, danger | a status in words (已同步, 待确认, 已拦截) | the status `-bg` under its `-text` |
