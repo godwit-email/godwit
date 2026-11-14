@@ -2,6 +2,7 @@ package kit
 
 import (
 	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
@@ -148,6 +149,14 @@ func Gallery(c *ui.Context, g *GalleryState) {
 					Card(c, ui.Column(c).Padding(th.Space(3)), ToneCard).Children(func() {
 						Block(c, ui.Column(c).Padding(th.Space(3)).Width(th.Space(30)), ToneRaised).Children(func() { ui.Text(c, "Block · Raised") })
 					})
+				})
+			})
+			section("Tile", func() {
+				row(func() {
+					for _, s := range []float32{6, 7, 8, 10} {
+						Tile(c, th.Space(s), th.Space(s), ToneTint).Children(func() { ui.Icon(c, icons.Get("star")).Size(theme.IconSm, theme.IconSm) })
+					}
+					ui.Column(c).Width(th.Space(40)).Children(func() { Progress(c, 3, 8, "Progress") })
 				})
 			})
 			section("Choice", func() {

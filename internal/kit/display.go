@@ -202,7 +202,7 @@ func Kbd(c *ui.Context, text string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
 		for _, k := range kbdKeys(text) {
-			ui.Box(c).Height(th.Space(5)).MinWidth(th.Space(5)).PaddingX(th.Space(1.25)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Background(t.Sidebar).Center().Children(func() {
+			ui.Box(c).Height(th.Space(5)).MinWidth(th.Space(5)).PaddingX(th.Space(1.5)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Background(t.Sidebar).Center().Children(func() { // a badge's box
 				ui.Text(c, k).Font(theme.Mono).FontSize(t.Text.Xs).LineHeight(theme.LineTight).TextColor(t.Muted)
 			})
 		}

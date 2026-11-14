@@ -56,7 +56,13 @@ func LabelChip(c *ui.Context, o LabelChipOpts) ui.Element {
 			ui.Text(c, o.Text).SingleLine()
 		}
 		if o.OnRemove != nil {
-			x := ui.ButtonBase(c).Label(o.RemoveLabel).Size(theme.LabelChipX, theme.LabelChipX).Radius(t.Radius.Xs).Justify(ui.Center).AlignItems(ui.Center)
+			x := ui.ButtonBase(c).Label(o.RemoveLabel).Size(theme.LabelChipX, theme.LabelChipX).Radius(t.Radius.Xs).Justify(ui.Center).AlignItems(ui.Center).Transition(colors(theme.MotionFast))
+			switch { // a tint of the label's own color, deeper pressed
+			case x.Pressed():
+				x.Background(o.Color.Text.Alpha(0.25))
+			case x.Hovered():
+				x.Background(o.Color.Text.Alpha(0.15))
+			}
 			if x.Clicked() {
 				o.OnRemove()
 			}

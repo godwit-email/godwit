@@ -359,7 +359,7 @@ func (p *contactsPage) listView(c *ui.Context) {
 func (p *contactsPage) row(c *ui.Context, ct core.Contact) ui.Element {
 	t := theme.Of(c)
 	th, small := c.Theme(), t.Text.Xs
-	weight := 400
+	weight := 500 // the lead line, as a mail list row's: 600 with unread mail
 	if ct.Unread > 0 {
 		weight = 600
 	}

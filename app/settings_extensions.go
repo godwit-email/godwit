@@ -1071,7 +1071,7 @@ func (e *extView) installProgressView(c *ui.Context) {
 		if e.installing != ":folder" {
 			name = i18n.Tf("settings.ext.registry.named", label, e.installing)
 		}
-		ui.Progress(c, value).FillWidth().Label(name)
+		kit.Progress(c, float32(value), 1, name)
 	})
 }
 

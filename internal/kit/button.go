@@ -242,14 +242,16 @@ func RoundAction(c *ui.Context, icon, name, tip string, disabled, on bool) ui.El
 	}
 	return b.Children(func() {
 		fg, tint := t.Foreground, t.Hover
-		switch {
+		switch { // as a Secondary button: a step on hover (or while on), another pressed
 		case disabled:
 			fg = t.Idle
+		case b.Pressed():
+			tint = t.Hover.Mix(t.Foreground, 0.08)
 		case on || b.Hovered():
-			tint = t.Border
+			tint = t.Hover.Mix(t.Foreground, 0.04)
 		}
 		ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(1.5)).TextColor(fg).Children(func() {
-			ui.Box(c).Size(th.Space(10), th.Space(10)).Radius(t.Radius.Full).Background(tint).Center().Children(func() {
+			ui.Box(c).Size(th.Space(10), th.Space(10)).Radius(t.Radius.Full).Background(tint).Center().Transition(colors(theme.MotionFast)).Children(func() {
 				ui.Icon(c, icons.Get(icon)).Size(theme.IconMd, theme.IconMd)
 			})
 			Text(c, name, t.Text.Xs).TextAlign(ui.Center)

@@ -1378,8 +1378,8 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 		// who is who the mail is with, its count and security mark: the line's lead, or its second line.
 		who := func(weight int) {
 			ui.Text(c, it.Who).FontWeight(weight).TextColor(ink).SingleLine().Shrink(1)
-			if it.Thread && it.Count > 1 { // how many messages the conversation holds, as the reader's header says
-				ui.Badge(c, strconv.Itoa(it.Count)).Label(i18n.Tf("reader.thread_count", it.Count))
+			if it.Thread && it.Count > 1 { // how many messages the conversation holds, a plain count as the sidebar's
+				kit.Text(c, strconv.Itoa(it.Count), small).TextColor(t.Muted).Shrink(0).Label(i18n.Tf("reader.thread_count", it.Count))
 			}
 			securityIcon(c, p.a.settings, it.Security)
 		}

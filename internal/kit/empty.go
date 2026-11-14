@@ -23,7 +23,7 @@ func Empty(c *ui.Context, o EmptyOpts) ui.Element {
 	}
 	return e.Children(func() {
 		if o.Icon != "" {
-			ui.Box(c).Size(theme.EmptyIcon, theme.EmptyIcon).Radius(t.Radius.Lg).Background(t.Hover).Center().Children(func() {
+			Tile(c, theme.EmptyIcon, theme.EmptyIcon, ToneTint).Children(func() {
 				ui.Icon(c, icons.Get(o.Icon)).Size(theme.IconLg, theme.IconLg).TextColor(t.Foreground)
 			})
 		}
@@ -39,7 +39,5 @@ func Empty(c *ui.Context, o EmptyOpts) ui.Element {
 	})
 }
 
-// EmptyAction is a button for Empty's Actions: the default size, 12 to each side as the design's.
-func EmptyAction(c *ui.Context, label string, o ButtonOpts) ui.Element {
-	return Button(c, label, o).PaddingX(c.Theme().Space(3))
-}
+// EmptyAction is a button for Empty's Actions, the default size.
+func EmptyAction(c *ui.Context, label string, o ButtonOpts) ui.Element { return Button(c, label, o) }
