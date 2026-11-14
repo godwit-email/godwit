@@ -33,15 +33,15 @@ import (
 // (ADR 0041). The gateway restores the files when the user disconnects, and
 // what they no longer list goes.
 const (
-	externalModels       = "models.json"   // {"<name>": {by, baseURL, apiKey, kind, models, model}}
-	externalMCP          = "mcp.json"      // {"mcpServers": {...}}, Claude's format
-	externalSkills       = "skills"        // a folder per skill, possibly linked
-	externalInstructions = "AGENTS.md"     // the user's standing instructions
-	maxExternalFile      = 1 << 20         // a larger file is ignored
-	maxExternalModels    = 1000            // per service
-	maxInstructions      = 16 << 10        // bytes of AGENTS.md Wit reads
-	externalDefaultBy    = "external"      // ManagedBy when models.json names no gateway
-	externalByKey        = "external.by"   // settings row: the gateway models.json last named
+	externalModels       = "models.json" // {"<name>": {by, baseURL, apiKey, kind, models, model}}
+	externalMCP          = "mcp.json"    // {"mcpServers": {...}}, Claude's format
+	externalSkills       = "skills"      // a folder per skill, possibly linked
+	externalInstructions = "AGENTS.md"   // the user's standing instructions
+	maxExternalFile      = 1 << 20       // a larger file is ignored
+	maxExternalModels    = 1000          // per service
+	maxInstructions      = 16 << 10      // bytes of AGENTS.md Wit reads
+	externalDefaultBy    = "external"    // ManagedBy when models.json names no gateway
+	externalByKey        = "external.by" // settings row: the gateway models.json last named
 )
 
 // externalSyncEvery is how often the folder is checked: the gateway writes
