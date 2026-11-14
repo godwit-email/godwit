@@ -428,7 +428,14 @@ func TestMCPStdioEnvIsolated(t *testing.T) {
 	srv = mcpServer(t, e.s, srv.ID)
 	out, err := e.s.callMCP(t.Context(), mcpCall{id: srv.ID, version: srv.Version, tool: "env", hash: mcpTool(t, srv, "env").DefinitionHash}, json.RawMessage(`{}`))
 	require.NoError(t, err)
-	assert.Equal(t, mcpServerEnv+",PATH,SECRET_ONE", out)
+	want := []string{mcpServerEnv, "PATH", "SECRET_ONE"}
+	for _, k := range mcpHomeVars {
+		if os.Getenv(k) != "" {
+			want = append(want, k)
+		}
+	}
+	slices.Sort(want)
+	assert.Equal(t, strings.Join(want, ","), out, "PATH, the home folder and its own env, nothing else")
 }
 
 func alive(pid int) bool {

@@ -212,6 +212,7 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 		AppVersion:        app.Version,
 		AppleIntelligence: appleIntelligence(),
 		GuardCoreML:       guardCoreML(),
+		ExternalDir:       externalDir(dataDir),
 	}
 	if d != nil {
 		if d.translator != nil {

@@ -37,3 +37,16 @@ func singleInstance(dir string) bool {
 	def, err := productionDataDir()
 	return err == nil && filepath.Clean(def) == filepath.Clean(dir)
 }
+
+// externalDir is where an agent gateway such as magpie writes what Godwit
+// mirrors (ADR 0041): ~/.godwit/external, one path on every system because the
+// gateway's plugin cannot tell them apart. Only the default data directory
+// reads it: another one is a test's or a second profile's.
+func externalDir(dataDir string) string {
+	def, err := defaultDataDir()
+	home, herr := os.UserHomeDir()
+	if err != nil || herr != nil || filepath.Clean(def) != filepath.Clean(dataDir) {
+		return ""
+	}
+	return filepath.Join(home, ".godwit", "external")
+}

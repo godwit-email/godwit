@@ -4,6 +4,7 @@
   "settings_collapse_quotes_help": "Verberg wat een antwoord citeert achter een knop, zodat alleen te zien is wat de afzender schreef",
   "reader_quote_expand": "Geciteerde tekst uitklappen",
   "reader_quote_collapse": "Geciteerde tekst inklappen",
+  "settings_managed_by": "Beheerd door {arg1}",
   "settings_remote_images_keep": "Ongebruikte afbeeldingen bewaren",
   "settings_remote_images_keep_help": "Afbeeldingen in de cache die zo lang niet zijn geopend, worden verwijderd. Bijlagen blijven onaangeroerd. Een oud bericht laadt ze opnieuw als de afzender ze nog heeft.",
   "settings_remote_images_keep_forever": "Tot de cache vol is",

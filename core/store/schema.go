@@ -842,6 +842,18 @@ var Migrations = [][]string{{
 	// place in the accounts list (ADR 0040); NULL is a standalone one.
 	`ALTER TABLE address_books ADD COLUMN account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE`,
 	`CREATE UNIQUE INDEX address_books_account ON address_books(account_id) WHERE account_id IS NOT NULL`,
+}, {
+	// Services and MCP servers an agent gateway writes into Options.ExternalDir
+	// (ADR 0041): managed_by names it, managed_hash is the entry last applied;
+	// file_model is the model the file chooses, read as the default model
+	// while it is set; model_info is what the gateway says of each model (its
+	// name, its context window).
+	`ALTER TABLE model_services ADD COLUMN managed_by TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE model_services ADD COLUMN managed_hash TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE model_services ADD COLUMN file_model TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE mcp_servers ADD COLUMN managed_by TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE mcp_servers ADD COLUMN managed_hash TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE model_services ADD COLUMN model_info TEXT NOT NULL DEFAULT '{}'`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

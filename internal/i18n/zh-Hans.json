@@ -4,6 +4,7 @@
   "settings_collapse_quotes_help": "把回复引用的内容收在一个按钮后面，只显示发件人自己写的部分",
   "reader_quote_expand": "展开引用的文字",
   "reader_quote_collapse": "折叠引用的文字",
+  "settings_managed_by": "由 {arg1} 管理",
   "settings_remote_images_keep": "保留未使用的图片",
   "settings_remote_images_keep_help": "缓存的图片超过这段时间没有打开就会删除。附件不会被动。旧邮件在发件人那里还有图片时会重新加载。",
   "settings_remote_images_keep_forever": "直到缓存已满",
