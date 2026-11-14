@@ -96,7 +96,7 @@ func flowLabel(flow string) string {
 func entryIconBox(c *ui.Context, en core.RegistryEntry, tone kit.Tone) {
 	t, th := theme.Of(c), c.Theme()
 	kit.Tile(c, th.Space(10), th.Space(10), tone).TextColor(t.Muted).Children(func() {
-		ui.Icon(c, icons.Get(entryIcon(en))).Size(th.Space(5), th.Space(5))
+		ui.Icon(c, icons.Get(entryIcon(en))).Size(theme.IconLg, theme.IconLg)
 	})
 }
 

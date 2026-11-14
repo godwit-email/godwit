@@ -114,12 +114,9 @@ func (p *settingsPage) clientsRow(c *ui.Context, copied func(string)) {
 		ui.Row(c).Wrap().Gap(th.Space(2)).Children(func() {
 			for _, id := range ids {
 				st := p.clients[id]
-				b := kit.Pressable(c.Key(id), kit.PressableOpts{Bordered: true, OnClick: func() { p.toggleClient(id) }}).
-					Height(th.Space(8)).PaddingX(th.Space(3)).Gap(th.Space(1.5)).AlignItems(ui.Center).Label(clientNames[id]) // a settingButton's size
 				on := st == mcpclients.On
-				if on {
-					b.Border(theme.Stroke, t.Foreground)
-				}
+				b := kit.Choice(c, kit.Pressable(c.Key(id), kit.PressableOpts{Bare: true, OnClick: func() { p.toggleClient(id) }}).
+					Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(1.5)).AlignItems(ui.Center).Label(clientNames[id]), on, kit.ChoiceOpts{}) // a control's size
 				b.Children(func() {
 					// connected: the app's own colors; else its mark and name in gray
 					if on && (id == mcpclients.Codex || id == mcpclients.Grok) { // marks with no colors

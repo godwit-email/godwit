@@ -52,7 +52,7 @@ func (m *modelsView) svcMark(c *ui.Context, s core.ModelService) {
 	t, th := theme.Of(c), c.Theme()
 	if glyph := icons.BrandIcon(s.Provider); glyph != nil {
 		kit.Tile(c, th.Space(8), th.Space(8), kit.ToneRaised).AlignSelf(ui.Start).Margin(theme.ServiceMarkOffset, 0, 0, 0).Label(s.Name).Children(func() {
-			ui.Icon(c, glyph).Size(th.Space(5), th.Space(5)).TextColor(t.Foreground)
+			ui.Icon(c, glyph).Size(theme.IconLg, theme.IconLg).TextColor(t.Foreground)
 		})
 		return
 	}
@@ -107,7 +107,7 @@ func (m *modelsView) list(c *ui.Context, u usage) {
 			// The system runs it, with nothing to edit: no chevron, just its menu's test.
 			ui.Row(c.Key("apple-intelligence")).Gap(th.Space(3)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(4)).Children(func() {
 				kit.Tile(c, th.Space(8), th.Space(8), kit.ToneRaised).AlignSelf(ui.Start).Margin(theme.ServiceMarkOffset, 0, 0, 0).Label("Apple Intelligence").Children(func() {
-					ui.Icon(c, icons.Get("sparkles")).Size(th.Space(5), th.Space(5)).TextColor(t.Foreground)
+					ui.Icon(c, icons.Get("sparkles")).Size(theme.IconLg, theme.IconLg).TextColor(t.Foreground)
 				})
 				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
 					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
@@ -572,16 +572,8 @@ func (m *modelsView) gatewayChips(c *ui.Context, f *modelForm) {
 		for _, g := range gateways {
 			name := cmp.Or(g.name, i18n.T("settings.models.local.name"))
 			on := f.baseURL == g.url
-			b := kit.Pressable(c.Key(g.url), kit.PressableOpts{Bare: true, OnClick: func() { f.pickGateway(name, g.url) }}).
-				Label(name+" "+i18n.T("settings.models.common")).Height(th.Space(6)).Padding(0, th.Space(2)).Radius(t.Radius.Md)
-			fg := t.Muted
-			if on {
-				b.Background(t.Hover).Border(theme.Stroke, t.Primary)
-				fg = t.Foreground
-			} else {
-				b.Border(theme.Stroke, t.Border).Background(t.Background)
-			}
-			b.Children(func() { kit.Text(c, name, t.Text.Xs).TextColor(fg) })
+			kit.ToggleChip(c.Key(g.url), name, on, kit.ChoiceOpts{}).Label(name + " " + i18n.T("settings.models.common")).
+				OnClick(func() { f.pickGateway(name, g.url) })
 		}
 	})
 }

@@ -135,8 +135,8 @@ func Pressable(c *ui.Context, o PressableOpts) ui.Element {
 	}
 	if !o.Bare && !o.Glass {
 		switch {
-		case o.Selected:
-			b.Background(t.Hover)
+		case o.Selected: // tints, as a SidebarItem's: they show on a card too
+			b.Background(tint(t, 1.75))
 		case b.Hovered():
 			b.Background(tint(t, 1))
 		}
