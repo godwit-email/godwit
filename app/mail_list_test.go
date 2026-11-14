@@ -575,6 +575,25 @@ func TestArchiveAdvances(t *testing.T) {
 	}
 }
 
+// Two archives in a row, the second before the first leaves the list, close
+// the reader instead of moving it back to the mail the first archived.
+func TestArchiveTwiceAdvances(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	base := h.clock.Now()
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "first", "x", at(base, 1)))
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "second", "x", at(base, 2)))
+	h.syncNow(accs[0])
+	h.waitMail("two threads", func() bool { return len(h.items()) == 2 })
+	h.click("first")
+	h.click("first") // the list has the focus again
+	h.tt.Key(0, ui.KeyE)
+	h.tt.Key(0, ui.KeyE) // the first still listed
+	if r := h.app.route; r.ThreadID != 0 || r.MessageID != 0 {
+		t.Fatalf("the reader shows %+v, want none", r)
+	}
+	h.waitMail("both archived", func() bool { return len(h.items()) == 0 })
+}
+
 // Delete and forward delete trash the chosen rows, as # does: a selection
 // across accounts in 全部收件箱, then the one open.
 func TestKeyboardDeleteKeys(t *testing.T) {

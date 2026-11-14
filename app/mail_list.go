@@ -94,6 +94,9 @@ type mailPage struct {
 	list    latest // a page or a refresh in flight: one at a time; a reload drops the one before
 	stalled bool   // the last page failed: no more pages until a refresh
 	older   olderLoad
+	// leaving are the rows advance moved off and the list still shows, until
+	// the next reload: a second action before it must not move back to one.
+	leaving map[string]bool
 
 	main   listSel // the list's choice and place
 	found  listSel // the search results', apart: they are other rows
@@ -329,7 +332,7 @@ func (p *mailPage) reload() {
 		if viewList && cached {
 			items, viewGroups, cursor = p.items, p.viewGroups, ""
 		}
-		p.items, p.cursor, p.stalled = items, cursor, false
+		p.items, p.cursor, p.stalled, p.leaving = items, cursor, false, nil
 		p.viewGroups = viewGroups
 		if !cached {
 			p.views, p.viewsKnown, p.viewsReading = saved, true, false
@@ -472,12 +475,16 @@ func (p *mailPage) advance(gone []mailItem) {
 	if rt.MessageID != 0 {
 		open = mailItem{ID: rt.MessageID}.key()
 	}
-	leaving := func(it mailItem) bool {
-		return slices.ContainsFunc(gone, func(g mailItem) bool { return g.key() == it.key() })
-	}
 	if rt.ThreadID == 0 || !slices.ContainsFunc(gone, func(g mailItem) bool { return g.key() == open }) {
 		return
 	}
+	if p.leaving == nil {
+		p.leaving = map[string]bool{}
+	}
+	for _, g := range gone {
+		p.leaving[g.key()] = true
+	}
+	leaving := func(it mailItem) bool { return p.leaving[it.key()] }
 	rows := p.shown()
 	at := slices.IndexFunc(rows, func(it mailItem) bool { return it.key() == open })
 	next := -1
