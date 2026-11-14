@@ -14,7 +14,7 @@ magpie writes into `~/.godwit/external/`, and Godwit (of this package's version 
 
 | File | In Godwit |
 |---|---|
-| `models.json` | A model service named `magpie`, with every model magpie gives Godwit under the names and context windows magpie gives (routing groups included). Choosing a model in magpie makes it Godwit's default model. |
+| `models.json` | A model service named `magpie`, with every model magpie gives Godwit, written as magpie describes them; Godwit takes their names and context windows (routing groups included). Choosing a model in magpie makes it Godwit's default model. |
 | `mcp.json` | magpie's MCP servers. Each starts without a grant: Godwit asks you to grant it in Settings → Extensions before it runs. |
 | `skills/` | magpie's skills (linked from magpie's library), beside your own. A skill of yours with the same name wins. |
 | `AGENTS.md` | Your instructions from magpie's library, added to Wit's system prompt. |

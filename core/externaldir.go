@@ -48,14 +48,47 @@ const (
 var externalKinds = []string{ai.KindOpenAI, ai.KindResponses, ai.KindAnthropic}
 
 type externalService struct {
-	By      string            `json:"by"`
-	BaseURL string            `json:"baseURL"`
-	APIKey  string            `json:"apiKey"`
-	Kind    string            `json:"kind"`
-	Models  []string          `json:"models"`
-	Model   string            `json:"model"`
-	Names   map[string]string `json:"names"`    // model ID -> the gateway's display name
-	Context map[string]int    `json:"contexts"` // model ID -> its context window in tokens
+	By      string          `json:"by"`
+	BaseURL string          `json:"baseURL"`
+	APIKey  string          `json:"apiKey"`
+	Kind    string          `json:"kind"`
+	Models  []externalModel `json:"models"`
+	Model   string          `json:"model"`
+	bad     error           // the entry did not parse: skipped, and what it had is kept
+}
+
+// parseExternalServices reads models.json entry by entry, so one entry it
+// cannot read keeps its service as it was and the others still apply.
+func parseExternalServices(data []byte) (map[string]externalService, error) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	out := make(map[string]externalService, len(raw))
+	for name, r := range raw {
+		var e externalService
+		if err := json.Unmarshal(r, &e); err != nil {
+			e = externalService{bad: err}
+		}
+		out[name] = e
+	}
+	return out, nil
+}
+
+// externalModel is a model as the gateway describes it (magpie's connect
+// input); Godwit reads what it uses and leaves the rest (efforts, pricing…).
+type externalModel struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Context int    `json:"context"` // tokens
+}
+
+func (e externalService) ids() []string {
+	ids := make([]string, len(e.Models))
+	for i, m := range e.Models {
+		ids[i] = m.ID
+	}
+	return ids
 }
 
 type externalMCPServer struct {
@@ -107,7 +140,7 @@ func (s *Service) syncExternal(ctx context.Context) {
 	models, mStamp, mChanged, mErr := s.readExternal(externalModels)
 	var services map[string]externalService
 	if mErr == nil && models != nil {
-		mErr = json.Unmarshal(models, &services)
+		services, mErr = parseExternalServices(models)
 	}
 	if s.extBy.Load() == nil { // what an earlier run saw: a disconnected entry names no gateway
 		if l, err := s.readList(ctx, externalByKey); err == nil && len(l) == 1 && validManager(l[0]) {
@@ -252,21 +285,26 @@ func checkExternalService(name string, e *externalService) error {
 		return errors.New("no API key")
 	case len(e.Models) == 0 || len(e.Models) > maxExternalModels:
 		return fmt.Errorf("between 1 and %d models", maxExternalModels)
-	case slices.ContainsFunc(e.Models, func(m string) bool {
-		return m == "" || len(m) > 200 || strings.ContainsFunc(m, unicode.IsControl)
+	case slices.ContainsFunc(e.Models, func(m externalModel) bool {
+		return m.ID == "" || len(m.ID) > 200 || strings.ContainsFunc(m.ID, unicode.IsControl)
 	}):
 		return errors.New("a model id is empty, too long or has control characters")
-	case e.Model != "" && !slices.Contains(e.Models, e.Model):
+	}
+	seen := map[string]bool{}
+	e.Models = slices.DeleteFunc(e.Models, func(m externalModel) bool { // a model listed twice counts once
+		dup := seen[m.ID]
+		seen[m.ID] = true
+		return dup
+	})
+	if e.Model != "" && !seen[e.Model] {
 		return fmt.Errorf("model %q is not among its models", e.Model)
 	}
-	for id, n := range e.Names { // only a name is lost, never the service
-		if !slices.Contains(e.Models, id) || n == "" || len(n) > 200 || strings.ContainsFunc(n, unicode.IsControl) {
-			delete(e.Names, id)
+	for i := range e.Models { // only what is said of a model is lost, never the service
+		if m := &e.Models[i]; len(m.Name) > 200 || strings.ContainsFunc(m.Name, unicode.IsControl) {
+			m.Name = ""
 		}
-	}
-	for id, c := range e.Context {
-		if !slices.Contains(e.Models, id) || c < 1000 || c > 100_000_000 {
-			delete(e.Context, id)
+		if m := &e.Models[i]; m.Context < 1000 || m.Context > 100_000_000 {
+			m.Context = 0
 		}
 	}
 	return nil
@@ -275,12 +313,16 @@ func checkExternalService(name string, e *externalService) error {
 // ownModels is what e says of its models, nil when nothing.
 func (e externalService) ownModels() map[string]OwnModel {
 	var out map[string]OwnModel
-	for _, id := range e.Models {
-		if m := (OwnModel{Name: e.Names[id], Context: e.Context[id]}); m != (OwnModel{}) {
+	for _, em := range e.Models {
+		m := OwnModel{Name: em.Name, Context: em.Context}
+		if m.Name == em.ID {
+			m.Name = "" // no name of its own
+		}
+		if m != (OwnModel{}) {
 			if out == nil {
 				out = map[string]OwnModel{}
 			}
-			out[id] = m
+			out[em.ID] = m
 		}
 	}
 	return out
@@ -350,7 +392,11 @@ func (s *Service) syncExternalModels(ctx context.Context, services map[string]ex
 	}
 	for _, name := range slices.Sorted(maps.Keys(services)) {
 		e := services[name]
-		if e.BaseURL == "" && e.APIKey == "" { // what a disconnect leaves of the entry
+		if e.bad != nil {
+			slog.Warn("external model service unreadable, left as it was", "name", name, "err", e.bad)
+			continue
+		}
+		if e.BaseURL == "" && e.APIKey == "" { // an emptied entry, as one written key by key is left on disconnect
 			if row, ok := have[name]; ok && row.by != "" {
 				if err := s.dropManagedService(ctx, row); err != nil {
 					return err
@@ -375,8 +421,8 @@ func (s *Service) syncExternalModels(ctx context.Context, services map[string]ex
 			}
 		}
 		in := ModelServiceInput{Name: name, Kind: e.Kind, BaseURL: e.BaseURL, APIKey: e.APIKey, KeyAction: KeyReplace,
-			Models: e.Models, Provider: ProviderOther, managedBy: e.By, ownModels: e.ownModels(),
-			managedHash: entryHash([]any{e.By, e.BaseURL, e.Kind, e.Models, e.Names, e.Context, sha256.Sum256([]byte(e.APIKey))})}
+			Models: e.ids(), Provider: ProviderOther, managedBy: e.By, ownModels: e.ownModels(),
+			managedHash: entryHash([]any{e.By, e.BaseURL, e.Kind, e.Models, sha256.Sum256([]byte(e.APIKey))})}
 		switch {
 		case !exists:
 			m, err := s.AddModelService(ctx, in)

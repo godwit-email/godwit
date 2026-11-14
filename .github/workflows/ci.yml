@@ -145,6 +145,9 @@ jobs:
           ! printf '%s\n' "$out" | grep -q 'warning:'
       - name: vet
         run: go vet ./...
+      - name: magpie agent plugin
+        if: runner.os != 'Windows'
+        run: bun test packages/magpie-agent
       - name: build (no cgo)
         run: go build ./...
         env:

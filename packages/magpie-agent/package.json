@@ -12,7 +12,9 @@
   "homepage": "https://github.com/godwit-email/godwit/tree/main/packages/magpie-agent",
   "keywords": [
     "magpie",
+    "magpie-agent",
     "magpie-plugin",
+    "llm-gateway",
     "godwit"
   ],
   "files": [

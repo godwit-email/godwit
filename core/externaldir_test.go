@@ -43,10 +43,25 @@ func writeExternal(t *testing.T, dir, name string, v any) {
 	require.NoError(t, os.Chtimes(p, externalTick, externalTick))
 }
 
+// magpieEntry is models.json as the plugin writes it: models as magpie
+// describes them, more fields than Godwit reads among them.
 func magpieEntry(key, model string, models ...string) map[string]any {
+	list := []map[string]any{}
+	for _, id := range models {
+		m := map[string]any{"id": id, "efforts": []string{"low", "high"}, "pricing": map[string]string{"prompt": "0.000001"}}
+		switch id {
+		case "anthropic/claude":
+			m["name"], m["context"] = "Claude (magpie)", 200000
+		case "openai/gpt":
+			m["name"], m["context"] = "openai/gpt", 12 // its id for a name, and no believable window
+		}
+		list = append(list, m)
+	}
+	if len(models) > 0 {
+		list = append(list, map[string]any{"id": models[0], "name": "listed twice"})
+	}
 	return map[string]any{"magpie": map[string]any{"by": "magpie", "baseURL": "http://127.0.0.1:3425/v1", "apiKey": key,
-		"kind": "openai", "models": models, "model": model, "names": map[string]string{"anthropic/claude": "Claude (magpie)", "nowhere": "x"},
-		"contexts": map[string]int{"anthropic/claude": 200000, "openai/gpt": 12}}}
+		"kind": "openai", "models": list, "model": model}}
 }
 
 func managedService(t *testing.T, s *Service, name string) (ModelService, bool) {
@@ -89,7 +104,7 @@ func TestExternalModelService(t *testing.T) {
 	assert.Equal(t, []string{"anthropic/claude", "openai/gpt"}, m.Models)
 	assert.Equal(t, "key1", storedKey(t, s, m.ID))
 	assert.Equal(t, "magpie/anthropic/claude", defaultModel(t, s))
-	assert.Equal(t, map[string]string{"anthropic/claude": "Claude (magpie)"}, m.Names, "the gateway's names; one for a model it does not list is dropped")
+	assert.Equal(t, map[string]string{"anthropic/claude": "Claude (magpie)"}, m.Names, "the gateway's own names; an id for a name is none")
 	assert.Equal(t, "Claude (magpie)", s.ModelName(ctx, ""))
 	assert.Equal(t, 160000, s.historyBudget(m.BaseURL, "anthropic/claude"), "80% of the gateway's context window")
 	assert.Equal(t, defaultHistoryBudget, s.historyBudget(m.BaseURL, "openai/gpt"), "an implausible window is dropped")
@@ -140,11 +155,11 @@ func TestExternalModelServiceRefused(t *testing.T) {
 	ctx := t.Context()
 	_, err := s.AddModelService(ctx, ModelServiceInput{Name: "taken", Kind: "openai", BaseURL: "https://example.com/v1", APIKey: "k", Models: []string{"x"}})
 	require.NoError(t, err)
-	remote := magpieEntry("k", "")
+	remote := magpieEntry("k", "", "m")
 	remote["magpie"].(map[string]any)["baseURL"] = "https://gateway.example.com/v1"
-	remote["magpie"].(map[string]any)["models"] = []string{"m"}
 	files := map[string]any{
-		"magpie":   remote["magpie"], // not on this computer
+		"oldstyle": map[string]any{"baseURL": "http://127.0.0.1:3425/v1", "apiKey": "k", "kind": "openai", "models": []string{"m"}}, // not objects: unreadable
+		"magpie":   remote["magpie"],                                                                                                // not on this computer
 		"taken":    magpieEntry("k", "", "m")["magpie"],
 		"Bad Name": magpieEntry("k", "", "m")["magpie"],
 		"nomodel":  magpieEntry("k", "zzz", "m")["magpie"],
