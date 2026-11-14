@@ -157,20 +157,26 @@ func (s *Service) syncExternal(ctx context.Context) {
 	s.extSeen[externalMCP] = cStamp
 }
 
-// stamp is a file's size and modification time, "" when it is missing.
-func (s *Service) stamp(name string) string {
+// stamp is a file's size and modification time, "" when it is missing. Any
+// other failure is an error: a file Godwit cannot see is not a file gone.
+func (s *Service) stamp(name string) (string, error) {
 	st, err := os.Stat(filepath.Join(s.opts.ExternalDir, name))
-	if err != nil {
-		return ""
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
 	}
-	return fmt.Sprint(st.Size(), st.ModTime().UnixNano())
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprint(st.Size(), st.ModTime().UnixNano()), nil
 }
 
 // readExternal reads file name if its stamp changed: nil data for a missing
 // file, which lists nothing. st is the stamp taken before reading: the one to
 // record once data is applied, so a write meanwhile is seen next time.
 func (s *Service) readExternal(name string) (data []byte, st string, changed bool, err error) {
-	st = s.stamp(name)
+	if st, err = s.stamp(name); err != nil {
+		return nil, "", true, err
+	}
 	if seen, ok := s.extSeen[name]; ok && seen == st {
 		return nil, st, false, nil
 	}
@@ -337,25 +343,19 @@ func (s *Service) syncExternalModels(ctx context.Context, services map[string]ex
 		if _, listed := services[name]; row.by == "" || listed {
 			continue
 		}
-		if err := s.removeModelService(ctx, row.id, row.by); err != nil {
+		if err := s.dropManagedService(ctx, row); err != nil {
 			return err
 		}
 		changed = true
-		if err := s.followExternalModel(ctx, row, ""); err != nil {
-			return err
-		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(services)) {
 		e := services[name]
 		if e.BaseURL == "" && e.APIKey == "" { // what a disconnect leaves of the entry
 			if row, ok := have[name]; ok && row.by != "" {
-				if err := s.removeModelService(ctx, row.id, row.by); err != nil {
+				if err := s.dropManagedService(ctx, row); err != nil {
 					return err
 				}
 				changed = true
-				if err := s.followExternalModel(ctx, row, ""); err != nil {
-					return err
-				}
 			}
 			continue
 		}
@@ -443,6 +443,27 @@ func (s *Service) followExternalModel(ctx context.Context, row managedRow, model
 	}
 	_, err = s.db.DurableExecute(ctx, "UPDATE model_services SET file_model = ?, prev_default = ? WHERE id = ?", model, prev, row.id)
 	return err
+}
+
+// dropManagedService gives the default model back, then removes the service:
+// if the settings cannot be saved, or the process stops in between, the row
+// and its prev_default stay for the next poll to finish.
+func (s *Service) dropManagedService(ctx context.Context, row managedRow) error {
+	st, err := s.loadSettings(ctx)
+	if err != nil {
+		return err
+	}
+	prefix := row.slug + "/"
+	if strings.HasPrefix(st.DefaultModel, prefix) { // the file's choice or the user's: either goes with the service
+		st.DefaultModel = row.prevDefault
+		if st.DefaultModel != "" && (strings.HasPrefix(st.DefaultModel, prefix) || !s.modelRefExists(ctx, st.DefaultModel)) {
+			st.DefaultModel = ""
+		}
+		if _, err := s.SetSettings(ctx, st); err != nil {
+			return err
+		}
+	}
+	return s.removeModelService(ctx, row.id, row.by)
 }
 
 // modelRefExists reports whether ref still names a model.

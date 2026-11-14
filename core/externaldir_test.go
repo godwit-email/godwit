@@ -317,3 +317,40 @@ func TestExternalRetriesAfterKeychainFailure(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "k", storedKey(t, s, m.ID))
 }
+
+func TestExternalUnreadableDirKeepsSettings(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads any folder")
+	}
+	s, dir := externalSvc(t)
+	ctx := t.Context()
+	writeExternal(t, dir, externalModels, magpieEntry("k", "m", "m"))
+	s.syncExternal(ctx)
+	_, ok := managedService(t, s, "magpie")
+	require.True(t, ok)
+
+	require.NoError(t, os.Chmod(dir, 0))
+	t.Cleanup(func() { os.Chmod(dir, 0o700) })
+	s.syncExternal(ctx)
+	_, ok = managedService(t, s, "magpie")
+	assert.True(t, ok, "a folder Godwit cannot read is not a folder emptied")
+	assert.Equal(t, "magpie/m", defaultModel(t, s))
+}
+
+func TestExternalRemovalReleasesUsersDefault(t *testing.T) {
+	s, dir := externalSvc(t)
+	ctx := t.Context()
+	writeExternal(t, dir, externalModels, magpieEntry("k", "", "m")) // the file chooses no model
+	s.syncExternal(ctx)
+	st, err := s.GetSettings(ctx)
+	require.NoError(t, err)
+	st.DefaultModel = "magpie/m" // the user picks it in Godwit
+	_, err = s.SetSettings(ctx, st)
+	require.NoError(t, err)
+
+	writeExternal(t, dir, externalModels, map[string]any{"magpie": map[string]any{}})
+	s.syncExternal(ctx)
+	_, ok := managedService(t, s, "magpie")
+	require.False(t, ok)
+	assert.Empty(t, defaultModel(t, s), "no default left naming the removed service")
+}
