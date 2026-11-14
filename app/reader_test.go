@@ -67,7 +67,9 @@ func avatarHarness(t *testing.T, mode string, handler http.HandlerFunc) (*harnes
 		acc = e.AddAccount(t, "alice@example.com")
 	})
 	h.plat.svc = h.env.Svc
-	h.until("mail page", func() bool { return h.app.loaded && h.app.route.Page == PageMail })
+	// The list's first read too: one still under way could list a mail a test
+	// then delivers, and its row names the sender before the reader's avatar does.
+	h.until("mail page", func() bool { return h.app.loaded && h.app.route.Page == PageMail && !h.app.mail.list.loading })
 	return h, acc
 }
 
