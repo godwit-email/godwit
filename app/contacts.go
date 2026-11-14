@@ -749,7 +749,7 @@ func (p *contactsPage) blockAddrs(addrs []string, on bool) {
 				l = append(l, key)
 			}
 		}
-		a.blocked = l
+		a.blocked, a.blockedVer = l, a.blockedVer+1
 		p.syncBlockedState()
 		msg := i18n.T("reader.sender_unblocked")
 		if on {

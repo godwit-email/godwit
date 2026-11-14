@@ -2366,7 +2366,7 @@ func (a *App) setBlocked(from string, block bool, done func()) {
 		if block {
 			l = append(l, key)
 		}
-		a.blocked = l
+		a.blocked, a.blockedVer = l, a.blockedVer+1
 		if done != nil {
 			done()
 		}

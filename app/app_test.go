@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -164,6 +165,44 @@ func TestLoadNewestWins(t *testing.T) {
 	h.drain()
 	if h.app.settings.Theme != "dark" {
 		t.Fatalf("an older load rolled settings back to %q", h.app.settings.Theme)
+	}
+}
+
+// slowBlocked answers BlockedSenders with what it read once release closes:
+// a load slower than what the user does meanwhile.
+type slowBlocked struct {
+	Service
+	read, release chan struct{}
+}
+
+func (s slowBlocked) BlockedSenders(ctx context.Context) ([]string, error) {
+	l, err := s.Service.BlockedSenders(ctx)
+	close(s.read)
+	<-s.release
+	return l, err
+}
+
+// A load that read the blocked senders before a block made here, and
+// answers after it, leaves the block in place.
+func TestLoadKeepsBlockMadeMeanwhile(t *testing.T) {
+	h := startedIdle(t)
+	svc, fetch := h.app.svc, h.app.fetch
+	slow := slowBlocked{svc, make(chan struct{}), make(chan struct{})}
+	h.app.svc = slow
+	h.app.fetch = func(ctx context.Context) (core.Settings, []core.Account, error) {
+		st, accs, err := fetch(ctx)
+		st.Theme = "dark" // marks this load's answer
+		return st, accs, err
+	}
+	h.app.load()
+	<-slow.read
+	h.app.svc = svc
+	h.app.setBlocked("bob@example.com", true, nil)
+	h.until("blocked", func() bool { return slices.Contains(h.app.blocked, "bob@example.com") })
+	close(slow.release)
+	h.until("the load applied", func() bool { return h.app.settings.Theme == "dark" })
+	if !slices.Contains(h.app.blocked, "bob@example.com") {
+		t.Fatalf("a load that read the list before the block took it back: %q", h.app.blocked)
 	}
 }
 
