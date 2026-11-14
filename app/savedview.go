@@ -420,7 +420,9 @@ func (p *mailPage) archiveThreads(rows []mailItem) {
 			a.toastErr(err)
 			return
 		}
-		l.sel.Clear()
+		for _, it := range rows { // not the row advance chose meanwhile
+			l.sel.Remove(it.key())
+		}
 		p.offerUndoArchive([]core.ArchiveUndo{undo}, start)
 	})
 }
