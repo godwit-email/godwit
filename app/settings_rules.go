@@ -182,7 +182,7 @@ func (v *rulesView) view(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	pageHeading(c, i18n.T("settings.rules"), i18n.T("settings.rules.sub"), func() {
 		if len(v.rules) > 0 {
-			kit.Button(c, i18n.T("settings.rules.new"), kit.ButtonOpts{Icon: "plus"}).PaddingX(th.Space(3)).OnClick(v.create)
+			kit.Button(c, i18n.T("settings.rules.new"), kit.ButtonOpts{Icon: "plus"}).OnClick(v.create)
 		}
 	})
 	if len(v.rules) == 0 {

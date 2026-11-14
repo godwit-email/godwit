@@ -85,7 +85,7 @@ func (p *settingsPage) signaturesView(c *ui.Context) {
 	var add []func()
 	if len(sigs) > 0 {
 		add = append(add, func() {
-			kit.Button(c, i18n.T("settings.signatures.new"), kit.ButtonOpts{Icon: "plus"}).PaddingX(th.Space(3)).OnClick(p.newSignature)
+			kit.Button(c, i18n.T("settings.signatures.new"), kit.ButtonOpts{Icon: "plus"}).OnClick(p.newSignature)
 		})
 	}
 	pageHeading(c, i18n.T("settings.signatures"), i18n.T("settings.signatures.sub"), add...)

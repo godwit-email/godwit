@@ -1292,7 +1292,7 @@ func (o *onboarding) oauthView(c *ui.Context) {
 		lineText(c, title, t.Text.Sm).FontWeight(500)
 		kit.Text(c, i18n.T("onboarding.oauth.body"), t.Text.Sm).TextColor(t.Muted).TextAlign(ui.Center).LineHeight(theme.LineProse)
 		u := o.signIn.url
-		kit.Button(c, i18n.T("onboarding.oauth.reopen"), kit.ButtonOpts{Variant: kit.Outline, Disabled: u == ""}).PaddingX(th.Space(3)).
+		kit.Button(c, i18n.T("onboarding.oauth.reopen"), kit.ButtonOpts{Variant: kit.Outline, Disabled: u == ""}).
 			OnClick(func() { o.openURL(u) })
 	})
 }
@@ -1469,7 +1469,7 @@ func (o *onboarding) checkView(c *ui.Context) {
 	})
 	if failed && o.report.Confirm != "" {
 		host := o.report.Confirm
-		kit.Button(c, i18n.Tf("onboarding.confirm_host", host), kit.ButtonOpts{Size: kit.SizeLg}).PaddingX(th.Space(3.5)).
+		kit.Button(c, i18n.Tf("onboarding.confirm_host", host), kit.ButtonOpts{Size: kit.SizeLg}).
 			OnClick(func() {
 				if o.confirmed == nil {
 					o.confirmed = map[string][]string{}
@@ -1482,14 +1482,14 @@ func (o *onboarding) checkView(c *ui.Context) {
 	if failed {
 		ui.Row(c).Gap(th.Space(2)).Children(func() {
 			if o.oauth() {
-				kit.Button(c, i18n.T("onboarding.relogin"), kit.ButtonOpts{Size: kit.SizeLg}).PaddingX(th.Space(3.5)).OnClick(func() { o.retry(false) })
+				kit.Button(c, i18n.T("onboarding.relogin"), kit.ButtonOpts{Size: kit.SizeLg}).OnClick(func() { o.retry(false) })
 				return
 			}
-			kit.Button(c, i18n.Tf("onboarding.retype", o.secretName()), kit.ButtonOpts{Size: kit.SizeLg}).PaddingX(th.Space(3.5)).OnClick(func() { o.retry(false) })
-			kit.Button(c, i18n.T("onboarding.manual"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeLg}).PaddingX(th.Space(3.5)).OnClick(func() { o.retry(true) })
+			kit.Button(c, i18n.Tf("onboarding.retype", o.secretName()), kit.ButtonOpts{Size: kit.SizeLg}).OnClick(func() { o.retry(false) })
+			kit.Button(c, i18n.T("onboarding.manual"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeLg}).OnClick(func() { o.retry(true) })
 		})
 		if o.report.OnlySendingFailed() { // mail can still come in: the account just never sends
-			kit.Button(c, i18n.T("onboarding.receive_only"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeLg}).PaddingX(th.Space(3.5)).
+			kit.Button(c, i18n.T("onboarding.receive_only"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeLg}).
 				OnClick(func() { o.receiveOnly = true; o.goTo(stepDone) })
 		}
 	}

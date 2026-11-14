@@ -307,7 +307,7 @@ func (m *modelsView) footer(c *ui.Context, f *modelForm) {
 
 // footButton is a dialog footer's button: 12 across, flat.
 func footButton(c *ui.Context, label string, v kit.Variant, disabled bool) ui.Element {
-	return kit.Button(c, label, kit.ButtonOpts{Variant: v, Disabled: disabled, Flat: true}).PaddingX(c.Theme().Space(3))
+	return kit.Button(c, label, kit.ButtonOpts{Variant: v, Disabled: disabled, Flat: true})
 }
 
 // formRow is a label in its own 96 px column beside the control; the label
@@ -364,7 +364,7 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 					}
 					f.urlFocus = focused
 					if f.canResetURL() {
-						kit.Button(c, i18n.T("settings.models.reset_url"), kit.ButtonOpts{Variant: kit.Ghost}).PaddingX(th.Space(2.5)).TextColor(t.Muted).
+						kit.Button(c, i18n.T("settings.models.reset_url"), kit.ButtonOpts{Variant: kit.Ghost}).TextColor(t.Muted).
 							OnClick(func() { f.baseURL = providerURL[f.provider] })
 					}
 				})

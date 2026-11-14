@@ -45,7 +45,7 @@ type ButtonOpts struct {
 
 func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	h, padX := th.Space(8), th.Space(3.5)
+	h, padX := th.Space(8), th.Space(2.5) // shadcn Nova's px-2.5 at every height but the smallest, as the web pages' buttons
 	switch o.Size {
 	case SizeMini:
 		if square { // icon buttons only; a labelled button keeps the default size
@@ -56,14 +56,17 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 	case SizeSm:
 		h, padX = th.Space(7), th.Space(2.5)
 	case SizeLg:
-		h, padX = th.Space(9), th.Space(4.5)
+		h = th.Space(9)
 	}
 	// DimDisabled(false) turns off mygo's half-opacity dimming so a disabled
 	// button shows the design's disabled colours instead.
 	b := ui.ButtonBase(c).Disabled(o.Disabled).DimDisabled(false)
 	b.Gap(th.Space(1.5)).Justify(ui.Center).Transition(colors(theme.MotionFast))
-	if o.Size == SizeXs {
+	switch o.Size {
+	case SizeXs:
 		b.Gap(th.Space(1)).FontSize(t.Text.Xs)
+	case SizeSm:
+		b.Gap(th.Space(1))
 	}
 	if o.Variant == Link {
 		b.TextColor(t.Muted)
@@ -85,7 +88,14 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 			b.Radius(t.Radius.Full)
 		}
 	} else {
-		b.PaddingX(padX)
+		l, r := padX, padX // the side an icon is on is half a step tighter
+		if o.Icon != "" {
+			l -= th.Space(0.5)
+		}
+		if o.Trailing != "" {
+			r -= th.Space(0.5)
+		}
+		b.Padding(0, r, 0, l)
 	}
 	hover := b.Hovered() && !o.Disabled
 	switch o.Variant {

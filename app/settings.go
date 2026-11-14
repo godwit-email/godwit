@@ -519,7 +519,7 @@ func settingBlock(c *ui.Context, body func()) {
 
 // settingButton is a button in a settings row: the default size, 12 padding.
 func settingButton(c *ui.Context, label string, v kit.Variant, disabled bool) ui.Element {
-	return kit.Button(c, label, kit.ButtonOpts{Variant: v, Disabled: disabled}).PaddingX(c.Theme().Space(3))
+	return kit.Button(c, label, kit.ButtonOpts{Variant: v, Disabled: disabled})
 }
 
 // settingSelect is a select in a settings row.
