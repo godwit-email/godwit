@@ -420,54 +420,83 @@ func (s *Service) followExternalModel(ctx context.Context, row managedRow, model
 	if model == row.fileModel {
 		return nil
 	}
-	st, err := s.loadSettings(ctx)
-	if err != nil {
-		return err
-	}
 	prefix := row.slug + "/"
-	ours := strings.HasPrefix(st.DefaultModel, prefix)
 	prev := row.prevDefault
-	switch {
-	case model != "":
-		if !ours {
-			prev = st.DefaultModel
-			if _, err := s.db.DurableExecute(ctx, "UPDATE model_services SET prev_default = ? WHERE id = ?", prev, row.id); err != nil {
-				return err
+	err := s.setDefaultModel(ctx, func(cur string) (string, error) {
+		next := cur
+		switch ours := strings.HasPrefix(cur, prefix); {
+		case model != "":
+			if !ours {
+				prev = cur
+				if _, err := s.db.DurableExecute(ctx, "UPDATE model_services SET prev_default = ? WHERE id = ?", prev, row.id); err != nil {
+					return cur, err
+				}
 			}
+			next = prefix + model
+		case ours:
+			next, prev = prev, ""
+		default:
+			prev = ""
 		}
-		st.DefaultModel = prefix + model
-	case ours:
-		st.DefaultModel, prev = prev, ""
-	default:
-		prev = ""
-	}
-	if st.DefaultModel != "" && !strings.HasPrefix(st.DefaultModel, prefix) && !s.modelRefExists(ctx, st.DefaultModel) {
-		st.DefaultModel = "" // the user's earlier default went meanwhile
-	}
-	if _, err := s.SetSettings(ctx, st); err != nil {
+		if next != "" && !strings.HasPrefix(next, prefix) && !s.modelRefExists(ctx, next) {
+			next = "" // the user's earlier default went meanwhile
+		}
+		return next, nil
+	})
+	if err != nil {
 		return err
 	}
 	_, err = s.db.DurableExecute(ctx, "UPDATE model_services SET file_model = ?, prev_default = ? WHERE id = ?", model, prev, row.id)
 	return err
 }
 
-// dropManagedService gives the default model back, then removes the service:
-// if the settings cannot be saved, or the process stops in between, the row
-// and its prev_default stay for the next poll to finish.
-func (s *Service) dropManagedService(ctx context.Context, row managedRow) error {
+// setDefaultModel sets Settings.DefaultModel to what f makes of the current
+// one, and nothing else: it reads and writes under settingsMu, so a
+// SetSettings meanwhile is neither lost nor overwritten with an older copy.
+func (s *Service) setDefaultModel(ctx context.Context, f func(cur string) (string, error)) error {
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
 	st, err := s.loadSettings(ctx)
 	if err != nil {
 		return err
 	}
+	next, err := f(st.DefaultModel)
+	if err != nil || next == st.DefaultModel {
+		return err
+	}
+	st.DefaultModel, st.SettingsVersion = next, settingsVersion
+	if err := st.validate(st.MaskRules); err != nil {
+		return err
+	}
+	b, err := json.Marshal(st)
+	if err != nil {
+		return err
+	}
+	if _, err := s.db.Execute(ctx, `INSERT INTO settings(key, value) VALUES ('app', ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, string(b)); err != nil {
+		return err
+	}
+	s.bus.Publish(events.Event{Type: events.SettingsChanged})
+	return nil
+}
+
+// dropManagedService gives the default model back, then removes the service:
+// if the settings cannot be saved, or the process stops in between, the row
+// and its prev_default stay for the next poll to finish.
+func (s *Service) dropManagedService(ctx context.Context, row managedRow) error {
 	prefix := row.slug + "/"
-	if strings.HasPrefix(st.DefaultModel, prefix) { // the file's choice or the user's: either goes with the service
-		st.DefaultModel = row.prevDefault
-		if st.DefaultModel != "" && (strings.HasPrefix(st.DefaultModel, prefix) || !s.modelRefExists(ctx, st.DefaultModel)) {
-			st.DefaultModel = ""
+	err := s.setDefaultModel(ctx, func(cur string) (string, error) {
+		if !strings.HasPrefix(cur, prefix) {
+			return cur, nil
 		}
-		if _, err := s.SetSettings(ctx, st); err != nil {
-			return err
+		next := row.prevDefault // the file's choice or the user's: either goes with the service
+		if next != "" && (strings.HasPrefix(next, prefix) || !s.modelRefExists(ctx, next)) {
+			next = ""
 		}
+		return next, nil
+	})
+	if err != nil {
+		return err
 	}
 	return s.removeModelService(ctx, row.id, row.by)
 }
