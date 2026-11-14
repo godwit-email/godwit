@@ -27,7 +27,7 @@ export function Attachments({
           {items.map((a) => (
             <div
               key={a.id}
-              className="flex h-7 max-w-full items-center gap-1.5 rounded-full border pr-0.5 pl-2.5 text-sm"
+              className="flex h-7 max-w-full items-center gap-1.5 rounded-full border pr-0.5 pl-2.5 text-xs"
             >
               <span className="truncate">{a.filename}</span>
               <span className="shrink-0 text-muted-foreground">{byteSize(a.size)}</span>
@@ -46,7 +46,7 @@ export function Attachments({
         </div>
       )}
       {tooLarge.length > 0 && (
-        <p role="alert" className="text-base text-destructive">
+        <p role="alert" className="text-xs text-destructive">
           {tooLarge.map((n) => (
             <span key={n} className="mr-2 font-medium">
               {n}
@@ -56,7 +56,7 @@ export function Attachments({
         </p>
       )}
       {failed.length > 0 && (
-        <p role="alert" className="text-base text-destructive">
+        <p role="alert" className="text-xs text-destructive">
           {t("compose.attach.failed", failed.join(", "))}
         </p>
       )}

@@ -96,7 +96,7 @@ export function AddressInput({
             role="group"
             aria-label={addr}
             variant={bad ? "destructive" : "secondary"}
-            className="h-auto rounded-full px-2 py-0.5 font-normal text-md leading-4"
+            className="h-auto rounded-full px-2 py-0.5 font-normal text-sm leading-4"
           >
             <Tooltip>
               {/* invalid: the entry as typed, so what is wrong shows */}
@@ -125,7 +125,7 @@ export function AddressInput({
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
         aria-activedescendant={open && active >= 0 ? option(active) : undefined}
-        className="h-5.25 min-w-30 flex-1 bg-transparent text-md outline-none placeholder:text-muted-foreground"
+        className="h-5.25 min-w-30 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         placeholder={list.length ? undefined : placeholder}
         value={pending}
         readOnly={frozen}
@@ -189,7 +189,7 @@ export function AddressInput({
               {h.name && <span className="w-full truncate">{h.name}</span>}
               <span
                 className={
-                  h.name ? "w-full truncate text-muted-foreground text-sm" : "w-full truncate"
+                  h.name ? "w-full truncate text-muted-foreground text-xs" : "w-full truncate"
                 }
               >
                 {h.address}

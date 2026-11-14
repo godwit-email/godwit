@@ -292,7 +292,7 @@ function LayoutEditor(props: { t: T; initial: string; mode: Mode; onChange(html:
       </Bar>
       <div className="flex items-center gap-2 px-4 py-2 text-xs text-muted-foreground">
         <span className="flex-1">{t("settings.account.signature.layout")}</span>
-        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={mode.onHTML}>
+        <Button variant="outline" size="sm" onClick={mode.onHTML}>
           {t("settings.account.signature.edit_html")}
         </Button>
       </div>
@@ -426,7 +426,7 @@ export function SignatureApp() {
   if (!state || !doc) return <main />;
   if ("error" in doc)
     return (
-      <main className="p-3 text-sm text-muted-foreground">{t("error.unknown", doc.error)}</main>
+      <main className="p-3 text-xs text-muted-foreground">{t("error.unknown", doc.error)}</main>
     );
   return (
     <main>

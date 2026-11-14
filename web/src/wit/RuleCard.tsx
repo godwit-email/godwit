@@ -147,7 +147,7 @@ const ACTION_ICONS: Record<string, RemixiconComponentType> = {
 const mono = (ph: Phrase) => (
   <>
     {ph.pre}
-    {ph.val !== undefined && <span className="font-mono text-sm">{ph.val}</span>}
+    {ph.val !== undefined && <span className="font-mono text-xs">{ph.val}</span>}
     {ph.post}
   </>
 );
@@ -197,7 +197,7 @@ export function RuleCard({
     <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)">
       <div className="flex flex-wrap items-center gap-2 border-b-[0.5px] bg-sidebar px-3.5 py-2.5 leading-5">
         <span className="font-semibold">{t("wit.approval.wants", t("wit.tool.propose_rule"))}</span>
-        <span className="font-mono text-muted-foreground text-sm">{a.tool}</span>
+        <span className="font-mono text-muted-foreground text-xs">{a.tool}</span>
         <span className="ml-auto flex gap-1.5">
           {a.destinations.length > 0 && (
             <Badge variant="secondary">{t("settings.rules.egress")}</Badge>
@@ -210,7 +210,7 @@ export function RuleCard({
           </Badge>
         </span>
       </div>
-      <div className="grid grid-cols-[minmax(4.5rem,auto)_minmax(0,1fr)] gap-x-3 gap-y-2 px-3.5 py-3 text-md">
+      <div className="grid grid-cols-[minmax(4.5rem,auto)_minmax(0,1fr)] gap-x-3 gap-y-2 px-3.5 py-3 text-sm">
         {k(t("settings.rules.name"))}
         <span className="font-medium">{p.rule.name || t("settings.rules.untitled")}</span>
         {k(t("settings.rules.when"))}
@@ -222,7 +222,7 @@ export function RuleCard({
               {ifs.map((c, i) => (
                 // biome-ignore lint/suspicious/noArrayIndexKey: conditions are in order and may repeat
                 <span key={i} className="contents">
-                  {i > 0 && <span className="text-muted-foreground text-sm">{join}</span>}
+                  {i > 0 && <span className="text-muted-foreground text-xs">{join}</span>}
                   {c.rows.length > 1 ? (
                     // biome-ignore lint/a11y/useSemanticElements: a run of chips inline, not a form's fieldset
                     <span
@@ -233,7 +233,7 @@ export function RuleCard({
                       {c.rows.map((row, j) => (
                         // biome-ignore lint/suspicious/noArrayIndexKey: conditions are in order and may repeat
                         <span key={j} className="contents">
-                          {j > 0 && <span className="text-muted-foreground text-sm">{c.join}</span>}
+                          {j > 0 && <span className="text-muted-foreground text-xs">{c.join}</span>}
                           <span className="rounded-md bg-muted px-2 leading-6">{mono(row)}</span>
                         </span>
                       ))}
@@ -292,7 +292,7 @@ export function RuleCard({
             <Button
               variant="ghost"
               size="sm"
-              className="-ml-1.5 h-6 self-start px-1.5 font-normal text-md"
+              className="-ml-1.5 h-6 self-start px-1.5 font-normal text-sm"
               aria-expanded={open}
               disabled={mail.length === 0}
               onClick={() => setOpen(!open)}
@@ -308,7 +308,7 @@ export function RuleCard({
           {open && (
             <span className="flex flex-col divide-y-[0.5px] overflow-hidden rounded-lg border-[0.5px]">
               {mail.map((m) => (
-                <span key={m.id} className="flex gap-2 px-2.5 py-1.5 text-sm">
+                <span key={m.id} className="flex gap-2 px-2.5 py-1.5 text-xs">
                   <span className="shrink-0 font-medium">
                     {m.from.replace(/\s*<[^>]*>$/, "") || m.from}
                   </span>
@@ -322,7 +322,7 @@ export function RuleCard({
               ))}
             </span>
           )}
-          <span className="text-muted-foreground text-sm">
+          <span className="text-muted-foreground text-xs">
             {t(rcpts.length > 0 ? "wit.rule.new_only_forward" : "wit.rule.new_only")}
           </span>
         </span>
@@ -330,19 +330,19 @@ export function RuleCard({
       {confirm ? (
         <fieldset
           aria-label={t("settings.rules.confirm.title")}
-          className="flex min-w-0 flex-col gap-2.5 border-(--warning-border) border-t-[0.5px] bg-(--warning-bg) px-3.5 py-3 text-md"
+          className="flex min-w-0 flex-col gap-2.5 border-(--warning-border) border-t-[0.5px] bg-(--warning-bg) px-3.5 py-3 text-sm"
         >
           <span className="flex flex-col gap-0.5 text-(--warning-text)">
             <span className="font-semibold">{t("settings.rules.confirm.title")}</span>
-            <span className="text-sm">{t("wit.rule.confirm_desc")}</span>
+            <span className="text-xs">{t("wit.rule.confirm_desc")}</span>
           </span>
           {rcpts.map((to) => (
             <span key={to} className="flex flex-wrap items-center gap-2">
-              <span className="font-medium font-mono text-base">{to}</span>
+              <span className="font-medium font-mono text-sm">{to}</span>
               {firstBadge(to)}
             </span>
           ))}
-          <span className="flex flex-col gap-0.5 text-sm">
+          <span className="flex flex-col gap-0.5 text-xs">
             <span>
               ·{" "}
               {p.account_name
@@ -352,16 +352,10 @@ export function RuleCard({
             <span>· {t("wit.rule.confirm_again")}</span>
           </span>
           <span className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              className="px-3 font-normal text-md"
-              disabled={busy}
-              onClick={() => setConfirm(false)}
-            >
+            <Button variant="outline" disabled={busy} onClick={() => setConfirm(false)}>
               {t("close.unsaved.back")}
             </Button>
             <Button
-              className="px-3.5 text-md"
               disabled={busy}
               onClick={() => decide(true, JSON.stringify({ confirmed: rcpts }))}
             >
@@ -371,31 +365,20 @@ export function RuleCard({
         </fieldset>
       ) : (
         <div className="flex flex-wrap items-center gap-2 border-muted border-t-[0.5px] px-3.5 py-2.5">
-          <span className="flex items-center gap-1.5 text-muted-foreground text-sm">
+          <span className="flex items-center gap-1.5 text-muted-foreground text-xs">
             <RiShieldCheckLine className="size-3.5" />
             {t("wit.rule.hint")}
           </span>
           <span className="ml-auto flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              className="px-3 font-normal text-md"
-              disabled={busy}
-              onClick={() => decide(false)}
-            >
+            <Button variant="outline" disabled={busy} onClick={() => decide(false)}>
               {t("wit.approval.reject")}
             </Button>
             {onEdit && (
-              <Button
-                variant="outline"
-                className="px-3 font-normal text-md"
-                disabled={busy}
-                onClick={onEdit}
-              >
+              <Button variant="outline" disabled={busy} onClick={onEdit}>
                 {t("wit.rule.edit")}
               </Button>
             )}
             <Button
-              className="px-3.5 text-md"
               disabled={busy}
               onClick={() => (rcpts.length > 0 ? setConfirm(true) : decide(true))}
             >

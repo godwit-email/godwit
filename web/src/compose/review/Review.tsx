@@ -37,7 +37,7 @@ const CARET =
 export function Static({
   html,
   label,
-  className = "text-lg",
+  className = "text-sm",
   caret = false,
 }: {
   html: string;
@@ -222,9 +222,9 @@ export function Review({
               {active === s.k && (
                 // pt-1, not mt-1: the gap stays inside the change, so moving the mouse onto the buttons keeps them open.
                 <span ref={pop} className="absolute z-10 pt-1" style={at}>
-                  <span className="flex items-center gap-1 whitespace-nowrap rounded-lg border border-glass-border bg-glass-bg p-1 text-base shadow-2xl backdrop-blur-2xl ring-1 ring-glass-ring">
+                  <span className="flex items-center gap-1 whitespace-nowrap rounded-lg border border-glass-border bg-glass-bg p-1 text-xs shadow-2xl backdrop-blur-2xl ring-1 ring-glass-ring">
                     {link && (
-                      <span className="px-1 text-muted-foreground text-sm">
+                      <span className="px-1 text-muted-foreground text-xs">
                         {t("wit.compose.link", link)}
                       </span>
                     )}
@@ -252,7 +252,7 @@ export function Review({
   const pct = Math.round(r.ratio * 100);
   return (
     <div className="flex flex-col">
-      <div className="flex items-center gap-2 bg-sidebar px-4 py-2 text-base">
+      <div className="flex items-center gap-2 bg-sidebar px-4 py-2 text-sm">
         <RiSparkling2Line className="size-3.5 shrink-0" />
         <span className="flex-1">
           {r.kind === "translate"
@@ -264,25 +264,14 @@ export function Review({
                 : t("wit.compose.rewrite_plain")}
         </span>
         {!r.inline && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="text-base"
-            onClick={() => setCompare(!compare)}
-          >
+          <Button size="sm" variant="outline" onClick={() => setCompare(!compare)}>
             {t(compare ? "wit.compose.back" : "wit.compose.compare")}
           </Button>
         )}
-        <Button size="sm" className="text-base" disabled={busy} onClick={() => onDecide(true)}>
+        <Button size="sm" disabled={busy} onClick={() => onDecide(true)}>
           {t("wit.compose.accept_all")}
         </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          className="text-base"
-          disabled={busy}
-          onClick={() => onDecide(false)}
-        >
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => onDecide(false)}>
           {t("wit.compose.reject_all")}
         </Button>
       </div>
@@ -292,11 +281,11 @@ export function Review({
         className={`${BODY} bg-sidebar`}
       >
         {r.subject && r.subject !== r.old_subject && !compare && (
-          <div className="mb-3 flex flex-col gap-1 rounded-lg border bg-card/60 p-3 text-sm">
+          <div className="mb-3 flex flex-col gap-1 rounded-lg border bg-card/60 p-3 text-xs">
             <span className="font-semibold text-xs text-muted-foreground uppercase tracking-wider">
               {t("compose.subject")}
             </span>
-            <div className="flex flex-wrap items-center gap-1.5 text-base">
+            <div className="flex flex-wrap items-center gap-1.5 text-sm">
               {/* a rewrite shows the new subject as it is: its word diff would be mostly noise */}
               {r.inline ? (
                 r.subject_ops?.map((op, i) => (
@@ -310,32 +299,32 @@ export function Review({
           </div>
         )}
         {r.inline ? (
-          <div className="text-lg leading-[1.75] [&>*+*]:mt-3">{blocks}</div>
+          <div className="text-sm leading-[1.75] [&>*+*]:mt-3">{blocks}</div>
         ) : compare ? (
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-2 text-muted-foreground">
-              <h2 className="font-semibold text-sm">{t("wit.compose.original")}</h2>
+              <h2 className="font-semibold text-xs">{t("wit.compose.original")}</h2>
               {r.subject && r.subject !== r.old_subject && (
                 <div className="flex flex-col gap-0.5 rounded border border-border/50 bg-muted/30 p-2 text-xs">
-                  <span className="font-semibold text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <span className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">
                     {t("compose.subject")}
                   </span>
                   <span>{r.old_subject || t("mail.no_subject")}</span>
                 </div>
               )}
-              <Static html={r.old} label={t("wit.compose.original")} className="text-md" />
+              <Static html={r.old} label={t("wit.compose.original")} className="text-sm" />
             </div>
             <div className="flex flex-col gap-2 border-l-[0.5px] pl-4">
-              <h2 className="font-semibold text-sm">{t("wit.compose.new")}</h2>
+              <h2 className="font-semibold text-xs">{t("wit.compose.new")}</h2>
               {r.subject && r.subject !== r.old_subject && (
                 <div className="flex flex-col gap-0.5 rounded border border-primary/30 bg-primary/5 p-2 text-xs">
-                  <span className="font-semibold text-[10px] uppercase tracking-wider text-primary">
+                  <span className="font-semibold text-xs uppercase tracking-wider text-primary">
                     {t("compose.subject")}
                   </span>
                   <span className="font-medium text-foreground">{r.subject}</span>
                 </div>
               )}
-              <Static html={r.new} label={t("wit.compose.new")} className="text-md" />
+              <Static html={r.new} label={t("wit.compose.new")} className="text-sm" />
             </div>
           </div>
         ) : (

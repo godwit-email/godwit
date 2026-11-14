@@ -135,7 +135,7 @@ export function QuotePicker({
         </div>
       )}
       {hits?.length === 0 && (
-        <p className="px-2.5 py-2 text-muted-foreground text-sm">{t("wit.quote.none")}</p>
+        <p className="px-2.5 py-2 text-muted-foreground text-xs">{t("wit.quote.none")}</p>
       )}
       {!!hits?.length && !q.trim() && (
         <p className="px-2.5 pt-1 text-muted-foreground text-xs">{t("wit.quote.recent")}</p>
@@ -157,7 +157,7 @@ export function QuotePicker({
               onKeyDown={key}
             >
               <span className="w-full truncate">{subjectOf(h, t)}</span>
-              <span className="w-full truncate text-muted-foreground text-sm">{h.from}</span>
+              <span className="w-full truncate text-muted-foreground text-xs">{h.from}</span>
             </div>
           ))}
         </div>
@@ -184,7 +184,7 @@ export function QuotedMail({
         <Badge
           key={h.id}
           variant="secondary"
-          className="h-6 max-w-full gap-1 rounded-sm font-normal text-sm [button]:hover:bg-secondary/80"
+          className="h-6 max-w-full gap-1 rounded-sm font-normal text-xs [button]:hover:bg-secondary/80"
           title={h.from}
           render={
             onOpen && !gone(h.id) ? (
@@ -216,7 +216,7 @@ export function QuoteChips({
         <Badge
           key={h.id}
           variant="secondary"
-          className="h-6 max-w-full gap-1 rounded-sm pr-1 font-normal text-sm"
+          className="h-6 max-w-full gap-1 rounded-sm pr-1 font-normal text-xs"
         >
           <RiMailLine className="size-3.5 text-muted-foreground" />
           <span className="truncate">{subjectOf(h, t)}</span>

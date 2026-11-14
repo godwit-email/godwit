@@ -119,7 +119,7 @@ export function CommandPicker({
       className="absolute bottom-full left-0 z-3 mb-2 flex max-h-80 w-96 max-w-full flex-col gap-0.5 overflow-y-auto rounded-xl border border-glass-border bg-glass-bg p-1 text-popover-foreground shadow-2xl backdrop-blur-2xl ring-1 ring-glass-ring outline-none"
     >
       {shown.length === 0 ? (
-        <p className="px-2.5 py-2 text-muted-foreground text-sm">{t("wit.cmd.none")}</p>
+        <p className="px-2.5 py-2 text-muted-foreground text-xs">{t("wit.cmd.none")}</p>
       ) : (
         <div
           role="listbox"
@@ -152,12 +152,12 @@ export function CommandPicker({
                     {c.icon}
                   </span>
                 )}
-                <span className="shrink-0 font-medium text-sm">{c.label}</span>
+                <span className="shrink-0 font-medium text-xs">{c.label}</span>
                 {c.value && (
-                  <span className="shrink-0 text-muted-foreground text-sm">{c.value}</span>
+                  <span className="shrink-0 text-muted-foreground text-xs">{c.value}</span>
                 )}
                 {c.hint && (
-                  <span className="min-w-0 truncate text-muted-foreground text-sm">{c.hint}</span>
+                  <span className="min-w-0 truncate text-muted-foreground text-xs">{c.hint}</span>
                 )}
                 {c.checked && <RiCheckLine className="ml-auto size-4 shrink-0" />}
               </div>

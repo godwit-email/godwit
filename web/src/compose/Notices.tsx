@@ -5,15 +5,15 @@ import type { T } from "@/shared/i18n";
 
 function From({ w, t }: { w: SendWarning; t: T }) {
   return (
-    <AlertDescription className="text-base">{t("compose.warn.from", w.plugin)}</AlertDescription>
+    <AlertDescription className="text-sm">{t("compose.warn.from", w.plugin)}</AlertDescription>
   );
 }
 
 // The design's notice: a filled box, no outline; a warning in the theme's warning colours.
-const box = "gap-1 border-0 px-3.5 py-3 text-md";
+const box = "gap-1 border-0 px-3.5 py-3 text-sm";
 const warn = `${box} bg-(--warning-bg) text-(--warning-text) *:data-[slot=alert-description]:text-(--warning-text)`;
 const danger = `${box} bg-destructive/10`;
-const small = "bg-background px-2.5 font-normal text-base";
+const small = "bg-background";
 
 /** Plugin warnings (sendable anyway), a blocking refusal and the save conflict. */
 export function Notices({
@@ -57,7 +57,7 @@ export function Notices({
         <div>
           <Button
             variant="outline"
-            className="border-(--warning-border) bg-transparent px-3 font-normal text-(--warning-text) text-md"
+            className="border-(--warning-border) bg-transparent text-(--warning-text)"
             disabled={frozen}
             onClick={() => !frozen && onSendAnyway()}
           >

@@ -88,10 +88,10 @@ export function Fields({
   }));
 
   const row = (k: string, label: string, control: ReactNode) => (
-    <div key={k} className="mx-4 flex items-center gap-3 border-b-[0.5px] py-2 text-md">
+    <div key={k} className="mx-4 flex items-center gap-3 border-b-[0.5px] py-2 text-sm">
       <Label
         htmlFor={`${id}${k}`}
-        className="w-12 shrink-0 font-normal text-md text-muted-foreground leading-5"
+        className="w-12 shrink-0 font-normal text-sm text-muted-foreground leading-5"
       >
         {label}
       </Label>
@@ -136,7 +136,7 @@ export function Fields({
           <Button
             variant="link"
             size="sm"
-            className="h-auto shrink-0 px-0 font-normal text-base text-muted-foreground hover:text-foreground"
+            className="h-auto shrink-0 px-0 font-normal text-sm text-muted-foreground hover:text-foreground"
             disabled={frozen}
             onClick={() => setCcOpen(true)}
           >
@@ -152,7 +152,7 @@ export function Fields({
         </>
       )}
       {bad.length > 0 && (
-        <p className="mx-4 border-b-[0.5px] py-2 text-base text-destructive">
+        <p className="mx-4 border-b-[0.5px] py-2 text-xs text-destructive">
           {t("compose.invalid", bad.join(", "))}
         </p>
       )}
@@ -161,7 +161,7 @@ export function Fields({
         t("compose.subject"),
         <Input
           id={`${id}subject`}
-          className="h-5.5 flex-1 rounded-none border-0 bg-transparent px-0.5 py-0 text-md shadow-none focus-visible:ring-0 md:text-md dark:bg-transparent"
+          className="h-5.5 flex-1 rounded-none border-0 bg-transparent px-0.5 py-0 text-sm shadow-none focus-visible:ring-0 md:text-sm dark:bg-transparent"
           placeholder={t("compose.subject.input")}
           value={subject}
           readOnly={frozen}
@@ -179,7 +179,7 @@ export function Fields({
             aria-label={t("compose.from.select")}
             title={fromEmail}
             disabled={frozen}
-            className="flex h-5.5 min-w-0 items-center rounded-full bg-muted px-2 text-md leading-4 transition-colors hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-popup-open:bg-accent"
+            className="flex h-5.5 min-w-0 items-center rounded-full bg-muted px-2 text-sm leading-4 transition-colors hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-popup-open:bg-accent"
           >
             <span className="min-w-0 truncate">{fromEmail}</span>
             <RiArrowDownSLine className="ml-1 size-3.5 shrink-0 text-muted-foreground" />

@@ -30,7 +30,7 @@ export function CmdK({
   return (
     <form
       ref={box}
-      className="flex flex-col gap-1.5 rounded-xl border border-glass-border bg-glass-bg px-2.5 py-2 text-md leading-normal text-popover-foreground shadow-2xl backdrop-blur-2xl ring-1 ring-glass-ring outline-none"
+      className="flex flex-col gap-1.5 rounded-xl border border-glass-border bg-glass-bg px-2.5 py-2 text-sm leading-normal text-popover-foreground shadow-2xl backdrop-blur-2xl ring-1 ring-glass-ring outline-none"
       onSubmit={(e) => {
         e.preventDefault();
         const s = text.trim();
@@ -58,15 +58,15 @@ export function CmdK({
           placeholder={t("wit.compose.cmdk.input")}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          className="h-auto rounded-none border-0 bg-transparent p-0 text-md shadow-none focus-visible:ring-0 md:text-md dark:bg-transparent"
+          className="h-auto rounded-none border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0 md:text-sm dark:bg-transparent"
         />
       </div>
       <div className="flex items-center gap-2">
-        <span className="flex-1 text-muted-foreground text-sm">{t("wit.compose.cmdk")}</span>
+        <span className="flex-1 text-muted-foreground text-xs">{t("wit.compose.cmdk")}</span>
         <Button type="button" size="xs" variant="outline" onClick={onClose}>
           {t("wit.compose.cmdk.esc")}
         </Button>
-        <Button type="submit" size="xs" className="px-2.5">
+        <Button type="submit" size="xs">
           {t("wit.compose.cmdk.go")}
         </Button>
       </div>
