@@ -408,6 +408,42 @@ func TestUnreadFilter(t *testing.T) {
 	h.see("old news")
 }
 
+// An empty unread list is an answer, not a request to page the rest of the
+// mail in: it used to load a page per frame, which flipped the placeholder
+// rows and 没有未读邮件 against each other for as long as the mail lasted.
+func TestUnreadFilterEmptyDoesNotPage(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.putMany(accs[0], 120)
+	h.waitMail("the first page", func() bool { return len(h.items()) == 50 })
+	page, err := h.env.Svc.ListMessages(context.Background(), core.View{Unified: "inbox"}, "", 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := make([]int64, 0, len(page.Items))
+	for _, m := range page.Items {
+		ids = append(ids, m.ID)
+	}
+	if err := h.env.Svc.SetFlags(context.Background(), ids, []string{`\Seen`}, nil); err != nil {
+		t.Fatal(err)
+	}
+	h.waitMail("all read", func() bool { return h.items()[0].Unread == 0 })
+
+	h.click("未读")
+	h.see(i18n.T("mail.no_unread_messages"))
+	h.until("the list idle", func() bool { return !h.app.mail.list.loading })
+	items := len(h.items())
+	for range 5 {
+		h.tt.Frame()
+		h.tt.Advance(time.Second / 60)
+	}
+	if n := len(h.items()); n != items {
+		t.Fatalf("the empty unread list paged itself: %d -> %d items", items, n)
+	}
+	if !h.tt.HasText(i18n.T("mail.no_unread_messages")) {
+		t.Fatalf("the empty unread list does not say so: %q", h.tt.Texts())
+	}
+}
+
 func TestSearch(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Invoice March", "pay"))

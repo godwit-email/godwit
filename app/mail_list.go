@@ -990,19 +990,24 @@ func (p *mailPage) listView(c *ui.Context) {
 		p.devPath = ""
 	}
 	// An empty folder still fetching older mail is loading, not empty: its placeholders, not 没有邮件 above a spinner.
+	// The unread filter is not: its list is short or empty because the read mail is hidden, so its empty state stays put while the list reads.
 	loading := p.list.loading || p.older.read.loading
+	placeholder := len(rows) == 0 && loading && p.filter == 0
 	l.Children(func() {
-		if len(rows) == 0 && loading { // the first load: placeholder rows
+		if placeholder { // the first load: placeholder rows
 			for range 6 {
 				p.skeletonRow(c)
 			}
 		}
-		if len(rows) == 0 && !loading {
-			if p.searched {
+		if len(rows) == 0 && !placeholder {
+			switch {
+			case p.searched:
 				p.noResults(c)
-			} else if p.savedViewID() != 0 {
+			case p.savedViewID() != 0:
 				p.viewEmpty(c)
-			} else {
+			case p.filter != 0:
+				ui.Text(c, i18n.T("mail.no_unread_messages")).TextColor(t.Muted).Padding(th.Space(3))
+			default:
 				ui.Text(c, i18n.T("mail.empty")).TextColor(t.Muted).Padding(th.Space(3))
 			}
 		}
@@ -1027,7 +1032,12 @@ func (p *mailPage) listView(c *ui.Context) {
 	}
 	first, last := ls.list.Visible()
 	if last >= len(es)-5 {
-		p.loadMore()
+		// The list's end is the end of the rows it shows, not of the mail: under
+		// the unread filter an empty list means nothing unread is loaded, and
+		// paging the rest of the mail in would flip this state on every page.
+		if len(es) > 0 {
+			p.loadMore()
+		}
 		p.loadOlder()
 	}
 	if p.savedViewID() != 0 && !p.searched {
