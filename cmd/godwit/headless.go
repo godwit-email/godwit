@@ -230,6 +230,12 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 	if d != nil && d.newPlatform != nil {
 		opts.NotifyMCPSend = func(id int64) bool { return notifyMCP != nil && notifyMCP(id) }
 	}
+	kr, err := keyringFromEnv()
+	if err != nil {
+		fmt.Fprintln(stderr, "godwit:", err)
+		return nil, 1
+	}
+	opts.Keyring = kr
 	svc, err := core.New(ctx, opts)
 	if err != nil {
 		fmt.Fprintln(stderr, "godwit:", err)

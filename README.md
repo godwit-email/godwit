@@ -99,6 +99,22 @@ systemctl --user enable --now godwit
 
 A backend you start this way keeps running when the app quits and always serves the Local API to other programs of your user.
 
+### Credentials on a server without a keychain
+
+Godwit keeps passwords, refresh tokens and API keys in the system keychain. A Linux server with no desktop session or Secret Service has none; there you can choose an encrypted file instead (AES-256-GCM), with the key in a separate file you manage. Set both variables for the backend (`godwit --headless`), for example in the systemd unit's `[Service]` section:
+
+```sh
+mkdir -p ~/.config/godwit ~/.local/share/godwit
+(umask 077 && openssl rand -hex 32 > ~/.config/godwit/keyring.key)
+```
+
+```ini
+Environment=GODWIT_KEYRING_FILE=%h/.local/share/godwit/keyring
+Environment=GODWIT_KEYRING_KEY_FILE=%h/.config/godwit/keyring.key
+```
+
+The key file holds 64 hex characters and must not be readable by anyone else (0600 or narrower), or the backend refuses to start; so does setting only one of the two variables. Godwit creates the keyring file (0600) on the first credential it saves; its directory must exist. Without the variables nothing changes: credentials stay in the system keychain, and Godwit never falls back to a file on its own. Anyone with both files can read your credentials, so keep the key off backups that also hold the keyring.
+
 ## Development
 
 Godwit is written in Go on [MyGo](https://github.com/egoist/mygo): the main window is native UI, while compose, the Wit page and the message reader are React pages in `web/`. [mise](https://mise.jdx.dev) installs the pinned Go and Bun:
