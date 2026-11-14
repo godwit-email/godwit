@@ -854,6 +854,10 @@ var Migrations = [][]string{{
 	`ALTER TABLE mcp_servers ADD COLUMN managed_by TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE mcp_servers ADD COLUMN managed_hash TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE model_services ADD COLUMN model_info TEXT NOT NULL DEFAULT '{}'`,
+}, {
+	// Send later (ADR 0042): the time the user scheduled the item for, unix
+	// milliseconds; NULL for a send of now. send_after holds it too.
+	`ALTER TABLE outbox ADD COLUMN send_at INTEGER`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

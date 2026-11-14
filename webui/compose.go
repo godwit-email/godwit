@@ -6,6 +6,7 @@ import (
 	"log"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/mail"
@@ -409,14 +410,17 @@ func (p *ComposePage) RemoveAttachment(ctx context.Context, id, revision int64) 
 }
 
 // Send sends exactly revision of the calling window's draft, else Conflict.
-// digest, from an earlier SendResult's warnings, sends despite them. Once
-// sent, the window closes (OnDone).
-func (p *ComposePage) Send(ctx context.Context, revision int64, digest string) (SendResult, error) {
+// digest, from an earlier SendResult's warnings, sends despite them. at, in
+// unix milliseconds, sends it later, then (core.Service.SendLater); 0 now.
+// Once sent, the window closes (OnDone).
+func (p *ComposePage) Send(ctx context.Context, revision int64, digest string, at int64) (SendResult, error) {
 	win, svc, s, err := p.open(ctx)
 	if err != nil {
 		return SendResult{}, err
 	}
-	if digest == "" {
+	if at != 0 {
+		err = svc.SendLater(ctx, s.draftID, revision, time.UnixMilli(at), digest)
+	} else if digest == "" {
 		err = svc.SendRevision(ctx, s.draftID, revision)
 	} else {
 		err = svc.SendAcknowledgedRevision(ctx, s.draftID, revision, digest)

@@ -30,19 +30,24 @@ type outboxAction struct {
 	do  func()
 }
 
-// outboxView lists mail not yet sent and filed, with its state; mail that
-// may or may not have gone out, or failed, waits for the user's decision.
-func (p *mailPage) outboxView(c *ui.Context) {
+// outboxView lists items under title, note ("" for none) above them: the
+// outbox's mail not yet sent and filed, with its state (mail that may or may
+// not have gone out, or failed, waits for the user's decision), or the
+// scheduled mail waiting for its time.
+func (p *mailPage) outboxView(c *ui.Context, title string, items []outboxEntry, note string) {
 	t := theme.Of(c)
 	th, small := c.Theme(), t.Text.Sm
 	now := p.a.clock.Now()
-	ui.Text(c, i18n.T("mail.outbox")).FontWeight(500).TextColor(t.Muted).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4))
+	ui.Text(c, title).FontWeight(500).TextColor(t.Muted).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4))
+	if note != "" {
+		kit.Text(c, note, small).TextColor(t.Muted).Padding(0, th.Space(4), th.Space(3), th.Space(4))
+	}
 	ui.Scroll(c).Grow(1).Children(func() {
 		ui.Column(c).Padding(0, th.Space(4)).Gap(th.Space(3)).Children(func() {
-			if len(p.outbox) == 0 {
+			if len(items) == 0 {
 				ui.Text(c, i18n.T("mail.empty")).TextColor(t.Muted)
 			}
-			for _, it := range p.outbox {
+			for _, it := range items {
 				ui.Column(c.Key(it.ID)).Gap(th.Space(1)).Padding(th.Space(2.5)).Radius(t.Radius.Lg).Border(theme.Hairline, t.Border).Children(func() {
 					ui.Text(c, subjectOf(it.OutboxItem)).FontWeight(500).SingleLine()
 					kit.Text(c, it.Account, small).TextColor(t.Muted).SingleLine()
@@ -70,9 +75,9 @@ func (p *mailPage) outboxView(c *ui.Context) {
 }
 
 // outboxActions are what can be done with it: a queued item with its draft
-// can be taken back and a retrying one retried now; a failed one edited (with
-// its draft), sent again or discarded; one that may have gone out confirmed,
-// sent again or discarded.
+// can be taken back (a scheduled one also edited) and a retrying one retried
+// now; a failed one edited (with its draft), sent again or discarded; one
+// that may have gone out confirmed, sent again or discarded.
 func (p *mailPage) outboxActions(it core.OutboxItem, now time.Time) []outboxAction {
 	var acts []outboxAction
 	add := func(key string, v kit.Variant, do func()) { acts = append(acts, outboxAction{key, v, do}) }
@@ -82,8 +87,11 @@ func (p *mailPage) outboxActions(it core.OutboxItem, now time.Time) []outboxActi
 		if it.NextAttempt.After(now) {
 			add("retry_now", kit.Outline, resolve("resend", nil))
 		}
+		if it.DraftID != 0 && isScheduled(it) {
+			add("edit", kit.Outline, func() { p.cancel(it.ID, func() { p.a.plat.OpenCompose(it.DraftID) }) })
+		}
 		if it.DraftID != 0 {
-			add("cancel", kit.Outline, func() { p.cancel(it.ID) })
+			add("cancel", kit.Outline, func() { p.cancel(it.ID, nil) })
 		}
 	case "failed":
 		if it.DraftID != 0 {
@@ -102,21 +110,28 @@ func (p *mailPage) outboxActions(it core.OutboxItem, now time.Time) []outboxActi
 }
 
 // outboxStatus names its state as of now: a queued item is in its undo
-// window or retrying until its time comes.
+// window, scheduled or retrying until its time comes.
 func outboxStatus(it core.OutboxItem, now time.Time) string {
 	switch {
 	case it.State == "queued" && it.NextAttempt.After(now):
 		return i18n.Tf("outbox.state.retrying", it.NextAttempt.In(now.Location()).Format("15:04"))
+	case isScheduled(it) && it.SendAt.After(now):
+		at := it.SendAt.In(now.Location())
+		return i18n.Tf("outbox.state.scheduled", i18n.FormatDate(at, now)+" "+at.Format("15:04"))
 	case inUndoWindow(it, now):
 		return i18n.T("outbox.state.undo")
 	}
 	return i18n.T("outbox.state." + it.State)
 }
 
-// inUndoWindow: it is queued, untried, with its draft, and not due yet.
+// inUndoWindow: it is queued, untried, with its draft, not scheduled, and not due yet.
 func inUndoWindow(it core.OutboxItem, now time.Time) bool {
-	return it.State == "queued" && it.DraftID != 0 && it.Attempts == 0 && it.SendAfter.After(now)
+	return it.State == "queued" && it.DraftID != 0 && it.Attempts == 0 && it.SendAt.IsZero() && it.SendAfter.After(now)
 }
+
+// isScheduled: Send later queued it, and it has not started sending; it is
+// listed in Scheduled, not the outbox, until then.
+func isScheduled(it core.OutboxItem) bool { return it.State == "queued" && !it.SendAt.IsZero() }
 
 func subjectOf(it core.OutboxItem) string {
 	return cmp.Or(it.Subject, i18n.T("mail.no_subject"))
@@ -165,11 +180,14 @@ func (p *mailPage) resolve(id int64, action string, then func()) {
 	})
 }
 
-// cancel takes queued item id back to the drafts.
-func (p *mailPage) cancel(id int64) {
+// cancel takes queued item id back to the drafts; then, if set, runs after it succeeded.
+func (p *mailPage) cancel(id int64, then func()) {
 	a := p.a
 	a.writes.Chain(fmt.Sprintf("outbox:%d", id), func(ctx context.Context) error { return a.svc.CancelOutbox(ctx, id) }, func(err error) {
 		a.toastUndoErr(err)
+		if err == nil && then != nil {
+			then()
+		}
 		p.reload()
 	})
 }

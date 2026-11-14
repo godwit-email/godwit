@@ -753,6 +753,10 @@ func (cl *Client) SendAcknowledgedRevision(ctx context.Context, draftID int64, r
 	return callErr(cl, ctx, "SendAcknowledgedRevision", draftID, revision, digest)
 }
 
+func (cl *Client) SendLater(ctx context.Context, draftID int64, revision int64, at time.Time, digest string) error {
+	return callErr(cl, ctx, "SendLater", draftID, revision, at, digest)
+}
+
 func (cl *Client) SendRevision(ctx context.Context, draftID int64, revision int64) error {
 	return callErr(cl, ctx, "SendRevision", draftID, revision)
 }

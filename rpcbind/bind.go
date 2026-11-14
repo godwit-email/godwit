@@ -257,6 +257,10 @@ var uiOnly = map[string]bool{
 	// Quitting Godwit stops the backend its interface started; a user-started one refuses.
 	// Replace stops it for an interface of another version, even under 一直继续.
 	"StopUIBackend": true, "ReplaceUIBackend": true,
+	// Send later (ADR 0042): a send that leaves unattended, scheduled only by the user in the
+	// interface. Programs of the full role can Send at the time they choose; mcp sends through
+	// RequestMCPSend.
+	"SendLater": true,
 	// The interface's user cancelled a quit the tray's 退出并停止收信 began.
 	"CancelTrayQuit": true,
 	// A development build's preview of the backend tray's sign-in code card.

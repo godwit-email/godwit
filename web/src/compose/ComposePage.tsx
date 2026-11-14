@@ -303,9 +303,11 @@ function Compose({
   const [attachments, setAttachments] = useState<Attachment[]>(state.attachments);
   const [tooLarge, setTooLarge] = useState<string[]>([]);
   const [failed, setFailed] = useState<string[]>([]);
-  const [warnings, setWarnings] = useState<{ list: SendWarning[]; digest: string }>({
+  // at: the Send later time (unix ms) the warnings were for; 0 for a send of now.
+  const [warnings, setWarnings] = useState<{ list: SendWarning[]; digest: string; at: number }>({
     list: [],
     digest: "",
+    at: 0,
   });
   const [blocked, setBlocked] = useState<SendWarning | null>(null);
   const [latestFailed, setLatestFailed] = useState(false);
@@ -570,19 +572,22 @@ function Compose({
       edits.current++;
       setApplied(false);
     }
-    setWarnings({ list: [], digest: "" });
+    setWarnings({ list: [], digest: "", at: 0 });
     setBlocked(null);
   };
   const failure = (e: unknown) => toast.error(errorText(e, t));
 
-  const send = async (digest = "") => {
+  /** Sends now, or at at (unix ms) for Send later; digest goes ahead despite its warnings. */
+  const send = async (digest = "", at = 0) => {
     if (!sv || locked || sending) return;
     setSending(true);
     try {
-      const r = await sv.run((rev) => api.send(rev, digest).then((s) => ({ ...s, revision: rev })));
+      const r = await sv.run((rev) =>
+        api.send(rev, digest, at).then((s) => ({ ...s, revision: rev })),
+      );
       if (!r) return; // not saved: the status says why
       if (r.sent) finish();
-      setWarnings({ list: r.warnings ?? [], digest: r.digest });
+      setWarnings({ list: r.warnings ?? [], digest: r.digest, at });
       setBlocked(r.blocked);
     } catch (e) {
       failure(e);
@@ -989,7 +994,7 @@ function Compose({
                   conflict={sv?.status === "conflict"}
                   latestFailed={latestFailed}
                   frozen={locked}
-                  onSendAnyway={() => send(warnings.digest)}
+                  onSendAnyway={() => send(warnings.digest, warnings.at)}
                   onKeepMine={() => resolve(true)}
                   onUseLatest={() => resolve(false)}
                   onRetry={() => retry.current()}
@@ -1002,7 +1007,13 @@ function Compose({
               <div ref={setToolbarSlot} className="contents">
                 {!showEditor && <IdleToolbar t={t} attach={attach} />}
               </div>
-              <SendBar sending={sending} frozen={locked} onSend={() => send()} t={t} />
+              <SendBar
+                sending={sending}
+                frozen={locked}
+                onSend={() => send()}
+                onSendLater={(at) => send("", at)}
+                t={t}
+              />
             </div>
           </section>
         </ResizablePanel>

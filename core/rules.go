@@ -1092,6 +1092,7 @@ func failedResults(runID int64, acts []RuleAction, i int, failure string) []sqli
 type ruleSend struct {
 	ruleID int64
 	stmts  []sqlite.Statement
+	at     time.Time // SendLater's time; zero sends now
 }
 
 // runForward forwards the message, with its attachments, to the action's
