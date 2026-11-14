@@ -1397,3 +1397,20 @@ func TestHeadlessTraySignInCodeSurfaces(t *testing.T) {
 		t.Fatalf("exit code %d; stderr %q", code, stderr.String())
 	}
 }
+
+// Opened again while only the backend runs, the backend leaves the Dock
+// again, whatever the system made of it, before handing the open on: one
+// Godwit in the Dock, the interface's (#793).
+func TestBackendReopenedStaysAccessory(t *testing.T) {
+	for _, visible := range []bool{false, true} {
+		var calls []string
+		backendReopened(visible, func() { calls = append(calls, "accessory") }, func() { calls = append(calls, "show") })
+		want := []string{"accessory", "show"}
+		if visible {
+			want = want[:1] // a window of the backend's own (a sign-in code) shows: nothing to start
+		}
+		if !slices.Equal(calls, want) {
+			t.Fatalf("visible=%v: %v, want %v", visible, calls, want)
+		}
+	}
+}
