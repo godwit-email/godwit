@@ -107,6 +107,7 @@ type mailPage struct {
 	draftView                map[int64]draftInfo     // by draft, made when the drafts load
 	sending                  draftSend               // the pane's send in flight, or awaiting warnings' acknowledgement
 	accOpen                  map[int64]*bool         // account groups unfolded in the sidebar, by account
+	accOpenSeen              map[int64]bool          // what accOpen last was when it was saved, by account
 	accLabelsOpen            map[int64]*bool         // account labels unfolded in the sidebar, by account
 	folderOpen               map[folderKey]*bool     // user folders unfolded in the sidebar
 	labelsOpen, accountsOpen bool                    // the sidebar's groups unfolded
@@ -170,7 +171,7 @@ func (it mailItem) key() string {
 }
 
 func newMailPage(a *App) *mailPage {
-	p := &mailPage{a: a, folders: map[int64][]core.Folder{}, accOpen: map[int64]*bool{}, accLabelsOpen: map[int64]*bool{}, folderOpen: map[folderKey]*bool{}, imports: map[int64]context.CancelFunc{}, labelsOpen: true, accountsOpen: true, viewsOpen: true, draftList: &ui.ListState{}}
+	p := &mailPage{a: a, folders: map[int64][]core.Folder{}, accOpen: map[int64]*bool{}, accOpenSeen: map[int64]bool{}, accLabelsOpen: map[int64]*bool{}, folderOpen: map[folderKey]*bool{}, imports: map[int64]context.CancelFunc{}, labelsOpen: true, accountsOpen: true, viewsOpen: true, draftList: &ui.ListState{}}
 	p.main.reset()
 	p.found.reset()
 	p.exec = p.write

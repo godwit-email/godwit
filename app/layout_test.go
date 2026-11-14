@@ -142,3 +142,30 @@ func TestSidebarLabelsMenuNew(t *testing.T) {
 	}
 	h.see(i18n.T("settings.labels.dialog.new"))
 }
+
+// An account's fold in the sidebar is saved in Settings.SidebarAccountsOpen and
+// comes back with a fresh page; an account with no saved fold takes the default.
+func TestSidebarAccountFoldSaved(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com", "bob@example.com")
+	h.until("the first account open", func() bool { return *h.app.mail.accountOpen(accs[0].ID) })
+	if *h.app.mail.accountOpen(accs[1].ID) {
+		t.Fatal("the second account starts folded")
+	}
+	h.until("the second account's row", func() bool { _, ok := h.tt.Find("bob@example.com"); return ok })
+	if err := h.tt.Click("bob@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	h.until("the unfold saved", func() bool { return h.app.settings.SidebarAccountsOpen[accs[1].ID] })
+	st, err := h.env.Svc.GetSettings(context.Background())
+	if err != nil || !st.SidebarAccountsOpen[accs[1].ID] {
+		t.Fatalf("stored %v, %v: want the second account unfolded", st.SidebarAccountsOpen, err)
+	}
+	restarted := newMailPage(h.app)
+	if !*restarted.accountOpen(accs[1].ID) || !*restarted.accountOpen(accs[0].ID) {
+		t.Fatal("after a restart the accounts the user unfolded and the first are open")
+	}
+	h.app.accounts = append(h.app.accounts, core.Account{ID: accs[1].ID + 100})
+	if *newMailPage(h.app).accountOpen(accs[1].ID + 100) {
+		t.Fatal("a new account takes the default: folded")
+	}
+}
