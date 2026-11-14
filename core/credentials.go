@@ -21,7 +21,8 @@ import (
 )
 
 // ErrKeychainUnavailable means the system keychain cannot be used (locked, no
-// secret service, access denied). Credentials never fall back to a file.
+// secret service, access denied). Credentials never fall back to a file; see
+// Keyring for the file a user can choose instead.
 var ErrKeychainUnavailable = errors.New("system keychain is unavailable")
 
 // Replaced in tests.
@@ -39,7 +40,9 @@ var customKeyring atomic.Pointer[Keyring]
 // reach (iOS, whose keychain is only available in-process) gives its own in
 // Options.Keyring. Get returns ErrSecretNotFound for a missing entry; any other
 // error makes the keychain unavailable (ErrKeychainUnavailable). Credentials
-// never fall back to a file.
+// never fall back to a file on their own: a file is used only when the shell
+// passes one here because the user asked for it (cmd/godwit's encrypted file
+// keyring for headless servers, under GODWIT_KEYRING_FILE).
 type Keyring interface {
 	Get(service, user string) (string, error)
 	Set(service, user, secret string) error
