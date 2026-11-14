@@ -1,6 +1,7 @@
 # Every *core.Service method exposed only to the ui role (not full or mcp), one
 # per line; the ui role may call full_methods.txt plus these (ADR 0038).
 # TestUISurfacePinned fails until rpcbind.ExposeUI matches full_methods.txt + ui_methods.txt.
+ApproveDraft
 CachedImage
 CachedImageDims
 CancelTrayQuit

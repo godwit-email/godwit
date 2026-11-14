@@ -500,6 +500,7 @@ func (s *Service) ruleDraftReply(ctx context.Context, acc, msgID int64) (string,
 	if failure != "" || err != nil {
 		return failure, err
 	}
+	ctx = withProgram(ctx) // Wit wrote it (ADR 0041)
 	d, err := s.NewDraft(ctx, acc, "reply", msgID)
 	if err != nil {
 		return RuleFailUnknown, nil

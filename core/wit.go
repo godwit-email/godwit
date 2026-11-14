@@ -945,7 +945,7 @@ func (s *Service) applyDraft(_ context.Context, a Approval) ([]sqlite.Statement,
 		return nil, nil, nil, err
 	}
 	return []sqlite.Statement{{SQL: `INSERT INTO drafts(account_id, mode, to_addrs, cc_addrs, bcc_addrs, reply_to, subject, body_html,
-		updated_at, ai_approval_id) VALUES (?, 'new', ?, ?, '[]', '', ?, ?, ?, ?)`,
+		updated_at, ai_approval_id, from_program) VALUES (?, 'new', ?, ?, '[]', '', ?, ?, ?, ?, 1)`,
 			Args: []any{in.AccountID, encodeList(in.To), encodeList(in.Cc), in.Subject, in.HTML, time.Now().Unix(), a.ID}}},
 		map[string]any{"created": true, "subject": in.Subject}, nil, nil
 }
@@ -1475,7 +1475,7 @@ func (s *Service) applyReplyOrForwardDraft(ctx context.Context, a Approval) ([]s
 	if err := json.Unmarshal(a.Args, &in); err != nil {
 		return nil, nil, nil, err
 	}
-	res, err := s.db.Execute(ctx, `INSERT INTO drafts(account_id, mode, source_message_id, to_addrs, cc_addrs, bcc_addrs, reply_to, subject, body_html, updated_at, ai_approval_id) VALUES (?, ?, ?, ?, ?, '[]', '', ?, ?, ?, ?)`,
+	res, err := s.db.Execute(ctx, `INSERT INTO drafts(account_id, mode, source_message_id, to_addrs, cc_addrs, bcc_addrs, reply_to, subject, body_html, updated_at, ai_approval_id, from_program) VALUES (?, ?, ?, ?, ?, '[]', '', ?, ?, ?, ?, 1)`,
 		in.AccountID, in.Mode, in.SourceMessageID, encodeList(in.To), encodeList(in.Cc), in.Subject, in.HTML, time.Now().Unix(), a.ID)
 	if err != nil {
 		return nil, nil, nil, err

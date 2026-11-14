@@ -4,6 +4,8 @@ Godwit 不向插件、MCP 和 Wit 提供发信能力：插件的 `mail` 权限�
 
 MCP 部分已由 [0023](0023-mcp-send-setting.md) 修订：`godwit mcp` 可以请求发送，默认每次由用户在 Godwit 里确认，用户也可以改成不允许或直接发送。插件和 Wit 不变。
 
+程序写的草稿，用户也可以在会话里看过后点「批准并发送」，只发出看到的那一版，见 [0041](0041-program-drafts-approve-and-send.md)；点击仍是用户的。
+
 另一个例外是本机 API 的 `full` 角色（见 [0002](0002-single-owner-local-api.md)）：它代表用户自己的程序，可以发送，所有这类发送都记审计。
 
 `message.beforeSend` Hook 可以返回 `warn`（用户可以「仍然发送」）或 `block`（只能修改草稿或停用该插件），但不能替用户发送。

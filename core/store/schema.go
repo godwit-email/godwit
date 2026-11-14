@@ -842,6 +842,10 @@ var Migrations = [][]string{{
 	// place in the accounts list (ADR 0040); NULL is a standalone one.
 	`ALTER TABLE address_books ADD COLUMN account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE`,
 	`CREATE UNIQUE INDEX address_books_account ON address_books(account_id) WHERE account_id IS NOT NULL`,
+}, {
+	// A draft a program (the Local API, godwit mcp, a plugin or Wit) created or
+	// changed; local only, never an IMAP keyword (ADR 0041).
+	`ALTER TABLE drafts ADD COLUMN from_program INTEGER NOT NULL DEFAULT 0`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

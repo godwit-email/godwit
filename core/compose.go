@@ -37,6 +37,10 @@ type Draft struct {
 	// included (refetch it after one). SaveDraft with a non-zero Revision
 	// fails with ErrStaleDraft unless it is still the stored one.
 	Revision int64
+	// FromProgram: a program (the Local API, godwit mcp, a plugin or Wit)
+	// created or changed it, so the interface labels it and offers
+	// ApproveDraft. Local only; the user's own edits keep it (ADR 0041).
+	FromProgram bool
 }
 
 // DraftAttachment is a file copied into the draft's directory.
@@ -282,8 +286,32 @@ func (s *Service) auditMCPDraft(ctx context.Context, action string, target int64
 	return nil
 }
 
+type programKey struct{}
+
+// withProgram marks ctx as a program's draft write that comes in through no
+// Local API role: a plugin's or a Wit rule's (ADR 0041).
+func withProgram(ctx context.Context) context.Context {
+	return context.WithValue(ctx, programKey{}, true)
+}
+
+// fromProgram is 1 when ctx writes a draft for a program: the Local API's
+// full or mcp role, or withProgram; 0 for the user's interface and the engine.
+func fromProgram(ctx context.Context) int {
+	if src, _ := ctx.Value(externalSourceKey{}).(string); (src != "" && uiSessionFromContext(ctx) == nil) || ctx.Value(programKey{}) != nil {
+		return 1
+	}
+	return 0
+}
+
 // saveDraft is SaveDraft, unaudited.
-func (s *Service) saveDraft(ctx context.Context, d Draft) (Draft, error) {
+func (s *Service) saveDraft(ctx context.Context, d Draft) (out Draft, err error) {
+	if fromProgram(ctx) == 1 { // an open thread shows it (GetThread)
+		defer func() {
+			if err == nil {
+				s.bus.Publish(events.Event{Type: events.DraftsChanged, AccountID: out.AccountID})
+			}
+		}()
+	}
 	// Draft changes and Send never interleave.
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
@@ -301,9 +329,9 @@ func (s *Service) saveDraft(ctx context.Context, d Draft) (Draft, error) {
 			return Draft{}, cmp.Or(err, ErrLocalArchive)
 		}
 		r, err := s.db.Execute(ctx, `INSERT INTO drafts(account_id, mode, source_message_id, to_addrs, cc_addrs, bcc_addrs,
-			reply_to, subject, body_html, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			reply_to, subject, body_html, updated_at, from_program) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			d.AccountID, d.Mode, nullID(d.SourceMessageID), encodeList(d.To), encodeList(d.Cc), encodeList(d.Bcc),
-			d.ReplyTo, d.Subject, d.HTML, now)
+			d.ReplyTo, d.Subject, d.HTML, now, fromProgram(ctx))
 		if err != nil {
 			return Draft{}, err
 		}
@@ -313,8 +341,8 @@ func (s *Service) saveDraft(ctx context.Context, d Draft) (Draft, error) {
 		return Draft{}, err
 	}
 	q, args := `UPDATE drafts SET to_addrs = ?, cc_addrs = ?, bcc_addrs = ?, reply_to = ?, subject = ?,
-		body_html = ?, updated_at = ?, revision = revision + 1 WHERE id = ?`,
-		[]any{encodeList(d.To), encodeList(d.Cc), encodeList(d.Bcc), d.ReplyTo, d.Subject, d.HTML, now, d.ID}
+		body_html = ?, updated_at = ?, revision = revision + 1, from_program = MAX(from_program, ?) WHERE id = ?`,
+		[]any{encodeList(d.To), encodeList(d.Cc), encodeList(d.Bcc), d.ReplyTo, d.Subject, d.HTML, now, fromProgram(ctx), d.ID}
 	if d.Revision != 0 {
 		q, args = q+" AND revision = ?", append(args, d.Revision)
 	}
@@ -379,7 +407,7 @@ func (s *Service) DraftForApproval(ctx context.Context, approvalID int64) (int64
 // read, covering rows stored before SaveDraft sanitized.
 func (s *Service) GetDraft(ctx context.Context, id int64) (Draft, error) {
 	rows, err := s.db.Query(ctx, `SELECT account_id, mode, source_message_id, to_addrs, cc_addrs, bcc_addrs, reply_to,
-		subject, body_html, updated_at, revision FROM drafts WHERE id = ?`, id)
+		subject, body_html, updated_at, revision, from_program FROM drafts WHERE id = ?`, id)
 	if err != nil {
 		return Draft{}, err
 	}
@@ -389,7 +417,8 @@ func (s *Service) GetDraft(ctx context.Context, id int64) (Draft, error) {
 	r := rows.Values[0]
 	d := Draft{ID: id, AccountID: store.Int(r[0]), Mode: store.Str(r[1]), SourceMessageID: store.Int(r[2]),
 		To: jsonList(store.Str(r[3])), Cc: jsonList(store.Str(r[4])), Bcc: jsonList(store.Str(r[5])),
-		ReplyTo: store.Str(r[6]), Subject: store.Str(r[7]), UpdatedAt: time.Unix(store.Int(r[9]), 0), Revision: store.Int(r[10])}
+		ReplyTo: store.Str(r[6]), Subject: store.Str(r[7]), UpdatedAt: time.Unix(store.Int(r[9]), 0), Revision: store.Int(r[10]),
+		FromProgram: store.Int(r[11]) != 0}
 	if d.HTML, err = s.sanitizeDraft(ctx, store.Str(r[8])); err != nil {
 		return Draft{}, err
 	}
@@ -447,7 +476,7 @@ func (s *Service) addAttachment(ctx context.Context, draftID, rev int64, filenam
 		return DraftAttachment{}, 0, err
 	}
 	rs, err := s.db.Transaction(ctx, []sqlite.Statement{{SQL: "INSERT INTO draft_attachments(draft_id, filename, content_type, size) VALUES (?, ?, ?, ?)",
-		Args: []any{draftID, filename, contentType, len(data)}}, bumpRevision(draftID)})
+		Args: []any{draftID, filename, contentType, len(data)}}, bumpRevision(ctx, draftID)})
 	if err != nil {
 		return DraftAttachment{}, 0, err
 	}
@@ -460,7 +489,7 @@ func (s *Service) addAttachment(ctx context.Context, draftID, rev int64, filenam
 	if err != nil {
 		os.Remove(path)
 		_, derr := s.db.Transaction(context.WithoutCancel(ctx), []sqlite.Statement{
-			{SQL: "DELETE FROM draft_attachments WHERE id = ?", Args: []any{id}}, bumpRevision(draftID)})
+			{SQL: "DELETE FROM draft_attachments WHERE id = ?", Args: []any{id}}, bumpRevision(ctx, draftID)})
 		now, _ := s.draftRevision(context.WithoutCancel(ctx), draftID)
 		return DraftAttachment{}, now, errors.Join(err, derr)
 	}
@@ -499,8 +528,10 @@ func (s *Service) checkRevision(ctx context.Context, draftID, rev int64) error {
 
 // bumpRevision marks the draft changed: an attachment change makes the
 // proposals and saves bound to its old revision stale, as a body change does.
-func bumpRevision(draftID int64) sqlite.Statement {
-	return sqlite.Statement{SQL: "UPDATE drafts SET revision = revision + 1, updated_at = ? WHERE id = ?", Args: []any{time.Now().Unix(), draftID}}
+// A program's change marks it FromProgram.
+func bumpRevision(ctx context.Context, draftID int64) sqlite.Statement {
+	return sqlite.Statement{SQL: "UPDATE drafts SET revision = revision + 1, updated_at = ?, from_program = MAX(from_program, ?) WHERE id = ?",
+		Args: []any{time.Now().Unix(), fromProgram(ctx), draftID}}
 }
 
 // RemoveAttachment deletes the attachment from the draft and its file.
@@ -525,7 +556,7 @@ func (s *Service) removeAttachment(ctx context.Context, draftID, attachmentID, r
 		return 0, fmt.Errorf("attachment %d not found in draft %d", attachmentID, draftID)
 	}
 	if _, err := s.db.DurableTransaction(ctx, []sqlite.Statement{
-		{SQL: "DELETE FROM draft_attachments WHERE id = ?", Args: []any{attachmentID}}, bumpRevision(draftID)}); err != nil {
+		{SQL: "DELETE FROM draft_attachments WHERE id = ?", Args: []any{attachmentID}}, bumpRevision(ctx, draftID)}); err != nil {
 		return 0, err
 	}
 	if err := os.Remove(store.Str(rows.Values[0][0])); err != nil && !os.IsNotExist(err) {

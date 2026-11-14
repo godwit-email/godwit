@@ -246,6 +246,7 @@
   "error_signature_unsaved": "The signature was not saved",
   "error_stale_approval": "This action changed after it was proposed. Review it again.",
   "error_stale_draft": "The draft was changed elsewhere.",
+  "error_not_program_draft": "No program wrote this draft.",
   "error_too_large": "The attachment exceeds the size limit.",
   "error_message_too_large": "This is too large to pass to Godwit’s background process in one go.",
   "error_link_ref": "A link in this draft points to an email that is no longer available. Replace the link before sending.",
@@ -336,6 +337,9 @@
     }
   },
   "mail_draft_send_disabled": "Being edited in the compose window; send it there",
+  "mail_draft_from_program": "Draft from a program",
+  "mail_draft_from_program_help": "A program (an agent, a script, a plugin or Wit) wrote or changed this draft. Check the recipients and the text before you send it.",
+  "mail_draft_approve": "Approve and send",
   "mail_empty": "No mail",
   "mail_failed": "{arg1, number, ::group-off} messages could not be processed",
   "@mail_failed": {
