@@ -4,7 +4,7 @@ magpie 这样的 Agent 网关接入一个 agent，是把网关地址、给它的
 
 | 文件 | 同步成 |
 |---|---|
-| `models.json` | 模型服务，`{"<名字>": {by, baseURL, apiKey, kind, models: [{id, name, context, …}], model}}` |
+| `models.json` | 模型服务，`{"<名字>": {by, baseURL, apiKey, kind, models: [{id, name, context, …}], model, decisionModels: [{id, endpoints, …}]}}` |
 | `mcp.json` | MCP 服务器，Claude 的 `{"mcpServers": {…}}` 写法 |
 | `skills/` | 技能，每个一个文件夹 |
 | `AGENTS.md` | Wit 的系统提示里的用户指令 |
@@ -22,6 +22,7 @@ magpie 这样的 Agent 网关接入一个 agent，是把网关地址、给它的
 - **技能**：只有这个目录允许顶层是链接的文件夹，因为 magpie 是从自己的资源库链接过来的（实测如此）。技能内部的链接仍然不读，`scripts/` 仍然不执行（[0009](0009-skills-are-prompts-only.md)）。
 - **指令**：`AGENTS.md` 最多读 16 KB，转义后作为 `<user_instructions>` 放在 Ask 和 Assist 的系统提示末尾，在安全说明之后，并写明与前面的规则冲突时不遵循。
 - **模型照网关的原样写**：`models` 是网关描述的模型对象（magpie 的 `connect` 收到的样子，带 `efforts`、`pricing` 等），Godwit 只读用得上的：`name` 是显示名（magpie 的路由组都有自己的名字），`context` 是上下文窗口（token），都优先于 models.dev，因为 models.dev 不认识路由组。插件因此只做转交，Godwit 用到新字段时不必改插件。不像名字的名字、不在 1000 到一亿之间的窗口丢掉，重复的模型只算一次，都不影响服务本身；读不懂的条目整条跳过，它原有的服务保持不变。
+- **判断模型**：`decisionModels` 是网关的判断模型（magpie 0.1.4170 起在 `connect` 里给出）。托管服务据此打开判断能力：取第一个能用的模型，`endpoints` 里有 `/v1/systemone` 就用 System One（它能列出模型），否则用 Decisions；没有就不开。用哪个服务做判断仍由用户在 Godwit 里选，网关不替用户选。
 - **逐键写**：插件按键路径逐个写，不把条目作为一个对象返回：magpie 靠存它的 key 的那个键判断是否已接入，模型键也在同一个条目里，整体返回时两者都找不到（实测）。断开后留下的空对象按断开处理。
 - **同步时机**：启动时，之后每 3 秒比较一次文件的大小和修改时间。不用 fsnotify。
 

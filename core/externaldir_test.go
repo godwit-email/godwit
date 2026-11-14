@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -565,4 +566,35 @@ func TestExternalMCPNameWithSpacesSkipped(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 	assert.Equal(t, "tool", list[0].Name)
+}
+
+func TestExternalJudgeModels(t *testing.T) {
+	s, dir := externalSvc(t)
+	ctx := t.Context()
+	write := func(decision ...map[string]any) {
+		e := magpieEntry("k", "", "m")
+		e["magpie"].(map[string]any)["decisionModels"] = decision
+		writeExternal(t, dir, externalModels, e)
+		s.syncExternal(ctx)
+	}
+	judge := func() (string, string) {
+		m, ok := managedService(t, s, "magpie")
+		require.True(t, ok)
+		return m.JudgeFormat, m.JudgeModel
+	}
+
+	write(map[string]any{"id": "typesafe/jev-latest", "name": "jev-latest", "provider": "typesafe", "endpoints": []string{"/v1/systemone", "/v1/decisions"}})
+	f, m := judge()
+	assert.Equal(t, string(ai.FormatSystemOne), f, "System One where the model answers it")
+	assert.Equal(t, "typesafe/jev-latest", m)
+
+	write(map[string]any{"id": "openai/gpt-6-luna", "endpoints": []string{"/v1/decisions"}})
+	f, m = judge()
+	assert.Equal(t, string(ai.FormatDecisions), f)
+	assert.Equal(t, "openai/gpt-6-luna", m)
+
+	write() // none: no judging
+	f, m = judge()
+	assert.Empty(t, f)
+	assert.Empty(t, m)
 }

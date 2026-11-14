@@ -21,15 +21,22 @@ test("shows Godwit's own icon, as the package gives it", async () => {
   expect(pkg.magpie.icon).toBe(agent.icon)
 })
 
+const jev = { id: "typesafe/jev-latest", name: "jev-latest", provider: "typesafe", endpoints: ["/v1/systemone", "/v1/decisions"] }
+
 test("writes the service key by key, with magpie's models as it describes them", () => {
-  const out = connect({ gateway, model: cheap, models: [haiku, cheap], agent: { id: "godwit" } })
+  const out = connect({ gateway, model: cheap, models: [haiku, cheap], decisionModels: [jev], agent: { id: "godwit" } })
   expect(out).toEqual({
     "magpie.by": "magpie",
     "magpie.baseURL": "http://127.0.0.1:3425/v1",
     "magpie.apiKey": "magpie-godwit", // a key of its own: magpie reads it to tell Godwit is connected
     "magpie.kind": "openai",
     "magpie.models": [haiku, cheap],
+    "magpie.decisionModels": [jev],
   })
+})
+
+test("writes no judge models before magpie gives any", () => {
+  expect(connect({ gateway, models: [haiku] })["magpie.decisionModels"]).toEqual([])
 })
 
 test("offers the chosen model even when the list leaves it out", () => {

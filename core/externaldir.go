@@ -54,7 +54,31 @@ type externalService struct {
 	Kind    string          `json:"kind"`
 	Models  []externalModel `json:"models"`
 	Model   string          `json:"model"`
-	bad     error           // the entry did not parse: skipped, and what it had is kept
+	// DecisionModels are the gateway's judge models (magpie's connect gets
+	// them from 0.1.4170); the service judges with the first one it can.
+	DecisionModels []externalDecisionModel `json:"decisionModels"`
+	bad            error                   // the entry did not parse: skipped, and what it had is kept
+}
+
+// externalDecisionModel is a judge model as the gateway describes it:
+// Endpoints are the gateway paths it answers, "/v1/systemone" or "/v1/decisions".
+type externalDecisionModel struct {
+	ID        string   `json:"id"`
+	Endpoints []string `json:"endpoints"`
+}
+
+// judge is the judge format and model of the gateway's first judge model it
+// can use: System One where it answers it (it lists its models), else
+// Decisions; none when no model answers either.
+func (e externalService) judge() (format, model string) {
+	for _, f := range []ai.JudgeFormat{ai.FormatSystemOne, ai.FormatDecisions} {
+		for _, d := range e.DecisionModels {
+			if d.ID != "" && len(d.ID) <= 200 && !strings.ContainsFunc(d.ID, unicode.IsControl) && slices.Contains(d.Endpoints, "/v1"+f.Path()) {
+				return string(f), d.ID
+			}
+		}
+	}
+	return "", ""
 }
 
 // parseExternalServices reads models.json entry by entry, so one entry it
@@ -449,9 +473,10 @@ func (s *Service) syncExternalModels(ctx context.Context, services map[string]ex
 				continue
 			}
 		}
+		judgeFormat, judgeModel := e.judge()
 		in := ModelServiceInput{Name: name, Kind: e.Kind, BaseURL: e.BaseURL, APIKey: e.APIKey, KeyAction: KeyReplace,
-			Models: e.ids(), Provider: ProviderOther, managedBy: e.By, ownModels: e.ownModels(),
-			managedHash: entryHash([]any{e.By, e.BaseURL, e.Kind, e.Models, sha256.Sum256([]byte(e.APIKey))})}
+			Models: e.ids(), Provider: ProviderOther, JudgeFormat: judgeFormat, JudgeModel: judgeModel, managedBy: e.By, ownModels: e.ownModels(),
+			managedHash: entryHash([]any{e.By, e.BaseURL, e.Kind, e.Models, judgeFormat, judgeModel, sha256.Sum256([]byte(e.APIKey))})}
 		switch {
 		case !exists:
 			m, err := s.AddModelService(ctx, in)

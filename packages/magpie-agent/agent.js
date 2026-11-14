@@ -25,10 +25,10 @@ export const agent = {
 
 // connect is the service Godwit adds: the gateway's address, this agent's own
 // key and every model magpie gives it, as magpie describes them (name, context
-// window, efforts…); Godwit takes what it uses. Key by key, not one object:
+// window, efforts…) and its judge models; Godwit takes what it uses. Key by key, not one object:
 // magpie tells it is connected by the key holding its key, and the model key
 // sits beside them. magpie calls it again when the models change.
-export function connect({ gateway, model, models }) {
+export function connect({ gateway, model, models, decisionModels }) {
   if (!gateway?.v1 || !gateway?.key) throw new Error("magpie gave no gateway address or key")
   const list = [...(models ?? [])]
   if (model?.id && !list.some((m) => m.id === model.id)) list.push(model) // the chosen one is always offered
@@ -38,5 +38,6 @@ export function connect({ gateway, model, models }) {
     "magpie.apiKey": gateway.key,
     "magpie.kind": "openai",
     "magpie.models": list,
+    "magpie.decisionModels": decisionModels ?? [], // the judge models, magpie 0.1.4170 on
   }
 }
