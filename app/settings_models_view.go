@@ -483,17 +483,15 @@ func formatSegments(c *ui.Context, label string, list []string, sel *string) (ch
 	if len(list) < 2 {
 		return false
 	}
-	t, th := theme.Of(c), c.Theme()
-	ui.RadioGroup(c, func() {
-		for _, id := range list {
-			r := ui.RadioBase(c.Key(id), sel, id).Height(th.Space(7)).PaddingX(th.Space(2.5)).Radius(t.Radius.Md).TextColor(t.Muted)
-			changed = changed || r.Changed()
-			if *sel == id {
-				kit.Elevate(c, r.Background(t.Background).TextColor(t.Foreground), theme.ShadowSm)
-			}
-			r.Children(func() { kit.Text(c, formats[id].label, t.Text.Xs) })
-		}
-	}).Row().Label(label).Wrap().Gap(th.Space(1)).Padding(th.Space(0.5)).Radius(t.Radius.Lg).Background(t.Hover).AlignSelf(ui.Start)
+	labels := make([]string, len(list))
+	for i, id := range list {
+		labels[i] = formats[id].label
+	}
+	i := max(0, slices.Index(list, *sel))
+	kit.Tabs(c, &i, labels...).Label(label).AlignSelf(ui.Start)
+	if list[i] != *sel {
+		*sel, changed = list[i], true
+	}
 	return changed
 }
 
@@ -550,13 +548,10 @@ func (m *modelsView) tiles(c *ui.Context, f *modelForm) {
 				sub = strings.Join(caps, " · ")
 			}
 			name := svcProvider(p)
-			b := ui.RadioBase(c.Key(p), &f.provider, p).Label(name).Grow(1).Basis(0).MinWidth(0).Radius(t.Radius.Xl).Padding(th.Space(2.5), th.Space(3)).Border(theme.Stroke, t.Border).Background(t.Background)
+			b := kit.Choice(c, ui.RadioBase(c.Key(p), &f.provider, p).Label(name).Grow(1).Basis(0).MinWidth(0).Radius(t.Radius.Xl).Padding(th.Space(2.5), th.Space(3)), f.provider == p, kit.ChoiceOpts{})
 			if b.Changed() { // another provider starts the form over
 				m.cancelForm()
 				m.form = newForm(p)
-			}
-			if f.provider == p {
-				b.Background(t.Hover).Border(theme.Stroke, t.Primary)
 			}
 			b.Children(func() {
 				ui.Column(c).Gap(th.Space(0.5)).Children(func() {
@@ -669,15 +664,7 @@ func (m *modelsView) modelPicker(c *ui.Context, f *modelForm, p picker) {
 			ph := i18n.Tf("settings.models.filter", len(p.offered))
 			kit.Input(c, &p.view.query, kit.InputOpts{Placeholder: ph, Flat: true, Size: kit.SizeSm}).Label(ph).Grow(1).MinWidth(theme.ModelIDInputWidth)
 			label := i18n.T("settings.models.only_on")
-			b := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.view.onlyOn = !p.view.onlyOn }}).Label(label).Height(th.Space(7)).Padding(0, th.Space(2.5)).Radius(t.Radius.Md)
-			fg := t.Muted
-			if p.view.onlyOn {
-				b.Background(t.Hover).Border(theme.Stroke, t.Primary)
-				fg = t.Foreground
-			} else {
-				b.Background(t.Background).Border(theme.Stroke, t.Border)
-			}
-			b.Children(func() { kit.Text(c, label, t.Text.Xs).TextColor(fg) })
+			kit.ToggleChip(c, label, p.view.onlyOn, kit.ChoiceOpts{}).OnClick(func() { p.view.onlyOn = !p.view.onlyOn })
 			manual()
 		})
 	}
@@ -689,16 +676,9 @@ func (m *modelsView) modelPicker(c *ui.Context, f *modelForm, p picker) {
 				if n := f.names[name]; n != "" {
 					label, font = n, "" // a display name reads as prose, an ID as code
 				}
-				b := kit.Pressable(c.Key(name), kit.PressableOpts{Bare: true}).Label(label).Height(th.Space(7)).Padding(0, th.Space(2.5)).Radius(t.Radius.Md)
-				fg := t.Foreground
-				if on {
-					b.Background(t.Hover).Border(theme.Stroke, t.Primary)
-				} else {
-					b.Background(t.Background).Border(theme.Stroke, t.DividerHover).BorderStyle(ui.BorderDashed) // the design's neutral-300 dash
-					fg = t.Muted
-				}
+				b := kit.ToggleChipFrame(c.Key(name), on, kit.ChoiceOpts{Dashed: true}).Label(label) // offered, in dashes, until it is added
 				r := f.modelTests[p.cap+"\n"+name]
-				b.Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+				b.Children(func() {
 					if r.state != "" { // its test from the menu
 						dot := kit.Idle
 						switch r.state {
@@ -709,7 +689,7 @@ func (m *modelsView) modelPicker(c *ui.Context, f *modelForm, p picker) {
 						}
 						kit.StatusDot(c, dot)
 					}
-					tx := kit.Text(c, label, t.Text.Xs).TextColor(fg)
+					tx := ui.Text(c, label)
 					if font != "" {
 						tx.Font(font)
 					}

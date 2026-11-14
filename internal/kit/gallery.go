@@ -150,6 +150,13 @@ func Gallery(c *ui.Context, g *GalleryState) {
 					})
 				})
 			})
+			section("Choice", func() {
+				row(func() {
+					ToggleChip(c, "On", true, ChoiceOpts{})
+					ToggleChip(c, "Off", false, ChoiceOpts{})
+					ToggleChip(c, "Offered", false, ChoiceOpts{Dashed: true})
+				})
+			})
 			section("Badge", func() {
 				row(func() {
 					Badge(c, "Neutral")

@@ -75,21 +75,60 @@ func Radio[T comparable](c *ui.Context, sel *T, v T, label string) ui.Element {
 	})
 }
 
+// ChoiceOpts say how a Choice looks while it is not the one chosen: Dashed
+// in a dashed outline, as a model on offer but not added; Card on the card
+// gray with no outline, as a tile among others on a card.
+type ChoiceOpts struct{ Dashed, Card bool }
+
+// Choice makes e one of several the user picks among and returns it, drawn
+// the one way a choice is: chosen, the hover gray in a primary outline;
+// else the background in the border's (or as o says), half way to the hover
+// gray under the pointer. e is the caller's control, a RadioBase or a
+// Pressable: its role, state and corner are its own.
+func Choice(c *ui.Context, e ui.Element, on bool, o ChoiceOpts) ui.Element {
+	t := theme.Of(c)
+	fill, edge := t.Background, t.Border
+	if o.Card {
+		fill, edge = t.Card, t.Border.Alpha(0)
+	}
+	switch {
+	case on:
+		fill, edge = t.Hover, t.Primary
+	case e.Hovered():
+		fill = t.Hover.Mix(fill, 0.5)
+	}
+	e.Background(fill).Border(theme.Stroke, edge).Transition(colors(theme.MotionFast))
+	if o.Dashed && !on {
+		e.Border(theme.Stroke, t.DividerHover).BorderStyle(ui.BorderDashed)
+	}
+	return e
+}
+
+// ToggleChipFrame is a chip that is on or off without its content: 28 high
+// in xs text, muted while off. Give it its Label, Children and OnClick.
+func ToggleChipFrame(c *ui.Context, on bool, o ChoiceOpts) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	b := ui.ButtonBase(c).Height(th.Space(7)).PaddingX(th.Space(2.5)).Gap(th.Space(1.5)).Radius(controlRadius(c, th.Space(7))).FontSize(t.Text.Xs).TextColor(t.Muted)
+	if on {
+		b.TextColor(t.Foreground)
+	}
+	return Choice(c, b, on, o)
+}
+
+// ToggleChip is a ToggleChipFrame showing label: a filter that is on or
+// off, a model added or not.
+func ToggleChip(c *ui.Context, label string, on bool, o ChoiceOpts) ui.Element {
+	return ToggleChipFrame(c, on, o).Label(label).Children(func() { ui.Text(c, label) })
+}
+
 // RadioCard is a radio whose whole card clicks: the dot, label and help
-// under it, bordered while it is the choice.
+// under it, drawn as a Choice on a card.
 func RadioCard[T comparable](c *ui.Context, sel *T, v T, label, help string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	on := *sel == v
 	card := ui.RadioBase(c, sel, v).FillWidth().AlignItems(ui.Start).Gap(th.Space(2)).Padding(th.Space(2)).
-		Radius(t.Radius.Lg).Label(label).Transition(colors(theme.MotionFast))
-	edge, fill := t.Border.Alpha(0), t.Card
-	switch {
-	case on:
-		edge, fill = t.Foreground, t.Hover.Mix(t.Card, 0.5)
-	case card.Hovered():
-		fill = t.Hover.Mix(t.Card, 0.5)
-	}
-	return card.Background(fill).Border(theme.Hairline, edge).Children(func() {
+		Radius(t.Radius.Lg).Label(label)
+	return Choice(c, card, on, ChoiceOpts{Card: true}).Children(func() {
 		radioDot(c, on)
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 			ui.Text(c, label)

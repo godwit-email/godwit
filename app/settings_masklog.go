@@ -183,13 +183,8 @@ func (p *settingsPage) maskLogPage(c *ui.Context) {
 			color       ui.Color
 		}{{maskAll, "all", len(reqs), t.Foreground}, {core.MaskBlock, "blocked", blocked, t.DangerText}, {core.MaskWarn, "warned", warned, t.WarningText}, {core.MaskMask, "masked", masked, t.Foreground}} {
 			label := i18n.T("settings.masking.log." + tile.key)
-			b := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { f.result = tile.result }}).
-				Grow(1).Shrink(1).Basis(0).Padding(th.Space(3)).Radius(t.Radius.Xl).Background(t.Card).Label(label)
-			if f.result == tile.result {
-				b.Border(theme.Stroke, t.Foreground)
-			} else {
-				b.Border(theme.Stroke, t.Card)
-			}
+			b := kit.Choice(c, kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { f.result = tile.result }}).
+				Grow(1).Shrink(1).Basis(0).Padding(th.Space(3)).Radius(t.Radius.Xl).Label(label), f.result == tile.result, kit.ChoiceOpts{Card: true})
 			b.Children(func() {
 				ui.Column(c).Gap(th.Space(0.5)).Children(func() {
 					kit.Text(c, label, t.Text.Xs).TextColor(t.Muted)
