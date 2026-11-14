@@ -552,3 +552,17 @@ func TestExternalLastSkillRemovedAfterAConfigChangeNotifies(t *testing.T) {
 		}
 	}
 }
+
+func TestExternalMCPNameWithSpacesSkipped(t *testing.T) {
+	s, dir := externalSvc(t)
+	ctx := t.Context()
+	writeExternal(t, dir, externalModels, magpieEntry("k", "", "m"))
+	writeExternal(t, dir, externalMCP, map[string]any{"mcpServers": map[string]any{
+		" search ": map[string]any{"command": "magpie-search"},
+		"tool":     map[string]any{"command": "magpie-tool"}}})
+	s.syncExternal(ctx)
+	list, err := s.ListMCPServers(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, "tool", list[0].Name)
+}

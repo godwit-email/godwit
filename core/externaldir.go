@@ -547,6 +547,10 @@ func (s *Service) syncExternalMCP(ctx context.Context, servers map[string]extern
 	}
 	for _, name := range slices.Sorted(maps.Keys(servers)) {
 		e := servers[name]
+		if name != strings.TrimSpace(name) { // saved trimmed, it would never match its entry again
+			slog.Warn("external MCP server skipped: spaces around its name", "name", name)
+			continue
+		}
 		in := MCPServerInput{Name: name, Command: e.Command, Args: e.Args, Env: nonEmpty(e.Env), URL: e.URL, Headers: nonEmpty(e.Headers),
 			managedBy: by, managedHash: entryHash(e)}
 		switch {
