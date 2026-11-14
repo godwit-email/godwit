@@ -598,3 +598,23 @@ func TestExternalJudgeModels(t *testing.T) {
 	assert.Empty(t, f)
 	assert.Empty(t, m)
 }
+
+func TestExternalMCPNamedOnceTheGatewayIs(t *testing.T) {
+	s, dir := externalSvc(t)
+	ctx := t.Context()
+	// mcp.json is read before models.json names the gateway, as when both are written at once
+	writeExternal(t, dir, externalMCP, map[string]any{"mcpServers": map[string]any{"tool": map[string]any{"command": "magpie-tool"}}})
+	s.syncExternal(ctx)
+	list, err := s.ListMCPServers(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.NoError(t, s.GrantMCPServer(ctx, list[0].ID))
+
+	writeExternal(t, dir, externalModels, magpieEntry("k", "", "m"))
+	s.syncExternal(ctx)
+	list, err = s.ListMCPServers(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, "magpie", list[0].ManagedBy)
+	assert.True(t, list[0].Granted, "a new label keeps the grant")
+}

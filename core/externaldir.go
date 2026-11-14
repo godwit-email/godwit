@@ -185,6 +185,7 @@ func (s *Service) syncExternal(ctx context.Context) {
 					if err := s.writeList(ctx, externalByKey, []string{b}); err != nil {
 						slog.Warn("external gateway name not saved", "err", err)
 					}
+					delete(s.extSeen, externalMCP) // its servers may have come in before the name: named again below
 				}
 				break
 			}
@@ -615,6 +616,11 @@ func (s *Service) syncExternalMCP(ctx context.Context, servers map[string]extern
 			if _, err := s.UpdateMCPServer(ctx, old.ID, in); err != nil { // its grant goes: what it runs changed
 				failed = errors.Join(failed, fmt.Errorf("update %s: %w", name, err))
 			}
+		case old.ManagedBy != by: // the same server, its gateway named since: a label, the grant kept
+			if _, err := s.db.DurableExecute(ctx, "UPDATE mcp_servers SET managed_by = ? WHERE id = ?", by, old.ID); err != nil {
+				return err
+			}
+			s.bus.Publish(events.Event{Type: events.MCPChanged})
 		}
 	}
 	return failed
