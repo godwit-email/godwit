@@ -53,7 +53,7 @@ func Checkbox(c *ui.Context, on *bool, label string) ui.Element {
 		el.Gap(th.Space(2))
 	}
 	return el.Children(func() {
-		box := ui.Box(c).Size(theme.Control, theme.Control).Shrink(0).Radius(t.Radius.Sm).Border(theme.Stroke, t.Input).Background(t.Background).Center()
+		box := ui.Box(c).Size(theme.Control, theme.Control).Shrink(0).Radius(t.Radius.Sm).Border(theme.Stroke, t.Input).Background(t.Background).Center().Transition(colors(theme.MotionFast))
 		Elevate(c, box, theme.ShadowXs)
 		if *on {
 			box.Background(t.Primary).Border(theme.Stroke, t.Primary).TextColor(t.PrimaryText).Children(func() {
@@ -139,7 +139,7 @@ func RadioCard[T comparable](c *ui.Context, sel *T, v T, label, help string) ui.
 
 func radioDot(c *ui.Context, on bool) {
 	t := theme.Of(c)
-	dot := ui.Box(c).Size(theme.Control, theme.Control).Radius(t.Radius.Full).Border(theme.Stroke, t.Input).Background(t.Background).Center().Shrink(0)
+	dot := ui.Box(c).Size(theme.Control, theme.Control).Radius(t.Radius.Full).Border(theme.Stroke, t.Input).Background(t.Background).Center().Shrink(0).Transition(colors(theme.MotionFast))
 	Elevate(c, dot, theme.ShadowXs)
 	if on {
 		dot.Border(theme.Stroke, t.Primary).Children(func() { ui.Box(c).Size(theme.RadioDot, theme.RadioDot).Radius(t.Radius.Full).Background(t.Primary) })

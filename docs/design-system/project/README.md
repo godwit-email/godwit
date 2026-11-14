@@ -43,7 +43,7 @@ The `size` tokens are the app's fixed measures: sidebars 248 (240–480 by drag)
 
 ## Motion
 
-Hover and selection change over 120 ms, moves over 200 ms, ease-out. An overlay fades in rising 4 px (a toast 8) and fades out over 120 ms. A pressed button goes a step past its hover. With reduced motion everything appears at once.
+Hover and selection change over 120 ms, moves over 200 ms, ease-out. An overlay fades in rising 4 px (a toast 8) and fades out over 120 ms. A pressed button goes a step past its hover. What marks the chosen one of a set slides to it over 200 ms rather than jumping: a segmented list's raised segment, an underlined list's line, the page switch's pill. A control that flips (a switch, a check box, a radio) changes color over 120 ms. A menu's highlight follows the pointer and the keys at once. With reduced motion everything appears at once.
 
 ## The web pages' look
 
