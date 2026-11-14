@@ -121,8 +121,8 @@ func (p *settingsPage) syncSettings() {
 // no-translation settings alike, in the order of their tags.
 var languages = []struct{ tag, name string }{
 	{"de", "Deutsch"}, {"en", "English"}, {"es", "Español"}, {"fr", "Français"}, {"it", "Italiano"},
-	{"ja", "日本語"}, {"ko", "한국어"}, {"nl", "Nederlands"}, {"pt", "Português"}, {"ru", "Русский"},
-	{"tr", "Türkçe"}, {"vi", "Tiếng Việt"}, {"zh-Hans", "简体中文"}, {"zh-Hant", "繁體中文"},
+	{"ja", "日本語"}, {"ko", "한국어"}, {"nl", "Nederlands"}, {"pl", "Polski"}, {"pt", "Português"},
+	{"ru", "Русский"}, {"tr", "Türkçe"}, {"vi", "Tiếng Việt"}, {"zh-Hans", "简体中文"}, {"zh-Hant", "繁體中文"},
 }
 
 func isZhTW(tag string) bool {
@@ -164,6 +164,8 @@ func langName(tag string) string {
 		return "Русский"
 	case strings.HasPrefix(t, "nl"):
 		return "Nederlands"
+	case strings.HasPrefix(t, "pl"):
+		return "Polski"
 	case strings.HasPrefix(t, "tr"):
 		return "Türkçe"
 	case strings.HasPrefix(t, "vi"):

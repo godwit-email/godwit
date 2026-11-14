@@ -389,6 +389,7 @@ func languageName(code string) string {
 		"ja": "Japanese",
 		"ko": "Korean",
 		"nl": "Dutch",
+		"pl": "Polish",
 		"pt": "Portuguese",
 		"ru": "Russian",
 		"tr": "Turkish",

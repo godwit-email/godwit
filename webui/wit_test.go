@@ -121,7 +121,7 @@ func TestComposeWitInfo(t *testing.T) {
 	assert.Equal(t, []Language{
 		{"ja", "日本語"}, {"de", "Deutsch"}, {"zh-Hans", "简体中文"}, {"zh-Hant", "繁體中文"}, {"en", "English"},
 		{"ko", "한국어"}, {"fr", "Français"}, {"es", "Español"}, {"pt", "Português"}, {"it", "Italiano"},
-		{"ru", "Русский"}, {"nl", "Nederlands"}, {"tr", "Türkçe"}, {"vi", "Tiếng Việt"},
+		{"ru", "Русский"}, {"nl", "Nederlands"}, {"pl", "Polski"}, {"tr", "Türkçe"}, {"vi", "Tiếng Việt"},
 	}, info.Languages)
 	assert.Empty(t, info.Chips)
 	st2, err := f.page.Load(f.ctx(1))

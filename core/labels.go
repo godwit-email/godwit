@@ -61,7 +61,7 @@ var presetLabels = []presetLabel{
 		name: plugins.Text{Default: "Codes", ByLang: map[string]string{
 			"zh-Hans": "验证码", "zh-Hant": "驗證碼", "ja": "認証コード", "ko": "인증번호",
 			"de": "Codes", "fr": "Codes", "es": "Códigos", "pt": "Códigos",
-			"it": "Codici", "ru": "Коды", "nl": "Codes", "tr": "Kodlar", "vi": "Mã xác minh",
+			"it": "Codici", "ru": "Коды", "nl": "Codes", "pl": "Kody", "tr": "Kodlar", "vi": "Mã xác minh",
 		}},
 		desc: plugins.Text{Default: "One-time codes or sign-in links for logging in, signing up or paying", ByLang: map[string]string{
 			"zh-Hans": "登录、注册、支付时收到的一次性验证码或登录链接",
@@ -75,6 +75,7 @@ var presetLabels = []presetLabel{
 			"it":      "Codici monouso o link di accesso per accedere, registrarsi o pagare",
 			"ru":      "Одноразовые коды или ссылки для входа, регистрации и оплаты",
 			"nl":      "Eenmalige codes of inloglinks voor inloggen, registreren of betalen",
+			"pl":      "Jednorazowe kody lub linki do logowania, rejestracji lub płatności",
 			"tr":      "Giriş yapma, kaydolma veya ödeme için tek kullanımlık kodlar ve giriş bağlantıları",
 			"vi":      "Mã dùng một lần hoặc liên kết đăng nhập khi đăng nhập, đăng ký hoặc thanh toán",
 		}},
@@ -84,7 +85,7 @@ var presetLabels = []presetLabel{
 		name: plugins.Text{Default: "Bills", ByLang: map[string]string{
 			"zh-Hans": "账单", "zh-Hant": "帳單", "ja": "請求・明細", "ko": "청구서",
 			"de": "Rechnungen", "fr": "Factures", "es": "Facturas", "pt": "Faturas",
-			"it": "Fatture", "ru": "Счета", "nl": "Facturen", "tr": "Faturalar", "vi": "Hóa đơn",
+			"it": "Fatture", "ru": "Счета", "nl": "Facturen", "pl": "Faktury", "tr": "Faturalar", "vi": "Hóa đơn",
 		}},
 		desc: plugins.Text{Default: "Bills, receipts, invoices and payment notices", ByLang: map[string]string{
 			"zh-Hans": "账单、收据、发票和扣款通知",
@@ -98,6 +99,7 @@ var presetLabels = []presetLabel{
 			"it":      "Fatture, ricevute e avvisi di pagamento",
 			"ru":      "Счета, квитанции, чеки и уведомления об оплате",
 			"nl":      "Facturen, betalingsbewijzen, bonnen en afschrijvingen",
+			"pl":      "Faktury, potwierdzenia płatności, paragony i obciążenia",
 			"tr":      "Faturalar, makbuzlar ve ödeme bildirimleri",
 			"vi":      "Hóa đơn, biên lai và thông báo thanh toán",
 		}},
@@ -107,7 +109,7 @@ var presetLabels = []presetLabel{
 		name: plugins.Text{Default: "Orders", ByLang: map[string]string{
 			"zh-Hans": "订单与物流", "zh-Hant": "訂單與物流", "ja": "注文・配送", "ko": "주문 및 배송",
 			"de": "Bestellungen", "fr": "Commandes", "es": "Pedidos", "pt": "Pedidos",
-			"it": "Ordini", "ru": "Заказы", "nl": "Bestellingen", "tr": "Siparişler", "vi": "Đơn hàng",
+			"it": "Ordini", "ru": "Заказы", "nl": "Bestellingen", "pl": "Zamówienia", "tr": "Siparişler", "vi": "Đơn hàng",
 		}},
 		desc: plugins.Text{Default: "Order confirmations, shipping and delivery updates", ByLang: map[string]string{
 			"zh-Hans": "网购订单确认、发货和快递进度",
@@ -121,6 +123,7 @@ var presetLabels = []presetLabel{
 			"it":      "Conferme d’ordine, spedizioni e aggiornamenti sulla consegna",
 			"ru":      "Подтверждения заказов, отправка и статус доставки",
 			"nl":      "Bestelbevestigingen, verzending en bezorgupdates",
+			"pl":      "Potwierdzenia zamówień, wysyłki i informacje o dostawie",
 			"tr":      "Sipariş onayları, kargo ve teslimat güncellemeleri",
 			"vi":      "Xác nhận đơn hàng, vận chuyển và cập nhật giao hàng",
 		}},
@@ -130,7 +133,7 @@ var presetLabels = []presetLabel{
 		name: plugins.Text{Default: "Travel", ByLang: map[string]string{
 			"zh-Hans": "航班与出行", "zh-Hant": "航班與出行", "ja": "旅行・移動", "ko": "여행 및 교통",
 			"de": "Reisen", "fr": "Voyages", "es": "Viajes", "pt": "Viagens",
-			"it": "Viaggi", "ru": "Поездки", "nl": "Reizen", "tr": "Seyahat", "vi": "Di chuyển",
+			"it": "Viaggi", "ru": "Поездки", "nl": "Reizen", "pl": "Podróże", "tr": "Seyahat", "vi": "Di chuyển",
 		}},
 		desc: plugins.Text{Default: "Flights, train tickets, hotel bookings and check-in reminders", ByLang: map[string]string{
 			"zh-Hans": "机票、火车票、酒店预订和值机提醒",
@@ -144,6 +147,7 @@ var presetLabels = []presetLabel{
 			"it":      "Voli, biglietti del treno, prenotazioni alberghiere e promemoria di check-in",
 			"ru":      "Авиабилеты, билеты на поезд, бронирование отелей и напоминания о регистрации",
 			"nl":      "Vluchten, treinkaartjes, hotelboekingen en incheckherinneringen",
+			"pl":      "Loty, bilety kolejowe, rezerwacje hoteli i przypomnienia o odprawie",
 			"tr":      "Uçuşlar, tren biletleri, otel rezervasyonları ve check-in hatırlatmaları",
 			"vi":      "Vé máy bay, vé tàu, đặt phòng khách sạn và nhắc làm thủ tục",
 		}},
@@ -153,7 +157,7 @@ var presetLabels = []presetLabel{
 		name: plugins.Text{Default: "Invites", ByLang: map[string]string{
 			"zh-Hans": "日程邀请", "zh-Hant": "日程邀請", "ja": "予定・招待", "ko": "일정 초대",
 			"de": "Termine", "fr": "Invitations", "es": "Invitaciones", "pt": "Convites",
-			"it": "Inviti", "ru": "Встречи", "nl": "Uitnodigingen", "tr": "Davetler", "vi": "Lời mời lịch",
+			"it": "Inviti", "ru": "Встречи", "nl": "Uitnodigingen", "pl": "Zaproszenia", "tr": "Davetler", "vi": "Lời mời lịch",
 		}},
 		desc: plugins.Text{Default: "Meeting invites, schedule changes and event sign-ups", ByLang: map[string]string{
 			"zh-Hans": "会议邀请、日程变更和活动报名确认",
@@ -167,6 +171,7 @@ var presetLabels = []presetLabel{
 			"it":      "Inviti a riunioni, modifiche di programma e iscrizioni a eventi",
 			"ru":      "Приглашения на встречи, изменения расписания и регистрация на мероприятия",
 			"nl":      "Vergaderverzoeken, roosterwijzigingen en aanmeldingen voor evenementen",
+			"pl":      "Zaproszenia na spotkania, zmiany w harmonogramie i zapisy na wydarzenia",
 			"tr":      "Toplantı davetleri, program değişiklikleri ve etkinlik kayıtları",
 			"vi":      "Lời mời họp, thay đổi lịch trình và xác nhận đăng ký sự kiện",
 		}},
@@ -176,7 +181,7 @@ var presetLabels = []presetLabel{
 		name: plugins.Text{Default: "Notices", ByLang: map[string]string{
 			"zh-Hans": "通知", "zh-Hant": "通知", "ja": "通知", "ko": "알림",
 			"de": "Hinweise", "fr": "Notifications", "es": "Avisos", "pt": "Avisos",
-			"it": "Avvisi", "ru": "Уведомления", "nl": "Meldingen", "tr": "Bildirimler", "vi": "Thông báo",
+			"it": "Avvisi", "ru": "Уведомления", "nl": "Meldingen", "pl": "Powiadomienia", "tr": "Bildirimler", "vi": "Thông báo",
 		}},
 		desc: plugins.Text{Default: "Automatic notices from systems or services that need no reply", ByLang: map[string]string{
 			"zh-Hans": "系统或服务自动发出的提醒，不需要回复",
@@ -190,6 +195,7 @@ var presetLabels = []presetLabel{
 			"it":      "Avvisi automatici da sistemi o servizi che non richiedono risposta",
 			"ru":      "Автоматические уведомления от систем и сервисов, не требующие ответа",
 			"nl":      "Automatische meldingen van systemen of diensten waarop geen antwoord nodig is",
+			"pl":      "Automatyczne powiadomienia z systemów lub usług, które nie wymagają odpowiedzi",
 			"tr":      "Sistemlerden veya hizmetlerden gelen, yanıt gerektirmeyen otomatik bildirimler",
 			"vi":      "Thông báo tự động từ hệ thống hoặc dịch vụ không cần trả lời",
 		}},
@@ -199,7 +205,7 @@ var presetLabels = []presetLabel{
 		name: plugins.Text{Default: "Newsletters", ByLang: map[string]string{
 			"zh-Hans": "订阅与资讯", "zh-Hant": "訂閱與資訊", "ja": "ニュースレター", "ko": "뉴스레터",
 			"de": "Newsletter", "fr": "Newsletters", "es": "Boletines", "pt": "Newsletters",
-			"it": "Newsletter", "ru": "Рассылки", "nl": "Nieuwsbrieven", "tr": "Bültenler", "vi": "Bản tin",
+			"it": "Newsletter", "ru": "Рассылки", "nl": "Nieuwsbrieven", "pl": "Newslettery", "tr": "Bültenler", "vi": "Bản tin",
 		}},
 		desc: plugins.Text{Default: "Newsletters, product updates and promotions", ByLang: map[string]string{
 			"zh-Hans": "新闻简报、产品更新和营销邮件",
@@ -213,6 +219,7 @@ var presetLabels = []presetLabel{
 			"it":      "Newsletter, aggiornamenti di prodotto ed email promozionali",
 			"ru":      "Дайджесты, обновления продуктов и рекламные рассылки",
 			"nl":      "Nieuwsbrieven, productupdates en aanbiedingen",
+			"pl":      "Newslettery, nowości produktowe i oferty",
 			"tr":      "Haber bültenleri, ürün güncellemeleri ve tanıtım e-postaları",
 			"vi":      "Bản tin, cập nhật sản phẩm và thư quảng cáo",
 		}},
