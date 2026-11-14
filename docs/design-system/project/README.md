@@ -29,7 +29,7 @@ Menus, popovers, select lists and the search palette are liquid glass: `glass-bg
 
 ## Labels
 
-Mail labels come in twelve colors (gray, red, orange, amber, yellow, lime, green, teal, sky, blue, violet, pink), each four tokens: `label-<color>-dot` for the picker, `-fill` and `-text` for a label set by hand, `-edge` for the outline of one the model set. See Label chip.
+Mail labels come in sixteen colors (gray, red, orange, amber, yellow, lime, green, emerald, teal, cyan, sky, blue, indigo, violet, fuchsia, pink), each four tokens: `label-<color>-dot` for the picker, `-fill` and `-text` for a label set by hand, `-edge` for the outline of one the model set. See Label chip.
 
 ## Layout
 

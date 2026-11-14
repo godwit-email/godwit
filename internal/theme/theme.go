@@ -199,10 +199,10 @@ const (
 	DetailsLabel          = 72  // its labels' column
 	SyncMenuWidth         = 320 // the top bar's sync status list: compact, fitted popover
 	SecurityCardWidth     = 320 // the reader's security explanation card
-	LabelSwatch           = 32  // a label color's button: a 24 dot, a 2 ring when chosen
-	LabelSwatchDot        = 24
-	LabelSwatchRing       = 2
-	LabelIconCell         = 36 // a cell of the label icon grid
+	LabelStrip            = 28  // the label color strip's height
+	LabelThumb            = 35  // its thumb's height; it is as much wider than a cell
+	LabelThumbRing        = 2   // the ring of the background the thumb sits on
+	LabelIconCell         = 36  // a cell of the label icon grid
 	ToastMaxWidth         = 420
 	ToastMax              = 3  // toasts shown at once
 	TitleButtonHeight     = 24 // buttons in the top bar
@@ -300,21 +300,25 @@ type LabelColor struct{ Dot, Fill, Edge, Text ui.Color }
 
 // labelSteps are the label colors' Tailwind steps: 500, 100, 200, 700, 950, 800, 300.
 var labelSteps = map[string][7]p.OKLCH{
-	"red":    {p.Red500, p.Red100, p.Red200, p.Red700, p.Red950, p.Red800, p.Red300},
-	"orange": {p.Orange500, p.Orange100, p.Orange200, p.Orange700, p.Orange950, p.Orange800, p.Orange300},
-	"amber":  {p.Amber500, p.Amber100, p.Amber200, p.Amber700, p.Amber950, p.Amber800, p.Amber300},
-	"yellow": {p.Yellow500, p.Yellow100, p.Yellow200, p.Yellow700, p.Yellow950, p.Yellow800, p.Yellow300},
-	"lime":   {p.Lime500, p.Lime100, p.Lime200, p.Lime700, p.Lime950, p.Lime800, p.Lime300},
-	"green":  {p.Green500, p.Green100, p.Green200, p.Green700, p.Green950, p.Green800, p.Green300},
-	"teal":   {p.Teal500, p.Teal100, p.Teal200, p.Teal700, p.Teal950, p.Teal800, p.Teal300},
-	"sky":    {p.Sky500, p.Sky100, p.Sky200, p.Sky700, p.Sky950, p.Sky800, p.Sky300},
-	"blue":   {p.Blue500, p.Blue100, p.Blue200, p.Blue700, p.Blue950, p.Blue800, p.Blue300},
-	"violet": {p.Violet500, p.Violet100, p.Violet200, p.Violet700, p.Violet950, p.Violet800, p.Violet300},
-	"pink":   {p.Pink500, p.Pink100, p.Pink200, p.Pink700, p.Pink950, p.Pink800, p.Pink300},
+	"red":     {p.Red500, p.Red100, p.Red200, p.Red700, p.Red950, p.Red800, p.Red300},
+	"orange":  {p.Orange500, p.Orange100, p.Orange200, p.Orange700, p.Orange950, p.Orange800, p.Orange300},
+	"amber":   {p.Amber500, p.Amber100, p.Amber200, p.Amber700, p.Amber950, p.Amber800, p.Amber300},
+	"yellow":  {p.Yellow500, p.Yellow100, p.Yellow200, p.Yellow700, p.Yellow950, p.Yellow800, p.Yellow300},
+	"lime":    {p.Lime500, p.Lime100, p.Lime200, p.Lime700, p.Lime950, p.Lime800, p.Lime300},
+	"green":   {p.Green500, p.Green100, p.Green200, p.Green700, p.Green950, p.Green800, p.Green300},
+	"emerald": {p.Emerald500, p.Emerald100, p.Emerald200, p.Emerald700, p.Emerald950, p.Emerald800, p.Emerald300},
+	"teal":    {p.Teal500, p.Teal100, p.Teal200, p.Teal700, p.Teal950, p.Teal800, p.Teal300},
+	"cyan":    {p.Cyan500, p.Cyan100, p.Cyan200, p.Cyan700, p.Cyan950, p.Cyan800, p.Cyan300},
+	"sky":     {p.Sky500, p.Sky100, p.Sky200, p.Sky700, p.Sky950, p.Sky800, p.Sky300},
+	"blue":    {p.Blue500, p.Blue100, p.Blue200, p.Blue700, p.Blue950, p.Blue800, p.Blue300},
+	"indigo":  {p.Indigo500, p.Indigo100, p.Indigo200, p.Indigo700, p.Indigo950, p.Indigo800, p.Indigo300},
+	"violet":  {p.Violet500, p.Violet100, p.Violet200, p.Violet700, p.Violet950, p.Violet800, p.Violet300},
+	"fuchsia": {p.Fuchsia500, p.Fuchsia100, p.Fuchsia200, p.Fuchsia700, p.Fuchsia950, p.Fuchsia800, p.Fuchsia300},
+	"pink":    {p.Pink500, p.Pink100, p.Pink200, p.Pink700, p.Pink950, p.Pink800, p.Pink300},
 }
 
 // LabelNames are the label colors' names, in the picker's order.
-var LabelNames = [...]string{"gray", "red", "orange", "amber", "yellow", "lime", "green", "teal", "sky", "blue", "violet", "pink"}
+var LabelNames = [...]string{"gray", "red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal", "cyan", "sky", "blue", "indigo", "violet", "fuchsia", "pink"}
 
 // Label is the label color of a name; an unknown name is gray.
 func (t Tokens) Label(name string) LabelColor {
