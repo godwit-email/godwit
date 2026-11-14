@@ -12,7 +12,7 @@ export const agent = {
   bin: "godwit",
   dir,
   config: `${dir}/models.json`,
-  model: "magpie.model", // the default model Godwit switches to
+  model: "magpie.defaultModel", // the default model Godwit reads while connected
   ua: ["godwit"],
   notice: "Godwit picks this up within a few seconds.",
   library: {
@@ -24,10 +24,11 @@ export const agent = {
 }
 
 // connect is the service Godwit adds: the gateway's address, this agent's own
-// key and every model magpie gives it, as magpie describes them (name, context
-// window, efforts…) and its judge models; Godwit takes what it uses. Key by key, not one object:
-// magpie tells it is connected by the key holding its key, and the model key
-// sits beside them. magpie calls it again when the models change.
+// key, and magpie's models in Godwit's words: generate models (magpie's
+// models) and judge models (magpie's decisionModels), each as magpie describes
+// it; Godwit takes what it uses. Key by key, not one object: magpie tells it
+// is connected by the key holding its key, and the default model's key sits
+// beside them. magpie calls it again when the models change.
 export function connect({ gateway, model, models, decisionModels }) {
   if (!gateway?.v1 || !gateway?.key) throw new Error("magpie gave no gateway address or key")
   const list = [...(models ?? [])]
@@ -37,7 +38,7 @@ export function connect({ gateway, model, models, decisionModels }) {
     "magpie.baseURL": gateway.v1,
     "magpie.apiKey": gateway.key,
     "magpie.kind": "openai",
-    "magpie.models": list,
-    "magpie.decisionModels": decisionModels ?? [], // the judge models, magpie 0.1.4170 on
+    "magpie.generateModels": list,
+    "magpie.judgeModels": decisionModels ?? [], // magpie 0.1.4170 on
   }
 }

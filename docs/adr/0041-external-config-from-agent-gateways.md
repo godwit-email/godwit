@@ -4,7 +4,7 @@ magpie 这样的 Agent 网关接入一个 agent，是把网关地址、给它的
 
 | 文件 | 同步成 |
 |---|---|
-| `models.json` | 模型服务，`{"<名字>": {by, baseURL, apiKey, kind, models: [{id, name, context, …}], model, decisionModels: [{id, endpoints, …}]}}` |
+| `models.json` | 模型服务，`{"<名字>": {by, baseURL, apiKey, kind, generateModels: [{id, name, context, …}], defaultModel, judgeModels: [{id, endpoints, …}]}}` |
 | `mcp.json` | MCP 服务器，Claude 的 `{"mcpServers": {…}}` 写法 |
 | `skills/` | 技能，每个一个文件夹 |
 | `AGENTS.md` | Wit 的系统提示里的用户指令 |
@@ -15,14 +15,15 @@ magpie 这样的 Agent 网关接入一个 agent，是把网关地址、给它的
 - **只读**：托管的模型服务和 MCP 服务器带 `managed_by`，导出的修改和删除返回 `ErrModelServiceManaged` / `ErrMCPManaged`，只有同步能改。界面上没有编辑和删除，只有一个「由 magpie 管理」的标记；测试、授权、启用和信任照常可用。
 - **用户的优先**：和用户自己的服务、服务器或技能同名时，托管的那一项跳过，不覆盖。文件解析失败时什么都不改，因为网关可能正写到一半。
 - **只能指向本机**：模型服务的地址必须是 loopback。网关在本机，这一项能新增的目的地也只有它。MCP 服务器沿用 `mcpURL` 的规则。
-- **默认模型是读出来的，不是抄进来的**：文件里的 `model` 不写进 Godwit 的设置。读设置时，有网关的文件在选模型，生效的默认模型就是它（`DefaultModelBy` 标出是哪个网关；几个都在选时取服务名排第一的）；用户自己的默认模型一直存在下面，保存设置也不会覆盖它。网关断开时会还原自己的文件，`model` 没了，生效的就又是用户自己的。记录和还原都交给网关做，Godwit 不再自己记「要还原的默认模型」，也就没有多个网关轮流接管时的那一串还原问题。代价是接入期间默认模型在网关里改，Godwit 的设置里显示「由 magpie 管理」且不能改。默认模型切到网关以后，后台功能会在用户不操作时把内容发给网关，这是用户在网关里的选择；按 [0025](0025-mask-at-cloud-egress.md)，localhost 也算云端，照常脱敏。
+- **默认模型是读出来的，不是抄进来的**：文件里的 `defaultModel` 不写进 Godwit 的设置。读设置时，有网关的文件在选模型，生效的默认模型就是它（`DefaultModelBy` 标出是哪个网关；几个都在选时取服务名排第一的）；用户自己的默认模型一直存在下面，保存设置也不会覆盖它。网关断开时会还原自己的文件，`defaultModel` 没了，生效的就又是用户自己的。记录和还原都交给网关做，Godwit 不再自己记「要还原的默认模型」，也就没有多个网关轮流接管时的那一串还原问题。代价是接入期间默认模型在网关里改，Godwit 的设置里显示「由 magpie 管理」且不能改。默认模型切到网关以后，后台功能会在用户不操作时把内容发给网关，这是用户在网关里的选择；按 [0025](0025-mask-at-cloud-egress.md)，localhost 也算云端，照常脱敏。
 - **MCP 服务器先不授权**：新同步进来的服务器没有授权，用户授权后才会启动（[0004](0004-permission-gateway-taint.md)）。文件没变时授权保留；服务器运行的内容（命令、地址、环境变量、请求头）变了，授权和工具信任随之清空，和用户自己修改一样。比较用的是各项内容的哈希。
 - **断开和资源库各走各的**：magpie 断开模型连接时只还原 `models.json`（留下空的 `"magpie": {}`），服务随之移除；`mcp.json`、`skills/` 和 `AGENTS.md` 跟着它的资源库走：资源库不再给 Godwit 某一项，magpie 就从文件里拿走，Godwit 再跟着移除。所以「由谁管理」记在设置里，空条目不会把它冲掉。
 - **stdio MCP 服务器拿到用户目录**：启动时除了 `PATH` 和它自己的环境变量，再给 `HOME`（Windows 上 `USERPROFILE`）。magpie 的服务器（`magpie mcp search` 等）没有它就找不到自己的文件，npx 起的服务器也一样；Godwit 自己的密钥和代理设置照旧不给。
 - **技能**：只有这个目录允许顶层是链接的文件夹，因为 magpie 是从自己的资源库链接过来的（实测如此）。技能内部的链接仍然不读，`scripts/` 仍然不执行（[0009](0009-skills-are-prompts-only.md)）。
 - **指令**：`AGENTS.md` 最多读 16 KB，转义后作为 `<user_instructions>` 放在 Ask 和 Assist 的系统提示末尾，在安全说明之后，并写明与前面的规则冲突时不遵循。
-- **模型照网关的原样写**：`models` 是网关描述的模型对象（magpie 的 `connect` 收到的样子，带 `efforts`、`pricing` 等），Godwit 只读用得上的：`name` 是显示名（magpie 的路由组都有自己的名字），`context` 是上下文窗口（token），都优先于 models.dev，因为 models.dev 不认识路由组。插件因此只做转交，Godwit 用到新字段时不必改插件。不像名字的名字、不在 1000 到一亿之间的窗口丢掉，重复的模型只算一次，都不影响服务本身；读不懂的条目整条跳过，它原有的服务保持不变。
-- **判断模型**：`decisionModels` 是网关的判断模型（magpie 0.1.4170 起在 `connect` 里给出）。托管服务据此打开判断能力：取第一个能用的模型，`endpoints` 里有 `/v1/systemone` 就用 System One（它能列出模型），否则用 Decisions；没有就不开。用哪个服务做判断仍由用户在 Godwit 里选，网关不替用户选。
+- **键名用 Godwit 的术语**：生成模型和判断模型都是模型，所以文件里分别叫 `generateModels` 和 `judgeModels`，默认模型叫 `defaultModel`（见 GLOSSARY），不照搬网关的叫法（magpie 的 `models`、`decisionModels`）；插件负责翻译。
+- **模型照网关的原样写**：`generateModels` 和 `judgeModels` 里的每一项是网关描述的模型对象（magpie 的 `connect` 收到的样子，带 `efforts`、`pricing` 等），Godwit 只读用得上的：`name` 是显示名（magpie 的路由组都有自己的名字），`context` 是上下文窗口（token），都优先于 models.dev，因为 models.dev 不认识路由组。插件因此只做转交，Godwit 用到新字段时不必改插件。不像名字的名字、不在 1000 到一亿之间的窗口丢掉，重复的模型只算一次，都不影响服务本身；读不懂的条目整条跳过，它原有的服务保持不变。
+- **判断模型**：`judgeModels` 是网关的判断模型（magpie 0.1.4170 起在 `connect` 里以 `decisionModels` 给出）。托管服务据此打开判断能力：取第一个能用的模型，`endpoints` 里有 `/v1/systemone` 就用 System One（它能列出模型），否则用 Decisions；没有就不开。用哪个服务做判断仍由用户在 Godwit 里选，网关不替用户选。
 - **逐键写**：插件按键路径逐个写，不把条目作为一个对象返回：magpie 靠存它的 key 的那个键判断是否已接入，模型键也在同一个条目里，整体返回时两者都找不到（实测）。断开后留下的空对象按断开处理。
 - **同步时机**：启动时，之后每 3 秒比较一次文件的大小和修改时间。不用 fsnotify。
 

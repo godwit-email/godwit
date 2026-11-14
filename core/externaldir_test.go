@@ -63,7 +63,7 @@ func magpieEntry(key, model string, models ...string) map[string]any {
 		list = append(list, map[string]any{"id": models[0], "name": "listed twice"})
 	}
 	return map[string]any{"magpie": map[string]any{"by": "magpie", "baseURL": "http://127.0.0.1:3425/v1", "apiKey": key,
-		"kind": "openai", "models": list, "model": model}}
+		"kind": "openai", "generateModels": list, "defaultModel": model}}
 }
 
 func managedService(t *testing.T, s *Service, name string) (ModelService, bool) {
@@ -178,8 +178,8 @@ func TestExternalModelServiceRefused(t *testing.T) {
 	remote := magpieEntry("k", "", "m")
 	remote["magpie"].(map[string]any)["baseURL"] = "https://gateway.example.com/v1"
 	files := map[string]any{
-		"oldstyle": map[string]any{"baseURL": "http://127.0.0.1:3425/v1", "apiKey": "k", "kind": "openai", "models": []string{"m"}}, // not objects: unreadable
-		"magpie":   remote["magpie"],                                                                                                // not on this computer
+		"oldstyle": map[string]any{"baseURL": "http://127.0.0.1:3425/v1", "apiKey": "k", "kind": "openai", "generateModels": []string{"m"}}, // not objects: unreadable
+		"magpie":   remote["magpie"],                                                                                                        // not on this computer
 		"taken":    magpieEntry("k", "", "m")["magpie"],
 		"Bad Name": magpieEntry("k", "", "m")["magpie"],
 		"nomodel":  magpieEntry("k", "zzz", "m")["magpie"],
@@ -573,7 +573,7 @@ func TestExternalJudgeModels(t *testing.T) {
 	ctx := t.Context()
 	write := func(decision ...map[string]any) {
 		e := magpieEntry("k", "", "m")
-		e["magpie"].(map[string]any)["decisionModels"] = decision
+		e["magpie"].(map[string]any)["judgeModels"] = decision
 		writeExternal(t, dir, externalModels, e)
 		s.syncExternal(ctx)
 	}
