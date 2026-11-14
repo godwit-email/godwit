@@ -300,8 +300,10 @@ func TestRecognitionModelRowSaysItsFilesAreComingDownAgain(t *testing.T) {
 	h.masking()
 	h.until("its files seen", func() bool { return h.app.pages[PageSettings].(*settingsPage).recognition.installed })
 	h.click(i18n.T("settings.masking.recognition_model"))
-	h.until("on", func() bool { return h.app.settings.RecognitionModel })
-	if err := os.RemoveAll(filepath.Join(h.env.DataDir, "cache", "guard")); err != nil {
+	// Saved, not only switched: the save refuses to turn it on without its files.
+	h.until("on", func() bool { return h.app.settingsOK.RecognitionModel })
+	// One file, not their directory: a preview reading meanwhile already downloads into it.
+	if err := os.Remove(filepath.Join(h.env.DataDir, "cache", "guard", guard.Revision, guard.Files[0])); err != nil {
 		t.Fatal(err)
 	}
 	err := errors.New("guard: no such file")
