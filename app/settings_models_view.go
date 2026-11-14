@@ -51,7 +51,7 @@ func (m *modelsView) close() {
 func (m *modelsView) svcMark(c *ui.Context, s core.ModelService) {
 	t, th := theme.Of(c), c.Theme()
 	if glyph := icons.BrandIcon(s.Provider); glyph != nil {
-		ui.Box(c).Size(th.Space(8), th.Space(8)).Shrink(0).AlignSelf(ui.Start).Margin(theme.ServiceMarkOffset, 0, 0, 0).Radius(t.Radius.Lg).Background(t.Background).Center().Label(s.Name).Children(func() {
+		kit.Tile(c, th.Space(8), th.Space(8), kit.ToneRaised).AlignSelf(ui.Start).Margin(theme.ServiceMarkOffset, 0, 0, 0).Label(s.Name).Children(func() {
 			ui.Icon(c, glyph).Size(th.Space(5), th.Space(5)).TextColor(t.Foreground)
 		})
 		return
@@ -106,7 +106,7 @@ func (m *modelsView) list(c *ui.Context, u usage) {
 		rows = append(rows, func() {
 			// The system runs it, with nothing to edit: no chevron, just its menu's test.
 			ui.Row(c.Key("apple-intelligence")).Gap(th.Space(3)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(4)).Children(func() {
-				ui.Box(c).Size(th.Space(8), th.Space(8)).Shrink(0).AlignSelf(ui.Start).Margin(theme.ServiceMarkOffset, 0, 0, 0).Radius(t.Radius.Lg).Background(t.Background).Center().Label("Apple Intelligence").Children(func() {
+				kit.Tile(c, th.Space(8), th.Space(8), kit.ToneRaised).AlignSelf(ui.Start).Margin(theme.ServiceMarkOffset, 0, 0, 0).Label("Apple Intelligence").Children(func() {
 					ui.Icon(c, icons.Get("sparkles")).Size(th.Space(5), th.Space(5)).TextColor(t.Foreground)
 				})
 				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
@@ -140,9 +140,9 @@ func (m *modelsView) list(c *ui.Context, u usage) {
 // statusLine is a dot and a text in the look's colors.
 func statusLine(c *ui.Context, l line) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	dot, fg := l.look.colors(t)
+	dot, fg := l.look.status(t)
 	return ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Shrink(0).Children(func() {
-		ui.Box(c).Size(theme.StatusDot, theme.StatusDot).Shrink(0).Radius(t.Radius.Full).Background(dot)
+		kit.StatusDot(c, dot)
 		kit.Text(c, l.text, t.Text.Xs).TextColor(fg)
 	})
 }
@@ -516,15 +516,15 @@ func (m *modelsView) capStatus(c *ui.Context, r capTest) {
 		return
 	}
 	t, th := theme.Of(c), c.Theme()
-	dot, fg, text := t.Idle, t.Muted, i18n.T("settings.models.testing")
+	dot, fg, text := kit.Idle, t.Muted, i18n.T("settings.models.testing")
 	switch r.state {
 	case "ok":
-		dot, fg, text = t.Success, t.SuccessText, r.text
+		dot, fg, text = kit.OK, t.SuccessText, r.text
 	case "fail":
-		dot, fg, text = t.Danger, t.DangerText, cmp.Or(r.text, i18n.T("settings.models.fail.error"))
+		dot, fg, text = kit.Error, t.DangerText, cmp.Or(r.text, i18n.T("settings.models.fail.error"))
 	}
 	ui.Row(c).Wrap().Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
-		ui.Box(c).Size(theme.StatusDot, theme.StatusDot).Shrink(0).Radius(t.Radius.Full).Background(dot)
+		kit.StatusDot(c, dot)
 		kit.Text(c, text, t.Text.Xs).LineHeight(theme.LineProse).TextColor(fg) // CJK beside Latin digits: the design's line is that tall
 		if r.usage {
 			kit.TextLink(c, i18n.T("settings.models.manage_usage"), fg, t.Text.Xs).OnClick(func() { m.openURL(chatGPTUsageURL) })
@@ -700,14 +700,14 @@ func (m *modelsView) modelPicker(c *ui.Context, f *modelForm, p picker) {
 				r := f.modelTests[p.cap+"\n"+name]
 				b.Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 					if r.state != "" { // its test from the menu
-						dot := t.Idle
+						dot := kit.Idle
 						switch r.state {
 						case "ok":
-							dot = t.Success
+							dot = kit.OK
 						case "fail":
-							dot = t.Danger
+							dot = kit.Error
 						}
-						ui.Box(c).Size(theme.StatusDot, theme.StatusDot).Shrink(0).Radius(t.Radius.Full).Background(dot)
+						kit.StatusDot(c, dot)
 					}
 					tx := kit.Text(c, label, t.Text.Xs).TextColor(fg)
 					if font != "" {

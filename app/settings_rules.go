@@ -223,7 +223,7 @@ func (v *rulesView) templateCard(c *ui.Context, key, icon string, d core.RuleDoc
 	kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { v.fromTemplate(d, name) }}).
 		Label(i18n.Tf("settings.rules.template.use.label", name)).Grow(1).Basis(0).Shrink(1).
 		AlignItems(ui.Start).Gap(th.Space(3)).Padding(th.Space(3), th.Space(3.5)).Radius(t.Radius.Xl).Children(func() {
-		ui.Box(c).Size(th.Space(8), th.Space(8)).Radius(t.Radius.Lg).Background(t.Hover).Center().Shrink(0).Children(func() {
+		kit.Tile(c, th.Space(8), th.Space(8), kit.ToneTint).Children(func() {
 			ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
 		})
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {

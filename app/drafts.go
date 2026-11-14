@@ -185,7 +185,7 @@ func draftAttachments(c *ui.Context, atts []core.DraftAttachment) {
 	ui.Row(c).Wrap().Gap(th.Space(2)).Children(func() {
 		for _, att := range atts {
 			kit.Block(c, ui.Row(c), kit.ToneOutline).Width(theme.DraftAttachmentWidth).Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Children(func() {
-				ui.Box(c).Size(th.Space(7), th.Space(8.5)).Radius(t.Radius.Sm).Background(t.Hover).Center().Shrink(0).Children(func() {
+				kit.Tile(c, th.Space(7), th.Space(8.5), kit.ToneTint).Children(func() {
 					kit.Text(c, fileKind(core.AttachmentInfo{Filename: att.Filename, ContentType: att.ContentType}), t.Text.Xs).TextColor(t.Muted)
 				})
 				ui.Column(c).Shrink(1).Children(func() {

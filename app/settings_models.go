@@ -940,16 +940,16 @@ const (
 )
 
 // colors are the look's dot and text colors.
-func (l look) colors(t theme.Tokens) (dot, fg ui.Color) {
+func (l look) status(t theme.Tokens) (dot kit.Status, fg ui.Color) {
 	switch l {
 	case lookOK:
-		return t.Success, t.Muted
+		return kit.OK, t.Muted
 	case lookUntested, lookSlow:
-		return t.Attention, t.Muted
+		return kit.Attention, t.Muted
 	case lookFail:
-		return t.Danger, t.DangerText
+		return kit.Error, t.DangerText
 	}
-	return t.Idle, t.Muted
+	return kit.Idle, t.Muted
 }
 
 // line is a status line: a dot and its text.

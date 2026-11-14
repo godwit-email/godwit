@@ -1977,7 +1977,7 @@ func (r *reader) attachments(c *ui.Context, b *msgBody) {
 						if img := r.p.a.typeIcon(iconExt(att.Filename)); img != nil {
 							ui.Image(c, img).Size(th.Space(8.5), th.Space(8.5)).Fit(ui.Contain).Shrink(0)
 						} else {
-							ui.Box(c).Size(th.Space(7), th.Space(8.5)).Radius(t.Radius.Sm).Background(t.Hover).Center().Shrink(0).Children(func() {
+							kit.Tile(c, th.Space(7), th.Space(8.5), kit.ToneTint).Children(func() {
 								kit.Text(c, fileKind(att), t.Text.Xs).TextColor(t.Muted)
 							})
 						}

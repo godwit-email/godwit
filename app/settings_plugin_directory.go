@@ -93,9 +93,9 @@ func flowLabel(flow string) string {
 	return ""
 }
 
-func entryIconBox(c *ui.Context, en core.RegistryEntry, bg ui.Color) {
+func entryIconBox(c *ui.Context, en core.RegistryEntry, tone kit.Tone) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Box(c).Width(th.Space(10)).Height(th.Space(10)).Radius(t.Radius.Md).Background(bg).TextColor(t.Muted).AlignItems(ui.Center).Justify(ui.Center).Shrink(0).Children(func() {
+	kit.Tile(c, th.Space(10), th.Space(10), tone).TextColor(t.Muted).Children(func() {
 		ui.Icon(c, icons.Get(entryIcon(en))).Size(th.Space(5), th.Space(5))
 	})
 }
@@ -107,7 +107,7 @@ func (e *extView) directoryCard(c *ui.Context, en core.RegistryEntry) {
 		kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { e.openEntry(en) }}).Label(i18n.Tf("settings.ext.directory.view", title)).Grow(1).Shrink(1).Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(2)).Children(func() {
 				ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
-					entryIconBox(c, en, t.Background)
+					entryIconBox(c, en, kit.ToneRaised)
 					ui.Column(c).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 						kit.Text(c, title, t.Text.Sm).LineHeight(theme.LineFor(title)).FontWeight(500)
 						if en.Publisher != "" {

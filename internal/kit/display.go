@@ -165,9 +165,10 @@ const (
 	OK Status = iota
 	Attention
 	Error
+	Idle // nothing to report yet, as a test under way
 )
 
-// StatusDot is a 6×6 dot: green OK, amber Attention (clears by itself), red Error (needs the user).
+// StatusDot is a 6×6 dot: green OK, amber Attention (clears by itself), red Error (needs the user), gray Idle.
 func StatusDot(c *ui.Context, s Status) ui.Element {
 	t := theme.Of(c)
 	color := t.Success
@@ -176,8 +177,10 @@ func StatusDot(c *ui.Context, s Status) ui.Element {
 		color = t.Attention
 	case Error:
 		color = t.Danger
+	case Idle:
+		color = t.Idle
 	}
-	return ui.Box(c).Size(theme.StatusDot, theme.StatusDot).Radius(t.Radius.Full).Background(color)
+	return ui.Box(c).Size(theme.StatusDot, theme.StatusDot).Shrink(0).Radius(t.Radius.Full).Background(color)
 }
 
 // Spinner shows that something is under way.
@@ -299,4 +302,21 @@ func Skeleton(c *ui.Context, w, h float32) ui.Element {
 		b.Opacity(0.5 + 0.5*b.Loop("pulse", theme.SkeletonPulse, ui.Bounce(ui.EaseInOut)))
 	}
 	return b
+}
+
+// Progress is a bar of how far a job has come, done of total: 8 high, the
+// primary filling a track of the border gray, named label.
+func Progress(c *ui.Context, done, total float32, label string) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	return ui.Row(c).FillWidth().Height(th.Space(2)).Radius(t.Radius.Full).Background(t.Border).AlignItems(ui.Stretch).Clip().Label(label).Children(func() {
+		ui.Box(c).Grow(done).Background(t.Primary)
+		ui.Box(c).Grow(max(0, total-done))
+	})
+}
+
+// Tile is a box w by h holding a glyph or a few letters, centered: a
+// service's mark, a file's kind, a template's icon. It rounds as a control
+// of its shorter side and fills as tone; give it its Children.
+func Tile(c *ui.Context, w, h float32, tone Tone) ui.Element {
+	return toned(ui.Box(c).Size(w, h).Shrink(0).Center().Radius(controlRadius(c, min(w, h))), theme.Of(c), tone, false)
 }

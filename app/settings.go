@@ -720,11 +720,7 @@ func (p *settingsPage) securityRescanView(c *ui.Context) {
 				ui.Row(c).Gap(th.Space(6)).AlignItems(ui.Center).Children(func() {
 					ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1.5)).Children(func() {
 						kit.Text(c, i18n.Tf("settings.security.rescan.running", done, p.secTotal), t.Text.Xs)
-						ui.Row(c).FillWidth().Height(th.Space(2)).Radius(t.Radius.Full).Background(t.Border).AlignItems(ui.Stretch).Clip().
-							Label(i18n.T("settings.security.rescan.progress")).Children(func() {
-							ui.Box(c).Grow(float32(done)).Background(t.Primary)
-							ui.Box(c).Grow(float32(p.secPending))
-						})
+						kit.Progress(c, float32(done), float32(done+p.secPending), i18n.T("settings.security.rescan.progress"))
 					})
 					settingButton(c, i18n.T("settings.security.rescan.stop"), kit.Outline, p.secStopping).OnClick(p.stopSecurityRescan)
 				})
