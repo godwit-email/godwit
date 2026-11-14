@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -205,9 +206,19 @@ func Serial(ctx context.Context, account string, wait func(context.Context, time
 			return err
 		}
 		if err := wait(ctx, d); err != nil {
-			return err
+			return fmt.Errorf("%s: waiting out the server's back-off: %w", serverOf(account), err)
 		}
 	}
+}
+
+// serverOf is the host of account's server, for an error to name: the key
+// leads with the server's URL.
+func serverOf(account string) string {
+	base, _, _ := strings.Cut(account, "\x00")
+	if u, err := url.Parse(base); err == nil && u.Host != "" {
+		return u.Host
+	}
+	return base
 }
 
 // Sleep waits d out, or until ctx is done.
@@ -236,7 +247,9 @@ type slot struct {
 }
 
 // Acquire takes account's slot, waiting while another call holds it.
-// account names the server and the user, such as an API URL and user name.
+// account names the server and the user: the API's URL, a NUL, the user
+// name. A wait that ctx ends says so and names the URL's host, so a request's
+// deadline is never the bare context error (#755).
 func Acquire(ctx context.Context, account string) (release func(), err error) {
 	accounts.Lock()
 	s := accounts.m[account]
@@ -258,6 +271,6 @@ func Acquire(ctx context.Context, account string) (release func(), err error) {
 		return func() { <-s.ch; done() }, nil
 	case <-ctx.Done():
 		done()
-		return nil, ctx.Err()
+		return nil, fmt.Errorf("%s: waiting for the account's other requests: %w", serverOf(account), ctx.Err())
 	}
 }

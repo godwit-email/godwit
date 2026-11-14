@@ -315,8 +315,8 @@ func (p *mailPage) accountItems(m *ui.Menu, acc core.Account, folderID int64) {
 	a, id, name := p.a, acc.ID, accountName(acc)
 	if isArchive(acc) {
 		p.archiveItems(m, acc, folderID)
-	} else if m.Item(i18n.Tf("mail.account_sync", name)).Chosen() {
-		a.do(func(ctx context.Context) error { return a.svc.SyncNow(ctx, id) }, a.toastErr)
+	} else if m.Item(i18n.Tf("mail.account_sync", name)).Disabled(a.syncBusy(id)).Chosen() {
+		a.syncNow(id)
 	}
 	if m.Item(i18n.Tf("mail.account_edit", name)).Chosen() {
 		a.navigate(Route{Page: PageSettings, Settings: accountRoute(id)})

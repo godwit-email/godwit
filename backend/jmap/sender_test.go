@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	gojmap "git.sr.ht/~rockorager/go-jmap"
 	"git.sr.ht/~rockorager/go-jmap/jmapmemserver"
@@ -195,6 +196,21 @@ func TestSendUncertainOnDroppedResponseOr5xx(t *testing.T) {
 			t.Fatalf("Send on failed upload = %v, want plain retryable error", err)
 		}
 	})
+}
+
+// A server that never answers costs a send its deadline. The error names the
+// request and its server: JMAP has no wait that returns the bare context error (#755).
+func TestSendTimeoutNamesHost(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
+	t.Cleanup(srv.Close)
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+	err := jmap.NewSender(jmap.Config{SessionURL: srv.URL + "/session", Credentials: func(context.Context) (backend.Credentials, error) {
+		return backend.Credentials{Token: "secret"}, nil
+	}}).Send(ctx, "alice@example.com", []string{"bob@example.com"}, []byte(testRaw))
+	if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), strings.TrimPrefix(srv.URL, "http://")) {
+		t.Fatalf("Send = %v, want the deadline with the server it was for", err)
+	}
 }
 
 func TestNoSubmissionCapability(t *testing.T) {
