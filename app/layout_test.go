@@ -155,11 +155,11 @@ func TestSidebarAccountFoldSaved(t *testing.T) {
 	if err := h.tt.Click("bob@example.com"); err != nil {
 		t.Fatal(err)
 	}
-	h.until("the unfold saved", func() bool { return h.app.settings.SidebarAccountsOpen[accs[1].ID] })
-	st, err := h.env.Svc.GetSettings(context.Background())
-	if err != nil || !st.SidebarAccountsOpen[accs[1].ID] {
-		t.Fatalf("stored %v, %v: want the second account unfolded", st.SidebarAccountsOpen, err)
-	}
+	// changeSettings saves after it returns: wait for the store, not the window's copy
+	h.until("the unfold saved", func() bool {
+		st, err := h.env.Svc.GetSettings(context.Background())
+		return err == nil && st.SidebarAccountsOpen[accs[1].ID]
+	})
 	restarted := newMailPage(h.app)
 	if !*restarted.accountOpen(accs[1].ID) || !*restarted.accountOpen(accs[0].ID) {
 		t.Fatal("after a restart the accounts the user unfolded and the first are open")
