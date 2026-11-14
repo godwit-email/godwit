@@ -377,3 +377,31 @@ func TestExternalMCPRetriesAfterSecretsAndCleanupFail(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Bearer secret-1", sec)
 }
+
+func TestExternalRemovalKeepsTheChainToTheUsersDefault(t *testing.T) {
+	s, dir := externalSvc(t)
+	ctx := t.Context()
+	_, err := s.AddModelService(ctx, ModelServiceInput{Name: "mine", Kind: "openai", BaseURL: "https://example.com/v1", APIKey: "k", Models: []string{"x"}})
+	require.NoError(t, err)
+	st, err := s.GetSettings(ctx)
+	require.NoError(t, err)
+	st.DefaultModel = "mine/x"
+	_, err = s.SetSettings(ctx, st)
+	require.NoError(t, err)
+	entry := func(name string) map[string]any { return magpieEntry("k-"+name, "m", "m")["magpie"].(map[string]any) }
+
+	writeExternal(t, dir, externalModels, map[string]any{"a": entry("a")})
+	s.syncExternal(ctx)
+	require.Equal(t, "a/m", defaultModel(t, s))
+	writeExternal(t, dir, externalModels, map[string]any{"a": entry("a"), "b": entry("b")})
+	s.syncExternal(ctx)
+	require.Equal(t, "b/m", defaultModel(t, s))
+
+	// The first one goes while the second is the default: the second now gives back the user's.
+	writeExternal(t, dir, externalModels, map[string]any{"b": entry("b")})
+	s.syncExternal(ctx)
+	assert.Equal(t, "b/m", defaultModel(t, s))
+	writeExternal(t, dir, externalModels, map[string]any{})
+	s.syncExternal(ctx)
+	assert.Equal(t, "mine/x", defaultModel(t, s))
+}

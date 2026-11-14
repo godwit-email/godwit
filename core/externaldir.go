@@ -498,6 +498,13 @@ func (s *Service) dropManagedService(ctx context.Context, row managedRow) error 
 	if err != nil {
 		return err
 	}
+	// Another managed service may hold this one's model as the default to give
+	// back: it gets the one this service held instead, so the chain still ends
+	// at the user's.
+	if _, err := s.db.DurableExecute(ctx, `UPDATE model_services SET prev_default = ?
+		WHERE id != ? AND managed_by != '' AND substr(prev_default, 1, length(?)) = ?`, row.prevDefault, row.id, prefix, prefix); err != nil {
+		return err
+	}
 	return s.removeModelService(ctx, row.id, row.by)
 }
 
