@@ -20,7 +20,7 @@ A page sets the size (`InputOpts.Size`, `SelectOpts.Size`), never a height or a 
 
 ## Select
 
-The input frame with the value and a 16 `chevron-down` in `muted`, 8 apart, at least 120 wide (200–280 in a settings row, flat). A choice a select cannot hold, as several languages at once, is a button with the same face (`kit.SelectButton`) over a popover. The list opens 4 below: liquid glass (`glass-bg`, `glass-border`), `radius-lg`, `shadow-md`, 4 padding; items 32 high, `radius-md`, 8 side padding, `hover` behind the highlighted one, a 16 check after the chosen one, disabled ones `muted`. Arrows open and move, Home / End jump, Enter or Space choose.
+The input frame with the value and a 16 `chevron-down` in `muted`, 8 apart, at least 120 wide (200–280 in a settings row, flat). A choice a select cannot hold, as several languages at once, is a button with the same face (`kit.SelectButton`) over a popover. The list opens 4 below: liquid glass (`glass-bg`, `glass-border`), `radius-lg`, `shadow-md`, 4 padding; items 28 high, `radius-md`, 6 side padding, as a menu's, `hover` behind the highlighted one, a 16 check after the chosen one, disabled ones `muted`. Arrows open and move, Home / End jump, Enter or Space choose.
 
 ## Checkbox and radio
 

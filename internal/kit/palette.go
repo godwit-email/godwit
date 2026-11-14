@@ -58,7 +58,7 @@ func Palette(c *ui.Context, open *bool, query *string, o PaletteOpts, head, body
 		// a dialog's scrim, but fixed near the top: as hits come and go the panel only grows down
 		backdrop.Background(t.Scrim.Alpha(k)).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0).Transition(leave(c))
 		panel.Label(o.Label).Opacity(k).Margin(rise(k), 0, 0, 0).Width(theme.DialogWideWidth).MaxHeight(theme.SheetMaxHeight).
-			Radius(t.Radius.X2l).Clip().Border(theme.Hairline, t.Border)
+			Radius(t.Radius.Xl).Clip().Border(theme.Hairline, t.Border)
 		glassPanel(panel, t)
 		Elevate(c, panel, theme.ShadowX2l)
 		var in ui.Element

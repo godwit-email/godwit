@@ -33,11 +33,11 @@ The primary of a compose window, on the right of its bottom bar: one `primary` b
 
 ## Menu
 
-Liquid glass: `glass-bg` over a 20 px blur, a hairline `glass-border`, `radius-lg`, `shadow-md`, `space-1` padding. Items are 32 high, `radius-md`, 8 px side padding, `hover-tint` behind the hovered one; the label on the left and a hint in `xs` `muted` on the right. A heading over a set of items is `xs` `muted`. The menu opens 4 px from its trigger toward the free side (up from a bottom bar), aligned to the trigger's nearer edge, fading in over 120 ms with a 4 px rise.
+Liquid glass: `glass-bg` over a 20 px blur, a hairline `glass-border`, `radius-lg`, `shadow-md`, `space-1` padding. Items are 28 high, `radius-md`, 6 px side padding and gap, one under the next, `hover-tint` behind the hovered one; the label on the left and a hint in `xs` `muted` on the right. A heading over a set of items is `xs` `muted`. The menu opens 4 px from its trigger toward the free side (up from a bottom bar), aligned to the trigger's nearer edge, fading in over 120 ms with a 4 px rise.
 
 ## Tooltip
 
-`primary` fill, `primary-text`, `xs`, `space-1` / `space-2` padding, `radius-md`, no shadow; centered `space-1-5` below its control, or above near the window's bottom. It shows at once on keyboard focus and after a pause on hover, and only names the action (回复全部, not 点击回复全部).
+`primary` fill, `primary-text`, `xs`, `space-1-5` / `space-3` padding, `radius-md`, no shadow; centered `space-1-5` below its control, or above near the window's bottom. It shows at once on keyboard focus and after a pause on hover, and only names the action (回复全部, not 点击回复全部).
 
 ## Bars
 

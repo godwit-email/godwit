@@ -54,7 +54,7 @@ func Dialog(c *ui.Context, open *bool, title string, o DialogOpts, body, footer 
 		} else {
 			aboveCentre(c, backdrop, panel)
 		}
-		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(width).MaxHeight(maxH).Radius(t.Radius.X2l).Clip().Border(theme.Hairline, t.Border)
+		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(width).MaxHeight(maxH).Radius(t.Radius.Xl).Clip().Border(theme.Hairline, t.Border)
 		glassPanel(panel, t)
 		Elevate(c, panel, theme.ShadowX2l)
 		header := ui.Row(c).Shrink(0).AlignItems(ui.Start).Gap(th.Space(4)).Padding(th.Space(4))
@@ -208,8 +208,8 @@ func PopoverAt(c *ui.Context, anchor ui.Element, open *bool, at, self ui.Anchor,
 	k := enter(c, open, theme.MotionFast)
 	ui.PopoverBase(c, anchor, open, func(panel ui.Element) {
 		panel.AttachTo(anchor, at, self).
-			Opacity(k).Margin(topOffset+rise(k), 0, 0, 0).Padding(th.Space(3)).Transition(leave(c)).
-			Radius(t.Radius.Lg).Clip().Gap(th.Space(2)).
+			Opacity(k).Margin(topOffset+rise(k), 0, 0, 0).Padding(th.Space(2.5)).Transition(leave(c)).
+			Radius(t.Radius.Lg).Clip().Gap(th.Space(2.5)).
 			Material(LiquidGlass(t.GlassBg)).
 			Border(theme.Hairline, t.GlassBorder)
 		Elevate(c, panel, theme.ShadowMd)
@@ -225,7 +225,7 @@ func MenuAt(c *ui.Context, anchor ui.Element, open *bool, at, self ui.Anchor, to
 	ui.PopoverBase(c, anchor, open, func(panel ui.Element) {
 		panel.AttachTo(anchor, at, self).Role(ui.RoleMenu).Label(label).
 			Opacity(k).Margin(topOffset+rise(k), 0, 0, 0).Padding(th.Space(1)).Transition(leave(c)).
-			Radius(t.Radius.Lg).Clip().Gap(th.Space(0.5)).
+			Radius(t.Radius.Lg).Clip().
 			Material(LiquidGlass(t.GlassBg)).
 			Border(theme.Hairline, t.GlassBorder)
 		Elevate(c, panel, theme.ShadowMd)
@@ -236,15 +236,15 @@ func MenuAt(c *ui.Context, anchor ui.Element, open *bool, at, self ui.Anchor, to
 // MenuLabel is a muted heading over a menu's items.
 func MenuLabel(c *ui.Context, text string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return Text(c, text, t.Text.Xs).TextColor(t.Muted).SingleLine().Padding(th.Space(1.5), th.Space(2), th.Space(1), th.Space(2))
+	return Text(c, text, t.Text.Xs).FontWeight(500).TextColor(t.Muted).SingleLine().Padding(th.Space(1), th.Space(1.5))
 }
 
 // MenuItem is an item of a menu, tinted while selected (the keys' choice);
 // give it its Label and Children.
 func MenuItem(c *ui.Context, selected bool) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	b := ui.ButtonBase(c).Role(ui.RoleMenuItem).Selected(selected).Justify(ui.Start).AlignItems(ui.Center).Gap(th.Space(2)).
-		Height(th.Space(8)).PaddingX(th.Space(2)).Radius(t.Radius.Md).TextColor(t.Foreground) // a tint, not the inverted text
+	b := ui.ButtonBase(c).Role(ui.RoleMenuItem).Selected(selected).Justify(ui.Start).AlignItems(ui.Center).Gap(th.Space(1.5)).
+		Height(th.Space(7)).PaddingX(th.Space(1.5)).Radius(t.Radius.Md).TextColor(t.Foreground) // a tint, not the inverted text
 	if selected || b.Hovered() {
 		b.Background(t.HoverTint)
 	}
@@ -270,7 +270,7 @@ func tooltip(c *ui.Context, anchor ui.Element, text string, describe bool) {
 		anchor.Description(text)
 	}
 	ui.TooltipBase(c, anchor, func(tip ui.Element) {
-		tip.Padding(th.Space(1), th.Space(2)).Radius(t.Radius.Md).Background(t.Primary).TextColor(t.PrimaryText).FontSize(t.Text.Xs)
+		tip.Padding(th.Space(1.5), th.Space(3)).Radius(t.Radius.Md).Background(t.Primary).TextColor(t.PrimaryText).FontSize(t.Text.Xs)
 		tip.Children(func() { ui.Text(c, text) })
 	})
 }
@@ -281,7 +281,7 @@ func HoverCard(c *ui.Context, anchor ui.Element, w float32, body func()) {
 	t, th := theme.Of(c), c.Theme()
 	ui.TooltipBase(c, anchor, func(tip ui.Element) {
 		tip.AttachTo(anchor, ui.AnchorBottomStart, ui.AnchorTopStart).Margin(theme.PopupOffset, 0, 0, 0).
-			Width(w).Padding(th.Space(3)).Gap(th.Space(2)).Radius(t.Radius.Lg).
+			Width(w).Padding(th.Space(2.5)).Gap(th.Space(2.5)).Radius(t.Radius.Lg).
 			Background(t.Background).Border(theme.Hairline, t.Border).TextColor(t.Foreground)
 		Elevate(c, tip, theme.ShadowMd)
 		tip.Children(body)

@@ -167,7 +167,7 @@ func selectFace(c *ui.Context, e ui.Element, current string, o SelectOpts) ui.El
 	t, th := theme.Of(c), c.Theme()
 	inputFrame(c, e, InputOpts{Flat: o.Flat, Size: o.Size})
 	h, padX := inputSize(c, o.Size)
-	e.Height(h).PaddingX(padX).Gap(th.Space(2)).MinWidth(cmp.Or(o.MinWidth, theme.SelectMinWidth)).Children(func() {
+	e.Height(h).Padding(0, padX-th.Space(0.5), 0, padX).Gap(th.Space(1.5)).MinWidth(cmp.Or(o.MinWidth, theme.SelectMinWidth)).Children(func() { // the chevron's side is half a step tighter
 		ui.Text(c, current).SingleLine().Grow(1).Shrink(1)
 		ui.Icon(c, icons.Get("chevron-down")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
 	})
@@ -207,7 +207,7 @@ func SelectWith[T comparable](c *ui.Context, o SelectOpts, sel *T, opts []Option
 			Border(theme.Hairline, t.GlassBorder)
 		Elevate(c, panel, theme.ShadowMd)
 		for _, o := range opts {
-			item := s.Item(o.Value).Height(th.Space(8)).PaddingX(th.Space(2)).Gap(th.Space(2)).Radius(t.Radius.Md)
+			item := s.Item(o.Value).Height(th.Space(7)).PaddingX(th.Space(1.5)).Gap(th.Space(1.5)).Radius(t.Radius.Md) // as a MenuItem
 			if o.Disabled {
 				item.Disabled(true).TextColor(t.Muted)
 			}

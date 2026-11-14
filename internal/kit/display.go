@@ -123,7 +123,7 @@ func Alert(c *ui.Context, kind AlertKind, text string, actions func()) ui.Elemen
 	case Danger:
 		tone = ToneDanger
 	}
-	return Card(c, ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4)), tone).
+	return Block(c, ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), th.Space(2.5)), tone).
 		FontSize(t.Text.Sm).Children(func() {
 		ui.Text(c, text).Grow(1).Shrink(1) // the text wraps; the actions stay on its right
 		if actions != nil {
@@ -313,11 +313,11 @@ func Skeleton(c *ui.Context, w, h float32) ui.Element {
 	return b
 }
 
-// Progress is a bar of how far a job has come, done of total: 8 high, the
+// Progress is a bar of how far a job has come, done of total: 4 high, the
 // primary filling a track of the border gray, named label.
 func Progress(c *ui.Context, done, total float32, label string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return ui.Row(c).FillWidth().Height(th.Space(2)).Radius(t.Radius.Full).Background(t.Border).AlignItems(ui.Stretch).Clip().Label(label).Children(func() {
+	return ui.Row(c).FillWidth().Height(th.Space(1)).Radius(t.Radius.Full).Background(t.Border).AlignItems(ui.Stretch).Clip().Label(label).Children(func() {
 		ui.Box(c).Grow(done).Background(t.Primary)
 		ui.Box(c).Grow(max(0, total-done))
 	})
