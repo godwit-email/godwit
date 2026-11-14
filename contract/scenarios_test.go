@@ -247,6 +247,9 @@ func TestSettings(t *testing.T) {
 		}
 		bv, sv := reflect.ValueOf(before), reflect.ValueOf(st)
 		for i := range sv.NumField() { // every field must make the round trip
+			if sv.Type().Field(i).Name == "DefaultModelBy" {
+				continue // read from a gateway's file, never saved (ADR 0041)
+			}
 			if reflect.DeepEqual(bv.Field(i).Interface(), sv.Field(i).Interface()) {
 				t.Errorf("field %s keeps its default; change it", sv.Type().Field(i).Name)
 			}

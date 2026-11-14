@@ -171,8 +171,8 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 	defer func() {
 		m.defModel, m.smallModel, m.judge = a.settings.DefaultModel, a.settings.SmallModel, a.settings.JudgeService
 	}() // what the next frame shows
-	sel := func(label string, v *string, opts []kit.Option[string], set func(*core.Settings, string)) {
-		s := kit.SelectWith(c, kit.SelectOpts{Radius: t.Radius.Lg, Flat: true}, v, opts).Width(theme.UsageSelectMin).Label(label).Disabled(u.disabled)
+	sel := func(label string, v *string, opts []kit.Option[string], set func(*core.Settings, string), managed bool) {
+		s := kit.SelectWith(c, kit.SelectOpts{Radius: t.Radius.Lg, Flat: true}, v, opts).Width(theme.UsageSelectMin).Label(label).Disabled(u.disabled || managed)
 		if s.Changed() {
 			val := *v
 			m.setModel(func(st *core.Settings) { set(st, val) })
@@ -195,18 +195,22 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 		}
 		settingsCard(c,
 			func() {
-				usageRow(c, gen, i18n.T("settings.models.use.gen.desc"), &u.gen, func() {
-					sel(gen, &m.defModel, u.genOpts, func(st *core.Settings, v string) { st.DefaultModel = v })
+				desc, by := i18n.T("settings.models.use.gen.desc"), a.settings.DefaultModelBy
+				if by != "" { // its file chooses the default: changed there (ADR 0041)
+					desc += " · " + i18n.Tf("settings.managed_by", by)
+				}
+				usageRow(c, gen, desc, &u.gen, func() {
+					sel(gen, &m.defModel, u.genOpts, func(st *core.Settings, v string) { st.DefaultModel = v }, by != "")
 				})
 			},
 			func() {
 				usageRow(c, small, i18n.T("settings.models.use.small.desc"), &u.small, func() {
-					sel(small, &m.smallModel, u.smallOpts, func(st *core.Settings, v string) { st.SmallModel = v })
+					sel(small, &m.smallModel, u.smallOpts, func(st *core.Settings, v string) { st.SmallModel = v }, false)
 				})
 			},
 			func() {
 				usageRow(c, judge, i18n.T("settings.models.use.judge.desc"), &u.judge, func() {
-					sel(judge, &m.judge, u.judgeOpts, func(st *core.Settings, v string) { st.JudgeService = v })
+					sel(judge, &m.judge, u.judgeOpts, func(st *core.Settings, v string) { st.JudgeService = v }, false)
 				})
 			},
 			func() {

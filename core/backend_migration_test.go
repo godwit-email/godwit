@@ -60,7 +60,6 @@ var toPreBackendSchema = []string{
 	`ALTER TABLE model_services DROP COLUMN managed_by`,
 	`ALTER TABLE model_services DROP COLUMN managed_hash`,
 	`ALTER TABLE model_services DROP COLUMN file_model`,
-	`ALTER TABLE model_services DROP COLUMN prev_default`,
 	`ALTER TABLE model_services DROP COLUMN model_info`,
 	`ALTER TABLE mcp_servers DROP COLUMN managed_by`,
 	`ALTER TABLE mcp_servers DROP COLUMN managed_hash`,

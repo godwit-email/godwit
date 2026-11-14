@@ -117,19 +117,37 @@ func TestExternalModelService(t *testing.T) {
 	assert.ErrorIs(t, err, ErrModelServiceManaged)
 	assert.ErrorIs(t, s.RemoveModelService(ctx, m.ID), ErrModelServiceManaged)
 
-	// A new key and model list update it; the same model leaves a default the user chose since.
+	// The default is read from the file, never saved: the user's own stays beneath it.
 	st, _ = s.GetSettings(ctx)
-	st.DefaultModel = "magpie/openai/gpt"
-	_, err = s.SetSettings(ctx, st)
+	assert.Equal(t, "magpie", st.DefaultModelBy)
+	stored, err := s.storedSettings(ctx)
 	require.NoError(t, err)
+	assert.Equal(t, "mine/x", stored.DefaultModel)
+	// Saving the settings saves the rest; the default is changed in the gateway.
+	st.DefaultModel, st.Theme = "mine/x", "dark"
+	saved, err := s.SetSettings(ctx, st)
+	require.NoError(t, err)
+	assert.Equal(t, "magpie/anthropic/claude", saved.DefaultModel)
+	st, _ = s.GetSettings(ctx)
+	assert.Equal(t, "dark", st.Theme)
+	assert.Equal(t, "magpie/anthropic/claude", st.DefaultModel)
+
+	// A new key and model list update it.
 	writeExternal(t, dir, externalModels, magpieEntry("key2", "anthropic/claude", "anthropic/claude", "openai/gpt", "x/y"))
 	s.syncExternal(ctx)
 	m, _ = managedService(t, s, "magpie")
 	assert.Equal(t, "key2", storedKey(t, s, m.ID))
 	assert.Len(t, m.Models, 3)
-	assert.Equal(t, "magpie/openai/gpt", defaultModel(t, s))
+	assert.Equal(t, "magpie/anthropic/claude", defaultModel(t, s))
 
 	// A new choice in the file moves it again.
+	writeExternal(t, dir, externalModels, magpieEntry("key2", "x/y", "anthropic/claude", "openai/gpt", "x/y"))
+	s.syncExternal(ctx)
+	assert.Equal(t, "magpie/x/y", defaultModel(t, s))
+	// The file stops choosing: the user's own again, the service kept.
+	writeExternal(t, dir, externalModels, magpieEntry("key2", "", "anthropic/claude", "openai/gpt", "x/y"))
+	s.syncExternal(ctx)
+	assert.Equal(t, "mine/x", defaultModel(t, s))
 	writeExternal(t, dir, externalModels, magpieEntry("key2", "x/y", "anthropic/claude", "openai/gpt", "x/y"))
 	s.syncExternal(ctx)
 	assert.Equal(t, "magpie/x/y", defaultModel(t, s))
@@ -352,24 +370,6 @@ func TestExternalUnreadableDirKeepsSettings(t *testing.T) {
 	assert.Equal(t, "magpie/m", defaultModel(t, s))
 }
 
-func TestExternalRemovalReleasesUsersDefault(t *testing.T) {
-	s, dir := externalSvc(t)
-	ctx := t.Context()
-	writeExternal(t, dir, externalModels, magpieEntry("k", "", "m")) // the file chooses no model
-	s.syncExternal(ctx)
-	st, err := s.GetSettings(ctx)
-	require.NoError(t, err)
-	st.DefaultModel = "magpie/m" // the user picks it in Godwit
-	_, err = s.SetSettings(ctx, st)
-	require.NoError(t, err)
-
-	writeExternal(t, dir, externalModels, map[string]any{"magpie": map[string]any{}})
-	s.syncExternal(ctx)
-	_, ok := managedService(t, s, "magpie")
-	require.False(t, ok)
-	assert.Empty(t, defaultModel(t, s), "no default left naming the removed service")
-}
-
 func TestExternalMCPRetriesAfterSecretsAndCleanupFail(t *testing.T) {
 	s, dir := externalSvc(t)
 	ctx := t.Context()
@@ -393,85 +393,19 @@ func TestExternalMCPRetriesAfterSecretsAndCleanupFail(t *testing.T) {
 	assert.Equal(t, "Bearer secret-1", sec)
 }
 
-func TestExternalRemovalKeepsTheChainToTheUsersDefault(t *testing.T) {
+func TestExternalDefaultOfSeveralGateways(t *testing.T) {
 	s, dir := externalSvc(t)
 	ctx := t.Context()
-	_, err := s.AddModelService(ctx, ModelServiceInput{Name: "mine", Kind: "openai", BaseURL: "https://example.com/v1", APIKey: "k", Models: []string{"x"}})
-	require.NoError(t, err)
-	st, err := s.GetSettings(ctx)
-	require.NoError(t, err)
-	st.DefaultModel = "mine/x"
-	_, err = s.SetSettings(ctx, st)
-	require.NoError(t, err)
-	entry := func(name string) map[string]any { return magpieEntry("k-"+name, "m", "m")["magpie"].(map[string]any) }
-
-	writeExternal(t, dir, externalModels, map[string]any{"a": entry("a")})
+	entry := func(name, model string) map[string]any {
+		return magpieEntry("k-"+name, model, "m")["magpie"].(map[string]any)
+	}
+	writeExternal(t, dir, externalModels, map[string]any{"b": entry("b", "m"), "a": entry("a", "m")})
 	s.syncExternal(ctx)
-	require.Equal(t, "a/m", defaultModel(t, s))
-	writeExternal(t, dir, externalModels, map[string]any{"a": entry("a"), "b": entry("b")})
-	s.syncExternal(ctx)
-	require.Equal(t, "b/m", defaultModel(t, s))
-
-	// The first one goes while the second is the default: the second now gives back the user's.
-	writeExternal(t, dir, externalModels, map[string]any{"b": entry("b")})
+	assert.Equal(t, "a/m", defaultModel(t, s), "the first by name")
+	writeExternal(t, dir, externalModels, map[string]any{"b": entry("b", "m")})
 	s.syncExternal(ctx)
 	assert.Equal(t, "b/m", defaultModel(t, s))
 	writeExternal(t, dir, externalModels, map[string]any{})
 	s.syncExternal(ctx)
-	assert.Equal(t, "mine/x", defaultModel(t, s))
-}
-
-func TestExternalReselectionKeepsTheChainToTheUsersDefault(t *testing.T) {
-	s, dir := externalSvc(t)
-	ctx := t.Context()
-	_, err := s.AddModelService(ctx, ModelServiceInput{Name: "mine", Kind: "openai", BaseURL: "https://example.com/v1", APIKey: "k", Models: []string{"x"}})
-	require.NoError(t, err)
-	st, err := s.GetSettings(ctx)
-	require.NoError(t, err)
-	st.DefaultModel = "mine/x"
-	_, err = s.SetSettings(ctx, st)
-	require.NoError(t, err)
-	entry := func(name, model string) map[string]any {
-		return magpieEntry("k-"+name, model, "m", "n")["magpie"].(map[string]any)
-	}
-
-	writeExternal(t, dir, externalModels, map[string]any{"a": entry("a", "m")})
-	s.syncExternal(ctx)
-	writeExternal(t, dir, externalModels, map[string]any{"a": entry("a", "m"), "b": entry("b", "m")})
-	s.syncExternal(ctx)
-	require.Equal(t, "b/m", defaultModel(t, s))
-	// A chooses again while B is the default.
-	writeExternal(t, dir, externalModels, map[string]any{"a": entry("a", "n"), "b": entry("b", "m")})
-	s.syncExternal(ctx)
-	require.Equal(t, "a/n", defaultModel(t, s))
-
-	writeExternal(t, dir, externalModels, map[string]any{"a": entry("a", "n")})
-	s.syncExternal(ctx)
-	assert.Equal(t, "a/n", defaultModel(t, s))
-	writeExternal(t, dir, externalModels, map[string]any{})
-	s.syncExternal(ctx)
-	assert.Equal(t, "mine/x", defaultModel(t, s))
-}
-
-func TestExternalRemovingBothInOneSyncGivesBackTheUsersDefault(t *testing.T) {
-	s, dir := externalSvc(t)
-	ctx := t.Context()
-	_, err := s.AddModelService(ctx, ModelServiceInput{Name: "mine", Kind: "openai", BaseURL: "https://example.com/v1", APIKey: "k", Models: []string{"x"}})
-	require.NoError(t, err)
-	st, err := s.GetSettings(ctx)
-	require.NoError(t, err)
-	st.DefaultModel = "mine/x"
-	_, err = s.SetSettings(ctx, st)
-	require.NoError(t, err)
-	entry := func(name string) map[string]any { return magpieEntry("k-"+name, "m", "m")["magpie"].(map[string]any) }
-
-	writeExternal(t, dir, externalModels, map[string]any{"a": entry("a")})
-	s.syncExternal(ctx)
-	writeExternal(t, dir, externalModels, map[string]any{"a": entry("a"), "b": entry("b")})
-	s.syncExternal(ctx)
-	require.Equal(t, "b/m", defaultModel(t, s))
-
-	writeExternal(t, dir, externalModels, map[string]any{"a": map[string]any{}, "b": map[string]any{}}) // both disconnected at once
-	s.syncExternal(ctx)
-	assert.Equal(t, "mine/x", defaultModel(t, s))
+	assert.Empty(t, defaultModel(t, s), "the user's own: none")
 }

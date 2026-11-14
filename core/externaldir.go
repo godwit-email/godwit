@@ -22,7 +22,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/store"
@@ -252,9 +251,9 @@ func entryHash(v any) string {
 }
 
 type managedRow struct {
-	id                     int64
-	by, hash, slug         string
-	fileModel, prevDefault string
+	id             int64
+	by, hash, slug string
+	fileModel      string
 }
 
 // checkExternalService validates an entry: the gateway is a program on this
@@ -351,14 +350,14 @@ func (s *Service) loadExtModels(ctx context.Context) error {
 }
 
 func (s *Service) managedServices(ctx context.Context) (map[string]managedRow, error) {
-	rows, err := s.db.Query(ctx, "SELECT id, name, managed_by, managed_hash, slug, file_model, prev_default FROM model_services")
+	rows, err := s.db.Query(ctx, "SELECT id, name, managed_by, managed_hash, slug, file_model FROM model_services")
 	if err != nil {
 		return nil, err
 	}
 	out := map[string]managedRow{}
 	for _, r := range rows.Values {
 		out[store.Str(r[1])] = managedRow{id: store.Int(r[0]), by: store.Str(r[2]), hash: store.Str(r[3]), slug: store.Str(r[4]),
-			fileModel: store.Str(r[5]), prevDefault: store.Str(r[6])}
+			fileModel: store.Str(r[5])}
 	}
 	return out, nil
 }
@@ -446,7 +445,7 @@ func (s *Service) syncExternalModels(ctx context.Context, services map[string]ex
 			}
 			changed = true
 		}
-		if err := s.followExternalModel(ctx, row, e.Model); err != nil {
+		if err := s.setFileModel(ctx, row, e.Model); err != nil {
 			return err
 		}
 	}
@@ -457,133 +456,44 @@ func (s *Service) updateManagedService(ctx context.Context, id int64, in ModelSe
 	return s.UpdateModelService(ctx, id, in) // in.managedBy lets it through
 }
 
-// followExternalModel sets the default model when the file chooses a new one,
-// and gives the user's back when it chooses none. Only a change in the file
-// moves it: a default the user picked since stays. The default it replaces is
-// saved before the default changes, and file_model only after, so a stop
-// anywhere between is finished by the next poll with the right default to
-// give back.
-func (s *Service) followExternalModel(ctx context.Context, row managedRow, model string) error {
-	if err := s.freshChain(ctx, &row); err != nil {
-		return err
-	}
+// setFileModel records the model the file chooses for row's service; the
+// settings read it as the default model while it is set (gatewayDefault).
+func (s *Service) setFileModel(ctx context.Context, row managedRow, model string) error {
 	if model == row.fileModel {
 		return nil
 	}
-	prefix := row.slug + "/"
-	prev := row.prevDefault
-	err := s.setDefaultModel(ctx, func(cur string) (string, error) {
-		next := cur
-		switch ours := strings.HasPrefix(cur, prefix); {
-		case model != "":
-			if !ours {
-				// cur may be another managed service's that saved this one's model:
-				// it takes this one's saved default first, so no two point at each other.
-				prev = cur
-				if _, err := s.db.DurableTransaction(ctx, []sqlite.Statement{spliceChain(row, row.prevDefault),
-					{SQL: "UPDATE model_services SET prev_default = ? WHERE id = ?", Args: []any{prev, row.id}}}); err != nil {
-					return cur, err
-				}
-			}
-			next = prefix + model
-		case ours:
-			next, prev = prev, ""
-		default:
-			prev = ""
-		}
-		if next != "" && !strings.HasPrefix(next, prefix) && !s.modelRefExists(ctx, next) {
-			next = "" // the user's earlier default went meanwhile
-		}
-		return next, nil
-	})
-	if err != nil {
+	if _, err := s.db.DurableExecute(ctx, "UPDATE model_services SET file_model = ? WHERE id = ?", model, row.id); err != nil {
 		return err
 	}
-	_, err = s.db.DurableExecute(ctx, "UPDATE model_services SET file_model = ?, prev_default = ? WHERE id = ?", model, prev, row.id)
-	return err
-}
-
-// setDefaultModel sets Settings.DefaultModel to what f makes of the current
-// one, and nothing else: it reads and writes under settingsMu, so a
-// SetSettings meanwhile is neither lost nor overwritten with an older copy.
-func (s *Service) setDefaultModel(ctx context.Context, f func(cur string) (string, error)) error {
-	s.settingsMu.Lock()
-	defer s.settingsMu.Unlock()
-	st, err := s.loadSettings(ctx)
-	if err != nil {
-		return err
-	}
-	next, err := f(st.DefaultModel)
-	if err != nil || next == st.DefaultModel {
-		return err
-	}
-	st.DefaultModel, st.SettingsVersion = next, settingsVersion
-	if err := st.validate(st.MaskRules); err != nil {
-		return err
-	}
-	b, err := json.Marshal(st)
-	if err != nil {
-		return err
-	}
-	if _, err := s.db.Execute(ctx, `INSERT INTO settings(key, value) VALUES ('app', ?)
-		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, string(b)); err != nil {
-		return err
-	}
-	s.bus.Publish(events.Event{Type: events.SettingsChanged})
+	s.bus.Publish(events.Event{Type: events.SettingsChanged}) // the default model the settings show changed
 	return nil
 }
 
-// dropManagedService gives the default model back, then removes the service:
-// if the settings cannot be saved, or the process stops in between, the row
-// and its prev_default stay for the next poll to finish.
+// dropManagedService removes row's service; if the file chose one of its
+// models, the default model is the user's own again (gatewayDefault).
 func (s *Service) dropManagedService(ctx context.Context, row managedRow) error {
-	if err := s.freshChain(ctx, &row); err != nil {
+	if err := s.removeModelService(ctx, row.id, row.by); err != nil {
 		return err
 	}
-	prefix := row.slug + "/"
-	err := s.setDefaultModel(ctx, func(cur string) (string, error) {
-		if !strings.HasPrefix(cur, prefix) {
-			return cur, nil
-		}
-		next := row.prevDefault // the file's choice or the user's: either goes with the service
-		if next != "" && (strings.HasPrefix(next, prefix) || !s.modelRefExists(ctx, next)) {
-			next = ""
-		}
-		return next, nil
-	})
-	if err != nil {
-		return err
+	if row.fileModel != "" {
+		s.bus.Publish(events.Event{Type: events.SettingsChanged})
 	}
-	if _, err := s.db.DurableTransaction(ctx, []sqlite.Statement{spliceChain(row, row.prevDefault)}); err != nil {
-		return err
-	}
-	return s.removeModelService(ctx, row.id, row.by)
-}
-
-// freshChain reads row's saved default and file choice again: an earlier
-// entry of the same sync may have spliced them since the rows were listed.
-func (s *Service) freshChain(ctx context.Context, row *managedRow) error {
-	rows, err := s.db.Query(ctx, "SELECT file_model, prev_default FROM model_services WHERE id = ?", row.id)
-	if err != nil || len(rows.Values) == 0 {
-		return err
-	}
-	row.fileModel, row.prevDefault = store.Str(rows.Values[0][0]), store.Str(rows.Values[0][1])
 	return nil
 }
 
-// spliceChain gives every other managed service that saved row's model as
-// the default to give back to give back prev instead (what row itself saved),
-// so the chain of saved defaults still ends at the user's.
-func spliceChain(row managedRow, prev string) sqlite.Statement {
-	prefix := row.slug + "/"
-	return sqlite.Statement{SQL: `UPDATE model_services SET prev_default = ?
-		WHERE id != ? AND managed_by != '' AND substr(prev_default, 1, length(?)) = ?`, Args: []any{prev, row.id, prefix, prefix}}
-}
-
-// modelRefExists reports whether ref still names a model.
-func (s *Service) modelRefExists(ctx context.Context, ref string) bool {
-	_, _, err := s.resolveRef(ctx, ref)
-	return !errors.Is(err, ErrModelServiceNotFound) && !errors.Is(err, ErrModelNotFound)
+// gatewayDefault is the default model a gateway's file chooses, as
+// "slug/model", and the gateway; "" when none does. It is read, never
+// copied into the settings: the gateway keeps and restores its own file, so
+// once the file stops choosing, the user's own default is the default again.
+// Of several, the first by service name.
+func (s *Service) gatewayDefault(ctx context.Context) (ref, by string, err error) {
+	rows, err := s.db.Query(ctx, `SELECT slug, file_model, managed_by FROM model_services
+		WHERE managed_by != '' AND file_model != '' ORDER BY name LIMIT 1`)
+	if err != nil || len(rows.Values) == 0 {
+		return "", "", err
+	}
+	r := rows.Values[0]
+	return store.Str(r[0]) + "/" + store.Str(r[1]), store.Str(r[2]), nil
 }
 
 // syncExternalMCP makes the managed MCP servers match servers. New ones come

@@ -43,6 +43,11 @@ type Settings struct {
 	ThreadCollapse                    bool // collapse runs of folded messages into an expandable card
 	ThreadCollapseThreshold           int  // a longer thread keeps its newest this many messages in sight and collapses the older; MinThreadCollapse to MaxThreadCollapse
 	DefaultModel, SmallModel          string
+	// DefaultModelBy names the agent gateway whose file chooses DefaultModel
+	// (ADR 0041); "" when it is the user's own. Read, never saved: the user's
+	// own default stays stored beneath it and is the default again once the
+	// gateway's file stops choosing.
+	DefaultModelBy string
 	// Translator is the reader's translation channel: "" the model, or
 	// "plugin/<name>" a plugin declaring translate (ListTranslators).
 	Translator string
@@ -373,7 +378,25 @@ func (s *Service) GetSettings(ctx context.Context) (Settings, error) {
 	return s.loadSettings(ctx)
 }
 
+// loadSettings is the settings in effect: the stored ones, with the default
+// model a gateway's file chooses over the user's own (DefaultModelBy).
 func (s *Service) loadSettings(ctx context.Context) (Settings, error) {
+	st, err := s.storedSettings(ctx)
+	if err != nil {
+		return st, err
+	}
+	ref, by, err := s.gatewayDefault(ctx)
+	if err != nil {
+		return Settings{}, err
+	}
+	if ref != "" {
+		st.DefaultModel, st.DefaultModelBy = ref, by
+	}
+	return st, nil
+}
+
+// storedSettings is the settings as saved, the user's own default model in them.
+func (s *Service) storedSettings(ctx context.Context) (Settings, error) {
 	st := defaultSettings()
 	rows, err := s.db.Query(ctx, "SELECT value FROM settings WHERE key = 'app'")
 	if err != nil || len(rows.Values) == 0 {
@@ -424,10 +447,18 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 	defer end()
 	s.settingsMu.Lock()
 	defer s.settingsMu.Unlock()
-	stored, err := s.loadSettings(ctx)
+	stored, err := s.storedSettings(ctx)
 	if err != nil {
 		return Settings{}, err
 	}
+	gw, gwBy, err := s.gatewayDefault(ctx)
+	if err != nil {
+		return Settings{}, err
+	}
+	if gw != "" { // the gateway's file chooses the default: changed there, never saved over the user's own
+		st.DefaultModel = stored.DefaultModel
+	}
+	st.DefaultModelBy = ""
 	if err := st.validate(stored.MaskRules); err != nil { // an old rule under a built-in kind must not stop saving the rest
 		return Settings{}, err
 	}
@@ -477,6 +508,9 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 		s.wakeSecurityScanner()
 	}
 	s.bus.Publish(events.Event{Type: events.SettingsChanged})
+	if gw != "" {
+		st.DefaultModel, st.DefaultModelBy = gw, gwBy
+	}
 	return st, nil
 }
 

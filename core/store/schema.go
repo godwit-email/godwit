@@ -845,13 +845,12 @@ var Migrations = [][]string{{
 }, {
 	// Services and MCP servers an agent gateway writes into Options.ExternalDir
 	// (ADR 0041): managed_by names it, managed_hash is the entry last applied;
-	// file_model is the model the file last chose, prev_default the default
-	// model it replaced; model_info is what the gateway says of each model
-	// (its name, its context window).
+	// file_model is the model the file chooses, read as the default model
+	// while it is set; model_info is what the gateway says of each model (its
+	// name, its context window).
 	`ALTER TABLE model_services ADD COLUMN managed_by TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE model_services ADD COLUMN managed_hash TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE model_services ADD COLUMN file_model TEXT NOT NULL DEFAULT ''`,
-	`ALTER TABLE model_services ADD COLUMN prev_default TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE mcp_servers ADD COLUMN managed_by TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE mcp_servers ADD COLUMN managed_hash TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE model_services ADD COLUMN model_info TEXT NOT NULL DEFAULT '{}'`,
