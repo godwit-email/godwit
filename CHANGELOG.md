@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.37.0](https://github.com/godwit-email/godwit/compare/v1.36.0...v1.37.0) (2026-11-14)
+
+
+### Features
+
+* **app:** remember which sidebar accounts are unfolded ([#769](https://github.com/godwit-email/godwit/issues/769)) ([0e45fe3](https://github.com/godwit-email/godwit/commit/0e45fe3f2003487023b4a8fb14786123b801902c)), closes [#704](https://github.com/godwit-email/godwit/issues/704)
+* connect magpie to Godwit as an agent (ADR 0041) ([#784](https://github.com/godwit-email/godwit/issues/784)) ([cf8f954](https://github.com/godwit-email/godwit/commit/cf8f95497af3ba36b4cf348b6cbc1ccf6ba3de5b))
+* **i18n:** add Polish ([#775](https://github.com/godwit-email/godwit/issues/775)) ([cf55cb9](https://github.com/godwit-email/godwit/commit/cf55cb97e366940f1eee0e231a276a4fa6ed2517))
+* **labels:** add cyan, indigo, emerald and fuchsia label colors ([#770](https://github.com/godwit-email/godwit/issues/770)) ([9983576](https://github.com/godwit-email/godwit/commit/99835764dac412ab6f106f063061e77f71bc5c46))
+
+
+### Bug Fixes
+
+* **app:** keep a block made while a load is under way ([#781](https://github.com/godwit-email/godwit/issues/781)) ([bf3995e](https://github.com/godwit-email/godwit/commit/bf3995e5da0db3c0185117db51759d5bc5dbc50f))
+* **app:** stop an empty unread list from paging the mail in ([#779](https://github.com/godwit-email/godwit/issues/779)) ([dca3c78](https://github.com/godwit-email/godwit/commit/dca3c786a317b72994fd14603303293d1dc36e7f))
+* **cmd:** stop a mygo dev backend once its interface goes ([#783](https://github.com/godwit-email/godwit/issues/783)) ([0db940b](https://github.com/godwit-email/godwit/commit/0db940ba23bb5ee14eb630ee7ba1c5b3f7ec477f))
+* **codes:** keep the sign-in code card while the pointer rests on it ([#757](https://github.com/godwit-email/godwit/issues/757)) ([097d5e4](https://github.com/godwit-email/godwit/commit/097d5e4351a86f1226c9e2b922ee2d6eeda4b82d))
+* **core:** don't count a quitting interface against the next one's quit ([#773](https://github.com/godwit-email/godwit/issues/773)) ([e957325](https://github.com/godwit-email/godwit/commit/e957325631fad9c7095401871ad3069d1c5e28d3))
+* **i18n:** add the four Polish label color names ([#778](https://github.com/godwit-email/godwit/issues/778)) ([f18ff2b](https://github.com/godwit-email/godwit/commit/f18ff2b35159c63acdb226a39138c1c5f8733b45))
+* **mailsync:** await the claim of a move whose reply was lost on EWS ([#759](https://github.com/godwit-email/godwit/issues/759)) ([cf46b23](https://github.com/godwit-email/godwit/commit/cf46b23ebc92dd7140ab53a8edd672d72c88e3b8))
+* name the step and the server of a sync that timed out ([#772](https://github.com/godwit-email/godwit/issues/772)) ([10a03fa](https://github.com/godwit-email/godwit/commit/10a03fa8b7cca44b06e9141eb9605a46ee5da8bc))
+* **reader:** fold quotes on the rendered body, following the mail's stylesheet ([#713](https://github.com/godwit-email/godwit/issues/713)) ([#771](https://github.com/godwit-email/godwit/issues/771)) ([160322e](https://github.com/godwit-email/godwit/commit/160322e9c962dc1a94b726e6ba4b403fbf43f88d))
+
 ## [1.36.0](https://github.com/godwit-email/godwit/compare/v1.35.0...v1.36.0) (2026-11-13)
 
 
