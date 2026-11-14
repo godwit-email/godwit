@@ -129,11 +129,11 @@ func TestRadiusAndTextScale(t *testing.T) {
 	if r := tok.Radius; [8]float32{r.Xs, r.Sm, r.Md, r.Lg, r.Xl, r.X2l, r.X3l, r.X4l} != [8]float32{2, 4, 6, 8, 12, 16, 24, 32} {
 		t.Errorf("Radius = %+v", r)
 	}
-	if x := tok.Text; [7]float32{x.Xs, x.Sm, x.Base, x.Body, x.Lg, x.Xl, x.X2l} != [7]float32{12, 13, 14, 15, 16, 19, 21} {
+	if x := tok.Text; [5]float32{x.Xs, x.Sm, x.Base, x.Xl, x.X3l} != [5]float32{13, 15, 17, 21, 31} {
 		t.Errorf("Text = %+v", x)
 	}
-	if Light().Text.Body != 14 {
-		t.Errorf("Light().Text.Body = %v, want 14", Light().Text.Body)
+	if Light().Text.Sm != 14 {
+		t.Errorf("Light().Text.Sm = %v, want 14", Light().Text.Sm)
 	}
 	var th *ui.Theme
 	ui.NewTester(func(c *ui.Context) { Apply(c, tok); th = c.Theme() }, 200, 100).Frame()
@@ -170,10 +170,18 @@ func TestShadowsAsTailwind(t *testing.T) {
 	}
 }
 
+// TestTextNeverUnderMin: at the smallest font-size setting the scale's
+// smallest step stays at MinText.
+func TestTextNeverUnderMin(t *testing.T) {
+	if sm := FromSettings(core.Settings{FontSize: 13}, false).Text.Xs; sm != MinText {
+		t.Errorf("Sm at 13 = %v, want %v", sm, float32(MinText))
+	}
+}
+
 func TestTextScaleMatchesTokens(t *testing.T) {
 	tok := Light()
 	x := tok.Text
-	if got := [9]float32{x.Xs, x.Sm, x.Base, x.Body, x.Lg, x.Title, x.Xl, x.X2l, x.Display}; got != [9]float32{11, 12, 13, 14, 15, 16, 18, 20, 29} {
+	if got := [5]float32{x.Xs, x.Sm, x.Base, x.Xl, x.X3l}; got != [5]float32{12, 14, 16, 20, 30} {
 		t.Errorf("Text at 14 = %+v", x)
 	}
 	if got := mygoTheme(tok).FontSize; got != 14 {
@@ -211,8 +219,8 @@ func TestDarkStatus(t *testing.T) {
 func TestLine(t *testing.T) {
 	for _, font := range []int{13, 14, 16} {
 		s := FromSettings(core.Settings{FontSize: font}, false).Text
-		for size, want := range map[float32]float32{s.Xs: LineXs, s.Sm: LineSm, s.Base: LineBase, s.Body: LineBody, s.Lg: LineLg,
-			s.Title: LineTitle, s.Xl: LineXl, s.X2l: LineX2l, s.Display: LineDisplay, s.Body + 0.5: LineBody} {
+		for size, want := range map[float32]float32{s.Xs: LineXs, s.Sm: LineSm,
+			s.Base: LineBase, s.Xl: LineXl, s.X3l: LineX3l, s.Sm + 0.5: LineSm} {
 			if got := s.Line(size); got != want {
 				t.Errorf("font %d: Line(%v) = %v, want %v", font, size, got, want)
 			}

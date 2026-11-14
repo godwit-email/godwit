@@ -19,6 +19,16 @@ func ink(t theme.Tokens) ui.Color {
 }
 
 // colors animates color changes (hover, selection) over d.
+// controlRadius is the corner of a control h high: Md under the default 32
+// (the 28 and 24 ones), Lg from there, so that a button, an input and a
+// select of one height, side by side, round alike.
+func controlRadius(c *ui.Context, h float32) float32 {
+	if h < c.Theme().Space(8) {
+		return theme.Of(c).Radius.Md
+	}
+	return theme.Of(c).Radius.Lg
+}
+
 func colors(d time.Duration) ui.ElementTransition {
 	return ui.ElementTransition{Colors: true, Duration: d}
 }

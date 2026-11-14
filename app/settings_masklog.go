@@ -128,8 +128,8 @@ func (p *settingsPage) maskLogEntry(c *ui.Context) {
 			FillWidth().MinHeight(th.Space(12)).Padding(th.Space(2), th.Space(4)).Gap(th.Space(6)).AlignItems(ui.Center).Radius(0).Label(i18n.T("settings.masking.log.open"))
 		b.Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-				kit.Text(c, i18n.T("settings.masking.log.open"), t.Text.Body).FontWeight(500)
-				kit.Text(c, maskLogSummary(maskRequests(p.maskLog)), t.Text.Sm).TextColor(t.Muted)
+				kit.Text(c, i18n.T("settings.masking.log.open"), t.Text.Sm).FontWeight(500)
+				kit.Text(c, maskLogSummary(maskRequests(p.maskLog)), t.Text.Xs).TextColor(t.Muted)
 			})
 			ui.Icon(c, icons.Get("chevron-right")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
 		})
@@ -150,7 +150,7 @@ func settingsBack(c *ui.Context, label string, onClick func()) {
 	}
 	back.TextColor(fg).Children(func() {
 		ui.Icon(c, icons.Get("arrow-left")).Size(theme.Icon, theme.Icon)
-		kit.Text(c, label, t.Text.Base)
+		kit.Text(c, label, t.Text.Sm)
 	})
 }
 
@@ -192,13 +192,13 @@ func (p *settingsPage) maskLogPage(c *ui.Context) {
 			}
 			b.Children(func() {
 				ui.Column(c).Gap(th.Space(0.5)).Children(func() {
-					kit.Text(c, label, t.Text.Sm).TextColor(t.Muted)
+					kit.Text(c, label, t.Text.Xs).TextColor(t.Muted)
 					color := tile.color
 					if tile.n == 0 {
 						color = t.Muted
 					}
 					kit.Text(c, strconv.Itoa(tile.n), t.Text.Xl).FontWeight(600).TextColor(color)
-					kit.Text(c, i18n.T("settings.masking.log."+tile.key+".help"), t.Text.Sm).TextColor(t.Muted)
+					kit.Text(c, i18n.T("settings.masking.log."+tile.key+".help"), t.Text.Xs).TextColor(t.Muted)
 				})
 			})
 		}
@@ -229,7 +229,7 @@ func (p *settingsPage) maskLogPage(c *ui.Context) {
 		}
 		title, rs := day, rows
 		ui.Column(c).Gap(theme.SectionGap).Children(func() {
-			kit.Text(c, title, t.Text.Sm).TextColor(t.Muted).PaddingX(th.Space(4))
+			kit.Text(c, title, t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(4))
 			settingsCard(c, rs...)
 		})
 		rows = nil
@@ -261,7 +261,7 @@ func (p *settingsPage) maskLogPage(c *ui.Context) {
 		}
 		settingsCard(c, func() { settingBlock(c, func() { ui.Text(c, msg).TextColor(t.Muted) }) })
 	}
-	kit.Text(c, i18n.T("settings.masking.log.short"), t.Text.Sm).TextColor(t.Muted).PaddingX(th.Space(4))
+	kit.Text(c, i18n.T("settings.masking.log.short"), t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(4))
 
 	if f.clearing {
 		dismiss := func() { f.clearing = false }
@@ -295,8 +295,8 @@ func (p *settingsPage) maskRequestRow(c *ui.Context, q maskRequest) {
 			f.open[q.key] = !open
 		}}).FillWidth().MinHeight(th.Space(11)).Padding(th.Space(2), th.Space(4)).Gap(th.Space(3)).AlignItems(ui.Center).Radius(0).Label(feature)
 		b.Children(func() {
-			kit.Text(c, q.at.In(p.a.clock.Now().Location()).Format("15:04"), t.Text.Sm).Width(th.Space(10)).Shrink(0).TextColor(t.Muted)
-			kit.Text(c, feature, t.Text.Body).FontWeight(500).Grow(1).Shrink(1)
+			kit.Text(c, q.at.In(p.a.clock.Now().Location()).Format("15:04"), t.Text.Xs).Width(th.Space(10)).Shrink(0).TextColor(t.Muted)
+			kit.Text(c, feature, t.Text.Sm).FontWeight(500).Grow(1).Shrink(1)
 			per := map[string]int{}
 			var order []string
 			for _, r := range q.values {
@@ -351,18 +351,17 @@ func (p *settingsPage) maskValueRow(c *ui.Context, r core.MaskRecord, blocked bo
 		color = t.WarningText
 	}
 	ui.Row(c).FillWidth().MinHeight(th.Space(8)).Padding(th.Space(1), th.Space(2.5)).Gap(th.Space(2.5)).AlignItems(ui.Center).Radius(t.Radius.Lg).Background(t.Background).Children(func() {
-		kit.Text(c, maskCategoryName(r.Category), t.Text.Base).FontWeight(500).Shrink(0)
-		kit.Text(c, r.Kind, t.Text.Sm).Font(theme.Mono).TextColor(t.Muted).Shrink(0)
-		kit.Text(c, shape, t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
-		kit.Text(c, i18n.T("settings.masking.log.source."+r.Source), t.Text.Sm).TextColor(t.Muted).Shrink(0)
-		kit.Text(c, act, t.Text.Sm).TextColor(color).Shrink(0)
+		kit.Text(c, maskCategoryName(r.Category), t.Text.Sm).FontWeight(500).Shrink(0)
+		kit.Text(c, r.Kind, t.Text.Xs).Font(theme.Mono).TextColor(t.Muted).Shrink(0)
+		kit.Text(c, shape, t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
+		kit.Text(c, i18n.T("settings.masking.log.source."+r.Source), t.Text.Xs).TextColor(t.Muted).Shrink(0)
+		kit.Text(c, act, t.Text.Xs).TextColor(color).Shrink(0)
 	})
 }
 
 // dangerPill is statusPill in the danger colors: 已拦截.
 func dangerPill(c *ui.Context, text string) {
-	t, th := theme.Of(c), c.Theme()
-	ui.Box(c).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Sm).Background(t.DangerBg).TextColor(t.DangerText).Children(func() { kit.Text(c, text, t.Text.Sm) })
+	kit.BadgeWith(c, text, kit.BadgeOpts{Tone: kit.BadgeDanger})
 }
 
 // maskFeatures are the features the masking log names (core's

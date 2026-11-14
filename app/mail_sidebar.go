@@ -253,7 +253,7 @@ func (p *mailPage) navItem(c *ui.Context, icon, label string, v core.View, count
 		kit.SidebarIcon(c, item, icon, on)
 		ui.Text(c, label).SingleLine().Grow(1).Shrink(1)
 		if count > 0 {
-			kit.Text(c, strconv.Itoa(count), t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, strconv.Itoa(count), t.Text.Xs).TextColor(t.Muted)
 		}
 	})
 	if v.Unified == "inbox" || v.Unified == "starred" {
@@ -286,7 +286,7 @@ func (p *mailPage) account(c *ui.Context, acc core.Account) {
 		p.a.accountMark(c, acc) // as in the settings sidebar
 		ui.Text(c, name).SingleLine().Grow(1).Shrink(1).TextColor(t.Foreground)
 		if n := p.a.unread[acc.ID]; n > 0 {
-			kit.Text(c, strconv.Itoa(n), t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, strconv.Itoa(n), t.Text.Xs).TextColor(t.Muted)
 		}
 	}, func() {
 		hide := "" // the subtree of a folded folder
@@ -357,7 +357,7 @@ func (p *mailPage) folderRow(c *ui.Context, f sideFolder, open *bool) {
 			n = f.sum
 		}
 		if n > 0 && f.Role != "junk" && f.Role != "trash" {
-			kit.Text(c, strconv.Itoa(n), t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, strconv.Itoa(n), t.Text.Xs).TextColor(t.Muted)
 		}
 		if f.kids {
 			ch, label := kit.SidebarChevron(c, 0), "mail.folder.expand"
@@ -471,7 +471,7 @@ func (p *mailPage) accountLabelsNav(c *ui.Context, accID int64) {
 		ui.Icon(c, icons.Get("tag")).Size(theme.Icon, theme.Icon).Shrink(0).TextColor(t.Muted)
 		ui.Text(c, i18n.T("mail.labels")).SingleLine().Grow(1).Shrink(1)
 		if !*open && totalUnread > 0 {
-			kit.Text(c, strconv.Itoa(totalUnread), t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, strconv.Itoa(totalUnread), t.Text.Xs).TextColor(t.Muted)
 		}
 	}, func() {
 		for _, l := range labels {
@@ -485,7 +485,7 @@ func (p *mailPage) accountLabelsNav(c *ui.Context, accID int64) {
 				ui.Icon(c, icons.Get("label-"+l.Icon)).Size(theme.Icon, theme.Icon).TextColor(t.Label(l.Color).Text)
 				ui.Text(c, l.Name).SingleLine().Grow(1).Shrink(1)
 				if l.Unread > 0 {
-					kit.Text(c, strconv.Itoa(l.Unread), t.Text.Sm).TextColor(t.Muted)
+					kit.Text(c, strconv.Itoa(l.Unread), t.Text.Xs).TextColor(t.Muted)
 				}
 			})
 		}

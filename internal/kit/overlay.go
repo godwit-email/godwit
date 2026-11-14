@@ -48,7 +48,7 @@ func Dialog(c *ui.Context, open *bool, title string, o DialogOpts, body, footer 
 	}
 	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
 		dialogShown = true
-		backdrop.Background(scrim.Alpha(k)) // Alpha scales: the scrim fades with the panel
+		backdrop.Background(scrim.Alpha(k)).Transition(leave(c)) // Alpha scales: the scrim fades with the panel
 		if o.Top {
 			backdrop.Justify(ui.Start).Padding(theme.DialogTop, 0, 0, 0)
 		} else {
@@ -63,7 +63,7 @@ func Dialog(c *ui.Context, open *bool, title string, o DialogOpts, body, footer 
 		}
 		header.Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
-				Text(c, title, t.Text.Title).FontWeight(600).LineHeight(theme.LineFor(title))
+				Text(c, title, t.Text.Base).FontWeight(600).LineHeight(theme.LineFor(title))
 				if o.Desc != "" {
 					ui.Text(c, o.Desc).LineHeight(theme.LineFor(o.Desc)).TextColor(t.Muted)
 				}
@@ -208,7 +208,7 @@ func PopoverAt(c *ui.Context, anchor ui.Element, open *bool, at, self ui.Anchor,
 	k := enter(c, open, theme.MotionFast)
 	ui.PopoverBase(c, anchor, open, func(panel ui.Element) {
 		panel.AttachTo(anchor, at, self).
-			Opacity(k).Margin(topOffset+rise(k), 0, 0, 0).Padding(th.Space(3)).
+			Opacity(k).Margin(topOffset+rise(k), 0, 0, 0).Padding(th.Space(3)).Transition(leave(c)).
 			Radius(t.Radius.Lg).Clip().Gap(th.Space(2)).
 			Material(LiquidGlass(t.GlassBg)).
 			Border(theme.Hairline, t.GlassBorder)
@@ -224,7 +224,7 @@ func MenuAt(c *ui.Context, anchor ui.Element, open *bool, at, self ui.Anchor, to
 	k := enter(c, open, theme.MotionFast)
 	ui.PopoverBase(c, anchor, open, func(panel ui.Element) {
 		panel.AttachTo(anchor, at, self).Role(ui.RoleMenu).Label(label).
-			Opacity(k).Margin(topOffset+rise(k), 0, 0, 0).Padding(th.Space(1)).
+			Opacity(k).Margin(topOffset+rise(k), 0, 0, 0).Padding(th.Space(1)).Transition(leave(c)).
 			Radius(t.Radius.Lg).Clip().Gap(th.Space(0.5)).
 			Material(LiquidGlass(t.GlassBg)).
 			Border(theme.Hairline, t.GlassBorder)

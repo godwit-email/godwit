@@ -100,8 +100,8 @@ func (p *settingsPage) clientsRow(c *ui.Context, copied func(string)) {
 	settingBlock(c, func() {
 		ui.Row(c).FillWidth().Gap(th.Space(6)).AlignItems(ui.Start).Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-				kit.Text(c, i18n.T("settings.local_api.connect"), t.Text.Body).FontWeight(500)
-				kit.Text(c, i18n.T("settings.local_api.connect.help"), t.Text.Sm).TextColor(t.Muted)
+				kit.Text(c, i18n.T("settings.local_api.connect"), t.Text.Sm).FontWeight(500)
+				kit.Text(c, i18n.T("settings.local_api.connect.help"), t.Text.Xs).TextColor(t.Muted)
 			})
 			if settingButton(c, i18n.T("settings.local_api.copy"), kit.Outline, false).Clicked() {
 				copied(a.mcpConfig())
@@ -124,13 +124,13 @@ func (p *settingsPage) clientsRow(c *ui.Context, copied func(string)) {
 					// connected: the app's own colors; else its mark and name in gray
 					if on && (id == mcpclients.Codex || id == mcpclients.Grok) { // marks with no colors
 						ui.Icon(c, icons.BrandIcon(id+"-mono")).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
-						kit.Text(c, clientNames[id], t.Text.Base)
+						kit.Text(c, clientNames[id], t.Text.Sm)
 					} else if on {
 						ui.Image(c, icons.BrandIcon(id)).Size(theme.Icon, theme.Icon)
-						kit.Text(c, clientNames[id], t.Text.Base)
+						kit.Text(c, clientNames[id], t.Text.Sm)
 					} else {
 						ui.Icon(c, icons.BrandIcon(id+"-mono")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
-						kit.Text(c, clientNames[id], t.Text.Base).TextColor(t.Muted)
+						kit.Text(c, clientNames[id], t.Text.Sm).TextColor(t.Muted)
 					}
 					switch st {
 					case mcpclients.On:

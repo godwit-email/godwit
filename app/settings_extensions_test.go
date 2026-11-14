@@ -570,7 +570,7 @@ func TestPluginRowDescription(t *testing.T) {
 	h.see("desc-demo")
 	h.see("演示插件")
 	desc, ok := h.tt.Find(long)
-	sm := theme.Light().Text.Sm
+	sm := theme.Light().Text.Xs
 	if line := sm * theme.Light().Text.Line(sm); !ok || desc.H > line*1.5 {
 		t.Fatalf("the description is %v high, a line %v: not one line", desc.H, line)
 	}

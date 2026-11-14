@@ -208,8 +208,8 @@ func viewHeading(c *ui.Context, e listEntry) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2.5), th.Space(2.5), th.Space(1), th.Space(2)).
 		Background(t.Background).Children(func() {
-		kit.Text(c, e.head, t.Text.Base).FontWeight(500).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1)
-		kit.Text(c, strconv.Itoa(e.count), t.Text.Sm).TextColor(t.Muted).Shrink(0)
+		kit.Text(c, e.head, t.Text.Xs).FontWeight(500).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1)
+		kit.Text(c, strconv.Itoa(e.count), t.Text.Xs).TextColor(t.Muted).Shrink(0)
 	})
 }
 
@@ -281,7 +281,7 @@ func (p *mailPage) viewRow(c *ui.Context, b core.SavedView) {
 		ui.Icon(c, icons.Get(labelIcon(b.Icon))).Size(theme.Icon, theme.Icon).Shrink(0).TextColor(t.Muted)
 		ui.Text(c, b.Name).SingleLine().Grow(1).Shrink(1)
 		if b.Unread > 0 {
-			kit.Text(c, strconv.Itoa(b.Unread), t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, strconv.Itoa(b.Unread), t.Text.Xs).TextColor(t.Muted)
 		}
 	})
 	item.ContextMenu(func(m *ui.Menu) { p.savedViewMenu(m, b) })
@@ -605,7 +605,7 @@ func (r *reader) viewBand(c *ui.Context) {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2), th.Space(3)).MinHeight(th.Space(10)).
 			Radius(t.Radius.Lg).Background(t.Hover).Border(theme.Hairline, t.Border).Children(func() {
 			ui.Icon(c, icons.Get(icon)).Size(theme.IconSm, theme.IconSm).Shrink(0).TextColor(t.Muted)
-			kit.Text(c, text, t.Text.Base).Grow(1).Shrink(1)
+			kit.Text(c, text, t.Text.Sm).Grow(1).Shrink(1)
 			if w.Status == core.ReplyStatusWaiting {
 				kit.Button(c, i18n.T("view.follow_up"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Shrink(0).OnClick(func() { r.draft("reply") })
 			}
@@ -637,11 +637,11 @@ func (r *reader) viewWhyLine(c *ui.Context) {
 	r.column(c).Children(func() {
 		kit.Separator(c, false)
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), 0, 0, 0).Children(func() {
-			kit.Text(c, text, t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
+			kit.Text(c, text, t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
 			if w.Manual {
-				kit.TextLink(c, i18n.T("compose.undo"), t.Foreground, t.Text.Sm).Shrink(0).OnClick(func() { p.setViewExceptions(b.ID, []int64{r.key[0]}, "", nil) })
+				kit.TextLink(c, i18n.T("compose.undo"), t.Foreground, t.Text.Xs).Shrink(0).OnClick(func() { p.setViewExceptions(b.ID, []int64{r.key[0]}, "", nil) })
 			} else {
-				kit.TextLink(c, i18n.T("view.remove"), t.Foreground, t.Text.Sm).Shrink(0).OnClick(func() { p.removeFromView(b, thread) })
+				kit.TextLink(c, i18n.T("view.remove"), t.Foreground, t.Text.Xs).Shrink(0).OnClick(func() { p.removeFromView(b, thread) })
 			}
 		})
 	})

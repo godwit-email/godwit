@@ -9,7 +9,11 @@ Godwit is an open-source AI email client. Its interface is drawn natively (mygo)
 - **One panel.** The sidebar and content form one rounded panel (`radius-xl`), inset `space-2` from the window's right and bottom edges. The sidebar is 240–480 wide, one width for every page.
 - **Status is tinted, not shouted.** Success, warning and error toasts take their color's 50 behind, 200 around (warning: amber-300) and 700 for text and icon (warning: amber-800); a plain toast is white. Toasts sit centered under the top bar.
 - **Few lines.** Draw a divider only between peers: fields of a form, rows of a card, both inset to the content edge. Nothing separates a bottom bar from the content above it, and a toolbar sits on the bar rather than in a row of its own; whitespace does that job.
-- **Spacing in 4s.** Every size is `space-n` = 4n px (half steps allowed); controls are 32 high (28 small, 36 large).
+- **Spacing in 4s.** Every size is `space-n` = 4n px (half steps allowed).
+- **One scale for controls.** A control is 32 high, 28 small, 24 extra small or 36 large, and nothing between: a button, an input and a select of one height sit side by side alike. Its corner follows its height: `radius-lg` from 32, `radius-md` at 28 and 24, `radius-sm` for a badge (20). Inside a rounded box a part rounds no more than the box: `radius-md` items in a `radius-lg` menu or toast. Rows (a sidebar's 32 and 28, a settings row) are not controls and keep `radius-lg`.
+- **Pages draw no surfaces of their own.** A box a page rounds and fills or outlines by hand is a component the kit lacks: add it there. `app/kit_guard_test.go` holds the line: the hand-drawn ones left are pinned per file in `app/testdata/hand_styled.txt` and only go down, and a control gets no height off the scale.
+- **Five text sizes, Tailwind's.** `xs` 12 (secondary text, badges, hints), `sm` 14 (the interface's text), `base` 16 (dialog, card and section titles), `xl` 20 (page headings, figures) and `3xl` 30: the names and sizes the app's web pages use, so `sm` is one size everywhere. There is no step between 12 and 14, and nothing is under 12 at any font-size setting. Weight 400 reads, 500 marks what acts or is chosen (buttons, a chosen tab, a row's label), 600 is for titles and unread mail.
+- **Three inks.** `foreground` for what is read first, `muted` for what is secondary, and `subdued` between them for what has been seen. A list row leads with one line at 500 (who, or the subject where the user put it first), 600 while unread; the line under it is 400 and the snippet `xs` `muted`. Read mail takes `subdued` on both lines, so unread differs by ink as well as weight.
 
 ## Content fundamentals
 
@@ -33,11 +37,11 @@ Mail labels come in sixteen colors (gray, red, orange, amber, yellow, lime, gree
 
 ## Layout
 
-The `size` tokens are the app's fixed measures: sidebars 248 (240–480 by drag), the mail list 340 (280–560), the top bar 44, dialogs 440 / 560 / 640, toasts at most 420, a settings column 760, the reading column 720. Text sizes follow the user's font size (body 14 by default) and comfortable density scales every `space-*` by 1.25; radii and the `size` tokens do not change.
+The `size` tokens are the app's fixed measures: sidebars 248 (240–480 by drag), the mail list 340 (280–560), the top bar 44, dialogs 440 / 560 / 640, toasts at most 420, a settings column 760, the reading column 720. Text sizes follow the user's font size (`sm` 14 by default) and comfortable density scales every `space-*` by 1.25; radii and the `size` tokens do not change.
 
 ## Motion
 
-Hover and selection change over 120 ms, moves over 200 ms, ease-out. An overlay fades in rising 4 px (a toast 8). With reduced motion everything appears at once.
+Hover and selection change over 120 ms, moves over 200 ms, ease-out. An overlay fades in rising 4 px (a toast 8) and fades out over 120 ms. A pressed button goes a step past its hover. With reduced motion everything appears at once.
 
 ## Components
 

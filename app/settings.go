@@ -305,13 +305,13 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 		cur = "privacy" // 脱敏记录 is a page of 隐私与安全
 	}
 	group := func(label string, top, bottom float32) {
-		kit.Text(c, label, t.Text.Sm).TextColor(t.Muted).Padding(top, th.Space(2), bottom, th.Space(2))
+		kit.Text(c, label, t.Text.Xs).TextColor(t.Muted).Padding(top, th.Space(2), bottom, th.Space(2))
 	}
 	item := func(sec string) ui.Element {
 		return kit.SidebarItem(c, kit.SidebarItemOpts{Selected: sec == cur, OnClick: func() { a.navigate(Route{Page: PageSettings, Settings: sec}) }})
 	}
 	sidebarScroll(c, func() {
-		kit.Text(c, i18n.T("settings.heading"), t.Text.Xl).LineHeight(theme.LineFor(i18n.T("settings.heading"))).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
+		kit.Text(c, i18n.T("settings.heading"), t.Text.Base).LineHeight(theme.LineFor(i18n.T("settings.heading"))).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
 		p.searchField(c)
 		hit := p.matching(p.query)
 		if hit.accounts {
@@ -427,9 +427,9 @@ func pageHeading(c *ui.Context, title, sub string, action ...func()) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).AlignItems(ui.End).Gap(th.Space(4)).Children(func() {
 		ui.Column(c).Grow(1).Shrink(1).Gap(theme.HeadingGap).Children(func() {
-			kit.Text(c, title, t.Text.Display).FontWeight(600)
+			kit.Text(c, title, t.Text.X3l).FontWeight(600)
 			if sub != "" {
-				kit.Text(c, sub, t.Text.Body).LineHeight(theme.LineFor(sub)).TextColor(t.Muted)
+				kit.Text(c, sub, t.Text.Sm).LineHeight(theme.LineFor(sub)).TextColor(t.Muted)
 			}
 		})
 		for _, f := range action {
@@ -447,14 +447,14 @@ func settingsSection(c *ui.Context, title, footnote string, rows ...func()) {
 		sectionTitle(c, title)
 		settingsCard(c, rows...)
 		if footnote != "" {
-			kit.Text(c, footnote, t.Text.Sm).TextColor(t.Muted).PaddingX(c.Theme().Space(4))
+			kit.Text(c, footnote, t.Text.Xs).TextColor(t.Muted).PaddingX(c.Theme().Space(4))
 		}
 	})
 }
 
 // sectionTitle is a settings section's title, inset as its card's rows.
 func sectionTitle(c *ui.Context, title string) {
-	kit.Text(c, title, theme.Of(c).Text.Body).LineHeight(theme.LineFor(title)).FontWeight(600).PaddingX(c.Theme().Space(4))
+	kit.Text(c, title, theme.Of(c).Text.Sm).LineHeight(theme.LineFor(title)).FontWeight(600).PaddingX(c.Theme().Space(4))
 }
 
 // settingsCard is a section's card of rows, with hairlines between them: a
@@ -503,9 +503,9 @@ func settingRow(c *ui.Context, label, desc string, control func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-			kit.Text(c, label, t.Text.Body).LineHeight(theme.LineFor(label)).FontWeight(500)
+			kit.Text(c, label, t.Text.Sm).LineHeight(theme.LineFor(label)).FontWeight(500)
 			if desc != "" {
-				kit.Text(c, desc, t.Text.Sm).TextColor(t.Muted)
+				kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted)
 			}
 		})
 		control()
@@ -525,7 +525,7 @@ func settingButton(c *ui.Context, label string, v kit.Variant, disabled bool) ui
 
 // settingSelect is a select in a settings row.
 func settingSelect[T comparable](c *ui.Context, label string, sel *T, opts []kit.Option[T]) ui.Element {
-	return kit.SelectWith(c, kit.SelectOpts{Radius: theme.Of(c).Radius.Lg, MinWidth: theme.SettingsSelectMin, MaxWidth: theme.SettingsSelectMax, Flat: true}, sel, opts).Label(label)
+	return kit.SelectWith(c, kit.SelectOpts{MinWidth: theme.SettingsSelectMin, MaxWidth: theme.SettingsSelectMax, Flat: true}, sel, opts).Label(label)
 }
 
 // privacyView is 隐私与安全, a tab each: masking with its log, remote
@@ -557,13 +557,13 @@ func (p *settingsPage) keychainState(c *ui.Context) {
 		switch {
 		case !p.keychainSet:
 			kit.Spinner(c)
-			kit.Text(c, i18n.T("settings.keychain.checking"), t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, i18n.T("settings.keychain.checking"), t.Text.Xs).TextColor(t.Muted)
 		case p.keychain != nil:
 			kit.StatusDot(c, kit.Error)
-			kit.Text(c, humanize(p.keychain), t.Text.Sm)
+			kit.Text(c, humanize(p.keychain), t.Text.Xs)
 		default:
 			kit.StatusDot(c, kit.OK)
-			kit.Text(c, i18n.T("settings.keychain.ok"), t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, i18n.T("settings.keychain.ok"), t.Text.Xs).TextColor(t.Muted)
 		}
 	})
 }
@@ -622,7 +622,7 @@ func (p *settingsPage) localAPIView(c *ui.Context) {
 			t := theme.Of(c)
 			settingRow(c, i18n.T("settings.local_api.path"), "", func() {
 				ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Shrink(1).Children(func() {
-					kit.Text(c, path, t.Text.Sm).Font(theme.Mono).TextColor(t.Muted).Selectable().Shrink(1)
+					kit.Text(c, path, t.Text.Xs).Font(theme.Mono).TextColor(t.Muted).Selectable().Shrink(1)
 					if settingButton(c, i18n.T("settings.local_api.copy_path"), kit.Outline, false).Clicked() {
 						copied(path)
 					}
@@ -709,7 +709,7 @@ func (p *settingsPage) securityRescanView(c *ui.Context) {
 						if !p.secLoaded || p.secStarting {
 							key = "settings.security.rescan.checking"
 						}
-						kit.Text(c, i18n.T(key), t.Text.Sm).TextColor(t.Muted)
+						kit.Text(c, i18n.T(key), t.Text.Xs).TextColor(t.Muted)
 					}
 					ui.Row(c).Gap(th.Space(6)).AlignItems(ui.Center).Children(func() {
 						ui.Spacer(c)
@@ -720,7 +720,7 @@ func (p *settingsPage) securityRescanView(c *ui.Context) {
 				done := p.secTotal - p.secPending
 				ui.Row(c).Gap(th.Space(6)).AlignItems(ui.Center).Children(func() {
 					ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1.5)).Children(func() {
-						kit.Text(c, i18n.Tf("settings.security.rescan.running", done, p.secTotal), t.Text.Sm)
+						kit.Text(c, i18n.Tf("settings.security.rescan.running", done, p.secTotal), t.Text.Xs)
 						ui.Row(c).FillWidth().Height(th.Space(2)).Radius(t.Radius.Full).Background(t.Border).AlignItems(ui.Stretch).Clip().
 							Label(i18n.T("settings.security.rescan.progress")).Children(func() {
 							ui.Box(c).Grow(float32(done)).Background(t.Primary)
@@ -942,7 +942,7 @@ func (p *settingsPage) aboutView(c *ui.Context) {
 				ui.Icon(c, logo).Size(theme.Logo, theme.Logo).TextColor(t.Foreground)
 			}
 		})
-		kit.Text(c, "Godwit", t.Text.X2l).FontWeight(600)
+		kit.Text(c, "Godwit", t.Text.Xl).FontWeight(600)
 		ui.Text(c, i18n.Tf("settings.about.version", Version)).TextColor(t.Muted)
 	})
 	// value is a row's muted value on the right, a button with icon after it.

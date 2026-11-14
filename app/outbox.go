@@ -34,7 +34,7 @@ type outboxAction struct {
 // may or may not have gone out, or failed, waits for the user's decision.
 func (p *mailPage) outboxView(c *ui.Context) {
 	t := theme.Of(c)
-	th, small := c.Theme(), t.Text.Sm
+	th, small := c.Theme(), t.Text.Xs
 	now := p.a.clock.Now()
 	ui.Text(c, i18n.T("mail.outbox")).FontWeight(500).TextColor(t.Muted).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4))
 	ui.Scroll(c).Grow(1).Children(func() {

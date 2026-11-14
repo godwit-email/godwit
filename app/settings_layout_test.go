@@ -67,7 +67,7 @@ func TestFixedHeightTextFits(t *testing.T) {
 			capChip(c, "chip", true)
 			kit.Kbd(c, "Tab")
 		})
-		c.Root().LineHeight(theme.Of(c).Text.Line(theme.Of(c).Text.Body))
+		c.Root().LineHeight(theme.Of(c).Text.Line(theme.Of(c).Text.Sm))
 	}, 400, 200)
 	for _, s := range []string{"chip", "Tab"} {
 		r, ok := tt.Find(s)

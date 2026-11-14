@@ -101,7 +101,7 @@ func cardHead(c *ui.Context, icon, word string, tile, fg ui.Color, extra func())
 		ui.Box(c).Size(th.Space(6), th.Space(6)).Radius(t.Radius.Md).Background(tile).TextColor(fg).Center().Shrink(0).Children(func() {
 			ui.Icon(c, icons.Get(icon)).Size(theme.IconSm, theme.IconSm)
 		})
-		kit.Text(c, word, t.Text.Body).FontWeight(600)
+		kit.Text(c, word, t.Text.Sm).FontWeight(600)
 		if extra != nil {
 			extra()
 		}
@@ -119,7 +119,7 @@ func ruleNote(c *ui.Context, icon, text string, fill, edge, fg ui.Color) {
 	ui.Row(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Lg).
 		Background(fill).Border(theme.Hairline, edge).TextColor(fg).Children(func() {
 		ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon).Shrink(0)
-		kit.Text(c, text, t.Text.Sm).LineHeight(theme.LineFor(text)).Grow(1).Shrink(1)
+		kit.Text(c, text, t.Text.Xs).LineHeight(theme.LineFor(text)).Grow(1).Shrink(1)
 	})
 }
 
@@ -199,7 +199,7 @@ func (v *rulesView) banners(c *ui.Context) {
 	if v.from != "" {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2.5)).Padding(th.Space(2.5), th.Space(3.5)).Radius(t.Radius.Lg).Background(t.Hover).Children(func() {
 			ui.Icon(c, icons.Get("mail")).Size(theme.Icon, theme.Icon).TextColor(t.Muted).Shrink(0)
-			kit.Text(c, i18n.Tf("settings.rules.from_mail.banner", v.from), t.Text.Body).Grow(1).Shrink(1)
+			kit.Text(c, i18n.Tf("settings.rules.from_mail.banner", v.from), t.Text.Sm).Grow(1).Shrink(1)
 			for i, cd := range v.suggest {
 				kit.Button(c.Key(i), "＋ "+v.chipText(cd), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Shrink(0).OnClick(func() {
 					if condGrouped(d.Conditions) {
@@ -218,14 +218,14 @@ func (v *rulesView) banners(c *ui.Context) {
 			Background(violet.Fill.Mix(t.Background, 0.5)).TextColor(violet.Text).Children(func() {
 			ui.Icon(c, icons.Get("sparkles")).Size(theme.Icon, theme.Icon).Shrink(0).Margin(th.Space(0.5), 0, 0, 0)
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-				kit.Text(c, i18n.T("settings.rules.from_wit.banner"), t.Text.Body)
+				kit.Text(c, i18n.T("settings.rules.from_wit.banner"), t.Text.Sm)
 				if w.ask != "" {
-					kit.Text(c, i18n.Tf("settings.rules.from_wit.quote", w.ask), t.Text.Sm).TextColor(violet.Dot)
+					kit.Text(c, i18n.Tf("settings.rules.from_wit.quote", w.ask), t.Text.Xs).TextColor(violet.Dot)
 				}
 			})
 			if w.conv != 0 {
 				conv := w.conv
-				kit.TextLink(c, i18n.T("settings.rules.from_wit.back"), violet.Dot, t.Text.Sm).Shrink(0).
+				kit.TextLink(c, i18n.T("settings.rules.from_wit.back"), violet.Dot, t.Text.Xs).Shrink(0).
 					OnClick(func() { v.a.navigate(Route{Page: PageWit, ConversationID: conv}) })
 			}
 		})
@@ -239,7 +239,7 @@ func (v *rulesView) flow(c *ui.Context) {
 	d := &v.edit.Doc
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).
 		Radius(t.Radius.Xl).Background(t.Hover).Children(func() {
-		kit.Text(c, i18n.T("settings.rules.name"), t.Text.Body).FontWeight(500).Shrink(0)
+		kit.Text(c, i18n.T("settings.rules.name"), t.Text.Sm).FontWeight(500).Shrink(0)
 		kit.Input(c, &d.Name, kit.InputOpts{Placeholder: i18n.T("settings.rules.name.placeholder")}).Label(i18n.T("settings.rules.name")).Grow(1).Shrink(1)
 	})
 	ui.Box(c).Height(th.Space(4))
@@ -286,14 +286,14 @@ func (v *rulesView) whenCard(c *ui.Context, labels []kit.Option[string]) {
 					{Value: core.SecuritySuspicious, Label: i18n.T("settings.rules.security.suspicious")},
 					{Value: core.SecurityDangerous, Label: i18n.T("settings.rules.security.dangerous")}})
 			}
-			kit.Text(c, i18n.T("settings.rules.in"), t.Text.Body).TextColor(t.Muted)
+			kit.Text(c, i18n.T("settings.rules.in"), t.Text.Sm).TextColor(t.Muted)
 			accts := []kit.Option[int64]{{Value: 0, Label: i18n.T("settings.rules.account.all")}}
 			for _, acc := range a.accounts {
 				accts = append(accts, kit.Option[int64]{Value: acc.ID, Label: accountName(acc)})
 			}
 			triggerSelect(c, i18n.T("settings.rules.account"), &d.Account, accts)
 		})
-		kit.Text(c, i18n.T("settings.rules.trigger."+d.Trigger+".help"), t.Text.Sm).TextColor(t.Muted)
+		kit.Text(c, i18n.T("settings.rules.trigger."+d.Trigger+".help"), t.Text.Xs).TextColor(t.Muted)
 	})
 }
 
@@ -427,9 +427,9 @@ func (v *rulesView) ifCard(c *ui.Context, labels []kit.Option[string]) {
 			ruleSelect(c, i18n.T("settings.rules.op"), &cd.Op, setOps, theme.RuleOpWidth)
 			ruleSelect(c, i18n.T("settings.rules.folder"), &cd.Value, roles, 0)
 		case core.FieldAge:
-			kit.Text(c, i18n.T("settings.rules.op.older_than"), t.Text.Sm)
+			kit.Text(c, i18n.T("settings.rules.op.older_than"), t.Text.Xs)
 			kit.Input(c, &cd.Value, kit.InputOpts{Placeholder: "30"}).Label(i18n.T("settings.rules.days")).Width(th.Space(16))
-			kit.Text(c, i18n.T("settings.rules.days_ago"), t.Text.Sm)
+			kit.Text(c, i18n.T("settings.rules.days_ago"), t.Text.Xs)
 			ui.Row(c).Grow(1)
 		default:
 			ruleSelect(c, i18n.T("settings.rules.op"), &cd.Op, ops, theme.RuleOpWidth)
@@ -443,7 +443,7 @@ func (v *rulesView) ifCard(c *ui.Context, labels []kit.Option[string]) {
 	ruleCard(c, t.Border, t.Card, func() {
 		cardHead(c, "filter", i18n.T("settings.rules.if"), t.Hover, t.Foreground, nil)
 		if len(d.Conditions) == 0 {
-			kit.Text(c, i18n.T("settings.rules.no_conditions"), t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, i18n.T("settings.rules.no_conditions"), t.Text.Xs).TextColor(t.Muted)
 		}
 		condEditor(c, &d.Conditions, &d.Match, &v.condMenu, row)
 	})
@@ -570,13 +570,13 @@ func addCondMenu(c *ui.Context, conds *[]core.RuleCondition, match *string, menu
 
 // triggerSelect is a select on the 当 card, as wide as its choice.
 func triggerSelect[T comparable](c *ui.Context, label string, sel *T, opts []kit.Option[T]) ui.Element {
-	return kit.SelectWith(c, kit.SelectOpts{Radius: theme.Of(c).Radius.Lg, Flat: true, MaxWidth: theme.SettingsSelectMax}, sel, opts).Label(label)
+	return kit.SelectWith(c, kit.SelectOpts{Flat: true, MaxWidth: theme.SettingsSelectMax}, sel, opts).Label(label)
 }
 
 // ruleSelect is a select in a rule card's row: w wide (a longer language
 // may widen it a little), or filling what the row leaves when w is 0.
 func ruleSelect[T comparable](c *ui.Context, label string, sel *T, opts []kit.Option[T], w float32) ui.Element {
-	o := kit.SelectOpts{Radius: theme.Of(c).Radius.Lg, Flat: true, MinWidth: w, MaxWidth: w * 1.5}
+	o := kit.SelectOpts{Flat: true, MinWidth: w, MaxWidth: w * 1.5}
 	if w == 0 {
 		return kit.SelectWith(c, o, sel, opts).Label(label).Grow(1).Shrink(1).Basis(0).MinWidth(0)
 	}
@@ -651,13 +651,13 @@ func (v *rulesView) actionCard(c *ui.Context, i int, labels []kit.Option[string]
 			if k := mail.AddrKey(ac.To); k != "" && slices.Contains(v.edit.Confirmed, k) {
 				note = "settings.rules.forward.confirmed"
 			}
-			kit.Text(c, i18n.T(note), t.Text.Sm).TextColor(t.WarningText)
+			kit.Text(c, i18n.T(note), t.Text.Xs).TextColor(t.WarningText)
 		case v.aiOff(ac.Kind):
-			kit.Text(c, i18n.T("settings.rules.ai_off.hint"), t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, i18n.T("settings.rules.ai_off.hint"), t.Text.Xs).TextColor(t.Muted)
 		case slices.Contains(core.RuleAIActions, ac.Kind):
-			kit.Text(c, i18n.T("settings.rules.ai.note"), t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, i18n.T("settings.rules.ai.note"), t.Text.Xs).TextColor(t.Muted)
 		case fileAction(ac.Kind):
-			kit.Text(c, i18n.T("settings.rules.files.note"), t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, i18n.T("settings.rules.files.note"), t.Text.Xs).TextColor(t.Muted)
 		}
 		if fileAction(ac.Kind) {
 			v.fileOptions(c, d, i)
@@ -690,7 +690,7 @@ func (v *rulesView) addAction(c *ui.Context) {
 					ui.Icon(c, icons.Get(actionIcon(k))).Size(theme.Icon, theme.Icon).Shrink(0)
 					ui.Text(c, label).SingleLine().Grow(1)
 					if off {
-						kit.Text(c, i18n.T("settings.rules.ai_off.hint"), t.Text.Sm).TextColor(t.Muted)
+						kit.Text(c, i18n.T("settings.rules.ai_off.hint"), t.Text.Xs).TextColor(t.Muted)
 					}
 				}).OnClick(func() {
 					v.menu = false
@@ -707,7 +707,7 @@ func (v *rulesView) aside(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	// 运行方式 first: a choice of the rule's, over the preview that only shows.
 	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(3)).Radius(t.Radius.Xl).Background(t.Card).Border(theme.Hairline, t.Border).Children(func() {
-		kit.Text(c, i18n.T("settings.rules.run"), t.Text.Body).FontWeight(600).PaddingX(th.Space(1))
+		kit.Text(c, i18n.T("settings.rules.run"), t.Text.Sm).FontWeight(600).PaddingX(th.Space(1))
 		for _, o := range []struct {
 			bg  bool
 			key string
@@ -717,13 +717,13 @@ func (v *rulesView) aside(c *ui.Context) {
 	})
 	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(3)).Radius(t.Radius.Xl).Background(t.Hover).Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Baseline).Gap(th.Space(2)).PaddingX(th.Space(1)).Children(func() {
-			kit.Text(c, i18n.T("settings.rules.preview"), t.Text.Body).FontWeight(600).Grow(1)
-			kit.Text(c, i18n.Tf("settings.rules.preview.recent", core.RulePreviewDays), t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, i18n.T("settings.rules.preview"), t.Text.Sm).FontWeight(600).Grow(1)
+			kit.Text(c, i18n.Tf("settings.rules.preview.recent", core.RulePreviewDays), t.Text.Xs).TextColor(t.Muted)
 		})
 		p := v.prev
 		muted := func(key string) {
 			ui.Column(c).FillWidth().Padding(th.Space(4), th.Space(3)).Radius(t.Radius.Lg).Background(t.Background).Border(theme.Hairline, t.Border).
-				AlignItems(ui.Center).Children(func() { kit.Text(c, i18n.T(key), t.Text.Sm).TextColor(t.Muted).TextAlign(ui.Center) })
+				AlignItems(ui.Center).Children(func() { kit.Text(c, i18n.T(key), t.Text.Xs).TextColor(t.Muted).TextAlign(ui.Center) })
 		}
 		switch {
 		case p == nil && (v.prevStop != nil || v.prevCancel != nil):
@@ -733,7 +733,7 @@ func (v *rulesView) aside(c *ui.Context) {
 		case p.Count == 0:
 			muted("settings.rules.preview.none")
 		default:
-			kit.Text(c, i18n.Tf("settings.rules.preview.count", p.Count), t.Text.Sm).TextColor(t.Muted).PaddingX(th.Space(1))
+			kit.Text(c, i18n.Tf("settings.rules.preview.count", p.Count), t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(1))
 			now := time.Now()
 			ui.Column(c).FillWidth().Radius(t.Radius.Lg).Background(t.Background).Border(theme.Hairline, t.Border).Clip().Children(func() {
 				for i, m := range p.Messages {
@@ -742,10 +742,10 @@ func (v *rulesView) aside(c *ui.Context) {
 					}
 					ui.Column(c.Key(m.ID)).FillWidth().Gap(th.Space(0.5)).Padding(th.Space(2), th.Space(3)).Children(func() {
 						ui.Row(c).FillWidth().Gap(th.Space(2)).Children(func() {
-							kit.Text(c, displayName(m.From), t.Text.Sm).FontWeight(500).SingleLine().Grow(1).Shrink(1)
-							kit.Text(c, listTime(now, m.Date), t.Text.Sm).TextColor(t.Muted).Shrink(0)
+							kit.Text(c, displayName(m.From), t.Text.Xs).FontWeight(500).SingleLine().Grow(1).Shrink(1)
+							kit.Text(c, listTime(now, m.Date), t.Text.Xs).TextColor(t.Muted).Shrink(0)
 						})
-						kit.Text(c, m.Subject, t.Text.Sm).SingleLine()
+						kit.Text(c, m.Subject, t.Text.Xs).SingleLine()
 					})
 				}
 			})
@@ -853,13 +853,13 @@ func (v *rulesView) saveDialog(c *ui.Context) {
 		ui.Column(c).Gap(th.Space(1)).Padding(th.Space(3)).Radius(t.Radius.Lg).Background(t.Background).Border(theme.Hairline, t.Border).Children(func() {
 			if len(now) == 0 {
 				v.runExisting = false
-				kit.Text(c, i18n.T("settings.rules.save.existing.nothing"), t.Text.Sm).TextColor(t.Muted)
+				kit.Text(c, i18n.T("settings.rules.save.existing.nothing"), t.Text.Xs).TextColor(t.Muted)
 			} else {
 				kit.Checkbox(c, &v.runExisting, i18n.Tf("settings.rules.save.existing", count))
-				kit.Text(c, i18n.Tf("settings.rules.save.existing.only", strings.Join(now, sep)), t.Text.Sm).TextColor(t.Muted).PaddingX(th.Space(6))
+				kit.Text(c, i18n.Tf("settings.rules.save.existing.only", strings.Join(now, sep)), t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(6))
 			}
 			if len(later) > 0 {
-				kit.Text(c, i18n.Tf("settings.rules.save.existing.later", strings.Join(later, sep)), t.Text.Sm).TextColor(t.Muted).PaddingX(th.Space(6))
+				kit.Text(c, i18n.Tf("settings.rules.save.existing.later", strings.Join(later, sep)), t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(6))
 			}
 		})
 	}, func() {
@@ -881,10 +881,10 @@ func (v *rulesView) confirmDialog(c *ui.Context) {
 		Desc: i18n.Tf("settings.rules.confirm.desc", ruleName(v.edit.Doc)), Close: i18n.T("common.close")}, func() {
 		amber := t.Label("amber")
 		ui.Column(c).FillWidth().Gap(th.Space(1.5)).Padding(th.Space(3.5)).Radius(t.Radius.Lg).Background(t.WarningBg).Border(theme.Hairline, t.WarningBorder).Children(func() {
-			kit.Text(c, i18n.T("settings.rules.confirm.to"), t.Text.Sm).TextColor(t.WarningText)
+			kit.Text(c, i18n.T("settings.rules.confirm.to"), t.Text.Xs).TextColor(t.WarningText)
 			for _, to := range v.unconfirmed {
 				ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-					kit.Text(c, to, t.Text.Lg).Font(theme.Mono).FontWeight(500).Selectable()
+					kit.Text(c, to, t.Text.Sm).Font(theme.Mono).FontWeight(500).Selectable()
 					if slices.ContainsFunc(v.firstTime, func(f string) bool { return mail.AddrKey(f) == mail.AddrKey(to) }) {
 						ruleTag(c, i18n.T("settings.rules.confirm.first"), amber.Fill, amber.Text, "")
 					}
@@ -893,7 +893,7 @@ func (v *rulesView) confirmDialog(c *ui.Context) {
 		})
 		ui.Column(c).Gap(th.Space(1.5)).Children(func() {
 			for _, s := range []string{outbox, i18n.T("settings.rules.confirm.new_only"), i18n.T("settings.rules.confirm.again")} {
-				kit.Text(c, "· "+s, t.Text.Base).LineHeight(theme.LineFor(s))
+				kit.Text(c, "· "+s, t.Text.Sm).LineHeight(theme.LineFor(s))
 			}
 		})
 	}, func() {

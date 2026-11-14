@@ -21,20 +21,22 @@ const (
 	DestructiveOutline
 )
 
-// ButtonSize is a button's height; the zero value is the 32 px default.
-type ButtonSize int
+// Size is a control's height, a step of the control scale: a button's, an
+// input's or a select's. The zero value is the 32 px default.
+type Size int
 
 const (
-	SizeDefault ButtonSize = iota
-	SizeXs                 // IconButton only, round
-	SizeSm
-	SizeLg
+	SizeDefault Size = iota
+	SizeMini         // IconButton only: 16 round with a 12 icon, as a chip's ×
+	SizeXs           // 24, in xs text with a 14 icon: an action among chips or in a dense row; buttons only
+	SizeSm           // 28
+	SizeLg           // 36
 )
 
 // ButtonOpts style a button. Icon is an icons name shown before the label.
 type ButtonOpts struct {
 	Variant  Variant
-	Size     ButtonSize
+	Size     Size
 	Disabled bool
 	Flat     bool // Outline without its shadow
 	Icon     string
@@ -45,10 +47,12 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	h, padX := th.Space(8), th.Space(3.5)
 	switch o.Size {
-	case SizeXs:
+	case SizeMini:
 		if square { // icon buttons only; a labelled button keeps the default size
 			h, padX = th.Space(4), th.Space(1.5)
 		}
+	case SizeXs:
+		h, padX = th.Space(6), th.Space(2)
 	case SizeSm:
 		h, padX = th.Space(7), th.Space(2.5)
 	case SizeLg:
@@ -58,23 +62,26 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 	// button shows the design's disabled colours instead.
 	b := ui.ButtonBase(c).Disabled(o.Disabled).DimDisabled(false)
 	b.Gap(th.Space(1.5)).Justify(ui.Center).Transition(colors(theme.MotionFast))
+	if o.Size == SizeXs {
+		b.Gap(th.Space(1)).FontSize(t.Text.Xs)
+	}
 	if o.Variant == Link {
 		b.TextColor(t.Muted)
 		if o.Disabled {
 			b.TextColor(t.Idle)
 		}
 		if o.Size == SizeSm {
-			b.FontSize(t.Text.Sm)
+			b.FontSize(t.Text.Xs)
 		}
 		if b.Hovered() && !o.Disabled {
 			b.TextColor(t.Foreground).Underline()
 		}
 		return b
 	}
-	b.Height(h).Radius(t.Radius.Lg)
+	b.Height(h).Radius(controlRadius(c, h)).FontWeight(500) // what acts is at 500, whatever its look
 	if square {
-		b.Width(h).Radius(t.Radius.Md)
-		if o.Size == SizeXs {
+		b.Width(h)
+		if o.Size == SizeMini {
 			b.Radius(t.Radius.Full)
 		}
 	} else {
@@ -83,7 +90,7 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 	hover := b.Hovered() && !o.Disabled
 	switch o.Variant {
 	case Default:
-		b.Background(t.Primary).TextColor(t.PrimaryText).FontWeight(500)
+		b.Background(t.Primary).TextColor(t.PrimaryText)
 		if hover {
 			b.Background(t.Primary.Mix(t.Background, 0.1))
 		}
@@ -119,6 +126,18 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 			b.Background(t.DangerBg)
 		}
 	}
+	if hover && b.Pressed() { // a step past hover, as CSS's :active
+		switch o.Variant {
+		case Default:
+			b.Background(t.Primary.Mix(t.Background, 0.2))
+		case Secondary, Outline:
+			b.Background(t.Hover.Mix(t.Foreground, 0.08))
+		case Ghost:
+			b.Background(t.HoverTint.Alpha(2))
+		case Destructive, DestructiveOutline:
+			b.Background(t.DangerBg.Mix(t.Danger, 0.12))
+		}
+	}
 	if o.Disabled {
 		b.TextColor(t.Idle)
 		if o.Variant == Default { // itself at half, as shadcn's opacity-50: a button on any surface, frosted or not
@@ -128,6 +147,18 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 	return b
 }
 
+// iconSize is the icon of a button of size s: 16, 14 in a 24 one, 12 in a
+// 16 round one.
+func iconSize(s Size) float32 {
+	switch s {
+	case SizeMini:
+		return theme.IconXs
+	case SizeXs:
+		return theme.IconSm
+	}
+	return theme.Icon
+}
+
 // ButtonFrame is the styled button without children.
 func ButtonFrame(c *ui.Context, o ButtonOpts) ui.Element { return button(c, o, false) }
 
@@ -135,7 +166,7 @@ func ButtonFrame(c *ui.Context, o ButtonOpts) ui.Element { return button(c, o, f
 func Button(c *ui.Context, label string, o ButtonOpts) ui.Element {
 	return button(c, o, false).Label(label).Children(func() {
 		if o.Icon != "" {
-			ui.Icon(c, icons.Get(o.Icon)).Size(theme.Icon, theme.Icon)
+			ui.Icon(c, icons.Get(o.Icon)).Size(iconSize(o.Size), iconSize(o.Size))
 		}
 		ui.Text(c, label)
 		if o.Trailing != "" {
@@ -171,14 +202,12 @@ func SwapButton(c *ui.Context, label string, o ButtonOpts, others ...string) ui.
 }
 
 // IconButton is a square button showing only an icon, named label for
-// assistive technology and tests. A SizeXs one, 16 round, holds a 12 icon.
+// assistive technology and tests. A SizeMini one, 16 round, holds a 12
+// icon; a SizeXs one, 24, a 14.
 func IconButton(c *ui.Context, icon, label string, o ButtonOpts) ui.Element {
 	b := button(c, o, true).Label(label)
 	tooltip(c, b, label, false)
-	size := float32(theme.Icon)
-	if o.Size == SizeXs {
-		size = theme.IconXs
-	}
+	size := iconSize(o.Size)
 	return b.Children(func() {
 		ui.Icon(c, icons.Get(icon)).Size(size, size)
 	})
@@ -213,7 +242,7 @@ func RoundAction(c *ui.Context, icon, name, tip string, disabled, on bool) ui.El
 			ui.Box(c).Size(th.Space(10), th.Space(10)).Radius(t.Radius.Full).Background(tint).Center().Children(func() {
 				ui.Icon(c, icons.Get(icon)).Size(theme.IconMd, theme.IconMd)
 			})
-			Text(c, name, t.Text.Sm).TextAlign(ui.Center)
+			Text(c, name, t.Text.Xs).TextAlign(ui.Center)
 		})
 	})
 }

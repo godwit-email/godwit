@@ -190,8 +190,8 @@ func (e *extView) configFields(c *ui.Context, f *pluginForm, fields []plugins.Co
 	t, th := theme.Of(c), c.Theme()
 	lang := i18n.Language()
 	ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
-		kit.Text(c, i18n.T("settings.ext.config"), t.Text.Body).LineHeight(theme.LineFor(i18n.T("settings.ext.config"))).FontWeight(500)
-		kit.Text(c, i18n.T("settings.ext.config.sub"), t.Text.Sm).TextColor(t.Muted)
+		kit.Text(c, i18n.T("settings.ext.config"), t.Text.Sm).LineHeight(theme.LineFor(i18n.T("settings.ext.config"))).FontWeight(500)
+		kit.Text(c, i18n.T("settings.ext.config.sub"), t.Text.Xs).TextColor(t.Muted)
 	})
 	shown := f.shown(fields)
 	for _, fd := range fields {

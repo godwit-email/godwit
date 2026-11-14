@@ -29,7 +29,7 @@ func (p *mailPage) draftsView(c *ui.Context) {
 			title = i18n.Tf("mail.draft.heading", email)
 		}
 	}
-	kit.Text(c, title, t.Text.Base).FontWeight(500).TextColor(t.Muted).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4))
+	kit.Text(c, title, t.Text.Xs).FontWeight(500).TextColor(t.Muted).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4))
 	drafts := p.drafts
 	p.draftList.Key = func(i int) any { return drafts[i].ID }
 	kit.List(c, p.draftList, len(drafts), func(i int) {
@@ -94,17 +94,15 @@ func (p *mailPage) draftRow(c *ui.Context, d core.Draft) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 		ui.Row(c).Gap(th.Space(1.5)).Children(func() {
-			ui.Text(c, cmp.Or(recipients(d.To), i18n.T("mail.no_recipient"))).SingleLine().Grow(1).Shrink(1)
-			kit.Text(c, listTime(p.a.clock.Now(), d.UpdatedAt), t.Text.Sm).TextColor(t.Muted)
+			ui.Text(c, cmp.Or(recipients(d.To), i18n.T("mail.no_recipient"))).FontWeight(500).SingleLine().Grow(1).Shrink(1) // the lead line, as a list row's
+			kit.Text(c, listTime(p.a.clock.Now(), d.UpdatedAt), t.Text.Xs).TextColor(t.Muted)
 		})
 		ui.Text(c, cmp.Or(d.Subject, i18n.T("mail.no_subject"))).SingleLine()
 		if text := p.draftView[d.ID].preview; text != "" {
-			kit.Text(c, text, t.Text.Base).TextColor(t.Muted).SingleLine()
+			kit.Text(c, text, t.Text.Xs).TextColor(t.Muted).SingleLine()
 		}
 		if p.draftView[d.ID].editing {
-			ui.Box(c).AlignSelf(ui.Start).Margin(th.Space(0.5), 0, 0, 0).Padding(0, th.Space(1.5)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Children(func() {
-				kit.Text(c, i18n.T("mail.draft.chip"), t.Text.Sm)
-			})
+			kit.BadgeWith(c, i18n.T("mail.draft.chip"), kit.BadgeOpts{Tone: kit.BadgeOutline}).AlignSelf(ui.Start).Margin(th.Space(0.5), 0, 0, 0)
 		}
 	})
 }
@@ -151,15 +149,15 @@ func (p *mailPage) draftPane(c *ui.Context) {
 			if editing {
 				status = i18n.Tf("mail.draft.saved_editing", saved)
 			}
-			kit.Text(c, status, t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, status, t.Text.Xs).TextColor(t.Muted)
 		})
 		ui.Scroll(c).Grow(1).Children(func() {
 			ui.Column(c).FillWidth().Padding(th.Space(5), th.Space(7)).Children(func() {
 				ui.Column(c).FillWidth().MaxWidth(theme.ReaderMaxWidth).Gap(th.Space(4)).Children(func() {
 					if editing {
-						kit.Text(c, i18n.T("mail.draft.notice"), t.Text.Sm).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Lg).Background(t.Hover)
+						kit.Text(c, i18n.T("mail.draft.notice"), t.Text.Xs).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Lg).Background(t.Hover)
 					}
-					kit.Text(c, cmp.Or(d.Subject, i18n.T("mail.no_subject")), t.Text.X2l).FontWeight(600).LineHeight(theme.LineSubject)
+					kit.Text(c, cmp.Or(d.Subject, i18n.T("mail.no_subject")), t.Text.Xl).FontWeight(600).LineHeight(theme.LineSubject)
 					ui.Column(c).Gap(th.Space(1)).Children(func() {
 						for _, f := range [][2]string{
 							{i18n.T("compose.to"), cmp.Or(strings.Join(d.To, ", "), i18n.T("mail.no_recipient"))},
@@ -192,7 +190,7 @@ func draftAttachments(c *ui.Context, atts []core.DraftAttachment) {
 				})
 				ui.Column(c).Shrink(1).Children(func() {
 					ui.Text(c, att.Filename).SingleLine()
-					kit.Text(c, byteSize(att.Size), t.Text.Sm).TextColor(t.Muted)
+					kit.Text(c, byteSize(att.Size), t.Text.Xs).TextColor(t.Muted)
 				})
 			})
 		}
@@ -276,7 +274,7 @@ func warningsDialog(c *ui.Context, ask *bool, check core.SendCheck, anyway func(
 			for _, w := range check.Warnings {
 				ui.Column(c).Children(func() {
 					ui.Text(c, i18n.Tf("compose.warn", w.Message))
-					kit.Text(c, i18n.Tf("compose.warn.from", w.Plugin), t.Text.Sm).TextColor(t.Muted)
+					kit.Text(c, i18n.Tf("compose.warn.from", w.Plugin), t.Text.Xs).TextColor(t.Muted)
 				})
 			}
 		})

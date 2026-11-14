@@ -429,7 +429,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	ui.Row(c).Gap(th.Space(4)).Children(func() {
 		a.accountIcon(c, acc, theme.MarkXl)
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
-			kit.Text(c, accountAddr(acc), t.Text.Display).FontWeight(600).SingleLine()
+			kit.Text(c, accountAddr(acc), t.Text.X3l).FontWeight(600).SingleLine()
 			ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 				meta := providerName(prov)
 				if isArchive(acc) {
@@ -451,16 +451,14 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 				if isArchive(acc) { // never syncs
 					return
 				}
-				text, bg, fg := cmpTr("settings.account.status."+acc.Status, acc.Status), t.WarningBg, t.WarningText
+				text, tone := cmpTr("settings.account.status."+acc.Status, acc.Status), kit.BadgeWarning
 				if acc.Status == "ok" {
-					bg, fg = t.SuccessBg, t.SuccessText
+					tone = kit.BadgeSuccess
 					if at, ok := a.syncedAtBy[acc.ID]; ok {
 						text = i18n.Tf("shell.sync.synced", a.ago(at))
 					}
 				}
-				ui.Box(c).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Sm).Background(bg).TextColor(fg).Children(func() {
-					kit.Text(c, text, t.Text.Sm)
-				})
+				kit.BadgeWith(c, text, kit.BadgeOpts{Tone: tone})
 			})
 		})
 	})
@@ -485,7 +483,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	}
 	input := func(label, desc string, v *string, i int) func() {
 		return row(label, desc, func() {
-			if kit.Input(c, v, kit.InputOpts{}).Width(theme.SettingsInputWidth).Radius(t.Radius.Lg).Label(label).Changed() {
+			if kit.Input(c, v, kit.InputOpts{}).Width(theme.SettingsInputWidth).Label(label).Changed() {
 				p.edited(acc.ID, f, i)
 			}
 		})
@@ -550,9 +548,9 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 			p.edited(acc.ID, f, fieldAI)
 		}
 		if long {
-			kit.Text(c, i18n.Tf("settings.account.ai.long", core.MaxAIInstructions), t.Text.Sm).TextColor(t.Danger).PaddingX(th.Space(4))
+			kit.Text(c, i18n.Tf("settings.account.ai.long", core.MaxAIInstructions), t.Text.Xs).TextColor(t.Danger).PaddingX(th.Space(4))
 		}
-		kit.Text(c, i18n.T("settings.account.ai.help"), t.Text.Sm).TextColor(t.Muted).PaddingX(th.Space(4))
+		kit.Text(c, i18n.T("settings.account.ai.help"), t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(4))
 	})
 	desc := p.syncState(acc)
 	if acc.Status == "ok" {
@@ -582,12 +580,12 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	p.mailboxSection(c, acc.ID)
 	server := func(proto, host string, port int, sec core.Security, desc string) func() {
 		return row(proto, desc, func() {
-			kit.Text(c, host+":"+strconv.Itoa(port)+" · "+cmpTr("onboarding.security."+string(sec), string(sec)), t.Text.Sm).Font(theme.Mono).TextColor(t.Muted)
+			kit.Text(c, host+":"+strconv.Itoa(port)+" · "+cmpTr("onboarding.security."+string(sec), string(sec)), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted)
 		})
 	}
 	recv := server("IMAP", acc.Receiving.Host, acc.Receiving.Port, acc.Receiving.Security, "")
 	if pr := acc.Receiving.Protocol; pr == auth.JMAP || pr == auth.EWS {
-		recv = row(strings.ToUpper(pr), "", func() { kit.Text(c, sessionURL(acc.Receiving), t.Text.Sm).Font(theme.Mono).TextColor(t.Muted) })
+		recv = row(strings.ToUpper(pr), "", func() { kit.Text(c, sessionURL(acc.Receiving), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted) })
 	} else if acc.Receiving.Protocol == auth.Graph {
 		recv = server("Microsoft Graph", acc.Receiving.Host, acc.Receiving.Port, acc.Receiving.Security, "")
 	}
@@ -602,7 +600,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 		login = append(login, server("SMTP", acc.Sending.Host, acc.Sending.Port, acc.Sending.Security, receiveOnlyHelp(acc)))
 	}
 	if ab, ok := a.linkedBook(acc.ID); ok {
-		login = append(login, row("CardDAV", "", func() { kit.Text(c, abHost(ab), t.Text.Sm).Font(theme.Mono).TextColor(t.Muted) }))
+		login = append(login, row("CardDAV", "", func() { kit.Text(c, abHost(ab), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted) }))
 	}
 	if acc.ReceiveOnly { // OAuth has no servers to change: it tries SMTP again as it is
 		login = append(login, row(i18n.T("settings.account.receive_only"), "", func() {
@@ -728,7 +726,7 @@ func (p *settingsPage) importDialog(c *ui.Context) {
 		kit.DialogOpts{Size: kit.DialogMd, Desc: i18n.T("settings.account.import.desc"), Close: i18n.T("common.close")},
 		func() {
 			if len(p.importPreview.Accounts) == 0 {
-				kit.Text(c, i18n.T("settings.account.import.empty"), t.Text.Base).TextColor(t.Muted)
+				kit.Text(c, i18n.T("settings.account.import.empty"), t.Text.Xs).TextColor(t.Muted)
 			} else {
 				ui.Column(c).Radius(t.Radius.Lg).Border(theme.Hairline, t.Border).Clip().Children(func() {
 					for i, entry := range p.importPreview.Accounts {
@@ -737,9 +735,9 @@ func (p *settingsPage) importDialog(c *ui.Context) {
 						}
 						ui.Column(c).FillWidth().Padding(th.Space(3), th.Space(3.5)).Gap(th.Space(1)).Children(func() {
 							ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Wrap().Children(func() {
-								kit.Text(c, entry.Email, t.Text.Base).FontWeight(500)
+								kit.Text(c, entry.Email, t.Text.Sm).FontWeight(500)
 								if entry.Name != "" {
-									kit.Text(c, entry.Name, t.Text.Sm).TextColor(t.Muted)
+									kit.Text(c, entry.Name, t.Text.Xs).TextColor(t.Muted)
 								}
 								if entry.ReceiveOnly {
 									kit.Badge(c, i18n.T("settings.account.receive_only"))
@@ -757,9 +755,9 @@ func (p *settingsPage) importDialog(c *ui.Context) {
 								}
 							})
 							if entry.Username != "" && entry.Username != entry.Email {
-								kit.Text(c, i18n.Tf("settings.account.import.username", entry.Username), t.Text.Sm).TextColor(t.Muted)
+								kit.Text(c, i18n.Tf("settings.account.import.username", entry.Username), t.Text.Xs).TextColor(t.Muted)
 							}
-							kit.Text(c, importServersLabel(entry), t.Text.Sm).Font(theme.Mono).TextColor(t.Muted)
+							kit.Text(c, importServersLabel(entry), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted)
 						})
 					}
 				})

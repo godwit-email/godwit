@@ -300,7 +300,7 @@ func (a *App) View(c *ui.Context) {
 	if kit.DialogShown() {
 		root = t.Window
 	}
-	c.Root().Background(root).LineHeight(t.Text.Line(t.Text.Body))
+	c.Root().Background(root).LineHeight(t.Text.Line(t.Text.Sm))
 }
 
 // titleBar leaves the window controls their room (c.TitleBar) and drags the
@@ -343,7 +343,7 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 			ui.Row(c).Gap(th.Space(2)).Padding(0, 0, 0, th.Space(4)).Children(func() {
 				ui.Text(c, title).FontWeight(600).SingleLine()
 				if sub != "" {
-					kit.Text(c, sub, t.Text.Sm).TextColor(t.Muted).SingleLine()
+					kit.Text(c, sub, t.Text.Xs).TextColor(t.Muted).SingleLine()
 				}
 				a.mail.titleMenu(c)
 			})
@@ -367,7 +367,7 @@ func winCaption(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).Gap(th.Space(2)).Padding(0, th.Space(2), 0, th.Space(1)).Children(func() {
 		ui.Icon(c, logo).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
-		kit.Text(c, "Godwit", t.Text.Sm).SingleLine()
+		kit.Text(c, "Godwit", t.Text.Xs).SingleLine()
 	})
 }
 
@@ -575,7 +575,7 @@ func (a *App) updateCard(c *ui.Context) {
 		ui.Icon(c, logo).Size(theme.IconXl, theme.IconXl).TextColor(t.Foreground).Role(ui.RoleNone)
 		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Children(func() {
 			ui.Text(c, title).FontWeight(500).SingleLine().Role(ui.RoleNone)
-			kit.Text(c, ver, t.Text.Sm).TextColor(t.Muted).Role(ui.RoleNone)
+			kit.Text(c, ver, t.Text.Xs).TextColor(t.Muted).Role(ui.RoleNone)
 		})
 		ui.Icon(c, icons.Get("arrow-right")).Size(theme.Icon, theme.Icon).TextColor(arrow)
 	})

@@ -42,7 +42,7 @@ func LabelChip(c *ui.Context, o LabelChipOpts) ui.Element {
 		right = th.Space(0.5)
 	}
 	chip.AlignItems(ui.Center).Gap(th.Space(1)).Height(theme.LabelChip).Padding(0, right, 0, th.Space(1.5)).
-		Radius(t.Radius.Sm).TextColor(o.Color.Text).FontSize(t.Text.Sm)
+		Radius(t.Radius.Sm).TextColor(o.Color.Text).FontSize(t.Text.Xs)
 	if o.Auto {
 		chip.Border(theme.Stroke, o.Color.Edge)
 	} else {

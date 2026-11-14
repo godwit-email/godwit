@@ -463,6 +463,47 @@ func (p *mailPage) open(rows []mailItem, i int) {
 	p.reader.sync(false)
 }
 
+// advance moves the reader off gone, rows leaving the view, when it shows one
+// of them: to the row after them, else the one before, and it closes with no
+// row left, or when what it shows is not in the list.
+func (p *mailPage) advance(gone []mailItem) {
+	rt := &p.a.route
+	open := mailItem{ID: rt.ThreadID, Thread: true}.key()
+	if rt.MessageID != 0 {
+		open = mailItem{ID: rt.MessageID}.key()
+	}
+	leaving := func(it mailItem) bool {
+		return slices.ContainsFunc(gone, func(g mailItem) bool { return g.key() == it.key() })
+	}
+	if rt.ThreadID == 0 || !slices.ContainsFunc(gone, func(g mailItem) bool { return g.key() == open }) {
+		return
+	}
+	rows := p.shown()
+	at := slices.IndexFunc(rows, func(it mailItem) bool { return it.key() == open })
+	next := -1
+	for i := at + 1; at >= 0 && i < len(rows) && next < 0; i++ {
+		if !leaving(rows[i]) {
+			next = i
+		}
+	}
+	for i := at - 1; i >= 0 && next < 0; i-- {
+		if !leaving(rows[i]) {
+			next = i
+		}
+	}
+	if next < 0 {
+		rt.ThreadID, rt.MessageID = 0, 0
+		p.reader.sync(false)
+		return
+	}
+	// Chosen as a click chooses it: the list keeps cur on a row its selection holds.
+	l := p.ls()
+	l.sel.Clear()
+	l.sel.Add(rows[next].key())
+	l.cur = slices.IndexFunc(p.entries(rows), func(e listEntry) bool { return e.head == "" && e.group == "" && e.row == next })
+	p.open(rows, next)
+}
+
 // chosen are the rows chosen, or the one open when none is.
 func (p *mailPage) chosen(rows []mailItem) []mailItem {
 	l := p.ls()
@@ -511,6 +552,7 @@ func (p *mailPage) purgeDialog(c *ui.Context) {
 			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
 				p.purgeAsk = false
 				p.batch("purge", p.purgeRows)
+				p.advance(p.purgeRows)
 			})
 		})
 }
@@ -699,8 +741,7 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 	t, th := theme.Of(c), c.Theme()
 	if p.searchOpen {
 		ui.Column(c).Padding(th.Space(3), th.Space(3), th.Space(2), th.Space(3)).Gap(th.Space(2)).Children(func() {
-			// the design's box is 32 inside its border (a content-box label)
-			box := kit.InputGroup(c, kit.InputOpts{Glass: true}).Height(th.Space(8.5)).Gap(th.Space(2)).Padding(0, th.Space(1), 0, th.Space(2.5)).Radius(t.Radius.Lg)
+			box := kit.InputGroup(c, kit.InputOpts{Glass: true}).Gap(th.Space(2)).Padding(0, th.Space(1), 0, th.Space(2.5))
 			box.Children(func() {
 				ui.Icon(c, icons.Get("search")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
 				in := kit.Input(c, &p.query, kit.InputOpts{Placeholder: i18n.T("mail.search.placeholder"), Bare: true}).FocusRing(false).AutoFocus().Grow(1)
@@ -714,7 +755,7 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 			})
 			p.filterChips(c)
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Children(func() {
-				kit.Text(c, p.searchHint(), t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
+				kit.Text(c, p.searchHint(), t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
 				if p.savableSearch() {
 					kit.Button(c, i18n.T("view.save_search"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Shrink(0).OnClick(p.viewFromSearch)
 				}
@@ -725,7 +766,7 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.a.askWit(q) }}).Label(i18n.Tf("mail.search.ask_wit_row", q)).
 				Margin(0, th.Space(2), th.Space(1), th.Space(2)).Padding(th.Space(2), th.Space(3)).Gap(th.Space(2)).Radius(t.Radius.Lg).Background(t.Sidebar).Children(func() {
 				ui.Icon(c, icons.Get("sparkles")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
-				kit.Text(c, i18n.Tf("mail.search.ask_wit_row", q), t.Text.Sm).SingleLine().Grow(1).Shrink(1)
+				kit.Text(c, i18n.Tf("mail.search.ask_wit_row", q), t.Text.Xs).SingleLine().Grow(1).Shrink(1)
 			})
 		}
 		if c.Shortcut(0, ui.KeyEscape) {
@@ -741,7 +782,7 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 		return
 	}
 	ui.Row(c).AlignItems(ui.Center).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4)).Gap(th.Space(2)).Children(func() {
-		kit.Text(c, head, t.Text.Base).FontWeight(500).TextColor(t.Muted)
+		kit.Text(c, head, t.Text.Xs).FontWeight(500).TextColor(t.Muted)
 		ui.Spacer(c)
 		if !saved {
 			kit.Tabs(c, &p.filter, i18n.T("mail.filter.all"), i18n.T("mail.filter.unread"))
@@ -891,7 +932,7 @@ func (p *mailPage) listView(c *ui.Context) {
 		}
 		if es[i].head != "" { // a date heading: no row, never chosen
 			// left as the header's name: the list's own Space(2) and Space(2) more
-			h := kit.Text(c, es[i].head, t.Text.Base).FontWeight(500).Padding(th.Space(2), th.Space(2.5), th.Space(0.5), th.Space(2))
+			h := kit.Text(c, es[i].head, t.Text.Xs).FontWeight(500).Padding(th.Space(2), th.Space(2.5), th.Space(0.5), th.Space(2))
 			if es[i].head == head { // the header names it: clear, the same size
 				h.TextColor(ui.Transparent)
 			} else {
@@ -1029,6 +1070,9 @@ func (p *mailPage) listView(c *ui.Context) {
 	}
 	if act != "" {
 		p.batch(act, target)
+		if removes(act) && !p.purgeAsk {
+			p.advance(target)
+		}
 	}
 	if (p.older.read.loading && len(rows) > 0) || p.older.err != nil {
 		p.olderRow(c)
@@ -1111,10 +1155,10 @@ func (p *mailPage) olderRow(c *ui.Context) {
 	ui.Row(c).Height(theme.OlderRowHeight).Padding(0, th.Space(4)).Gap(th.Space(2)).Justify(ui.Center).AlignItems(ui.Center).Children(func() {
 		if p.older.read.loading {
 			kit.Spinner(c)
-			kit.Text(c, i18n.T("mail.older.loading"), t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, i18n.T("mail.older.loading"), t.Text.Xs).TextColor(t.Muted)
 			return
 		}
-		kit.Text(c, i18n.Tf("mail.older.failed", humanize(p.older.err)), t.Text.Sm).TextColor(t.Muted).Shrink(1).SingleLine()
+		kit.Text(c, i18n.Tf("mail.older.failed", humanize(p.older.err)), t.Text.Xs).TextColor(t.Muted).Shrink(1).SingleLine()
 		kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).OnClick(func() {
 			p.older.err = nil
 			p.loadOlder()
@@ -1212,14 +1256,14 @@ func (p *mailPage) resultRow(c *ui.Context, it mailItem) ui.Element {
 	col := ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2), th.Space(3))
 	return col.Children(func() {
 		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, p.resultWho(it)).SingleLine().Shrink(1)
+			ui.Text(c, p.resultWho(it)).FontWeight(500).SingleLine().Shrink(1) // the lead line, as a list row's
 			securityIcon(c, p.a.settings, it.Security)
 			ui.Spacer(c)
 			p.starButton(c, it, col.Hovered())
 			if it.Attach {
 				ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
 			}
-			kit.Text(c, listTime(p.a.clock.Now(), it.Date), t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, listTime(p.a.clock.Now(), it.Date), t.Text.Xs).TextColor(t.Muted)
 		})
 		subject := it.Subject
 		if subject == "" {
@@ -1227,10 +1271,10 @@ func (p *mailPage) resultRow(c *ui.Context, it mailItem) ui.Element {
 		}
 		marked(c, subject, q).SingleLine()
 		if it.Snippet != "" {
-			marked(c, it.Snippet, q).FontSize(t.Text.Sm).LineHeight(t.Text.Line(t.Text.Sm)).TextColor(t.Muted).SingleLine()
+			marked(c, it.Snippet, q).FontSize(t.Text.Xs).LineHeight(t.Text.Line(t.Text.Xs)).TextColor(t.Muted).SingleLine()
 		}
 		if line := p.folderLine(it); line != "" {
-			kit.Text(c, line, t.Text.Sm).TextColor(t.Muted).SingleLine()
+			kit.Text(c, line, t.Text.Xs).TextColor(t.Muted).SingleLine()
 		}
 		p.a.rowChips(c, it.Labels)
 	})
@@ -1296,7 +1340,7 @@ func (p *mailPage) starButton(c *ui.Context, it mailItem, hovered bool) {
 	if starred {
 		icon, label = "star-fill", i18n.T("mail.action.unstar")
 	}
-	b := kit.IconButton(c, icon, label, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs})
+	b := kit.IconButton(c, icon, label, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeMini})
 	if it.Flagged > 0 {
 		b.TextColor(t.Attention)
 	} else if !hovered && !b.FocusVisible() {
@@ -1312,10 +1356,13 @@ func (p *mailPage) starButton(c *ui.Context, it mailItem, hovered bool) {
 // how many are unread to assistive technology.
 func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 	t := theme.Of(c)
-	th, small := c.Theme(), t.Text.Sm
-	weight := 400
+	th, small := c.Theme(), t.Text.Xs
+	// The lead line carries the weight, 600 unread and 500 read; the line
+	// under it reads at 400. Read mail steps both a shade down, so unread
+	// stands out by more than its weight.
+	lead, ink := 500, t.Subdued
 	if it.Unread > 0 {
-		weight = 600
+		lead, ink = 600, t.Foreground
 	}
 	col := ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5))
 	return col.Children(func() {
@@ -1329,8 +1376,8 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 		}
 		subjectFirst := p.a.settings.ListRowOrder == core.ListRowSubject
 		// who is who the mail is with, its count and security mark: the line's lead, or its second line.
-		who := func() {
-			ui.Text(c, it.Who).FontWeight(weight).SingleLine().Shrink(1)
+		who := func(weight int) {
+			ui.Text(c, it.Who).FontWeight(weight).TextColor(ink).SingleLine().Shrink(1)
 			if it.Thread && it.Count > 1 { // how many messages the conversation holds, as the reader's header says
 				ui.Badge(c, strconv.Itoa(it.Count)).Label(i18n.Tf("reader.thread_count", it.Count))
 			}
@@ -1338,9 +1385,9 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 		}
 		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 			if subjectFirst {
-				ui.Text(c, subject).FontWeight(weight).SingleLine().Shrink(1)
+				ui.Text(c, subject).FontWeight(lead).TextColor(ink).SingleLine().Shrink(1)
 			} else {
-				who()
+				who(lead)
 			}
 			ui.Spacer(c)
 			p.starButton(c, it, col.Hovered())
@@ -1350,17 +1397,17 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 			kit.Text(c, listTime(p.a.clock.Now(), it.Date), small).TextColor(t.Muted)
 		})
 		if subjectFirst {
-			ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(who)
+			ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() { who(400) })
 		} else {
-			ui.Text(c, subject).FontWeight(weight).SingleLine()
+			ui.Text(c, subject).TextColor(ink).SingleLine()
 		}
 		if icon, line := p.viewLine(it); line != "" {
 			ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).TextColor(t.Muted).Children(func() {
 				ui.Icon(c, icons.Get(icon)).Size(theme.IconXs, theme.IconXs).Shrink(0)
-				kit.Text(c, line, t.Text.Base).SingleLine()
+				kit.Text(c, line, t.Text.Xs).SingleLine()
 			})
 		} else if it.Snippet != "" {
-			kit.Text(c, it.Snippet, t.Text.Base).TextColor(t.Muted).SingleLine()
+			kit.Text(c, it.Snippet, t.Text.Xs).TextColor(t.Muted).SingleLine()
 		}
 		p.a.rowChips(c, it.Labels)
 	})
@@ -1377,13 +1424,13 @@ func (p *mailPage) skeletonRow(c *ui.Context) {
 		})
 	}
 	ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5)).Children(func() {
-		line(t.Text.Body, func(bar func(float32)) {
+		line(t.Text.Sm, func(bar func(float32)) {
 			bar(theme.SkeletonShort * 0.75)
 			ui.Spacer(c)
 			bar(th.Space(8))
 		})
-		line(t.Text.Body, func(bar func(float32)) { bar(theme.SkeletonShort * 1.5) })
-		line(t.Text.Base, func(bar func(float32)) { bar(0) })
+		line(t.Text.Sm, func(bar func(float32)) { bar(theme.SkeletonShort * 1.5) })
+		line(t.Text.Xs, func(bar func(float32)) { bar(0) })
 	})
 }
 
@@ -1752,7 +1799,9 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 				a.toastAs(kit.ToastWarning, i18n.Tf("mail.no_"+op, strings.Join(skipped, i18n.T("mail.list_sep"))))
 			}
 			if removes(op) {
-				l.sel.Clear()
+				for _, it := range rows { // not the row advance chose meanwhile
+					l.sel.Remove(it.key())
+				}
 			}
 			if op == "purge" && len(purged) > 0 {
 				p.offerUndoPurge(i18n.Tf("mail.purge.toast", len(purged)), purged, start)

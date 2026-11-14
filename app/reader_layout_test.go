@@ -165,7 +165,7 @@ func TestFitQuickLabels(t *testing.T) {
 		// Dynamically compute constrained width based on actual shaped text metrics,
 		// ensuring test assertions are reliable across all OS font renderers.
 		t0, th := theme.Of(c), c.Theme()
-		f := ui.Font{Size: t0.Text.Sm}
+		f := ui.Font{Size: t0.Text.Xs}
 		w0, _ := ui.ShapeText("Accept now", f, 0).Size()
 		w1, _ := ui.ShapeText("Review changes carefully?", f, 0).Size()
 		w2, _ := ui.ShapeText("Send details", f, 0).Size()

@@ -102,7 +102,7 @@ func (v *rulesView) fileDir(c *ui.Context, d *core.RuleDoc, i int) {
 	b.Children(func() {
 		ui.Icon(c, icons.Get("folder")).Size(theme.Icon, theme.Icon).TextColor(t.Muted).Shrink(0)
 		if dir == "" {
-			kit.Text(c, i18n.T("settings.rules.files.choose"), t.Text.Sm).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1).MinWidth(0)
+			kit.Text(c, i18n.T("settings.rules.files.choose"), t.Text.Xs).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1).MinWidth(0)
 			return
 		}
 		kit.Text(c, dir, t.Text.Xs).Font(theme.Mono).SingleLine().Grow(1).Shrink(1).MinWidth(0)
@@ -136,7 +136,7 @@ func (v *rulesView) fileOptions(c *ui.Context, d *core.RuleDoc, i int) {
 	pathRow := func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(1.5)).TextColor(t.Muted).Children(func() {
 			ui.Icon(c, icons.Get("folder")).Size(theme.IconSm, theme.IconSm).Shrink(0)
-			kit.Text(c, filePreview(*ac), t.Text.Sm).Font(theme.Mono).SingleLine().Shrink(1)
+			kit.Text(c, filePreview(*ac), t.Text.Xs).Font(theme.Mono).SingleLine().Shrink(1)
 		})
 	}
 	if l := leader(d, i); l != i {

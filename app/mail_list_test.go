@@ -545,6 +545,36 @@ func TestKeyboardArchiveDelete(t *testing.T) {
 	}
 }
 
+// Archiving the open mail moves the reader, and the list's choice, on to the
+// row after it; with no row left the reader closes.
+func TestArchiveAdvances(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	base := h.clock.Now()
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "first", "x", at(base, 1)))
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "second", "x", at(base, 2)))
+	h.syncNow(accs[0])
+	h.waitMail("two threads", func() bool { return len(h.items()) == 2 })
+	second := h.items()[1].ID
+	h.click("first")
+	h.waitMail("first read by the reader", func() bool { return h.items()[0].Unread == 0 })
+	h.click("first") // the list has the focus again
+	h.tt.Key(0, ui.KeyE)
+	if r := h.app.route; r.ThreadID != second {
+		t.Fatalf("the reader shows %+v, want thread %d", r, second)
+	}
+	h.waitMail("first archived", func() bool { return len(h.items()) == 1 })
+	h.tt.Frame()
+	if got := h.app.mail.chosen(h.items()); len(got) != 1 || got[0].ID != second {
+		t.Fatalf("the list chose %+v, want thread %d", got, second)
+	}
+	h.click("second")
+	h.tt.Key(0, ui.KeyE)
+	h.waitMail("second archived", func() bool { return len(h.items()) == 0 })
+	if r := h.app.route; r.ThreadID != 0 || r.MessageID != 0 {
+		t.Fatalf("the reader still shows %+v", r)
+	}
+}
+
 // Delete and forward delete trash the chosen rows, as # does: a selection
 // across accounts in 全部收件箱, then the one open.
 func TestKeyboardDeleteKeys(t *testing.T) {

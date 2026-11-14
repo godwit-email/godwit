@@ -13,7 +13,7 @@ type SidebarItemOpts struct {
 	Selected bool    // the page shown: highlighted, and it does not click
 	Covered  bool    // selected, but something covers the page: it clicks, to show it
 	Muted    bool    // a secondary action, as Add account
-	Small    bool    // 30 high in the small text, as an account's header
+	Small    bool    // 28 high in the small text, as an account's header
 	Indent   float32 // more left padding, in spacing steps, as a folder under its account
 	OnClick  func()
 }
@@ -24,7 +24,7 @@ func SidebarItem(c *ui.Context, o SidebarItemOpts) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	b := ui.ButtonBase(c).Height(th.Space(8)).Padding(0, th.Space(2), 0, th.Space(2+o.Indent)).Gap(th.Space(2)).Radius(t.Radius.Lg).Justify(ui.Start).Transition(colors(theme.MotionFast))
 	if o.Small {
-		b.Height(th.Space(7.5)).Gap(th.Space(1.5)).FontSize(t.Text.Sm)
+		b.Height(th.Space(7)).Gap(th.Space(1.5)).FontSize(t.Text.Xs)
 	}
 	if o.Muted {
 		b.TextColor(t.Muted)
@@ -177,7 +177,7 @@ func NavSwitch(c *ui.Context, items ...NavItem) ui.Element {
 			for i, it := range items {
 				// Keyed by the page shown, so that a new one appears and slides from where its
 				// Match was, clipping the name as it widens.
-				e := segment(ui.Row(c).Key([2]int{shown, i}), it).FontSize(t.Text.Base).TextColor(t.Muted).Clip().PassThrough().
+				e := segment(ui.Row(c).Key([2]int{shown, i}), it).FontSize(t.Text.Xs).TextColor(t.Muted).Clip().PassThrough().
 					Transition(ui.ElementTransition{Duration: theme.MotionBase, Match: navContent(i)})
 				if it.Selected || hovered[i] {
 					e.TextColor(t.Foreground)
@@ -200,9 +200,9 @@ func Panel(c *ui.Context, radius float32) ui.Element {
 func CardHeader(c *ui.Context, title, description string) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Column(c).Gap(th.Space(1)).Children(func() {
-		Text(c, title, t.Text.Lg).FontWeight(600)
+		Text(c, title, t.Text.Base).FontWeight(600)
 		if description != "" {
-			Text(c, description, t.Text.Sm).TextColor(t.Muted)
+			Text(c, description, t.Text.Xs).TextColor(t.Muted)
 		}
 	})
 }

@@ -4,30 +4,30 @@ Every settings page is a centered column of grouped cards: a page header, then g
 
 ## Page
 
-The content panel is `background`. Its column is centered, at most 760 wide, with `space-8` padding all round and `space-8` between groups. Every padding, gap and radius on these pages is a token: spacing from `space-*`, corners from `radius-*`, sizes from the type scale; no in-between values. Secondary text anywhere on the page is `sm` (12 px) in `muted`.
+The content panel is `background`. Its column is centered, at most 760 wide, with `space-8` padding all round and `space-8` between groups. Every padding, gap and radius on these pages is a token: spacing from `space-*`, corners from `radius-*`, sizes from the type scale; no in-between values. Secondary text anywhere on the page is `xs` (12 px) in `muted`.
 
 ## Sidebar
 
 248 wide, `sidebar` ground, `space-3` padding, `outline` edge with a `border` line on the right; the panel's left corners take `radius-xl`.
 
-- Title 设置 in `xl`, then a search field (32 high, `radius-lg`, `window` fill, a 16 px search icon in `muted`), then two groups labelled in `sm` `muted`.
+- Title 设置 in `xl`, then a search field (32 high, `radius-lg`, `window` fill, a 16 px search icon in `muted`), then two groups labelled in `xs` `muted`.
 - **账户**: one row per account — provider logo (a 20 px tile, `radius-sm`, `shadow-xs`), address, status dot (6, `success` healthy, `attention` needs a look). Last row: **+ 添加账户** in `muted`.
 - **应用**: 通用, 模型服务, 扩展, 隐私与安全, 关于, each with a 16 px icon: line icon in `muted` at rest, the filled icon in `foreground` when selected.
 - Rows are 32 high, `radius-lg`, `space-0-5` apart. The selected row is `sidebar-selected` at regular weight.
 
 ## Page header
 
-Title in `display` (29 / 600), one line of description in `body` `muted` 6 px below, and at most one primary action on the right, aligned to the bottom. An account page uses the identity header instead: logo (48, `radius-xl`), address in `display`, then provider · folders, a 默认发件 badge and a status badge on one line.
+Title in `3xl` (30 / 600), one line of description in `sm` `muted` 6 px below, and at most one primary action on the right, aligned to the bottom. An account page uses the identity header instead: logo (48, `radius-xl`), address in `3xl`, then provider · folders, a 默认发件 badge and a status badge on one line.
 
 An alert about the whole page (login expired, the default model unreachable) sits between the header and the first group: `radius-xl`, its tint's background and border, its one action as a filled button in the tint's text color.
 
 ## Group
 
-A heading in `body` at 600, inset 16 like the rows, 10 px above a card: `card` fill, hairline `border` outline, `radius-xl`. Rows inside are separated by `border` hairlines (each row draws the line above it; the card hides the first). A note about the whole group goes under the card in `sm` `muted`, inset the same.
+A heading in `sm` at 600, inset 16 like the rows, 10 px above a card: `card` fill, hairline `border` outline, `radius-xl`. Rows inside are separated by `border` hairlines (each row draws the line above it; the card hides the first). A note about the whole group goes under the card in `xs` `muted`, inset the same.
 
 ## Row
 
-One setting, `space-2` / `space-4` padding (8 / 16), at least 48 high. The title is at 500 with its description below in `sm` `muted`; the description says what the setting does, not what it is.
+One setting, `space-2` / `space-4` padding (8 / 16), at least 48 high. The title is at 500 with its description below in `xs` `muted`; the description says what the setting does, not what it is.
 
 | Shape | When | Layout |
 | --- | --- | --- |
@@ -56,16 +56,16 @@ Capability tags in a list are `radius-sm` chips on `hover`: `muted` text, or `fo
 Collections are edited in an `lg` dialog (640) pinned to the top, so it can grow; the frame, scrim and footer are Dialog's. What is particular to settings:
 
 - Header: 添加模型服务 or 编辑 <name>, and one line in `muted`.
-- Choices that shape the rest of the form (服务商) come first as a row of tiles: name at 500, what it offers in `sm` `muted`; the picked one has a `primary` outline on `hover`.
+- Choices that shape the rest of the form (服务商) come first as a row of tiles: name at 500, what it offers in `xs` `muted`; the picked one has a `primary` outline on `hover`.
 - Form: labels 96 wide on the left at the control's 32 px line, fields on the right, 12 apart; a hint under a field says what the value does (请求发往 <url>). Preset values are editable inputs with 恢复默认 beside them once changed. A secret has a show button inside its right edge; when editing it stays empty with 已配置 · 留空表示保持不变.
 - Optional capabilities are cards (`border`, `radius-xl`, `space-3` / `space-4`): title at 600, what it does, a Switch; one the provider lacks is a `sidebar` card marked 不支持 that says what happens instead. Inside: a segmented control when there is more than one API format, the request URL, the model picker, and the test result.
-- Status lines: a 6 px dot and `sm` text — `muted` while testing, `success-text` when it passed, `danger-text` with the reason when it failed. Turning off something in use shows a `warning` note saying what takes over.
-- Footer: destructive 删除 on the left when editing; a `sm` `muted` reason when the primary is disabled; then 测试连接 and 取消 (outline) and the primary. Deleting turns the footer `danger-bg` with a confirmation saying what it affects.
+- Status lines: a 6 px dot and `xs` text — `muted` while testing, `success-text` when it passed, `danger-text` with the reason when it failed. Turning off something in use shows a `warning` note saying what takes over.
+- Footer: destructive 删除 on the left when editing; a `xs` `muted` reason when the primary is disabled; then 测试连接 and 取消 (outline) and the primary. Deleting turns the footer `danger-bg` with a confirmation saying what it affects.
 
 ## Badges
 
-`radius-sm`, `sm`, 2 / 8 padding. Neutral: `hover` with `foreground`; healthy: `success-bg` with `success-text`; needs a look: `warning-bg` with `warning-text`.
+`radius-sm`, `xs`, 2 / 8 padding. Neutral: `hover` with `foreground`; healthy: `success-bg` with `success-text`; needs a look: `warning-bg` with `warning-text`.
 
 ## In the design canvas
 
-`Empty.dc.html` (props `title`, `desc`, `icon` as a path, `actions` as `[{label, primary, onClick}]`), `SettingsSidebar.dc.html` (prop `current`: `account-0`, `account-1`, `general`, `models`, `extensions`) and `SettingsRow.dc.html` (props `label`, `desc`, `control` = switch | select | input | textarea | button | value, `layout` = inline | stacked, `on`, `options` as `a|b|c`, `value`, `action`, `tone`, `mono`) are imported with `<dc-import>`. Page header, group card, list rows and dialog are markup copied as written above, since an import cannot take child content.
+`Empty.dc.html` (props `base`, `desc`, `icon` as a path, `actions` as `[{label, primary, onClick}]`), `SettingsSidebar.dc.html` (prop `current`: `account-0`, `account-1`, `general`, `models`, `extensions`) and `SettingsRow.dc.html` (props `label`, `desc`, `control` = switch | select | input | textarea | button | value, `layout` = inline | stacked, `on`, `options` as `a|b|c`, `value`, `action`, `tone`, `mono`) are imported with `<dc-import>`. Page header, group card, list rows and dialog are markup copied as written above, since an import cannot take child content.

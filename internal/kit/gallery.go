@@ -26,14 +26,14 @@ func Gallery(c *ui.Context, g *GalleryState) {
 	row := func(children func()) { ui.Row(c).Wrap().AlignItems(ui.Center).Gap(th.Space(2)).Children(children) }
 	section := func(name string, body func()) {
 		ui.Column(c).Gap(th.Space(2)).AlignItems(ui.Start).Children(func() {
-			Text(c, name, t.Text.Lg).FontWeight(600).Label("section:" + name)
+			Text(c, name, t.Text.Base).FontWeight(600).Label("section:" + name)
 			body()
 		})
 	}
 	ui.Scroll(c).Grow(1).Children(func() {
 		ui.Column(c).Gap(th.Space(6)).Padding(th.Space(6)).Children(func() {
 			section("Button", func() {
-				for _, s := range []ButtonSize{SizeSm, SizeDefault, SizeLg} {
+				for _, s := range []Size{SizeXs, SizeSm, SizeDefault, SizeLg} {
 					row(func() {
 						for _, v := range galleryVariants {
 							Button(c, v.name, ButtonOpts{Variant: v.v, Size: s})
@@ -49,7 +49,7 @@ func Gallery(c *ui.Context, g *GalleryState) {
 			section("IconButton", func() {
 				for _, v := range []Variant{Ghost, Outline} {
 					row(func() {
-						for i, s := range []ButtonSize{SizeXs, SizeSm, SizeDefault, SizeLg} {
+						for i, s := range []Size{SizeMini, SizeXs, SizeSm, SizeDefault, SizeLg} {
 							IconButton(c, "star", "Star "+galleryVariants[v].name+string(rune('1'+i)), ButtonOpts{Variant: v, Size: s})
 						}
 					})
@@ -139,7 +139,18 @@ func Gallery(c *ui.Context, g *GalleryState) {
 					CardFooter(c, func() { Button(c, "Card action", ButtonOpts{}) })
 				}).Width(theme.SheetWidth)
 			})
-			section("Badge", func() { Badge(c, "Badge") })
+			section("Badge", func() {
+				row(func() {
+					Badge(c, "Neutral")
+					BadgeWith(c, "Muted", BadgeOpts{Muted: true})
+					BadgeWith(c, "Outline", BadgeOpts{Tone: BadgeOutline})
+					BadgeWith(c, "Default", BadgeOpts{Icon: "check"})
+					BadgeWith(c, "Success", BadgeOpts{Tone: BadgeSuccess})
+					BadgeWith(c, "Warning", BadgeOpts{Tone: BadgeWarning})
+					BadgeWith(c, "Danger", BadgeOpts{Tone: BadgeDanger})
+					BadgeWith(c, "mono", BadgeOpts{Mono: true})
+				})
+			})
 			section("Alert", func() {
 				ui.Column(c).Gap(th.Space(2)).MaxWidth(theme.ContentMaxWidth).Children(func() {
 					Alert(c, Warning, "Warning alert", nil)

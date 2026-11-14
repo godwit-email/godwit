@@ -345,14 +345,15 @@ func TestKitButtonSizes(t *testing.T) {
 			ui.Column(c).Gap(4).Children(func() {
 				for _, k := range []struct {
 					l string
-					s ButtonSize
+					s Size
 				}{{"probe-sm", SizeSm}, {"probe-def", SizeDefault}, {"probe-lg", SizeLg}} {
 					ButtonFrame(c, ButtonOpts{Size: k.s}).Label(k.l).Children(func() { ui.Text(c, "x") })
 				}
-				IconButton(c, "check", "probe-xs", ButtonOpts{Size: SizeXs})
+				ButtonFrame(c, ButtonOpts{Size: SizeXs}).Label("probe-24").Children(func() { ui.Text(c, "x") })
+				IconButton(c, "check", "probe-xs", ButtonOpts{Size: SizeMini})
 			})
 		}), 300, 300)
-		for l, want := range map[string]float32{"probe-sm": th.Space(7), "probe-def": th.Space(8), "probe-lg": th.Space(9), "probe-xs": th.Space(4)} {
+		for l, want := range map[string]float32{"probe-sm": th.Space(7), "probe-def": th.Space(8), "probe-lg": th.Space(9), "probe-24": th.Space(6), "probe-xs": th.Space(4)} {
 			r, ok := tt.Find(l)
 			if !ok {
 				t.Fatalf("%s: %s not found", density, l)
@@ -856,6 +857,31 @@ func TestKitOverlayEnters(t *testing.T) {
 		last := tt.Image().RGBAAt(2, 2)
 		if moved := first != last; moved == reduce {
 			t.Errorf("reduce motion %v: backdrop corner %v then %v", reduce, first, last)
+		}
+	}
+}
+
+// TestKitOverlayLeaves: a closed dialog fades out over MotionFast, and goes
+// at once under reduced motion.
+func TestKitOverlayLeaves(t *testing.T) {
+	for _, reduce := range []bool{false, true} {
+		open := true
+		tt := ui.NewTester(themed(func(c *ui.Context) {
+			Dialog(c, &open, "Title", DialogOpts{Close: "Close"}, func() { ui.Text(c, "inside") }, nil)
+		}), 400, 300)
+		tt.SetPreferences(ui.Preferences{ReduceMotion: reduce})
+		tt.Frame()
+		tt.Advance(2 * theme.MotionBase)
+		bare := color.RGBA{255, 255, 255, 255}
+		open = false
+		tt.Frame()
+		tt.Advance(theme.MotionFast / 2)
+		if mid := tt.Image().RGBAAt(2, 2); (mid != bare) == reduce {
+			t.Errorf("reduce motion %v: backdrop corner %v halfway out", reduce, mid)
+		}
+		tt.Advance(2 * theme.MotionFast)
+		if end := tt.Image().RGBAAt(2, 2); end != bare {
+			t.Errorf("reduce motion %v: backdrop corner %v after leaving", reduce, end)
 		}
 	}
 }
@@ -1372,6 +1398,33 @@ func TestDialogWidths(t *testing.T) {
 // dimming of all it covers: a Default one its primary at half opacity, so it
 // stays a button on any surface (white, frosted, dark), an Outline one's
 // text Idle.
+// TestKitButtonPressed: a button held down goes a step past its hover.
+func TestKitButtonPressed(t *testing.T) {
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Column(c).Padding(8).AlignItems(ui.Start).Children(func() { Button(c, "Save", ButtonOpts{Variant: Outline}) })
+	}), 300, 200)
+	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
+	tt.Frame()
+	r, ok := tt.Find("Save")
+	if !ok {
+		t.Fatal("Save not found")
+	}
+	x, y := r.X+r.W/2, r.Y+r.H/2
+	corner := func() color.RGBA {
+		tt.Frame()
+		tt.Advance(2 * theme.MotionBase)
+		return tt.Image().RGBAAt(int(r.X)+4, int(y))
+	} // inside the button, left of its label
+	tt.Move(x, y)
+	hover := corner()
+	tt.Press(x, y)
+	pressed := corner()
+	tt.Release(x, y)
+	if tok := theme.Light(); hover.R != tok.Hover.R || pressed == hover {
+		t.Errorf("hover %v (want %v), pressed %v: want pressed past hover", hover, tok.Hover, pressed)
+	}
+}
+
 func TestKitButtonDisabledColors(t *testing.T) {
 	tt := ui.NewTester(themed(func(c *ui.Context) {
 		ui.Column(c).Gap(8).Padding(8).Children(func() {

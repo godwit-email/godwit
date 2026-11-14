@@ -42,5 +42,16 @@ func enter(c *ui.Context, open *bool, d time.Duration) float32 {
 	return ui.EaseOut(k)
 }
 
+// leave fades an overlay out once it is no longer built: mygo shows a copy of
+// what the last frame drew, so nothing of the caller's runs after it closed.
+// Its other changes stay at once (they are enter's), and under reduced motion
+// it goes at once.
+func leave(c *ui.Context) ui.ElementTransition {
+	if c.Preferences().ReduceMotion {
+		return ui.ElementTransition{Duration: -1}
+	}
+	return ui.ElementTransition{Duration: -1, ExitDuration: theme.MotionFast, Exit: &ui.Motion{}}
+}
+
 // rise is how far below its place an overlay that has come in k is.
 func rise(k float32) float32 { return theme.MotionOffset * (1 - k) }

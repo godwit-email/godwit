@@ -5,24 +5,41 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
-// InputOpts style a text input.
+// InputOpts style a text input. Size is its height on the control scale:
+// SizeSm 28, the default 32 and SizeLg 36 (any other is the default), with
+// a button's corner and 8, 10 and 12 at its sides.
 type InputOpts struct {
 	Placeholder             string
+	Size                    Size
 	Password, Mono, Invalid bool
 	Bare                    bool // raw Base geometry: the row around it draws the box
 	Flat                    bool // no shadow
 	Glass                   bool // frosted glass appearance with hairline border (no blur)
 }
 
+// inputSize is the height and side padding of an input of size s.
+func inputSize(c *ui.Context, s Size) (h, padX float32) {
+	th := c.Theme()
+	switch s {
+	case SizeSm:
+		return th.Space(7), th.Space(2)
+	case SizeLg:
+		return th.Space(9), th.Space(3)
+	}
+	return th.Space(8), th.Space(2.5)
+}
+
 func inputFrame(c *ui.Context, e ui.Element, o InputOpts) ui.Element {
 	t := theme.Of(c)
 	borderWidth := float32(theme.Stroke)
+	h, _ := inputSize(c, o.Size)
+	e.Radius(controlRadius(c, h))
 	if o.Glass {
 		borderWidth = theme.Hairline
-		e.Radius(t.Radius.Lg).Clip().Background(t.GlassBg)
+		e.Clip().Background(t.GlassBg)
 		Elevate(c, e, theme.ShadowXs)
 	} else {
-		e.Radius(t.Radius.Md).Border(theme.Stroke, t.Input).Background(t.Background)
+		e.Border(theme.Stroke, t.Input).Background(t.Background)
 		if !o.Flat {
 			Elevate(c, e, theme.ShadowXs)
 		}
@@ -44,21 +61,25 @@ func inputFrame(c *ui.Context, e ui.Element, o InputOpts) ui.Element {
 	return e
 }
 
-// InputGroup is a 32-high input frame for a bare input and its icons or actions.
-// It shares Input's border, shadow, error and focus styles; o uses Invalid and Flat.
+// InputGroup is an input frame for a bare input and its icons or actions, as
+// high as an Input of o.Size. It shares Input's border, shadow, error and
+// focus styles; o uses Size, Invalid, Flat and Glass. The bare input in it
+// stretches to its height (AlignSelf(ui.Stretch)); the group pads itself.
 func InputGroup(c *ui.Context, o InputOpts) ui.Element {
-	return inputFrame(c, ui.Row(c).Height(c.Theme().Space(8)).AlignItems(ui.Center), o)
+	h, _ := inputSize(c, o.Size)
+	return inputFrame(c, ui.Row(c).Height(h).AlignItems(ui.Center), o)
 }
 
 func input(c *ui.Context, e ui.Element, o InputOpts) ui.Element {
-	t, th := theme.Of(c), c.Theme()
+	t := theme.Of(c)
 	e.Placeholder(o.Placeholder).FocusRing(false)
 	if !o.Bare {
-		e.PaddingX(th.Space(2.5))
+		_, padX := inputSize(c, o.Size)
+		e.PaddingX(padX)
 		inputFrame(c, e, o)
 	}
 	if o.Mono {
-		e.Font(theme.Mono).FontSize(t.Text.Sm)
+		e.Font(theme.Mono).FontSize(t.Text.Xs)
 	}
 	if o.Password {
 		e.Password()
@@ -66,11 +87,12 @@ func input(c *ui.Context, e ui.Element, o InputOpts) ui.Element {
 	return e
 }
 
-// Input is a 32-high single-line text input.
+// Input is a single-line text input, 32 high unless o.Size says otherwise.
 func Input(c *ui.Context, s *string, o InputOpts) ui.Element {
 	e := ui.TextInputBase(c, s)
 	if !o.Bare {
-		e.Height(c.Theme().Space(8))
+		h, _ := inputSize(c, o.Size)
+		e.Height(h)
 	}
 	return input(c, e, o)
 }
@@ -92,9 +114,9 @@ func Field(c *ui.Context, label, help, errText string, control func()) {
 		control()
 		switch {
 		case errText != "":
-			Text(c, errText, t.Text.Sm).TextColor(t.Danger)
+			Text(c, errText, t.Text.Xs).TextColor(t.Danger)
 		case help != "":
-			Text(c, help, t.Text.Sm).TextColor(t.Muted)
+			Text(c, help, t.Text.Xs).TextColor(t.Muted)
 		}
 	})
 }

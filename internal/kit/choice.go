@@ -1,6 +1,8 @@
 package kit
 
 import (
+	"cmp"
+
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/theme"
@@ -34,9 +36,9 @@ func SwitchRow(c *ui.Context, on *bool, label, help string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.SwitchBase(c, on).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Label(label).Children(func() {
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-			Text(c, label, t.Text.Body).LineHeight(theme.LineFor(label)).FontWeight(500)
+			Text(c, label, t.Text.Sm).LineHeight(theme.LineFor(label)).FontWeight(500)
 			if help != "" {
-				Text(c, help, t.Text.Sm).TextColor(t.Muted)
+				Text(c, help, t.Text.Xs).TextColor(t.Muted)
 			}
 		})
 		switchTrack(c, *on)
@@ -91,7 +93,7 @@ func RadioCard[T comparable](c *ui.Context, sel *T, v T, label, help string) ui.
 		radioDot(c, on)
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 			ui.Text(c, label)
-			Text(c, help, t.Text.Sm).TextColor(t.Muted)
+			Text(c, help, t.Text.Xs).TextColor(t.Muted)
 		})
 	})
 }
@@ -112,11 +114,35 @@ type Option[T comparable] struct {
 	Disabled bool // listed, muted, and not chosen
 }
 
-// SelectOpts style a SelectWith: zero Radius is Md, zero MinWidth the
-// default, zero MaxWidth unbounded; Flat drops the shadow.
+// SelectOpts style a SelectWith: Size is its height as an Input's, zero
+// MinWidth the default, zero MaxWidth unbounded; Flat drops the shadow.
 type SelectOpts struct {
-	Radius, MinWidth, MaxWidth float32
-	Flat                       bool
+	Size               Size
+	MinWidth, MaxWidth float32
+	Flat               bool
+}
+
+// selectFace makes e a select's face showing current: the input frame with
+// the text and a chevron.
+func selectFace(c *ui.Context, e ui.Element, current string, o SelectOpts) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	inputFrame(c, e, InputOpts{Flat: o.Flat, Size: o.Size})
+	h, padX := inputSize(c, o.Size)
+	e.Height(h).PaddingX(padX).Gap(th.Space(2)).MinWidth(cmp.Or(o.MinWidth, theme.SelectMinWidth)).Children(func() {
+		ui.Text(c, current).SingleLine().Grow(1).Shrink(1)
+		ui.Icon(c, icons.Get("chevron-down")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
+	})
+	if o.MaxWidth > 0 {
+		e.MaxWidth(o.MaxWidth)
+	}
+	return e
+}
+
+// SelectButton is a button with a select's face showing text, for a choice
+// a Select cannot hold, as several at once: it opens the caller's popover.
+// Give it a Label and an OnClick.
+func SelectButton(c *ui.Context, text string, o SelectOpts) ui.Element {
+	return selectFace(c, ui.ButtonBase(c).Justify(ui.Start), text, o)
 }
 
 // Select is a 32-high select of opts; give it a Label.
@@ -134,21 +160,7 @@ func SelectWith[T comparable](c *ui.Context, o SelectOpts, sel *T, opts []Option
 			current = o.Label
 		}
 	}
-	inputFrame(c, s.Trigger, InputOpts{Flat: o.Flat})
-	radius, minW := o.Radius, o.MinWidth
-	if radius == 0 {
-		radius = t.Radius.Md
-	}
-	if minW == 0 {
-		minW = theme.SelectMinWidth
-	}
-	s.Trigger.Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(2)).Radius(radius).MinWidth(minW).Children(func() {
-		ui.Text(c, current).SingleLine().Grow(1).Shrink(1)
-		ui.Icon(c, icons.Get("chevron-down")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
-	})
-	if o.MaxWidth > 0 {
-		s.Trigger.MaxWidth(o.MaxWidth)
-	}
+	selectFace(c, s.Trigger, current, o)
 	s.Popup(func(panel ui.Element) {
 		panel.Margin(theme.PopupOffset, 0, 0, 0).Padding(th.Space(1)).
 			Radius(t.Radius.Lg).Clip().

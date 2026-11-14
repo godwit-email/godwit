@@ -371,10 +371,8 @@ func permissionList(c *ui.Context, pm plugins.Permissions, capabilities []string
 				r.TextColor(t.Muted)
 			}
 			r.Children(func() {
-				ui.Box(c).Padding(th.Space(0.5), th.Space(1.5)).Radius(t.Radius.Sm).Background(t.Hover).Children(func() {
-					kit.Text(c, tag, t.Text.Sm).Font(theme.Mono)
-				})
-				kit.Text(c, text, t.Text.Body).LineHeight(theme.LineFor(text)).Shrink(1)
+				kit.BadgeWith(c, tag, kit.BadgeOpts{Mono: true})
+				kit.Text(c, text, t.Text.Sm).LineHeight(theme.LineFor(text)).Shrink(1)
 			})
 		}
 		if slices.Contains(pm.Mail, "read") {
@@ -498,13 +496,13 @@ func (e *extView) pluginRow(c *ui.Context, p core.PluginInfo) {
 						if p.Builtin {
 							statusPill(c, i18n.T("settings.ext.builtin"), false)
 						}
-						kit.Text(c, title, t.Text.Body).LineHeight(theme.LineFor(title)).FontWeight(500)
+						kit.Text(c, title, t.Text.Sm).LineHeight(theme.LineFor(title)).FontWeight(500)
 						if p.NeedsGrant {
-							kit.Text(c, p.Version, t.Text.Sm).TextColor(t.Muted)
+							kit.Text(c, p.Version, t.Text.Xs).TextColor(t.Muted)
 						}
 					})
 					if d := p.Description.For(i18n.Language()); d != "" { // untrusted length: one line, all of it in the tooltip
-						kit.Tooltip(c, kit.Text(c, d, t.Text.Sm).TextColor(t.Muted).SingleLine().Shrink(1), d)
+						kit.Tooltip(c, kit.Text(c, d, t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(1), d)
 					}
 				})
 			})
@@ -557,9 +555,9 @@ func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 			nativeCard(c, p)
 		} else {
 			ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Lg).Background(t.Background).Children(func() {
-				kit.Text(c, i18n.T("settings.ext.perms"), t.Text.Body).LineHeight(theme.LineFor(i18n.T("settings.ext.perms"))).FontWeight(500)
+				kit.Text(c, i18n.T("settings.ext.perms"), t.Text.Sm).LineHeight(theme.LineFor(i18n.T("settings.ext.perms"))).FontWeight(500)
 				if p.Trust == "listed" {
-					kit.Text(c, i18n.T("settings.ext.native.trust.listed"), t.Text.Sm).TextColor(t.Muted)
+					kit.Text(c, i18n.T("settings.ext.native.trust.listed"), t.Text.Xs).TextColor(t.Muted)
 				}
 				permissionList(c, p.Permissions, p.Capabilities)
 			})
@@ -567,7 +565,7 @@ func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 		if st, ok := e.logins[name]; signsIn(p) && ok && st.SignedIn {
 			ui.Row(c).FillWidth().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 				label := i18n.Tf("settings.ext.signed_in", st.Account)
-				kit.Text(c, label, t.Text.Body).LineHeight(theme.LineFor(label)).Grow(1).Shrink(1)
+				kit.Text(c, label, t.Text.Sm).LineHeight(theme.LineFor(label)).Grow(1).Shrink(1)
 				kit.Button(c, i18n.T("settings.ext.logout"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() {
 					e.write("plugins", func(ctx context.Context) error { return e.a.svc.PluginLogout(ctx, name) }, nil)
 				})
@@ -621,13 +619,13 @@ func nativeCard(c *ui.Context, p core.PluginInfo) {
 		if p.Trust == "listed" && p.Error == "" {
 			title, body, trust = trust, i18n.T("settings.ext.native.reviewed.body"), ""
 		}
-		kit.Text(c, title, t.Text.Body).LineHeight(theme.LineFor(title)).FontWeight(500)
+		kit.Text(c, title, t.Text.Sm).LineHeight(theme.LineFor(title)).FontWeight(500)
 		for _, s := range []string{body, trust} {
 			if s != "" {
-				kit.Text(c, s, t.Text.Body).LineHeight(theme.LineFor(s))
+				kit.Text(c, s, t.Text.Sm).LineHeight(theme.LineFor(s))
 			}
 		}
-		kit.Text(c, i18n.Tf("settings.ext.native.file", plugins.LibraryName(), h), t.Text.Sm).Font(theme.Mono).TextColor(t.Muted)
+		kit.Text(c, i18n.Tf("settings.ext.native.file", plugins.LibraryName(), h), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted)
 	})
 }
 
@@ -682,12 +680,11 @@ func (e *extView) setPluginEnabled(name string, on bool) {
 
 // statusPill is a small status label; attention shows it amber.
 func statusPill(c *ui.Context, text string, attention bool) {
-	t, th := theme.Of(c), c.Theme()
-	b := ui.Box(c).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Sm).Background(t.Background).TextColor(t.Foreground)
+	tone := kit.BadgeSurface
 	if attention {
-		b.Background(t.WarningBg).TextColor(t.WarningText)
+		tone = kit.BadgeWarning
 	}
-	b.Children(func() { kit.Text(c, text, t.Text.Sm) })
+	kit.BadgeWith(c, text, kit.BadgeOpts{Tone: tone})
 }
 
 // loadCfg reads a plugin's settings form once; a form already read or being read stays.
@@ -839,7 +836,7 @@ func (e *extView) mcpView(c *ui.Context) {
 						Grow(1).Shrink(1).Children(func() {
 						ui.Column(cc).Gap(th.Space(0.5)).Children(func() {
 							ui.Text(cc, s.Name).FontWeight(500)
-							kit.Text(cc, s.Transport+" · "+i18n.Plural("settings.ext.mcp.tools", len(s.Tools)), t.Text.Sm).TextColor(t.Muted)
+							kit.Text(cc, s.Transport+" · "+i18n.Plural("settings.ext.mcp.tools", len(s.Tools)), t.Text.Xs).TextColor(t.Muted)
 						})
 					})
 					st, attention := mcpStatus(s)
@@ -1069,7 +1066,7 @@ func (e *extView) installProgressView(c *ui.Context) {
 		label = i18n.T("settings.ext.verifying")
 	}
 	ui.Column(c).Width(th.Space(36)).Gap(th.Space(1)).Children(func() {
-		kit.Text(c, label, t.Text.Sm).TextColor(t.Muted)
+		kit.Text(c, label, t.Text.Xs).TextColor(t.Muted)
 		name := label
 		if e.installing != ":folder" {
 			name = i18n.Tf("settings.ext.registry.named", label, e.installing)

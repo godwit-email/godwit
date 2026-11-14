@@ -538,8 +538,8 @@ func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
 	if tr := st.translation; r.trShown(st) && !(tr.done && strings.TrimSpace(tr.text) == "") {
 		ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, icons.Get("languages")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
-			kit.Text(c, modelLabel(i18n.Tf("reader.ai.translated", shortLang(tr.lang), tr.model)), t.Text.Sm).TextColor(t.Muted)
-			kit.TextLink(c, i18n.T("reader.ai.show_original"), t.Foreground, t.Text.Sm).OnClick(func() { r.toggleTranslate(m.ID) })
+			kit.Text(c, modelLabel(i18n.Tf("reader.ai.translated", shortLang(tr.lang), tr.model)), t.Text.Xs).TextColor(t.Muted)
+			kit.TextLink(c, i18n.T("reader.ai.show_original"), t.Foreground, t.Text.Xs).OnClick(func() { r.toggleTranslate(m.ID) })
 		})
 	}
 }
@@ -589,7 +589,7 @@ func (r *reader) digest(c *ui.Context, d core.ThreadDigest) {
 	if d.Todo != nil {
 		kit.Separator(c, false)
 		ui.Column(c).Gap(th.Space(1)).Children(func() {
-			kit.Text(c, i18n.T("reader.ai.todo"), t.Text.Sm).FontWeight(600)
+			kit.Text(c, i18n.T("reader.ai.todo"), t.Text.Xs).FontWeight(600)
 			r.digestLine(c, d.Todo)
 		})
 	}
@@ -687,7 +687,7 @@ func (r *reader) citeCard(c *ui.Context, anchor ui.Element, m core.MessageSummar
 			})
 		})
 		if m.Snippet != "" {
-			kit.Text(c, m.Snippet, t.Text.Sm).TextColor(t.Muted).MaxLines(3)
+			kit.Text(c, m.Snippet, t.Text.Xs).TextColor(t.Muted).MaxLines(3)
 		}
 	})
 }
@@ -748,7 +748,7 @@ func (r *reader) translationState(c *ui.Context, m core.MessageSummary) {
 	}
 	tr := st.translation
 	if tr.done && strings.TrimSpace(tr.text) == "" { // it is in the reading language already
-		kit.Text(c, i18n.Tf("reader.ai.no_translation", shortLang(tr.lang)), theme.Of(c).Text.Sm).TextColor(theme.Of(c).Muted)
+		kit.Text(c, i18n.Tf("reader.ai.no_translation", shortLang(tr.lang)), theme.Of(c).Text.Xs).TextColor(theme.Of(c).Muted)
 		return
 	}
 	r.runState(c, tr, func() { st.translation = r.stream(m.ID, "translate") })
@@ -820,7 +820,7 @@ func (r *reader) panel(c *ui.Context, title, meta string, close func(), body fun
 		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, icons.Get("sparkles")).Size(theme.IconSm, theme.IconSm).TextColor(t.Foreground)
 			ui.Text(c, title).FontWeight(600).LineHeight(theme.LineCJK).Shrink(1)
-			kit.Text(c, meta, t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
+			kit.Text(c, meta, t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
 			if close != nil {
 				kit.IconButton(c, "x", i18n.T("reader.ai.close_result"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(close)
 			}
@@ -845,13 +845,13 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 		kit.Elevate(c, row, theme.ShadowXs)
 		row.Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-				kit.Text(c, i18n.Tf("reader.ai.card_from", card.Title, card.Plugin), t.Text.Sm).TextColor(t.Muted)
+				kit.Text(c, i18n.Tf("reader.ai.card_from", card.Title, card.Plugin), t.Text.Xs).TextColor(t.Muted)
 				if len(card.Fields) == 0 {
 					return
 				}
-				ui.Text(c, card.Fields[0].Value).Shrink(1).Font(theme.Mono).FontSize(t.Text.X2l).LineHeight(t.Text.Line(t.Text.X2l)).LetterSpacing(theme.CardTracking)
+				ui.Text(c, card.Fields[0].Value).Shrink(1).Font(theme.Mono).FontSize(t.Text.Xl).LineHeight(t.Text.Line(t.Text.Xl)).LetterSpacing(theme.CardTracking)
 				if hint := cardHint(card.Fields[1:]); hint != "" {
-					kit.Text(c, hint, t.Text.Sm).TextColor(t.Muted)
+					kit.Text(c, hint, t.Text.Xs).TextColor(t.Muted)
 				}
 			})
 			if len(card.Buttons) == 0 {
@@ -915,7 +915,7 @@ func (r *reader) tagChips(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	a := r.p.a
 	chip := func(e ui.Element) ui.Element {
-		return e.Height(th.Space(6)).PaddingX(th.Space(2)).Radius(t.Radius.Md).FontSize(t.Text.Base).Shrink(0)
+		return e.Height(th.Space(6)).PaddingX(th.Space(2)).Radius(t.Radius.Md).FontSize(t.Text.Xs).Shrink(0)
 	}
 	for i, tag := range st.tags.v {
 		key := fmt.Sprintf("tag/%d/%s/%d", m.ID, tag.Plugin, i)
@@ -975,15 +975,15 @@ func (r *reader) replyBar(c *ui.Context) ui.Element {
 					ui.Row(c).Gap(th.Space(1)).Role(ui.RoleGroup).Label(i18n.T("reader.ai.quick")).Children(func() {
 						for i, q := range st.quick.v {
 							lbl := labels[i]
-							chip := kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.quickReply(target.ID, q) }}).
-								Height(th.Space(6)).PaddingX(th.Space(2)).Radius(t.Radius.Md).Background(t.Hover).Center().Shrink(1).MinWidth(0).Label(q.Preview)
-							chip.Children(func() { kit.Text(c, lbl, t.Text.Sm).SingleLine().Shrink(1) })
+							chip := kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Secondary, Size: kit.SizeXs}).Shrink(1).MinWidth(0).Label(q.Preview).
+								OnClick(func() { r.quickReply(target.ID, q) })
+							chip.Children(func() { ui.Text(c, lbl).SingleLine().Shrink(1) })
 							kit.TooltipLabelled(c, chip, q.Preview)
 						}
 					})
 				}
 			}
-			kit.InputGroup(c, kit.InputOpts{Flat: true}).Height(th.Space(10)).Padding(0, th.Space(1), 0, th.Space(3)).Gap(th.Space(1)).Children(func() {
+			kit.InputGroup(c, kit.InputOpts{Flat: true, Size: kit.SizeLg}).Padding(0, th.Space(1), 0, th.Space(3)).Gap(th.Space(1)).Children(func() {
 				name := r.replyName(target)
 				in := kit.Input(c, &r.replyAsk, kit.InputOpts{Bare: true, Placeholder: i18n.Tf("reader.reply_wit", name)}).Grow(1).Shrink(1).Label(i18n.T("reader.ask_wit"))
 				if in.Submitted() {
@@ -1015,7 +1015,7 @@ func fitQuickLabels(c *ui.Context, replies []core.QuickReply, availWidth float32
 		return nil
 	}
 	t, th := theme.Of(c), c.Theme()
-	f := ui.Font{Size: t.Text.Sm}
+	f := ui.Font{Size: t.Text.Xs}
 
 	textW := func(s string) float32 {
 		w, _ := ui.ShapeText(s, f, 0).Size()
@@ -1139,7 +1139,7 @@ func (r *reader) egressDialog(c *ui.Context) {
 	kit.Dialog(c, &r.egressDlg, i18n.T("reader.egress.title"), opts, func() {
 		ui.Column(c).Gap(th.Space(1)).Children(func() {
 			for _, h := range ask.hosts {
-				kit.Text(c, h, t.Text.Sm).Font(theme.Mono)
+				kit.Text(c, h, t.Text.Xs).Font(theme.Mono)
 			}
 		})
 	}, func() {

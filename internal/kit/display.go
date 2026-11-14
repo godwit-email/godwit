@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
@@ -17,11 +18,64 @@ func Text(c *ui.Context, s string, size float32) ui.Element {
 	return ui.Text(c, s).FontSize(size).LineHeight(theme.Of(c).Text.Line(size))
 }
 
+// BadgeTone is a badge's colors.
+type BadgeTone uint8
+
+const (
+	BadgeNeutral BadgeTone = iota // the hover gray: a kind, a count, a tag
+	BadgeOutline                  // a hairline and no fill: a state of the row it is in
+	BadgeSurface                  // the background, for a badge on a card or a tinted row
+	BadgeSuccess                  // the status tints: their -bg under their -text
+	BadgeWarning
+	BadgeDanger
+)
+
+// BadgeOpts style a BadgeWith: Icon is a 12 icon before the text, named
+// IconLabel to assistive technology when it says what the text does not;
+// Muted is its text in the muted color (the status tones keep theirs), Mono
+// the monospace font.
+type BadgeOpts struct {
+	Tone            BadgeTone
+	Icon, IconLabel string
+	Muted, Mono     bool
+}
+
 // Badge is a small gray label.
-func Badge(c *ui.Context, text string) ui.Element {
+func Badge(c *ui.Context, text string) ui.Element { return BadgeWith(c, text, BadgeOpts{}) }
+
+// BadgeWith is a badge styled by o, the one small label of the interface: as
+// high as a label chip (20), sm text, 6 at its sides, radius-sm. It names
+// and does not act: what is clicked is a Button.
+func BadgeWith(c *ui.Context, text string, o BadgeOpts) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return ui.Box(c).Padding(th.Space(0.5), th.Space(2)).Radius(t.Radius.Sm).Background(t.Hover).Children(func() {
-		Text(c, text, t.Text.Sm).TextColor(t.Foreground)
+	b := ui.Row(c).AlignItems(ui.Center).Gap(th.Space(1)).Height(theme.LabelChip).PaddingX(th.Space(1.5)).Radius(t.Radius.Sm).TextColor(t.Foreground)
+	if o.Muted {
+		b.TextColor(t.Muted)
+	}
+	switch o.Tone {
+	case BadgeNeutral:
+		b.Background(t.Hover)
+	case BadgeOutline:
+		b.Border(theme.Hairline, t.Border)
+	case BadgeSurface:
+		b.Background(t.Background)
+	case BadgeSuccess:
+		b.Background(t.SuccessBg).TextColor(t.SuccessText)
+	case BadgeWarning:
+		b.Background(t.WarningBg).TextColor(t.WarningText)
+	case BadgeDanger:
+		b.Background(t.DangerBg).TextColor(t.DangerText)
+	}
+	return b.Children(func() {
+		if o.Icon != "" {
+			if i := ui.Icon(c, icons.Get(o.Icon)).Size(theme.IconXs, theme.IconXs); o.IconLabel != "" {
+				i.Label(o.IconLabel)
+			}
+		}
+		label := Text(c, text, t.Text.Xs).LineHeight(theme.LineTight).SingleLine()
+		if o.Mono {
+			label.Font(theme.Mono)
+		}
 	})
 }
 
@@ -39,7 +93,7 @@ func Alert(c *ui.Context, kind AlertKind, text string, actions func()) ui.Elemen
 	t, th := theme.Of(c), c.Theme()
 	bg, border, fg := alertLook(t, kind)
 	return ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Xl).Background(bg).Border(theme.Hairline, border).TextColor(fg).
-		FontSize(t.Text.Body).Children(func() {
+		FontSize(t.Text.Sm).Children(func() {
 		ui.Text(c, text).Grow(1).Shrink(1) // the text wraps; the actions stay on its right
 		if actions != nil {
 			actions()
@@ -156,7 +210,7 @@ func AvatarSized(c *ui.Context, name string, size float32) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	col := avatarColor(t, name)
 	return ui.Box(c).Size(size, size).Shrink(0).Radius(t.Radius.Lg).Background(col.Fill).Center().Label(name).Children(func() {
-		ui.Text(c, initial(name)).FontWeight(600).FontSize(t.Text.Base * size / th.Space(8)).LineHeight(theme.LineTight).TextColor(col.Text)
+		ui.Text(c, initial(name)).FontWeight(600).FontSize(t.Text.Sm * size / th.Space(8)).LineHeight(theme.LineTight).TextColor(col.Text)
 	})
 }
 
@@ -169,7 +223,7 @@ func MenuAvatar(c *ui.Context, name string, image ui.ImageSource) ui.Element {
 	}
 	t, th := theme.Of(c), c.Theme()
 	return ui.Box(c).Size(th.Space(8), th.Space(8)).Shrink(0).Radius(t.Radius.Lg).Background(avatarColor(t, name).Text).Center().Label(name).Children(func() {
-		ui.Text(c, initial(name)).FontWeight(600).FontSize(t.Text.Lg).LineHeight(theme.LineTight).TextColor(t.Background)
+		ui.Text(c, initial(name)).FontWeight(600).FontSize(t.Text.Sm).LineHeight(theme.LineTight).TextColor(t.Background)
 	})
 }
 
