@@ -264,6 +264,13 @@ func TestAddAccountSheetMailAndContacts(t *testing.T) {
 		return h.app.addAccount == nil && len(books) == 1 && books[0].Account != 0 && books[0].Status == "ok"
 	})
 
+	// The new account's page says only "iCloud" under its address until its
+	// first sync is loaded: click would take that one, under the sheet.
+	h.until("the account's first sync on its page", func() bool {
+		h.advance(refreshEvery)
+		_, ok := h.tt.Find("iCloud")
+		return !ok
+	})
 	h.app.openAddAccount()
 	h.click("iCloud")
 	h.post(func() { h.app.addAccount.noMail = true }) // the sheet's 邮件 box; the nav has a 邮件 too
