@@ -153,7 +153,7 @@ func (r *reader) readingLang() string {
 func shortLang(tag string) string {
 	base, _, _ := strings.Cut(strings.ToLower(tag), "-")
 	switch base {
-	case "de", "en", "es", "fr", "it", "ja", "ko", "nl", "pt", "ru", "tr", "vi", "zh":
+	case "de", "en", "es", "fr", "it", "ja", "ko", "nl", "pl", "pt", "ru", "tr", "vi", "zh":
 		return i18n.T("reader.lang." + base)
 	}
 	return i18n.T("reader.lang.en")

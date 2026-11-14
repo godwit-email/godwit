@@ -1242,21 +1242,21 @@ func viewText(def string, byLang map[string]string) plugins.Text {
 
 var (
 	textToReply = viewText("To reply", map[string]string{"zh-Hans": "待回复", "zh-Hant": "待回覆", "ja": "返信待ち", "ko": "답장 필요",
-		"de": "Zu beantworten", "fr": "À répondre", "es": "Por responder", "pt": "Por responder", "it": "Da rispondere", "ru": "Нужен ответ", "nl": "Te beantwoorden", "tr": "Yanıtlanacak", "vi": "Cần trả lời"})
+		"de": "Zu beantworten", "fr": "À répondre", "es": "Por responder", "pt": "Por responder", "it": "Da rispondere", "ru": "Нужен ответ", "nl": "Te beantwoorden", "pl": "Do odpowiedzi", "tr": "Yanıtlanacak", "vi": "Cần trả lời"})
 	textFollowUp = viewText("To follow up", map[string]string{"zh-Hans": "待跟进", "zh-Hant": "待跟進", "ja": "フォローアップ", "ko": "후속 조치",
-		"de": "Nachfassen", "fr": "À relancer", "es": "Por seguir", "pt": "Por acompanhar", "it": "Da sollecitare", "ru": "Напомнить", "nl": "Op te volgen", "tr": "Takip edilecek", "vi": "Cần theo dõi"})
+		"de": "Nachfassen", "fr": "À relancer", "es": "Por seguir", "pt": "Por acompanhar", "it": "Da sollecitare", "ru": "Напомнить", "nl": "Op te volgen", "pl": "Do przypomnienia", "tr": "Takip edilecek", "vi": "Cần theo dõi"})
 	textToHandle = viewText("To handle", map[string]string{"zh-Hans": "待处理", "zh-Hant": "待處理", "ja": "未処理", "ko": "처리 필요",
-		"de": "Zu erledigen", "fr": "À traiter", "es": "Por gestionar", "pt": "Por tratar", "it": "Da gestire", "ru": "Нужно обработать", "nl": "Te behandelen", "tr": "İşlenecek", "vi": "Cần xử lý"})
+		"de": "Zu erledigen", "fr": "À traiter", "es": "Por gestionar", "pt": "Por tratar", "it": "Da gestire", "ru": "Нужно обработать", "nl": "Te behandelen", "pl": "Do załatwienia", "tr": "İşlenecek", "vi": "Cần xử lý"})
 	textUnread = viewText("Unread", map[string]string{"zh-Hans": "未读", "zh-Hant": "未讀", "ja": "未読", "ko": "읽지 않음",
-		"de": "Ungelesen", "fr": "Non lus", "es": "No leídos", "pt": "Não lidas", "it": "Non letti", "ru": "Непрочитанные", "nl": "Ongelezen", "tr": "Okunmamış", "vi": "Chưa đọc"})
+		"de": "Ungelesen", "fr": "Non lus", "es": "No leídos", "pt": "Não lidas", "it": "Non letti", "ru": "Непрочитанные", "nl": "Ongelezen", "pl": "Nieprzeczytane", "tr": "Okunmamış", "vi": "Chưa đọc"})
 	textClient = viewText("Client", map[string]string{"zh-Hans": "客户", "zh-Hant": "客戶", "ja": "クライアント", "ko": "고객",
-		"de": "Kunde", "fr": "Client", "es": "Cliente", "pt": "Cliente", "it": "Cliente", "ru": "Клиент", "nl": "Klant", "tr": "Müşteri", "vi": "Khách hàng"})
+		"de": "Kunde", "fr": "Client", "es": "Cliente", "pt": "Cliente", "it": "Cliente", "ru": "Клиент", "nl": "Klant", "pl": "Klient", "tr": "Müşteri", "vi": "Khách hàng"})
 	textInvoices = viewText("Invoices", map[string]string{"zh-Hans": "票据", "zh-Hant": "票據", "ja": "請求書", "ko": "청구서",
-		"de": "Rechnungen", "fr": "Factures", "es": "Facturas", "pt": "Faturas", "it": "Fatture", "ru": "Счета", "nl": "Facturen", "tr": "Faturalar", "vi": "Hóa đơn"})
+		"de": "Rechnungen", "fr": "Factures", "es": "Facturas", "pt": "Faturas", "it": "Fatture", "ru": "Счета", "nl": "Facturen", "pl": "Faktury", "tr": "Faturalar", "vi": "Hóa đơn"})
 	textInvoiceWord = viewText("receipt", map[string]string{"zh-Hans": "发票", "zh-Hant": "發票", "ja": "請求書", "ko": "청구서",
-		"de": "Rechnung", "fr": "facture", "es": "factura", "pt": "fatura", "it": "fattura", "ru": "счёт", "nl": "factuur", "tr": "fatura", "vi": "hóa đơn"})
+		"de": "Rechnung", "fr": "facture", "es": "factura", "pt": "fatura", "it": "fattura", "ru": "счёт", "nl": "factuur", "pl": "faktura", "tr": "fatura", "vi": "hóa đơn"})
 	textNewsletters = viewText("Newsletters", map[string]string{"zh-Hans": "订阅", "zh-Hant": "訂閱", "ja": "ニュースレター", "ko": "뉴스레터",
-		"de": "Newsletter", "fr": "Newsletters", "es": "Boletines", "pt": "Newsletters", "it": "Newsletter", "ru": "Рассылки", "nl": "Nieuwsbrieven", "tr": "Bültenler", "vi": "Bản tin"})
+		"de": "Newsletter", "fr": "Newsletters", "es": "Boletines", "pt": "Newsletters", "it": "Newsletter", "ru": "Рассылки", "nl": "Nieuwsbrieven", "pl": "Newslettery", "tr": "Bültenler", "vi": "Bản tin"})
 )
 
 // toHandleLeavesOut are the labels 待处理 leaves out: nobody replies to them.

@@ -55,7 +55,7 @@ var adjustSkills = []string{"tone-formal", "tone-friendly", "shorter", "longer",
 var languages = []Language{
 	{"de", "Deutsch"}, {"zh-Hans", "简体中文"}, {"zh-Hant", "繁體中文"}, {"en", "English"}, {"ja", "日本語"},
 	{"ko", "한국어"}, {"fr", "Français"}, {"es", "Español"}, {"pt", "Português"}, {"it", "Italiano"},
-	{"ru", "Русский"}, {"nl", "Nederlands"}, {"tr", "Türkçe"}, {"vi", "Tiếng Việt"},
+	{"ru", "Русский"}, {"nl", "Nederlands"}, {"pl", "Polski"}, {"tr", "Türkçe"}, {"vi", "Tiếng Việt"},
 }
 
 func isZhTW(tag string) bool {
