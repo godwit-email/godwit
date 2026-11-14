@@ -123,6 +123,10 @@ type Options struct {
 	// services, MCP servers, skills and instructions Godwit mirrors (ADR 0041);
 	// "" turns that off. The apps set ~/.godwit/external.
 	ExternalDir string
+	// StopWithUI runs StopUIBackend once the last interface's connection
+	// ends, however it ended and whatever 后台收信 says: the backend of a
+	// mygo dev session goes with its interface (ADR 0038).
+	StopWithUI bool
 }
 
 // Service owns the database and event bus of one Godwit data directory.

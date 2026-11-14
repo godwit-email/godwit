@@ -136,6 +136,27 @@ func TestUIExitLeavesBackend(t *testing.T) {
 	exited(t, dir)
 }
 
+// A backend that a mygo dev session's interface started goes with that
+// interface however it went (mygo dev killing it, a crash, the exit after
+// hiding), even under 一直继续: left running, it keeps the dev data directory
+// and the next dev build's interface connects to its old code.
+func TestDevUIGoneStopsBackend(t *testing.T) {
+	startsBackends(t)
+	t.Setenv("MYGO_ENV", "development") // as mygo dev runs the interface; its backend inherits it
+	dir := shortDir(t)
+	c := connect(t, dir)
+	st, err := c.GetSettings(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.BackgroundReceive = core.BackgroundReceiveAlways
+	if _, err := c.SetSettings(t.Context(), st); err != nil {
+		t.Fatal(err)
+	}
+	c.Close() // killed: no SetUIReady, no StopUIBackend
+	exited(t, dir)
+}
+
 // Under 一直继续 the interface's quit leaves the backend it started running,
 // and does not wait on it; under 关窗后继续、退出即停止 the quit stops it again.
 func TestUIQuitUnderAlwaysLeavesBackend(t *testing.T) {
