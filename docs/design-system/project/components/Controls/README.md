@@ -8,12 +8,12 @@ Four heights, and its label at 500 in every look, since it acts:
 
 | Size | Height | Side padding | Text | Icon | Corner | For |
 | --- | --- | --- | --- | --- | --- | --- |
-| extra small | 24 | 8 | `xs` | 14 | `radius-md` | an action among chips or in a dense row (a quick reply, 刷新) |
-| small | 28 | 10 | `sm` | 16 | `radius-md` | settings rows, cards, bars |
+| extra small | 24 | 8 | `xs` | 12 | `radius-md` | an action among chips or in a dense row (a quick reply, 刷新) |
+| small | 28 | 10 | `xs` | 14 beside a label, 16 alone | `radius-md` | settings rows, cards, bars |
 | default | 32 | 10 | `sm` | 16 | `radius-lg` | dialogs, page actions |
 | large | 36 | 10 | `sm` | 16 | `radius-lg` | onboarding |
 
-These are shadcn Nova's, which the app's web pages draw unchanged: 10 at the sides whatever the height (8 in the smallest), and 2 less on a side that holds an icon. A page gives a button no weight, size, padding or corner of its own.
+These are shadcn Nova's, which the app's web pages draw unchanged: 10 at the sides whatever the height (8 in the smallest), and the two small sizes in `xs` with a smaller icon and a 4 px gap. A page gives a button no weight, size, padding or corner of its own.
 
 - **Primary**: `primary` fill, `primary-text`. One per view: the send of a message, the page action, the save of a dialog.
 - **Secondary**: `hover-tint` fill, `foreground` text, no outline: a quiet action that still reads as a button (a quick reply, a pressed toggle).

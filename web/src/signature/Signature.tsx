@@ -136,11 +136,11 @@ function Bar({ t, mode, children }: { t: T; mode: Mode; children?: ReactNode }) 
           aria-pressed={false}
           aria-label={t("settings.account.signature.html.label")}
           title={t("settings.account.signature.html.label")}
-          className="h-7 gap-1.5 px-2 text-muted-foreground text-xs"
+          className="text-muted-foreground"
           onMouseDown={(e) => e.preventDefault()}
           onClick={mode.onHTML}
         >
-          <RiCodeSSlashLine className="size-4" />
+          <RiCodeSSlashLine />
           {t("settings.account.signature.html")}
         </Button>
       </div>

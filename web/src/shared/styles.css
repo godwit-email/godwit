@@ -73,6 +73,14 @@
   --text-3xl--line-height: 1.25;
 }
 
+/* shadcn's small buttons and toggles ask for 0.8rem: 11.2 px at the root's 14, under the
+   scale's floor. They take xs, as the native small button does. Outside any layer, so it wins
+   over the utility whatever the order. */
+.text-\[0\.8rem\] {
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+}
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);

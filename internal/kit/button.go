@@ -28,8 +28,8 @@ type Size int
 const (
 	SizeDefault Size = iota
 	SizeMini         // IconButton only: 16 round with a 12 icon, as a chip's ×
-	SizeXs           // 24, in xs text with a 14 icon: an action among chips or in a dense row; buttons only
-	SizeSm           // 28
+	SizeXs           // 24, in xs text with a 12 icon: an action among chips or in a dense row; buttons only
+	SizeSm           // 28, in xs text with a 14 icon beside it (an icon alone stays 16)
 	SizeLg           // 36
 )
 
@@ -62,11 +62,8 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 	// button shows the design's disabled colours instead.
 	b := ui.ButtonBase(c).Disabled(o.Disabled).DimDisabled(false)
 	b.Gap(th.Space(1.5)).Justify(ui.Center).Transition(colors(theme.MotionFast))
-	switch o.Size {
-	case SizeXs:
+	if o.Size == SizeXs || o.Size == SizeSm { // shadcn Nova's small buttons: smaller text, a tighter gap
 		b.Gap(th.Space(1)).FontSize(t.Text.Xs)
-	case SizeSm:
-		b.Gap(th.Space(1))
 	}
 	if o.Variant == Link {
 		b.TextColor(t.Muted)
@@ -88,14 +85,7 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 			b.Radius(t.Radius.Full)
 		}
 	} else {
-		l, r := padX, padX // the side an icon is on is half a step tighter
-		if o.Icon != "" {
-			l -= th.Space(0.5)
-		}
-		if o.Trailing != "" {
-			r -= th.Space(0.5)
-		}
-		b.Padding(0, r, 0, l)
+		b.PaddingX(padX) // the same with an icon: the web pages' buttons do not mark theirs, and stay even
 	}
 	hover := b.Hovered() && !o.Disabled
 	switch o.Variant {
@@ -159,13 +149,14 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 	return b
 }
 
-// iconSize is the icon of a button of size s: 16, 14 in a 24 one, 12 in a
-// 16 round one.
-func iconSize(s Size) float32 {
-	switch s {
-	case SizeMini:
+// iconSize is the icon of a button of size s, shadcn Nova's: 16, 12 in a 24
+// one and a 16 round one, and 14 beside a 28 one's label (alone in a 28
+// square it stays 16).
+func iconSize(s Size, alone bool) float32 {
+	switch {
+	case s == SizeMini || s == SizeXs:
 		return theme.IconXs
-	case SizeXs:
+	case s == SizeSm && !alone:
 		return theme.IconSm
 	}
 	return theme.Icon
@@ -178,7 +169,7 @@ func ButtonFrame(c *ui.Context, o ButtonOpts) ui.Element { return button(c, o, f
 func Button(c *ui.Context, label string, o ButtonOpts) ui.Element {
 	return button(c, o, false).Label(label).Children(func() {
 		if o.Icon != "" {
-			ui.Icon(c, icons.Get(o.Icon)).Size(iconSize(o.Size), iconSize(o.Size))
+			ui.Icon(c, icons.Get(o.Icon)).Size(iconSize(o.Size, false), iconSize(o.Size, false))
 		}
 		ui.Text(c, label)
 		if o.Trailing != "" {
@@ -196,7 +187,7 @@ func SwapButton(c *ui.Context, label string, o ButtonOpts, others ...string) ui.
 	content := func(c *ui.Context, text string) ui.Element {
 		return ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 			if o.Icon != "" {
-				ui.Icon(c, icons.Get(o.Icon)).Size(iconSize(o.Size), iconSize(o.Size))
+				ui.Icon(c, icons.Get(o.Icon)).Size(iconSize(o.Size, false), iconSize(o.Size, false))
 			}
 			ui.Text(c, text).Role(ui.RoleNone) // the button's Label names it
 		})
@@ -214,12 +205,12 @@ func SwapButton(c *ui.Context, label string, o ButtonOpts, others ...string) ui.
 }
 
 // IconButton is a square button showing only an icon, named label for
-// assistive technology and tests. A SizeMini one, 16 round, holds a 12
-// icon; a SizeXs one, 24, a 14.
+// assistive technology and tests. A SizeMini one, 16 round, and a SizeXs
+// one, 24, hold a 12 icon; the others a 16.
 func IconButton(c *ui.Context, icon, label string, o ButtonOpts) ui.Element {
 	b := button(c, o, true).Label(label)
 	tooltip(c, b, label, false)
-	size := iconSize(o.Size)
+	size := iconSize(o.Size, true)
 	return b.Children(func() {
 		ui.Icon(c, icons.Get(icon)).Size(size, size)
 	})
