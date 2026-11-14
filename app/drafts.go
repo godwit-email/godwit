@@ -101,11 +101,34 @@ func (p *mailPage) draftRow(c *ui.Context, d core.Draft) {
 		if text := p.draftView[d.ID].preview; text != "" {
 			kit.Text(c, text, t.Text.Base).TextColor(t.Muted).SingleLine()
 		}
-		if p.draftView[d.ID].editing {
-			ui.Box(c).AlignSelf(ui.Start).Margin(th.Space(0.5), 0, 0, 0).Padding(0, th.Space(1.5)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Children(func() {
-				kit.Text(c, i18n.T("mail.draft.chip"), t.Text.Sm)
+		if editing := p.draftView[d.ID].editing; editing || d.FromProgram {
+			ui.Row(c).Gap(th.Space(1)).Margin(th.Space(0.5), 0, 0, 0).Children(func() {
+				if editing {
+					draftChip(c, i18n.T("mail.draft.chip"))
+				}
+				if d.FromProgram {
+					draftChip(c, i18n.T("mail.draft.from_program"))
+				}
 			})
 		}
+	})
+}
+
+// draftChip is a small bordered label on a draft: 编辑中, 来自程序的草稿.
+func draftChip(c *ui.Context, text string) {
+	t, th := theme.Of(c), c.Theme()
+	ui.Box(c).AlignSelf(ui.Start).Padding(0, th.Space(1.5)).Radius(t.Radius.Sm).Border(theme.Hairline, t.Border).Children(func() {
+		kit.Text(c, text, t.Text.Sm)
+	})
+}
+
+// programNotice is what heads a draft a program wrote (ADR 0042): its label
+// and the ask to check it before 批准并发送.
+func programNotice(c *ui.Context) {
+	t, th := theme.Of(c), c.Theme()
+	ui.Column(c).FillWidth().Gap(th.Space(1.5)).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Lg).Background(t.Hover).Children(func() {
+		draftChip(c, i18n.T("mail.draft.from_program"))
+		kit.Text(c, i18n.T("mail.draft.from_program_help"), t.Text.Sm)
 	})
 }
 
@@ -135,6 +158,9 @@ func (p *mailPage) draftPane(c *ui.Context) {
 	info := p.draftView[d.ID]
 	editing := info.editing
 	sendTip := i18n.T("compose.send")
+	if d.FromProgram {
+		sendTip = i18n.T("mail.draft.approve")
+	}
 	if editing {
 		sendTip = i18n.T("mail.draft.send_disabled")
 	}
@@ -159,19 +185,11 @@ func (p *mailPage) draftPane(c *ui.Context) {
 					if editing {
 						kit.Text(c, i18n.T("mail.draft.notice"), t.Text.Sm).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Lg).Background(t.Hover)
 					}
+					if d.FromProgram {
+						programNotice(c)
+					}
 					kit.Text(c, cmp.Or(d.Subject, i18n.T("mail.no_subject")), t.Text.X2l).FontWeight(600).LineHeight(theme.LineSubject)
-					ui.Column(c).Gap(th.Space(1)).Children(func() {
-						for _, f := range [][2]string{
-							{i18n.T("compose.to"), cmp.Or(strings.Join(d.To, ", "), i18n.T("mail.no_recipient"))},
-							{i18n.T("compose.subject"), cmp.Or(d.Subject, i18n.T("mail.no_subject"))},
-							{i18n.T("compose.from"), p.accountEmail(d.AccountID)},
-						} {
-							ui.Row(c).Gap(th.Space(3)).Children(func() {
-								ui.Text(c, f[0]).TextColor(t.Muted).LineHeight(theme.LineCJK).MinWidth(th.Space(12)).Shrink(0)
-								ui.Text(c, f[1]).LineHeight(theme.LineCJK).Grow(1).Shrink(1)
-							})
-						}
-					})
+					p.draftFields(c, d)
 					ui.Column(c).Padding(th.Space(4), 0, 0, 0).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
 						richtext.Render(c, info.doc, richtext.RenderOptions{OnLink: p.a.openLink})
 					})
@@ -179,6 +197,29 @@ func (p *mailPage) draftPane(c *ui.Context) {
 				})
 			})
 		})
+	})
+}
+
+// draftFields are the draft's headers: every address it goes to (Cc and Bcc
+// when it has them: approving sends to all of them), its subject and sender.
+func (p *mailPage) draftFields(c *ui.Context, d core.Draft) {
+	t, th := theme.Of(c), c.Theme()
+	fields := [][2]string{{i18n.T("compose.to"), cmp.Or(strings.Join(d.To, ", "), i18n.T("mail.no_recipient"))}}
+	if len(d.Cc) > 0 {
+		fields = append(fields, [2]string{i18n.T("compose.cc"), strings.Join(d.Cc, ", ")})
+	}
+	if len(d.Bcc) > 0 {
+		fields = append(fields, [2]string{i18n.T("compose.bcc"), strings.Join(d.Bcc, ", ")})
+	}
+	fields = append(fields, [2]string{i18n.T("compose.subject"), cmp.Or(d.Subject, i18n.T("mail.no_subject"))},
+		[2]string{i18n.T("compose.from"), p.accountEmail(d.AccountID)})
+	ui.Column(c).Gap(th.Space(1)).Children(func() {
+		for _, f := range fields {
+			ui.Row(c).Gap(th.Space(3)).Children(func() {
+				ui.Text(c, f[0]).TextColor(t.Muted).LineHeight(theme.LineCJK).MinWidth(th.Space(12)).Shrink(0)
+				ui.Text(c, f[1]).LineHeight(theme.LineCJK).Grow(1).Shrink(1)
+			})
+		}
 	})
 }
 
@@ -220,10 +261,16 @@ type draftSend struct {
 	warnings core.SendCheck
 }
 
-// sendDraft queues the draft as last saved. A compose window opened since
-// the pane was drawn owns the draft, so it is refused here, not at render.
+// sendDraft queues the draft as last saved, a program's through ApproveDraft
+// (批准并发送): either way only the revision shown. A compose window opened
+// since the pane was drawn owns the draft, so it is refused here, not at render.
 func (p *mailPage) sendDraft(d core.Draft) {
-	p.doSend(d.ID, d.Revision, func(ctx context.Context) error { return p.a.svc.SendRevision(ctx, d.ID, d.Revision) })
+	p.doSend(d.ID, d.Revision, func(ctx context.Context) error {
+		if d.FromProgram {
+			return p.a.svc.ApproveDraft(ctx, d.ID, d.Revision)
+		}
+		return p.a.svc.SendRevision(ctx, d.ID, d.Revision)
+	})
 }
 
 func (p *mailPage) doSend(id, rev int64, call func(context.Context) error) {
@@ -249,6 +296,9 @@ func (p *mailPage) doSend(id, rev int64, call func(context.Context) error) {
 			return
 		default:
 			a.toastErr(err) // blocked, stale and the rest read from humanize
+			if errors.Is(err, core.ErrStaleDraft) && a.route.ThreadID != 0 {
+				p.reader.sync(true) // a thread's program draft (programDrafts) shows its new revision
+			}
 		}
 		p.reload()
 	})

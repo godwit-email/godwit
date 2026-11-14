@@ -854,6 +854,10 @@ var Migrations = [][]string{{
 	`ALTER TABLE mcp_servers ADD COLUMN managed_by TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE mcp_servers ADD COLUMN managed_hash TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE model_services ADD COLUMN model_info TEXT NOT NULL DEFAULT '{}'`,
+}, {
+	// A draft a program (the Local API, godwit mcp, a plugin or Wit) created or
+	// changed; local only, never an IMAP keyword (ADR 0042).
+	`ALTER TABLE drafts ADD COLUMN from_program INTEGER NOT NULL DEFAULT 0`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

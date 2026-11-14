@@ -170,6 +170,7 @@ func (h *pluginHost) MailMove(ctx context.Context, ids []int64, folderID int64) 
 // plugin's cleaned HTML, then the account signature.
 func (h *pluginHost) MailCreateDraft(ctx context.Context, in plugins.DraftInput) (id int64, err error) {
 	err = h.do(ctx, func(ctx context.Context) error {
+		ctx = withProgram(ctx)
 		for _, a := range slices.Concat(in.To, in.Cc) {
 			if _, err := netmail.ParseAddress(a); err != nil {
 				return fmt.Errorf("invalid address %q", a)
@@ -194,6 +195,7 @@ var errStalePluginDraft = fmt.Errorf("StaleDraft: %w", ErrStaleDraft)
 // stay) if the draft is still at u.Revision, and returns the new revision.
 func (h *pluginHost) MailUpdateDraft(ctx context.Context, u plugins.DraftUpdate) (rev int64, err error) {
 	err = h.do(ctx, func(ctx context.Context) error {
+		ctx = withProgram(ctx)
 		d, err := h.s.GetDraft(ctx, u.DraftID)
 		if err != nil {
 			return err

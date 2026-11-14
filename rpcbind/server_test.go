@@ -308,6 +308,30 @@ func TestAuditSendRevision(t *testing.T) {
 	assert.Equal(t, [][]any{{"local_api", "SendRevision", d.ID, ""}}, auditRows(t, e.DataDir))
 }
 
+// 批准并发送 (ADR 0042) sends from the interface alone, audited as the ui's
+// send; the draft is the one godwit mcp wrote, and mcp cannot approve it.
+func TestAuditApproveDraft(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	ctx := t.Context()
+	acc := e.AddAccount(t, "alice@example.com")
+	dir := listen(t, e.Svc)
+	mcp, ui := dial(t, dir, rpc.RoleMCP), dial(t, dir, rpc.RoleUI)
+	var d core.Draft
+	require.NoError(t, mcp.Call(ctx, "NewDraft", &d, acc.ID, "new", 0))
+	d.To, d.Subject = []string{"dave@example.com"}, "hi"
+	require.NoError(t, mcp.Call(ctx, "SaveDraft", &d, d))
+	require.True(t, d.FromProgram)
+	var we *rpc.WireError
+	require.ErrorAs(t, mcp.Call(ctx, "ApproveDraft", nil, d.ID, d.Revision), &we)
+	assert.Equal(t, rpc.CodeForbidden, we.Code)
+	require.NoError(t, ui.Call(ctx, "ApproveDraft", nil, d.ID, d.Revision))
+	assert.Equal(t, [][]any{
+		{"local_mcp", "NewDraft", nil, ""},
+		{"local_mcp", "SaveDraft", d.ID, ""},
+		{"ui", "ApproveDraft", d.ID, ""},
+	}, auditRows(t, e.DataDir))
+}
+
 func TestDialFull(t *testing.T) {
 	e := coretest.New(t, coretest.WithoutAutoSync())
 	acc := e.AddAccount(t, "alice@example.com")

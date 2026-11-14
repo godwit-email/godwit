@@ -320,6 +320,31 @@ func TestShots(t *testing.T) {
 		s.see("正在撰写窗口里编辑")
 		shot(s.harness, "MainDrafts")
 	})
+	t.Run("MainProgramDraft", func(t *testing.T) { // a reply godwit mcp wrote, under its thread (ADR 0042; no artboard)
+		s := shotMail(t, noAuto)
+		ctx := context.Background()
+		page, err := s.env.Svc.Search(ctx, s.you.ID, "Q4 partnership proposal", 1)
+		if err != nil || len(page) == 0 {
+			t.Fatalf("search %v, %v", page, err)
+		}
+		mcp := core.WithExternalSource(ctx, core.AuditMCP)
+		d, err := s.env.Svc.NewDraft(mcp, s.you.ID, "reply", page[0].ID)
+		if err == nil {
+			d.HTML = "<p>Hi Lena,</p><p>Thanks for the proposal. November works for us, happy to move ahead.</p>"
+			d, err = s.env.Svc.SaveDraft(mcp, d)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.click("Q4 partnership proposal")
+		s.see("来自程序的草稿")
+		s.tt.Scroll(900, 400, 0, 2000)
+		shot(s.harness, "MainProgramDraft")
+		s.shotDrafts()
+		s.post(func() { s.app.mail.draftSel = d.ID })
+		s.see("这封草稿由程序")
+		shot(s.harness, "MainProgramDraftFolder")
+	})
 	t.Run("MainOlder", func(t *testing.T) { // the row while older mail loads (no artboard: compared by eye)
 		s := shotMail(t, noAuto)
 		f := s.folderOf(s.you, "inbox")

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -85,14 +86,15 @@ func (s *Service) SetDraftAccount(ctx context.Context, id, accountID, revision i
 	}
 	ed, quote, _ := mail.SplitDraft(d.HTML)
 	body := mail.SanitizeDraft(mail.JoinDraft(ed, quote, signatureHTML(acc.Signature, cids, st.SignatureDelimiter)), cids)
-	r, err := s.db.Execute(ctx, `UPDATE drafts SET account_id = ?, body_html = ?, updated_at = ?, revision = revision + 1
-		WHERE id = ? AND revision = ?`, accountID, body, time.Now().Unix(), id, revision)
+	r, err := s.db.Execute(ctx, `UPDATE drafts SET account_id = ?, body_html = ?, updated_at = ?, revision = revision + 1,
+		from_program = MAX(from_program, ?) WHERE id = ? AND revision = ?`, accountID, body, time.Now().Unix(), fromProgram(ctx), id, revision)
 	if err != nil {
 		return Draft{}, err
 	}
 	if r.Changes == 0 {
 		return Draft{}, fmt.Errorf("draft %d changed or was deleted meanwhile", id)
 	}
+	s.programChanged(ctx, nil)
 	return s.GetDraft(ctx, id)
 }
 
@@ -105,6 +107,32 @@ func (s *Service) SendRevision(ctx context.Context, draftID, revision int64) err
 	}
 	defer end()
 	return s.send(ctx, draftID, max(revision, 0), apiSend(ctx, "SendRevision", draftID, s.secrets.Redact)) // a negative one would mean any
+}
+
+// ErrNotProgramDraft: ApproveDraft was asked for a draft no program wrote.
+var ErrNotProgramDraft = errors.New("no program wrote this draft")
+
+// ApproveDraft is the user's 批准并发送 on a draft a program wrote
+// (FromProgram, ADR 0042): Send for exactly the revision the interface
+// showed, else ErrStaleDraft, so a program's change after the user looked
+// voids it; any other draft is ErrNotProgramDraft. Plugins' message.beforeSend
+// checks run as for Send (warnings: SendAcknowledgedRevision, same revision),
+// and the send is audited with its outbox item. Only the interface may call
+// it (uiOnly): the approval stands for the user's click.
+func (s *Service) ApproveDraft(ctx context.Context, draftID, revision int64) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	d, err := s.GetDraft(ctx, draftID)
+	if err != nil {
+		return err
+	}
+	if !d.FromProgram { // never cleared, so it holds until the send below
+		return ErrNotProgramDraft
+	}
+	return s.send(ctx, draftID, max(revision, 0), apiSend(ctx, "ApproveDraft", draftID, s.secrets.Redact))
 }
 
 // SendAcknowledgedRevision is SendAcknowledged for exactly that revision of

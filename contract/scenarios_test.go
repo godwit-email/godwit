@@ -139,7 +139,8 @@ func TestMailRead(t *testing.T) {
 
 func TestCompose(t *testing.T) {
 	runContract(t, func(t *testing.T, api contract.API, env *coretest.Env) any {
-		ctx := t.Context()
+		// As the full role writes it, typed too: a program's draft (ADR 0042).
+		ctx := core.WithExternalSource(t.Context(), core.AuditLocalAPI)
 		acc := env.AddAccount(t, "alice@example.com")
 		out := map[string]any{}
 		d, err := api.NewDraft(ctx, acc.ID, "new", 0)

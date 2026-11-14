@@ -28,6 +28,7 @@ import (
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
+	"github.com/godwit-email/godwit/internal/richtext"
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
@@ -97,6 +98,7 @@ type session struct {
 	// what label changes apply to.
 	threadIDs    []int64
 	thread       core.Thread         // as last read: its copies read with what shows
+	draftDocs    []richtext.Doc      // thread.Drafts' bodies, parsed once per read
 	labels       []core.AppliedLabel // the thread's
 	open         map[int64]bool      // messages shown in full
 	focus        int64               // the message last expanded, or whose page took ⌘S/⌘P: what save and print act on while it is open
@@ -298,6 +300,11 @@ func (r *reader) load(k [2]int64) {
 			}
 			k[1] = m.ID // merged into another message since the route was set (ADR 0034)
 		}
+		for i := range th.Drafts { // shown, never saved: signature images as data: (richtext's only kind)
+			if th.Drafts[i].HTML, err = a.svc.InlineSignatureImages(ctx, th.Drafts[i].HTML); err != nil {
+				return err
+			}
+		}
 		labels, err = a.svc.ThreadLabels(ctx, []int64{k[0]})
 		return err
 	}, func(err error) {
@@ -313,7 +320,10 @@ func (r *reader) load(k [2]int64) {
 			a.toastErr(err)
 			return
 		}
-		r.threadIDs, r.labels, r.thread = nil, labels[k[0]], th
+		r.threadIDs, r.labels, r.thread, r.draftDocs = nil, labels[k[0]], th, nil
+		for _, d := range th.Drafts {
+			r.draftDocs = append(r.draftDocs, richtext.FromComposeHTML(d.HTML))
+		}
 		for _, m := range th.Messages {
 			r.threadIDs = append(r.threadIDs, m.ID)
 		}
@@ -1154,6 +1164,9 @@ func (r *reader) draw(c *ui.Context, next *session) {
 	// The toolbar and the reply bar float over the messages, which scroll
 	// under them: one sheet, the bars frosted over it.
 	col.Children(func() {
+		if next == nil {
+			r.p.sendDialog(c) // 批准并发送's plugin warnings (programDrafts)
+		}
 		// next's unseen body, placed first so it stacks under r's pages, in a
 		// slot always there: what follows keeps its place in the tree, or it
 		// would go and come again with its motion (a grey block, a fade).
@@ -1185,6 +1198,7 @@ func (r *reader) draw(c *ui.Context, next *session) {
 						}
 					}
 					r.renderMessages(c)
+					r.programDrafts(c)
 					r.viewWhyLine(c)
 				})
 			})

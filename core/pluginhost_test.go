@@ -121,6 +121,7 @@ func TestUpdateDraftCAS(t *testing.T) {
 	assert.Contains(t, d.HTML, "hi")
 	assert.NotContains(t, d.HTML, "data-godwit")
 	assert.NotContains(t, d.HTML, "script")
+	assert.True(t, d.FromProgram, "a plugin's draft is marked (ADR 0042)")
 
 	got, err = evalPlugin(t, s, "drafter", toolWrite, fmt.Sprintf(`ctx.mail.updateDraft({draftId: %d, revision: %d, html: "<p>v2</p><img src=\"https://x/t.png\">"})`, id, d.Revision))
 	require.NoError(t, err)

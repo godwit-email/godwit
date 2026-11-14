@@ -45,6 +45,7 @@ var table = []Error{
 	{Code: "mask_too_many_allow", Err: core.ErrMaskTooManyAllow},
 	{Code: "not_on_server_yet", Err: core.ErrNotOnServerYet},
 	{Code: "stale_draft", Err: core.ErrStaleDraft},
+	{Code: "not_program_draft", Err: core.ErrNotProgramDraft},
 	{Code: "not_synced", Err: core.ErrNotSynced},
 	{Code: "run_active", Err: core.ErrRunActive},
 	{Code: "security_scan_busy", Err: core.ErrSecurityScanBusy, Key: "settings.security.rescan.busy"},
@@ -263,6 +264,9 @@ var uiOnly = map[string]bool{
 	"DevPreviewSignInCode": true,
 	// Whether the backend's tray shows its icon: the interface's window hides only where it can come back.
 	"TrayShown": true,
+	// 批准并发送 on a program's draft (ADR 0042): the approval stands for the user's click,
+	// so no program may give it. It sends nothing SendRevision could not.
+	"ApproveDraft": true,
 }
 
 // Expose picks the *core.Service methods callable by the full role: every

@@ -53,6 +53,10 @@ type Thread struct {
 	Subject     string
 	Messages    []MessageSummary
 	ReplyTarget int64
+	// Drafts are the drafts a program wrote (FromProgram) that answer or
+	// forward a message of the thread and are not in the outbox, oldest first:
+	// the thread shows them with 批准并发送 (ADR 0042).
+	Drafts []Draft
 }
 
 // ListThreads lists threads with at least one message in the view, newest first.
@@ -209,6 +213,18 @@ func (s *Service) GetThread(ctx context.Context, id int64) (Thread, error) {
 	}
 	if err := s.fillFromNames(ctx, t.Messages); err != nil {
 		return Thread{}, err
+	}
+	ds, err := s.db.Query(ctx, `SELECT d.id FROM drafts d JOIN messages m ON m.id = d.source_message_id
+		WHERE m.thread_id = ? AND d.from_program = 1 AND d.id NOT IN (SELECT draft_id FROM outbox WHERE draft_id IS NOT NULL) ORDER BY d.id`, id)
+	if err != nil {
+		return Thread{}, err
+	}
+	for _, r := range ds.Values {
+		d, err := s.GetDraft(ctx, store.Int(r[0]))
+		if err != nil {
+			return Thread{}, err
+		}
+		t.Drafts = append(t.Drafts, d)
 	}
 	return t, nil
 }
