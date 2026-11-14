@@ -117,10 +117,10 @@ font-family: var(--font-sans);   /* the family alone */
 | style | CSS | size / line | weight | family | usage |
 | --- | --- | --- | --- | --- | --- |
 | `xs` | `.xs`, `--text-xs` | 12px / 1.45 | 400 | `sans` |  |
-| `sm` | `.sm`, `--text-sm` | 14px / 1.6 | 400 | `sans` |  |
-| `base` | `.base`, `--text-base` | 16px / 1.4 | 600 | `sans` |  |
-| `xl` | `.xl`, `--text-xl` | 20px / 1.3 | 600 | `sans` |  |
-| `3xl` | `.\33 xl`, `--text-\33 xl` | 30px / 1.25 | 600 | `sans` |  |
+| `sm` | `.sm`, `--text-sm` | 14px / 1.45 | 400 | `sans` |  |
+| `base` | `.base`, `--text-base` | 16px / 1.45 | 600 | `sans` |  |
+| `xl` | `.xl`, `--text-xl` | 20px / 1.45 | 600 | `sans` |  |
+| `3xl` | `.\33 xl`, `--text-\33 xl` | 30px / 1.45 | 600 | `sans` |  |
 | `mono` | `.mono`, `--text-mono` | 12px / 1.5 | 500 | `mono` |  |
 
 ### Families
