@@ -44,11 +44,36 @@ type BadgeOpts struct {
 func Badge(c *ui.Context, text string) ui.Element { return BadgeWith(c, text, BadgeOpts{}) }
 
 // BadgeWith is a badge styled by o, the one small label of the interface: as
-// high as a label chip (20), sm text, 6 at its sides, radius-sm. It names
-// and does not act: what is clicked is a Button.
+// high as a label chip (20), xs text, 6 at its sides, radius-sm. It names
+// and does not act: one that is clicked is a BadgeButton.
 func BadgeWith(c *ui.Context, text string, o BadgeOpts) ui.Element {
+	return badge(c, ui.Row(c), text, o)
+}
+
+// BadgeButton is a badge that acts, at a badge's size so that it sits in a
+// row of them, as 标签 and 退订 beside a mail's label chips: neutral or
+// outline, a step darker hovered and another pressed. Give it its OnClick or
+// its Menu; elsewhere what acts is a Button.
+func BadgeButton(c *ui.Context, text string, o BadgeOpts) ui.Element {
+	t := theme.Of(c)
+	b := badge(c, ui.ButtonBase(c).Label(text), text, o).Transition(colors(theme.MotionFast))
+	fill := t.Hover
+	if o.Tone == BadgeOutline {
+		fill = t.Background
+	}
+	switch {
+	case b.Pressed():
+		b.Background(fill.Mix(t.Foreground, 0.12))
+	case b.Hovered():
+		b.Background(fill.Mix(t.Foreground, 0.06))
+	}
+	return b
+}
+
+// badge gives e a badge's box and content.
+func badge(c *ui.Context, e ui.Element, text string, o BadgeOpts) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	b := ui.Row(c).AlignItems(ui.Center).Gap(th.Space(1)).Height(theme.LabelChip).PaddingX(th.Space(1.5)).Radius(t.Radius.Sm).TextColor(t.Foreground)
+	b := e.AlignItems(ui.Center).Gap(th.Space(1)).Height(theme.LabelChip).PaddingX(th.Space(1.5)).Radius(t.Radius.Sm).TextColor(t.Foreground)
 	if o.Muted {
 		b.TextColor(t.Muted)
 	}

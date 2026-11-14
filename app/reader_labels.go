@@ -7,7 +7,6 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
-	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -27,26 +26,15 @@ func (r *reader) labelRow(c *ui.Context) {
 			id := l.LabelID
 			a.labelChip(c.Key(id), l, func(m *ui.Menu) { r.labelMenu(m, t) }, func() { r.setLabel(id, false) })
 		}
-		add := kit.Pressable(c, kit.PressableOpts{Bordered: true}).
-			Label(i18n.T("reader.labels.add.label")).Height(theme.LabelChip).PaddingX(th.Space(1.5)).
-			Gap(th.Space(1)).Radius(t.Radius.Sm).TextColor(t.Muted).Menu(func(m *ui.Menu) { r.labelMenu(m, t) })
-		add.Children(func() {
-			ui.Icon(c, icons.Get("plus")).Size(theme.IconXs, theme.IconXs)
-			kit.Text(c, i18n.T("reader.labels.add"), t.Text.Xs)
-		})
+		kit.BadgeButton(c, i18n.T("reader.labels.add"), kit.BadgeOpts{Tone: kit.BadgeOutline, Muted: true, Icon: "plus"}).
+			Label(i18n.T("reader.labels.add.label")).Menu(func(m *ui.Menu) { r.labelMenu(m, t) })
 		// 退订, once a thread: it leaves the list, whichever message says how.
 		if id := r.unsubMessage(); id != 0 {
 			ui.Spacer(c)
 			if r.bodies[id].unsubbing {
 				kit.Spinner(c)
 			} else {
-				// as tall as the label chips beside it, on the secondary button's fill
-				b := kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.unsubscribe(id) }}).Label(i18n.T("reader.unsubscribe")).
-					Height(theme.LabelChip).PaddingX(th.Space(1.5)).Gap(th.Space(1)).Radius(t.Radius.Sm).Background(t.Hover)
-				b.Children(func() {
-					ui.Icon(c, icons.Get("mail-forbid")).Size(theme.IconXs, theme.IconXs)
-					kit.Text(c, i18n.T("reader.unsubscribe"), t.Text.Xs)
-				})
+				kit.BadgeButton(c, i18n.T("reader.unsubscribe"), kit.BadgeOpts{Icon: "mail-forbid"}).OnClick(func() { r.unsubscribe(id) })
 			}
 		}
 	})

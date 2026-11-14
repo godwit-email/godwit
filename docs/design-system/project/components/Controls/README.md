@@ -45,7 +45,7 @@ A bar of a window (the compose window's bottom bar) is 56 high with `space-3` ve
 
 ## Badge
 
-The one small label (`kit.Badge`, `kit.BadgeWith`): 20 high as a label chip, `xs` text, 6 px at its sides, `radius-sm`, an optional 12 px icon 4 before the text. It names and does not act: what is clicked is a button.
+The one small label (`kit.Badge`, `kit.BadgeWith`): 20 high as a label chip, `xs` text, 6 px at its sides, `radius-sm`, an optional 12 px icon 4 before the text. It names and does not act. One that acts among badges, as 标签 and 退订 beside a mail's label chips, is a badge button (`kit.BadgeButton`): the same box, neutral or outline, a step darker hovered and another pressed. Anywhere else what is clicked is a button.
 
 | Tone | When | Look |
 | --- | --- | --- |

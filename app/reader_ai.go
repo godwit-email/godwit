@@ -912,22 +912,19 @@ func (r *reader) tagChips(c *ui.Context) {
 	if !ok || st == nil {
 		return
 	}
-	t, th := theme.Of(c), c.Theme()
+	t := theme.Of(c)
 	a := r.p.a
-	chip := func(e ui.Element) ui.Element {
-		return e.Height(th.Space(6)).PaddingX(th.Space(2)).Radius(t.Radius.Md).FontSize(t.Text.Xs).Shrink(0)
-	}
 	for i, tag := range st.tags.v {
 		key := fmt.Sprintf("tag/%d/%s/%d", m.ID, tag.Plugin, i)
 		switch tag.Kind {
 		case "copy":
-			label, o := tag.Text, kit.ButtonOpts{Variant: kit.Secondary, Icon: "copy"}
+			label, o := tag.Text, kit.ButtonOpts{Variant: kit.Secondary, Size: kit.SizeXs, Icon: "copy"}
 			if r.copiedCard == key {
 				label, o.Icon = i18n.T("codes.copied"), "check"
 			}
-			e := chip(kit.SwapButton(c, label, o, tag.Text, i18n.T("codes.copied")))
+			e := kit.SwapButton(c, label, o, tag.Text, i18n.T("codes.copied")).Shrink(0)
 			if r.copiedCard != key {
-				e.Font(theme.Mono).FontWeight(500)
+				e.Font(theme.Mono)
 			}
 			if e.Clicked() {
 				c.WriteClipboard(tag.Value)
@@ -943,8 +940,8 @@ func (r *reader) tagChips(c *ui.Context) {
 			if tag.Builtin {
 				name = i18n.T("codes.card." + tag.Label)
 			}
-			e := chip(kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Secondary})).Label(name).Children(func() {
-				ui.Icon(c, icons.Get("external-link")).Size(theme.Icon, theme.Icon)
+			e := kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Secondary, Size: kit.SizeXs}).Shrink(0).Label(name).Children(func() {
+				ui.Icon(c, icons.Get("external-link")).Size(theme.IconSm, theme.IconSm)
 				ui.Text(c, name)
 				ui.Text(c, tag.Text).TextColor(t.Muted) // where it goes, before it opens
 			})

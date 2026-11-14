@@ -149,6 +149,8 @@ func Gallery(c *ui.Context, g *GalleryState) {
 					BadgeWith(c, "Warning", BadgeOpts{Tone: BadgeWarning})
 					BadgeWith(c, "Danger", BadgeOpts{Tone: BadgeDanger})
 					BadgeWith(c, "mono", BadgeOpts{Mono: true})
+					BadgeButton(c, "Acts", BadgeOpts{Icon: "plus"})
+					BadgeButton(c, "Acts", BadgeOpts{Tone: BadgeOutline, Muted: true, Icon: "plus"})
 				})
 			})
 			section("Alert", func() {

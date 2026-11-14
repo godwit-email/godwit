@@ -5,7 +5,6 @@ oauth_client_form.go 1
 onboarding.go 4
 outbox.go 1
 reader.go 2
-reader_labels.go 1
 savedview.go 1
 savedview_editor.go 5
 settings.go 2

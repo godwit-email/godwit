@@ -184,7 +184,7 @@ func SwapButton(c *ui.Context, label string, o ButtonOpts, others ...string) ui.
 	content := func(c *ui.Context, text string) ui.Element {
 		return ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 			if o.Icon != "" {
-				ui.Icon(c, icons.Get(o.Icon)).Size(theme.Icon, theme.Icon)
+				ui.Icon(c, icons.Get(o.Icon)).Size(iconSize(o.Size), iconSize(o.Size))
 			}
 			ui.Text(c, text).Role(ui.RoleNone) // the button's Label names it
 		})
