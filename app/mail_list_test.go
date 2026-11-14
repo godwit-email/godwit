@@ -1358,3 +1358,34 @@ func TestEmptyFolderLoadingOlder(t *testing.T) {
 		}
 	}
 }
+
+// Archiving the open mail from the list (E) closes the reader, as the
+// reader's own Archive does, and leaves no row chosen: the row that slid
+// into its place is not open, and a second E must not act on it unseen
+// (#792).
+func TestKeyboardArchiveClosesItsReader(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	base := h.clock.Now()
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "older", "x", at(base, 1)))
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "newer", "x", at(base, 2)))
+	h.syncNow(accs[0])
+	h.waitMail("two threads", func() bool { return len(h.items()) == 2 })
+	h.click("newer")
+	h.until("the reader", func() bool { return h.app.route.ThreadID != 0 })
+	h.click("newer") // the list has the focus again
+	h.tt.Key(0, ui.KeyE)
+	h.waitMail("newer archived", func() bool { return len(h.items()) == 1 })
+	h.tt.Frame()
+	if r := h.app.route; r.ThreadID != 0 || r.MessageID != 0 {
+		t.Fatalf("the reader still shows %+v after its mail was archived", r)
+	}
+	if cur := h.app.mail.main.cur; cur != -1 {
+		t.Fatalf("row %d chosen after the open mail was archived", cur)
+	}
+	h.tt.Key(0, ui.KeyE)
+	h.tt.Frame()
+	h.waitMail("older stays", func() bool { return len(h.items()) == 1 })
+	if n := h.countIn(h.folderOf(accs[0], "archive")); n != 1 {
+		t.Fatalf("%d in Archive: a second E archived the row it slid onto", n)
+	}
+}

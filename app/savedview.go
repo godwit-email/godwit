@@ -410,6 +410,7 @@ func (p *mailPage) removeFromView(b core.SavedView, rows []mailItem) {
 func (p *mailPage) archiveThreads(rows []mailItem) {
 	a, l := p.a, p.ls()
 	threads := threadsOf(rows)
+	unchoose := p.choiceGoes(l, rows)
 	start := a.clock.Now()
 	var undo core.ArchiveUndo
 	a.writes.Chain("mail:expand", func(ctx context.Context) (err error) {
@@ -421,6 +422,10 @@ func (p *mailPage) archiveThreads(rows []mailItem) {
 			return
 		}
 		l.sel.Clear()
+		if r := a.route; r.Page == PageMail && slices.Contains(threads, r.ThreadID) { // whole conversations go
+			a.setRoute(Route{Page: PageMail, View: r.View})
+		}
+		unchoose()
 		p.offerUndoArchive([]core.ArchiveUndo{undo}, start)
 	})
 }
