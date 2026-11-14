@@ -216,6 +216,7 @@ type App struct {
 	addressBooks  []core.AddressBook     // in priority order, as the last load read them
 	trusted       []string               // the senders whose remote images load at once, as the last load read them
 	blocked       []string               // the blocked senders, as the last load read them or a block changed them
+	blockedVer    int                    // counts the blocks and unblocks made here: a load that began before one read the list without it
 	settings      core.Settings          // what the interface shows: the newest edit while one saves
 	taskModels    map[string]bool        // the reader's tasks ("summarize", "translate", "" quick replies) core has a model for, and "labels"
 	tasks         latest                 // refreshTasks' reads; only the newest answer counts
@@ -410,7 +411,7 @@ func (a *App) load() {
 	var trusted, blocked []string
 	listsRead := false
 	inbox := 0
-	fetch, ver := a.fetch, a.settingsVer
+	fetch, ver, blockedVer := a.fetch, a.settingsVer, a.blockedVer
 	settled := ver == a.settingsSavedVer // no local change waits for its save
 	a.loads.Run(a, func(ctx context.Context) error {
 		var err error
@@ -483,7 +484,10 @@ func (a *App) load() {
 			if !slices.Equal(a.trusted, trusted) {
 				avatars = trustChanged
 			}
-			a.trusted, a.blocked = trusted, blocked
+			a.trusted = trusted
+			if blockedVer == a.blockedVer { // else the read may predate a block made here, and would take its badge back off
+				a.blocked = blocked
+			}
 		}
 		if sigs != nil {
 			a.signatures = sigs
