@@ -444,6 +444,32 @@ func TestUnreadFilterEmptyDoesNotPage(t *testing.T) {
 	}
 }
 
+// An unread mail past the loaded pages is still found: the title counts it, so
+// the empty unread list pages on instead of saying 没有未读邮件.
+func TestUnreadFilterPagesToUnread(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.putMany(accs[0], 120)
+	h.waitMail("the first page", func() bool { return len(h.items()) == 50 })
+	page, err := h.env.Svc.ListMessages(context.Background(), core.View{Unified: "inbox"}, "", 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := make([]int64, 0, len(page.Items))
+	for _, m := range page.Items[:len(page.Items)-1] { // the oldest stays unread
+		ids = append(ids, m.ID)
+	}
+	if err := h.env.Svc.SetFlags(context.Background(), ids, []string{`\Seen`}, nil); err != nil {
+		t.Fatal(err)
+	}
+	h.waitMail("all but one read", func() bool { return h.items()[0].Unread == 0 })
+
+	h.click("未读")
+	h.until("the unread mail", func() bool { return len(h.app.mail.shown()) == 1 })
+	if h.tt.HasText(i18n.T("mail.no_unread_messages")) {
+		t.Fatalf("the unread list says it is empty: %q", h.tt.Texts())
+	}
+}
+
 func TestSearch(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Invoice March", "pay"))
