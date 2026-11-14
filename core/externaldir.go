@@ -22,6 +22,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/store"
@@ -473,8 +474,11 @@ func (s *Service) followExternalModel(ctx context.Context, row managedRow, model
 		switch ours := strings.HasPrefix(cur, prefix); {
 		case model != "":
 			if !ours {
+				// cur may be another managed service's that saved this one's model:
+				// it takes this one's saved default first, so no two point at each other.
 				prev = cur
-				if _, err := s.db.DurableExecute(ctx, "UPDATE model_services SET prev_default = ? WHERE id = ?", prev, row.id); err != nil {
+				if _, err := s.db.DurableTransaction(ctx, []sqlite.Statement{spliceChain(row, row.prevDefault),
+					{SQL: "UPDATE model_services SET prev_default = ? WHERE id = ?", Args: []any{prev, row.id}}}); err != nil {
 					return cur, err
 				}
 			}
@@ -544,14 +548,19 @@ func (s *Service) dropManagedService(ctx context.Context, row managedRow) error 
 	if err != nil {
 		return err
 	}
-	// Another managed service may hold this one's model as the default to give
-	// back: it gets the one this service held instead, so the chain still ends
-	// at the user's.
-	if _, err := s.db.DurableExecute(ctx, `UPDATE model_services SET prev_default = ?
-		WHERE id != ? AND managed_by != '' AND substr(prev_default, 1, length(?)) = ?`, row.prevDefault, row.id, prefix, prefix); err != nil {
+	if _, err := s.db.DurableTransaction(ctx, []sqlite.Statement{spliceChain(row, row.prevDefault)}); err != nil {
 		return err
 	}
 	return s.removeModelService(ctx, row.id, row.by)
+}
+
+// spliceChain gives every other managed service that saved row's model as
+// the default to give back to give back prev instead (what row itself saved),
+// so the chain of saved defaults still ends at the user's.
+func spliceChain(row managedRow, prev string) sqlite.Statement {
+	prefix := row.slug + "/"
+	return sqlite.Statement{SQL: `UPDATE model_services SET prev_default = ?
+		WHERE id != ? AND managed_by != '' AND substr(prev_default, 1, length(?)) = ?`, Args: []any{prev, row.id, prefix, prefix}}
 }
 
 // modelRefExists reports whether ref still names a model.
