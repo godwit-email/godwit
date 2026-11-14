@@ -170,7 +170,7 @@ export function AddressInput({
           role="listbox"
           id={listId}
           aria-label={t("shell.nav.contacts")}
-          className="absolute top-full left-0 z-50 mt-2 flex w-80 max-w-full flex-col rounded-lg border border-glass-border bg-glass-bg p-1.5 text-popover-foreground shadow-2xl ring-1 ring-glass-ring backdrop-blur-2xl"
+          className="absolute top-full left-0 z-50 mt-2 flex w-80 max-w-full flex-col rounded-lg border border-glass-border bg-glass-bg p-1.5 text-popover-foreground shadow-md backdrop-blur-2xl"
         >
           {hits.map((h, i) => (
             <div

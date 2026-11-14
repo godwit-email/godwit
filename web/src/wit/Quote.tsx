@@ -106,7 +106,7 @@ export function QuotePicker({
       ref={box}
       role="dialog"
       aria-label={t("wit.quote")}
-      className="absolute bottom-full left-0 z-3 mb-2 flex w-80 max-w-full flex-col gap-1 rounded-lg border border-glass-border bg-glass-bg p-1.5 text-popover-foreground shadow-2xl backdrop-blur-2xl ring-1 ring-glass-ring outline-none"
+      className="absolute bottom-full left-0 z-3 mb-2 flex w-80 max-w-full flex-col gap-1 rounded-lg border border-glass-border bg-glass-bg p-1.5 text-popover-foreground shadow-md backdrop-blur-2xl outline-none"
     >
       {own && (
         <div className="relative flex items-center">

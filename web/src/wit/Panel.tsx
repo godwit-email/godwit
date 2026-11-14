@@ -2472,7 +2472,7 @@ export function Panel({
             ))}
             {page && chat.messages.length === 0 && !running && !locked && (
               <div className="flex flex-col items-center gap-3 pt-[16vh] text-center">
-                <span className="flex size-12 items-center justify-center rounded-2xl border border-glass-border bg-glass-bg shadow-xs ring-1 ring-glass-ring">
+                <span className="flex size-12 items-center justify-center rounded-2xl border border-glass-border bg-glass-bg shadow-xs">
                   <RiSparkling2Line className="size-6" />
                 </span>
                 <h1 className="font-semibold text-xl">{t("wit.empty.title")}</h1>
@@ -2487,7 +2487,7 @@ export function Panel({
                       <Button
                         key={n}
                         variant="ghost"
-                        className="h-auto rounded-lg border border-glass-border bg-glass-bg px-3.5 py-1.5 text-sm text-foreground shadow-xs ring-1 ring-glass-ring transition-all outline-none hover:bg-glass-hover focus-visible:ring-2 focus-visible:ring-ring dark:shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.08)]"
+                        className="h-auto rounded-lg border border-glass-border bg-glass-bg px-3.5 py-1.5 text-sm text-foreground shadow-xs transition-all outline-none hover:bg-glass-hover focus-visible:ring-2 focus-visible:ring-ring dark:shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.08)]"
                         onClick={() => ask(q)}
                       >
                         {q}
@@ -2858,7 +2858,7 @@ export function Panel({
     <Button
       variant="ghost"
       size="sm"
-      className="h-7 gap-1.5 rounded-md border border-glass-border bg-glass-bg px-2.5 text-xs text-foreground shadow-xs ring-1 ring-glass-ring hover:bg-glass-hover disabled:opacity-100 dark:shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.08)] dark:hover:bg-glass-hover dark:aria-expanded:bg-glass-hover"
+      className="h-7 gap-1.5 rounded-md border border-glass-border bg-glass-bg px-2.5 text-xs text-foreground shadow-xs hover:bg-glass-hover disabled:opacity-100 dark:shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.08)] dark:hover:bg-glass-hover dark:aria-expanded:bg-glass-hover"
     >
       <Icon className="size-3.5 text-muted-foreground" />
       {label}
@@ -2888,9 +2888,7 @@ export function Panel({
             data-tray
             className={cn(
               "flex items-center gap-1.5",
-              only
-                ? "rounded-2xl border border-glass-border bg-glass-bg p-1 ring-1 ring-glass-ring"
-                : "mb-2",
+              only ? "rounded-2xl border border-glass-border bg-glass-bg p-1" : "mb-2",
             )}
           >
             {!only && (

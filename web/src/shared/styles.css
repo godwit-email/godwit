@@ -84,6 +84,19 @@
 /* Where the native kit differs from shadcn's components on purpose, the pages follow the kit, here
    and once rather than in each page's classes. A badge has radius-sm and reads at 400 beside the
    mail label chips (shadcn: a pill at 500). A title is at 600 (shadcn: 500). */
+/* Popups have one edge, their border, and the native ShadowMd: Nova's ring
+   would stack a second line on it. */
+.glass-popover,
+[data-slot="popover-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="dropdown-menu-sub-content"],
+[data-slot="select-content"],
+[data-slot="hover-card-content"] {
+  box-shadow:
+    0 4px 6px -1px rgb(0 0 0 / 0.1),
+    0 2px 4px -2px rgb(0 0 0 / 0.1); /* shadow-md */
+}
+
 [data-slot="badge"] {
   border-radius: var(--radius-sm);
   font-weight: 400;
@@ -128,7 +141,6 @@
   --sidebar-ring: oklch(0.708 0 0);
   --glass-bg: oklch(1 0 0 / 70%);
   --glass-border: oklch(0.145 0 0 / 12%);
-  --glass-ring: oklch(0.145 0 0 / 5%);
   --glass-hover: oklch(0 0 0 / 6%);
 }
 
@@ -167,7 +179,6 @@
   --sidebar-ring: oklch(0.556 0 0);
   --glass-bg: oklch(0.205 0 0 / 70%);
   --glass-border: oklch(1 0 0 / 15%);
-  --glass-ring: oklch(1 0 0 / 6%);
   --glass-hover: oklch(1 0 0 / 10%);
 }
 
@@ -222,8 +233,6 @@ kbd {
     -webkit-backdrop-filter: blur(24px);
     border-radius: var(--radius-lg);
     border: 1px solid var(--glass-border);
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-    outline: 1px solid var(--glass-ring);
   }
 
   [data-slot="select-scroll-up-button"],
@@ -242,6 +251,5 @@ kbd {
   --color-del-foreground: var(--del-text);
   --color-glass-bg: var(--glass-bg);
   --color-glass-border: var(--glass-border);
-  --color-glass-ring: var(--glass-ring);
   --color-glass-hover: var(--glass-hover);
 }
