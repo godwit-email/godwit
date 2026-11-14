@@ -345,7 +345,7 @@ func (p *contactsPage) listView(c *ui.Context) {
 			if strings.TrimSpace(p.query) != "" {
 				icon, msg = "search", i18n.T("contacts.no_match")
 			}
-			listEmpty(c, icon, msg)
+			listEmpty(c, kit.EmptyOpts{Icon: icon, Title: msg})
 		}
 	})
 	if l.Changed() && p.cur >= 0 && p.cur < len(rows) {

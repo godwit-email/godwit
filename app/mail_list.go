@@ -1050,9 +1050,9 @@ func (p *mailPage) listView(c *ui.Context) {
 			case p.savedViewID() != 0:
 				p.viewEmpty(c)
 			case p.filter != 0:
-				listEmpty(c, "mail-open", i18n.T("mail.no_unread_messages"))
+				listEmpty(c, kit.EmptyOpts{Icon: p.viewIcon(), Title: i18n.T("mail.no_unread_messages")})
 			default:
-				listEmpty(c, "inbox", i18n.T("mail.empty"))
+				listEmpty(c, kit.EmptyOpts{Icon: p.viewIcon(), Title: i18n.T("mail.empty")})
 			}
 		}
 	})
@@ -1295,26 +1295,48 @@ func (a *App) openAccountSettings(acc int64) func() {
 	}
 }
 
-// listEmpty is a list with nothing in it: the kit's empty state under the
-// list's top, where a search's and a view's stand.
-func listEmpty(c *ui.Context, icon, title string) {
-	kit.Empty(c, kit.EmptyOpts{Icon: icon, Title: title}).Margin(c.Theme().Space(8), c.Theme().Space(1))
+// listEmpty is a list with nothing in it: the kit's empty state above the
+// list's middle, the space around it split by the golden ratio.
+func listEmpty(c *ui.Context, o kit.EmptyOpts) {
+	ui.Column(c).Absolute().Left(0).Top(0).Right(0).Bottom(0).AlignItems(ui.Center).Children(func() {
+		ui.Box(c).Grow(0.382)
+		kit.Empty(c, o)
+		ui.Box(c).Grow(0.618)
+	})
+}
+
+// viewIcon is the icon the sidebar gives the view the list shows.
+func (p *mailPage) viewIcon() string {
+	v := p.view
+	if b, ok := p.savedView(p.savedViewID()); ok {
+		return labelIcon(b.Icon)
+	}
+	if l, ok := p.a.label(v.LabelID); ok && v.LabelID != 0 {
+		return labelIcon(l.Icon)
+	}
+	if strings.HasPrefix(v.Unified, "starred") {
+		return "star"
+	}
+	if f, ok := p.folder(v.FolderID); ok {
+		return cmp.Or(folderIcons[f.Role], "folder")
+	}
+	return "inbox"
 }
 
 // noResults is the list of a search that found nothing: it offers Wit and a
 // wider sync.
 func (p *mailPage) noResults(c *ui.Context) {
-	q, th := p.hlQuery, c.Theme()
+	q := p.hlQuery
 	title := i18n.Tf("mail.search.empty_title", q)
 	if q == "" { // filters alone: nothing to hand Wit
 		title = i18n.T("mail.search.empty_filtered")
 	}
-	kit.Empty(c, kit.EmptyOpts{Icon: "search", Title: title, Desc: p.searchedDesc(), Actions: func() {
+	listEmpty(c, kit.EmptyOpts{Icon: "search", Title: title, Desc: p.searchedDesc(), Actions: func() {
 		if q != "" {
 			kit.EmptyAction(c, i18n.T("mail.search.ask_wit"), kit.ButtonOpts{}).OnClick(func() { p.a.askWit(q) })
 		}
 		kit.EmptyAction(c, i18n.T("mail.search.expand"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(p.a.openAccountSettings(p.searchAccount()))
-	}}).Margin(th.Space(8), th.Space(1))
+	}})
 }
 
 // searchedDesc says what a search covered: the searched accounts' sync range

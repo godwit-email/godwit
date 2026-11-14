@@ -38,10 +38,10 @@ func (p *mailPage) outboxView(c *ui.Context) {
 	now := p.a.clock.Now()
 	ui.Text(c, i18n.T("mail.outbox")).FontWeight(500).TextColor(t.Muted).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4))
 	ui.Scroll(c).Grow(1).Children(func() {
+		if len(p.outbox) == 0 {
+			listEmpty(c, kit.EmptyOpts{Icon: "outbox", Title: i18n.T("mail.empty")})
+		}
 		ui.Column(c).Padding(0, th.Space(4)).Gap(th.Space(3)).Children(func() {
-			if len(p.outbox) == 0 {
-				listEmpty(c, "send", i18n.T("mail.empty"))
-			}
 			for _, it := range p.outbox {
 				kit.Block(c, ui.Column(c.Key(it.ID)), kit.ToneOutline).Gap(th.Space(1)).Padding(th.Space(2.5)).Children(func() {
 					ui.Text(c, subjectOf(it.OutboxItem)).FontWeight(500).SingleLine()

@@ -247,7 +247,7 @@ func (p *mailPage) viewLine(it mailItem) (icon, text string) {
 
 // viewEmpty is an empty view's list.
 func (p *mailPage) viewEmpty(c *ui.Context) {
-	kit.Empty(c, kit.EmptyOpts{Icon: "inbox", Title: i18n.T("view.empty"), Desc: i18n.T("view.empty.desc")}).Margin(c.Theme().Space(8), c.Theme().Space(1))
+	listEmpty(c, kit.EmptyOpts{Icon: p.viewIcon(), Title: i18n.T("view.empty"), Desc: i18n.T("view.empty.desc")})
 }
 
 // viewNav is the sidebar's 视图: each view with its icon, name, unread
