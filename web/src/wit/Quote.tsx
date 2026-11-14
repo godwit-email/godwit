@@ -184,7 +184,7 @@ export function QuotedMail({
         <Badge
           key={h.id}
           variant="secondary"
-          className="h-6 max-w-full gap-1 rounded-sm font-normal text-xs [button]:hover:bg-secondary/80"
+          className="h-6 max-w-full gap-1 [button]:hover:bg-secondary/80"
           title={h.from}
           render={
             onOpen && !gone(h.id) ? (
@@ -213,11 +213,7 @@ export function QuoteChips({
   return (
     <div className="flex w-full flex-wrap gap-1.5">
       {items.map((h) => (
-        <Badge
-          key={h.id}
-          variant="secondary"
-          className="h-6 max-w-full gap-1 rounded-sm pr-1 font-normal text-xs"
-        >
+        <Badge key={h.id} variant="secondary" className="h-6 max-w-full gap-1 pr-1">
           <RiMailLine className="size-3.5 text-muted-foreground" />
           <span className="truncate">{subjectOf(h, t)}</span>
           <button

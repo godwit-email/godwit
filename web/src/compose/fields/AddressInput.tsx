@@ -96,7 +96,7 @@ export function AddressInput({
             role="group"
             aria-label={addr}
             variant={bad ? "destructive" : "secondary"}
-            className="h-auto rounded-full px-2 py-0.5 font-normal text-sm leading-4"
+            className="h-auto px-2 py-0.5 text-sm leading-4"
           >
             <Tooltip>
               {/* invalid: the entry as typed, so what is wrong shows */}

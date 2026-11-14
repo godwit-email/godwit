@@ -179,7 +179,7 @@ export function Fields({
             aria-label={t("compose.from.select")}
             title={fromEmail}
             disabled={frozen}
-            className="flex h-5.5 min-w-0 items-center rounded-full bg-muted px-2 text-sm leading-4 transition-colors hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-popup-open:bg-accent"
+            className="flex h-5.5 min-w-0 items-center rounded-sm bg-muted px-2 text-sm leading-4 transition-colors hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-popup-open:bg-accent"
           >
             <span className="min-w-0 truncate">{fromEmail}</span>
             <RiArrowDownSLine className="ml-1 size-3.5 shrink-0 text-muted-foreground" />

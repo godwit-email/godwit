@@ -81,6 +81,17 @@
   line-height: var(--text-xs--line-height);
 }
 
+/* Where the native kit differs from shadcn's components on purpose, the pages follow the kit, here
+   and once rather than in each page's classes. A badge has radius-sm and reads at 400 beside the
+   mail label chips (shadcn: a pill at 500). A title is at 600 (shadcn: 500). */
+[data-slot="badge"] {
+  border-radius: var(--radius-sm);
+  font-weight: 400;
+}
+[data-slot$="-title"] {
+  font-weight: 600;
+}
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);

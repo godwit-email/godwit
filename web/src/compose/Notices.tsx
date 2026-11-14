@@ -43,13 +43,13 @@ export function Notices({
     <div className="flex flex-col gap-2">
       {blocked && (
         <Alert variant="destructive" className={danger}>
-          <AlertTitle className="font-semibold">{blocked.message}</AlertTitle>
+          <AlertTitle>{blocked.message}</AlertTitle>
           <From w={blocked} t={t} />
         </Alert>
       )}
       {warnings.map((w) => (
         <Alert key={`${w.plugin}:${w.message}`} className={warn}>
-          <AlertTitle className="font-semibold">{t("compose.warn", w.message)}</AlertTitle>
+          <AlertTitle>{t("compose.warn", w.message)}</AlertTitle>
           <From w={w} t={t} />
         </Alert>
       ))}
@@ -67,7 +67,7 @@ export function Notices({
       )}
       {conflict && (
         <Alert variant="destructive" className={danger}>
-          <AlertTitle className="font-semibold">{t("compose.conflict")}</AlertTitle>
+          <AlertTitle>{t("compose.conflict")}</AlertTitle>
           <div className="mt-2 flex gap-1.5">
             {latestFailed ? (
               <Button

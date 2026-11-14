@@ -291,8 +291,8 @@ export function RuleCard({
           {p.matches > 0 ? (
             <Button
               variant="ghost"
-              size="sm"
-              className="-ml-1.5 h-6 self-start px-1.5 font-normal text-sm"
+              size="xs"
+              className="-ml-1.5 self-start"
               aria-expanded={open}
               disabled={mail.length === 0}
               onClick={() => setOpen(!open)}

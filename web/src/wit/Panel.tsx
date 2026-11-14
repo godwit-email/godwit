@@ -651,7 +651,7 @@ function ToolCard({
               {a.destinations.map((d) => (
                 <span
                   key={d}
-                  className="flex h-5.5 items-center gap-1 rounded-full border-[0.5px] px-2 text-xs"
+                  className="flex h-5 items-center gap-1 rounded-sm border-[0.5px] px-1.5 text-xs"
                 >
                   <RiGlobalLine className="size-3 text-muted-foreground" />
                   {d}
@@ -666,7 +666,7 @@ function ToolCard({
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground"
+            className="text-muted-foreground hover:text-foreground"
             disabled={busy}
             onClick={() => setEditing(!editing)}
           >
@@ -1119,7 +1119,7 @@ function ToolLine({
         {found.map((c) =>
           sender(
             c,
-            "cursor-pointer rounded-full border-[0.5px] px-2 text-muted-foreground text-xs leading-5 hover:text-foreground data-popup-open:bg-muted data-popup-open:text-foreground",
+            "cursor-pointer rounded-sm border-[0.5px] px-1.5 text-muted-foreground text-xs leading-5 hover:text-foreground data-popup-open:bg-muted data-popup-open:text-foreground",
           ),
         )}
       </TraceCollapsibleContent>
@@ -2487,7 +2487,7 @@ export function Panel({
                       <Button
                         key={n}
                         variant="ghost"
-                        className="h-auto rounded-full border border-glass-border bg-glass-bg px-3.5 py-1.5 font-normal text-sm text-foreground shadow-xs ring-1 ring-glass-ring transition-all outline-none hover:bg-glass-hover focus-visible:ring-2 focus-visible:ring-ring dark:shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.08)]"
+                        className="h-auto rounded-lg border border-glass-border bg-glass-bg px-3.5 py-1.5 text-sm text-foreground shadow-xs ring-1 ring-glass-ring transition-all outline-none hover:bg-glass-hover focus-visible:ring-2 focus-visible:ring-ring dark:shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.08)]"
                         onClick={() => ask(q)}
                       >
                         {q}
@@ -2553,7 +2553,7 @@ export function Panel({
           <InputGroupButton
             variant="ghost"
             size="xs"
-            className="font-normal text-foreground"
+            className="text-foreground"
             aria-label={t("wit.edit.cancel")}
             onClick={cancelEdit}
           >
@@ -2705,10 +2705,7 @@ export function Panel({
                 <InputGroupButton
                   variant="ghost"
                   size="sm"
-                  className={cn(
-                    !meter && "ml-auto",
-                    "h-8 min-w-0 gap-1.5 px-2 font-normal text-xs",
-                  )}
+                  className={cn(!meter && "ml-auto", "h-8 min-w-0 gap-1.5 px-2 text-xs")}
                   title={t("wit.model.pick")}
                 >
                   <span className="truncate">{chosen}</span>
@@ -2745,10 +2742,7 @@ export function Panel({
                       <DropdownMenuRadioItem closeOnClick key={c.ref} value={c.ref}>
                         {c.name}
                         {c.default && (
-                          <Badge
-                            variant="outline"
-                            className="h-4.5 px-1.5 font-normal text-muted-foreground"
-                          >
+                          <Badge variant="outline" className="text-muted-foreground">
                             {t("wit.model.default_tag")}
                           </Badge>
                         )}
@@ -2799,10 +2793,7 @@ export function Panel({
             <InputGroupButton
               variant="ghost"
               size="sm"
-              className={cn(
-                !meter && "ml-auto",
-                "h-8 gap-1 px-2 font-normal text-muted-foreground text-xs",
-              )}
+              className={cn(!meter && "ml-auto", "h-8 gap-1 px-2 text-muted-foreground text-xs")}
               title={t("wit.model")}
               onClick={onModels}
             >
@@ -2867,7 +2858,7 @@ export function Panel({
     <Button
       variant="ghost"
       size="sm"
-      className="h-7 gap-1.5 rounded-full border border-glass-border bg-glass-bg px-2.5 font-normal text-xs text-foreground shadow-xs ring-1 ring-glass-ring hover:bg-glass-hover disabled:opacity-100 dark:shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.08)] dark:hover:bg-glass-hover dark:aria-expanded:bg-glass-hover"
+      className="h-7 gap-1.5 rounded-md border border-glass-border bg-glass-bg px-2.5 text-xs text-foreground shadow-xs ring-1 ring-glass-ring hover:bg-glass-hover disabled:opacity-100 dark:shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.08)] dark:hover:bg-glass-hover dark:aria-expanded:bg-glass-hover"
     >
       <Icon className="size-3.5 text-muted-foreground" />
       {label}
@@ -2882,11 +2873,7 @@ export function Panel({
       {info && !only && info.chips.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 px-4 py-3">
           {info.chips.map((c) => (
-            <Badge
-              key={c}
-              variant="secondary"
-              className="h-auto max-w-full truncate rounded-sm font-normal text-xs"
-            >
+            <Badge key={c} variant="secondary" className="h-auto max-w-full truncate">
               {c}
             </Badge>
           ))}

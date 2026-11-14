@@ -27,7 +27,7 @@ export function Attachments({
           {items.map((a) => (
             <div
               key={a.id}
-              className="flex h-7 max-w-full items-center gap-1.5 rounded-full border pr-0.5 pl-2.5 text-xs"
+              className="flex h-7 max-w-full items-center gap-1.5 rounded-md border pr-0.5 pl-2.5 text-xs"
             >
               <span className="truncate">{a.filename}</span>
               <span className="shrink-0 text-muted-foreground">{byteSize(a.size)}</span>
