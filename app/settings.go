@@ -311,7 +311,7 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 		return kit.SidebarItem(c, kit.SidebarItemOpts{Selected: sec == cur, OnClick: func() { a.navigate(Route{Page: PageSettings, Settings: sec}) }})
 	}
 	sidebarScroll(c, func() {
-		kit.Text(c, i18n.T("settings.heading"), t.Text.Base).LineHeight(theme.LineFor(i18n.T("settings.heading"))).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
+		kit.Text(c, i18n.T("settings.heading"), t.Text.Base).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
 		p.searchField(c)
 		hit := p.matching(p.query)
 		if hit.accounts {
@@ -429,7 +429,7 @@ func pageHeading(c *ui.Context, title, sub string, action ...func()) {
 		ui.Column(c).Grow(1).Shrink(1).Gap(theme.HeadingGap).Children(func() {
 			kit.Text(c, title, t.Text.X3l).FontWeight(600)
 			if sub != "" {
-				kit.Text(c, sub, t.Text.Sm).LineHeight(theme.LineFor(sub)).TextColor(t.Muted)
+				kit.Text(c, sub, t.Text.Sm).TextColor(t.Muted)
 			}
 		})
 		for _, f := range action {
@@ -454,7 +454,7 @@ func settingsSection(c *ui.Context, title, footnote string, rows ...func()) {
 
 // sectionTitle is a settings section's title, inset as its card's rows.
 func sectionTitle(c *ui.Context, title string) {
-	kit.Text(c, title, theme.Of(c).Text.Sm).LineHeight(theme.LineFor(title)).FontWeight(600).PaddingX(c.Theme().Space(4))
+	kit.Text(c, title, theme.Of(c).Text.Sm).FontWeight(600).PaddingX(c.Theme().Space(4))
 }
 
 // settingsCard is a section's card of rows, with hairlines between them: a
@@ -502,7 +502,7 @@ func settingRow(c *ui.Context, label, desc string, control func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-			kit.Text(c, label, t.Text.Sm).LineHeight(theme.LineFor(label)).FontWeight(500)
+			kit.Text(c, label, t.Text.Sm).FontWeight(500)
 			if desc != "" {
 				kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted)
 			}

@@ -109,7 +109,7 @@ func (e *extView) directoryCard(c *ui.Context, en core.RegistryEntry) {
 				ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
 					entryIconBox(c, en, kit.ToneRaised)
 					ui.Column(c).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-						kit.Text(c, title, t.Text.Sm).LineHeight(theme.LineFor(title)).FontWeight(500)
+						kit.Text(c, title, t.Text.Sm).FontWeight(500)
 						if en.Publisher != "" {
 							kit.Text(c, en.Publisher, t.Text.Xs).TextColor(t.Muted)
 						}
@@ -235,7 +235,7 @@ func (e *extView) installDialog(c *ui.Context) {
 				fact := func(label, value string) {
 					ui.Column(c).Grow(1).Basis(0).Gap(th.Space(0.5)).Children(func() {
 						kit.Text(c, label, t.Text.Xs).TextColor(t.Muted)
-						kit.Text(c, value, t.Text.Sm).LineHeight(theme.LineFor(value))
+						kit.Text(c, value, t.Text.Sm)
 					})
 				}
 				fact(i18n.T("settings.ext.dialog.version"), en.Version)
@@ -300,7 +300,7 @@ func dataFlowCard(c *ui.Context, en core.RegistryEntry) {
 			}
 		})
 		if s := en.Summary.For(i18n.Language()); s != "" {
-			kit.Text(c, s, t.Text.Sm).LineHeight(theme.LineFor(s))
+			kit.Text(c, s, t.Text.Sm)
 		}
 	})
 }
@@ -313,7 +313,7 @@ func entryPermissions(c *ui.Context, en core.RegistryEntry) {
 		kit.Text(c, i18n.T("settings.ext.dialog.perm"), t.Text.Sm).FontWeight(500)
 		if en.Native {
 			text := i18n.T("settings.ext.dialog.perm.native")
-			kit.Text(c, text, t.Text.Sm).LineHeight(theme.LineFor(text))
+			kit.Text(c, text, t.Text.Sm)
 			return
 		}
 		permissionList(c, en.Permissions, en.Capabilities)
@@ -406,16 +406,16 @@ func readmeView(c *ui.Context, blocks []readmeBlock) {
 			cc := c.Key(i)
 			switch b.kind {
 			case "h":
-				kit.Text(cc, b.text, t.Text.Sm).LineHeight(theme.LineFor(b.text)).FontWeight(600).Margin(th.Space(2), 0, 0, 0)
+				kit.Text(cc, b.text, t.Text.Sm).FontWeight(600).Margin(th.Space(2), 0, 0, 0)
 			case "li":
 				ui.Row(cc).FillWidth().Gap(th.Space(2)).Children(func() {
 					kit.Text(cc, b.mark, t.Text.Sm).TextColor(t.Muted).Shrink(0)
-					kit.Text(cc, b.text, t.Text.Sm).LineHeight(theme.LineFor(b.text)).Shrink(1)
+					kit.Text(cc, b.text, t.Text.Sm).Shrink(1)
 				})
 			case "code":
 				kit.Text(cc, b.text, t.Text.Xs).Font(theme.Mono).TextColor(t.Muted)
 			default:
-				kit.Text(cc, b.text, t.Text.Sm).LineHeight(theme.LineFor(b.text))
+				kit.Text(cc, b.text, t.Text.Sm)
 			}
 		}
 	})

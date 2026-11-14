@@ -1271,7 +1271,7 @@ func (p *mailPage) resultRow(c *ui.Context, it mailItem) ui.Element {
 		}
 		marked(c, subject, q).SingleLine()
 		if it.Snippet != "" {
-			marked(c, it.Snippet, q).FontSize(t.Text.Xs).LineHeight(t.Text.Line(t.Text.Xs)).TextColor(t.Muted).SingleLine()
+			marked(c, it.Snippet, q).FontSize(t.Text.Xs).TextColor(t.Muted).SingleLine()
 		}
 		if line := p.folderLine(it); line != "" {
 			kit.Text(c, line, t.Text.Xs).TextColor(t.Muted).SingleLine()
@@ -1419,7 +1419,7 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 func (p *mailPage) skeletonRow(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	line := func(size float32, bars func(bar func(w float32))) {
-		ui.Row(c).Height(size * t.Text.Line(size)).AlignItems(ui.Center).Children(func() {
+		ui.Row(c).Height(size * theme.LineUI).AlignItems(ui.Center).Children(func() {
 			bars(func(w float32) { kit.Skeleton(c, w, size) })
 		})
 	}

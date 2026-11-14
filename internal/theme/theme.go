@@ -3,10 +3,8 @@
 package theme
 
 import (
-	"strings"
 	"sync"
 	"time"
-	"unicode"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -93,50 +91,19 @@ type RadiusScale struct{ Xs, Sm, Md, Lg, Xl, X2l, X3l, X4l, Full float32 }
 // onboarding headline. Mail bodies use BodyFontSize.
 type TextScale struct{ Xs, Sm, Base, Xl, X3l float32 }
 
-// Line heights, multipliers of a text's own size, one per TextScale step:
-// tokens.json's, but Sm is 1.3, the font's normal line height,
-// which the design's screens render (its 1.5 and 1.6 make list rows 13 px
-// taller than the design's). Reading is mail bodies, translations and the
-// drafts pane; Prose onboarding's and empty
-// states' paragraphs; Lede onboarding's lede; Tight text in a box of fixed
-// height.
+// LineUI is the line height of the interface's text, a multiple of its
+// size, the same at every step: the CJK fallback font's own line (1.448),
+// so that a line is as tall with CJK in it as without, and a row of a list
+// is one height whatever its text. Apply sets it on the window's root, which
+// every text inherits, overlays too; a text names a line height only to
+// differ from it. Reading is mail bodies, translations and the drafts pane;
+// Prose onboarding's and empty states' paragraphs; Lede onboarding's lede;
+// Tight text in a box of fixed height.
 const (
-	LineXs, LineSm            = 1.45, 1.3
-	LineBase, LineXl, LineX3l = 1.4, 1.3, 1.25
-	LineReading, LineProse    = 1.75, 1.6
-	LineLede, LineTight       = 1.7, 1
-	LineCJK                   = 1.4  // a CJK line at the fallback font's normal height (the drafts pane's fields, an AI panel's title, the remote-image notice)
-	LineSubject               = 1.35 // a mail's subject over the reader and the drafts pane
-	LineRow                   = 1.45 // settings' labels, subtitles and section titles with CJK in them (LineFor)
+	LineUI                 = 1.45
+	LineReading, LineProse = 1.75, 1.6
+	LineLede, LineTight    = 1.7, 1
 )
-
-// LineFor is the line height of a settings label, subtitle or section title
-// s: LineRow with CJK in it, whose fallback font has the taller normal line
-// (1.448), else Sm's, as a browser lays out the design's settings pages.
-func LineFor(s string) float32 {
-	if strings.ContainsFunc(s, func(r rune) bool {
-		return unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul)
-	}) {
-		return LineRow
-	}
-	return LineSm
-}
-
-// Line returns the line height of the step whose size is size, Sm's for
-// a size between steps.
-func (s TextScale) Line(size float32) float32 {
-	switch size {
-	case s.Xs:
-		return LineXs
-	case s.Base:
-		return LineBase
-	case s.Xl:
-		return LineXl
-	case s.X3l:
-		return LineX3l
-	}
-	return LineSm
-}
 
 // Layout sizes that do not follow the density.
 const (
@@ -422,7 +389,8 @@ var (
 const Mono = "monospace"
 
 // Apply makes the frame draw with t: mygo's theme for the appearance with
-// t's colors, the system's font and t's font size. Of(c) returns t afterwards.
+// t's colors, the system's font and t's font size, and LineUI for every
+// text's lines. Of(c) returns t afterwards.
 func Apply(c *ui.Context, t Tokens) {
 	mu.Lock()
 	th, ok := themes[t]
@@ -432,6 +400,7 @@ func Apply(c *ui.Context, t Tokens) {
 	}
 	mu.Unlock()
 	c.SetTheme(th)
+	c.Root().LineHeight(LineUI)
 }
 
 func mygoTheme(t Tokens) *ui.Theme {

@@ -372,7 +372,7 @@ func permissionList(c *ui.Context, pm plugins.Permissions, capabilities []string
 			}
 			r.Children(func() {
 				kit.BadgeWith(c, tag, kit.BadgeOpts{Mono: true})
-				kit.Text(c, text, t.Text.Sm).LineHeight(theme.LineFor(text)).Shrink(1)
+				kit.Text(c, text, t.Text.Sm).Shrink(1)
 			})
 		}
 		if slices.Contains(pm.Mail, "read") {
@@ -496,7 +496,7 @@ func (e *extView) pluginRow(c *ui.Context, p core.PluginInfo) {
 						if p.Builtin {
 							statusPill(c, i18n.T("settings.ext.builtin"), false)
 						}
-						kit.Text(c, title, t.Text.Sm).LineHeight(theme.LineFor(title)).FontWeight(500)
+						kit.Text(c, title, t.Text.Sm).FontWeight(500)
 						if p.NeedsGrant {
 							kit.Text(c, p.Version, t.Text.Xs).TextColor(t.Muted)
 						}
@@ -555,7 +555,7 @@ func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 			nativeCard(c, p)
 		} else {
 			kit.Block(c, ui.Column(c), kit.ToneRaised).FillWidth().Gap(th.Space(2)).Padding(th.Space(3), th.Space(4)).Children(func() {
-				kit.Text(c, i18n.T("settings.ext.perms"), t.Text.Sm).LineHeight(theme.LineFor(i18n.T("settings.ext.perms"))).FontWeight(500)
+				kit.Text(c, i18n.T("settings.ext.perms"), t.Text.Sm).FontWeight(500)
 				if p.Trust == "listed" {
 					kit.Text(c, i18n.T("settings.ext.native.trust.listed"), t.Text.Xs).TextColor(t.Muted)
 				}
@@ -565,7 +565,7 @@ func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 		if st, ok := e.logins[name]; signsIn(p) && ok && st.SignedIn {
 			ui.Row(c).FillWidth().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 				label := i18n.Tf("settings.ext.signed_in", st.Account)
-				kit.Text(c, label, t.Text.Sm).LineHeight(theme.LineFor(label)).Grow(1).Shrink(1)
+				kit.Text(c, label, t.Text.Sm).Grow(1).Shrink(1)
 				kit.Button(c, i18n.T("settings.ext.logout"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() {
 					e.write("plugins", func(ctx context.Context) error { return e.a.svc.PluginLogout(ctx, name) }, nil)
 				})
@@ -619,10 +619,10 @@ func nativeCard(c *ui.Context, p core.PluginInfo) {
 		if p.Trust == "listed" && p.Error == "" {
 			title, body, trust = trust, i18n.T("settings.ext.native.reviewed.body"), ""
 		}
-		kit.Text(c, title, t.Text.Sm).LineHeight(theme.LineFor(title)).FontWeight(500)
+		kit.Text(c, title, t.Text.Sm).FontWeight(500)
 		for _, s := range []string{body, trust} {
 			if s != "" {
-				kit.Text(c, s, t.Text.Sm).LineHeight(theme.LineFor(s))
+				kit.Text(c, s, t.Text.Sm)
 			}
 		}
 		kit.Text(c, i18n.Tf("settings.ext.native.file", plugins.LibraryName(), h), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted)

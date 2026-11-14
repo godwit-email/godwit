@@ -63,9 +63,9 @@ func Dialog(c *ui.Context, open *bool, title string, o DialogOpts, body, footer 
 		}
 		header.Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
-				Text(c, title, t.Text.Base).FontWeight(600).LineHeight(theme.LineFor(title))
+				Text(c, title, t.Text.Base).FontWeight(600)
 				if o.Desc != "" {
-					ui.Text(c, o.Desc).LineHeight(theme.LineFor(o.Desc)).TextColor(t.Muted)
+					ui.Text(c, o.Desc).TextColor(t.Muted)
 				}
 			})
 			if !o.Alert {

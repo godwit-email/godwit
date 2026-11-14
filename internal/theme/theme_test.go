@@ -213,16 +213,23 @@ func TestDarkStatus(t *testing.T) {
 	}
 }
 
-// TestLine: each text step has its line height at any font size, and a
-// size between steps has Body's.
-func TestLine(t *testing.T) {
-	for _, font := range []int{13, 14, 16} {
-		s := FromSettings(core.Settings{FontSize: font}, false).Text
-		for size, want := range map[float32]float32{s.Xs: LineXs, s.Sm: LineSm,
-			s.Base: LineBase, s.Xl: LineXl, s.X3l: LineX3l, s.Sm + 0.5: LineSm} {
-			if got := s.Line(size); got != want {
-				t.Errorf("font %d: Line(%v) = %v, want %v", font, size, got, want)
-			}
+// TestLineUI: Apply gives every text the interface's line, a text in an
+// overlay too, whatever script it is in.
+func TestLineUI(t *testing.T) {
+	open := true
+	tt := ui.NewTester(func(c *ui.Context) {
+		Apply(c, Light())
+		ui.Column(c).Children(func() {
+			ui.Text(c, "Latin only")
+			ui.Text(c, "中文一行")
+		})
+		ui.DialogBase(c, &open, func(backdrop, panel ui.Element) { ui.Text(c, "In a dialog") })
+	}, 400, 300)
+	tt.Frame()
+	want := float32(14 * LineUI)
+	for _, s := range []string{"Latin only", "中文一行", "In a dialog"} {
+		if r, ok := tt.Find(s); !ok || r.H < want-0.1 || r.H > want+0.1 {
+			t.Errorf("%q is %v high, want %v", s, r.H, want)
 		}
 	}
 }

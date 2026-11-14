@@ -74,11 +74,11 @@ func (m *modelsView) list(c *ui.Context, u usage) {
 				m.svcMark(c, s)
 				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
 					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, s.Name).FontWeight(500).LineHeight(theme.LineFor(s.Name)).SingleLine().Shrink(1)
+						ui.Text(c, s.Name).FontWeight(500).SingleLine().Shrink(1)
 						l, label := svcLook(s)
 						statusLine(c, line{label, l})
 					})
-					kit.Text(c, svcSubtitle(s), t.Text.Xs).Font(theme.Mono).LineHeight(theme.LineSm).TextColor(t.Muted).SingleLine()
+					kit.Text(c, svcSubtitle(s), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted).SingleLine()
 					ui.Row(c).Wrap().Gap(th.Space(1.5)).Children(func() {
 						if s.Kind != "" && len(s.Models) > 0 {
 							capChip(c, i18n.Plural("settings.models.gen", len(s.Models)), u.genSvc != nil && u.genSvc.ID == s.ID)
@@ -111,10 +111,10 @@ func (m *modelsView) list(c *ui.Context, u usage) {
 				})
 				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
 					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, "Apple Intelligence").FontWeight(500).LineHeight(theme.LineFor("Apple Intelligence")).SingleLine().Shrink(1)
+						ui.Text(c, "Apple Intelligence").FontWeight(500).SingleLine().Shrink(1)
 						statusLine(c, pluginLook(p, m.pluginStatus))
 					})
-					kit.Text(c, i18n.T("settings.models.apple_intelligence.sub"), t.Text.Xs).Font(theme.Mono).LineHeight(theme.LineSm).TextColor(t.Muted).SingleLine()
+					kit.Text(c, i18n.T("settings.models.apple_intelligence.sub"), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted).SingleLine()
 					ui.Row(c).Wrap().Gap(th.Space(1.5)).Children(func() {
 						st := m.a.settings
 						var genOn, judgeOn bool
@@ -238,7 +238,7 @@ func usageRow(c *ui.Context, label, desc string, l *line, control func()) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-			kit.Text(c, label, t.Text.Sm).LineHeight(theme.LineFor(label)).FontWeight(500)
+			kit.Text(c, label, t.Text.Sm).FontWeight(500)
 			kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted)
 			if l != nil {
 				statusLine(c, *l).Margin(th.Space(1), 0, 0, 0)
@@ -317,7 +317,7 @@ func formRow(c *ui.Context, label string, control func() ui.Element, extra func(
 	ui.Row(c).AlignItems(ui.Start).Gap(th.Space(4)).Children(func() {
 		var in ui.Element
 		// 4 down: where the design's 32 px line box (Geist's metrics) puts the glyphs, a little above center
-		l := ui.Text(c, label).Width(theme.FormLabelWidth).Shrink(0).LineHeight(theme.LineRow).Margin(th.Space(1), 0, 0, 0)
+		l := ui.Text(c, label).Width(theme.FormLabelWidth).Shrink(0).Margin(th.Space(1), 0, 0, 0)
 		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(1.5)).Children(func() {
 			in = control().Label(label)
 			if extra != nil {
@@ -382,7 +382,7 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 	})
 	ui.Column(c).Gap(th.Space(2)).Children(func() {
 		ui.Row(c).Justify(ui.SpaceBetween).AlignItems(ui.End).Gap(th.Space(3)).Children(func() {
-			ui.Text(c, i18n.T("settings.models.caps")).FontWeight(600).LineHeight(theme.LineFor(i18n.T("settings.models.caps")))
+			ui.Text(c, i18n.T("settings.models.caps")).FontWeight(600)
 			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 				if core.ModelProviderLogin(f.provider) != "oauth" { // a subscription has no key, and no judge to share it with
 					kit.Text(c, i18n.T("settings.models.caps.note"), t.Text.Xs).TextColor(t.Muted)
@@ -457,7 +457,7 @@ func capCard(c *ui.Context, title, desc, unsupported, switchLabel string, suppor
 	card.Children(func() {
 		ui.Row(c).AlignItems(ui.Start).Gap(th.Space(3)).Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-				ui.Text(c, title).FontWeight(600).LineHeight(theme.LineFor(title))
+				ui.Text(c, title).FontWeight(600)
 				kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted)
 			})
 			if supported {
@@ -555,8 +555,8 @@ func (m *modelsView) tiles(c *ui.Context, f *modelForm) {
 			}
 			b.Children(func() {
 				ui.Column(c).Gap(th.Space(0.5)).Children(func() {
-					ui.Text(c, name).FontWeight(500).LineHeight(theme.LineRow).SingleLine() // the row's CJK caption sets its line
-					kit.Text(c, sub, t.Text.Xs).LineHeight(theme.LineRow).TextColor(t.Muted).SingleLine()
+					ui.Text(c, name).FontWeight(500).SingleLine() // the row's CJK caption sets its line
+					kit.Text(c, sub, t.Text.Xs).TextColor(t.Muted).SingleLine()
 				})
 			})
 		}

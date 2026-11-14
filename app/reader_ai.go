@@ -819,7 +819,7 @@ func (r *reader) panel(c *ui.Context, title, meta string, close func(), body fun
 	kit.Elevate(c, p, theme.ShadowSm).Children(func() {
 		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, icons.Get("sparkles")).Size(theme.IconSm, theme.IconSm).TextColor(t.Foreground)
-			ui.Text(c, title).FontWeight(600).LineHeight(theme.LineCJK).Shrink(1)
+			ui.Text(c, title).FontWeight(600).Shrink(1)
 			kit.Text(c, meta, t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
 			if close != nil {
 				kit.IconButton(c, "x", i18n.T("reader.ai.close_result"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(close)
@@ -849,7 +849,7 @@ func (r *reader) cards(c *ui.Context, m core.MessageSummary) {
 				if len(card.Fields) == 0 {
 					return
 				}
-				ui.Text(c, card.Fields[0].Value).Shrink(1).Font(theme.Mono).FontSize(t.Text.Xl).LineHeight(t.Text.Line(t.Text.Xl)).LetterSpacing(theme.CardTracking)
+				ui.Text(c, card.Fields[0].Value).Shrink(1).Font(theme.Mono).FontSize(t.Text.Xl).LetterSpacing(theme.CardTracking)
 				if hint := cardHint(card.Fields[1:]); hint != "" {
 					kit.Text(c, hint, t.Text.Xs).TextColor(t.Muted)
 				}

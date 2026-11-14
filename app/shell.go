@@ -300,7 +300,7 @@ func (a *App) View(c *ui.Context) {
 	if kit.DialogShown() {
 		root = t.Window
 	}
-	c.Root().Background(root).LineHeight(t.Text.Line(t.Text.Sm))
+	c.Root().Background(root)
 }
 
 // titleBar leaves the window controls their room (c.TitleBar) and drags the

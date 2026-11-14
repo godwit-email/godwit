@@ -771,7 +771,7 @@ func TestKitBareInputMatchesBase(t *testing.T) {
 	if !ok1 || !ok2 || !ok3 {
 		t.Fatalf("missing inputs in %q", tt.Texts())
 	}
-	if rb.H != rr.H {
+	if d := rb.H - rr.H; d < -0.01 || d > 0.01 { // a float's rounding apart
 		t.Errorf("bare height %v, base %v", rb.H, rr.H)
 	}
 	px := func(r ui.Rect) [3]uint8 {

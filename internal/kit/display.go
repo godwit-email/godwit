@@ -11,11 +11,10 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
-// Text is text at a step of the text scale with that step's line height.
-// Leaves only: a line height passes down as a multiplier, so on a container
-// it would reach texts of other sizes.
+// Text is text at a step of the text scale, on the interface's line
+// (theme.LineUI, which every text inherits).
 func Text(c *ui.Context, s string, size float32) ui.Element {
-	return ui.Text(c, s).FontSize(size).LineHeight(theme.Of(c).Text.Line(size))
+	return ui.Text(c, s).FontSize(size)
 }
 
 // BadgeTone is a badge's colors.

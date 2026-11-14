@@ -1169,7 +1169,7 @@ func (r *reader) draw(c *ui.Context, next *session) {
 					r.column(c).Gap(th.Space(2)).Children(func() {
 						// Plugins' tags follow the subject, so a glance at it is enough.
 						ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(th.Space(1.5)).Children(func() {
-							tx := kit.Text(c, subject, t.Text.Xl).FontWeight(600).LineHeight(theme.LineSubject).Shrink(1).Selectable() // copied as often as read
+							tx := kit.Text(c, subject, t.Text.Xl).FontWeight(600).Shrink(1).Selectable() // copied as often as read
 							if !r.hasTags() {
 								// shortcut: MyGo measures large semibold text too narrow in a row, so it wraps early; with no tag to follow it, take the row. Drop it once MyGo measures it right.
 								tx.Grow(1)
@@ -1674,7 +1674,7 @@ func (r *reader) detailsValue(c *ui.Context, raw, fallbackName string, cut map[s
 	if addr != "" && addr != name {
 		spans = append(spans, ui.Span{Text: " <" + addr + ">", Color: t.Muted})
 	}
-	e := ui.RichText(c, spans...).FontSize(t.Text.Xs).LineHeight(t.Text.Line(t.Text.Xs)).SingleLine()
+	e := ui.RichText(c, spans...).FontSize(t.Text.Xs).SingleLine()
 	text := ui.ShapeRichText(spans, ui.Font{Size: t.Text.Xs}, 0)
 	if w, _ := text.Size(); w > theme.DetailsWidth-theme.DetailsLabel-th.Space(3) {
 		var b strings.Builder
@@ -1813,7 +1813,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 			if b.imgFailed > 0 && !bodyBlocked {
 				ui.Row(c).Wrap().Gap(th.Space(3)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Lg).
 					Background(t.WarningBg).Border(theme.Hairline, t.WarningBorder).Children(func() {
-					kit.Text(c, i18n.Tf("reader.images_failed", b.imgFailed), t.Text.Xs).LineHeight(theme.LineCJK).TextColor(t.WarningText)
+					kit.Text(c, i18n.Tf("reader.images_failed", b.imgFailed), t.Text.Xs).TextColor(t.WarningText)
 					kit.TextLink(c, i18n.T("common.retry"), t.WarningText, t.Text.Xs).OnClick(func() {
 						b.imgFailed = 0
 						r.p.a.plat.AllowImages(m.ID)
@@ -2508,7 +2508,7 @@ func (r *reader) securityBadge(c *ui.Context, msgID int64, sec gomail.SecurityRe
 			ui.Icon(c, icons.Fill(iconName)).Size(theme.Icon, theme.Icon).TextColor(color)
 			kit.Text(c, label, t.Text.Sm).FontWeight(600).TextColor(color)
 		})
-		kit.Text(c, r.secExplanation(sec), t.Text.Xs).LineHeight(theme.LineCJK).TextColor(t.Foreground)
+		kit.Text(c, r.secExplanation(sec), t.Text.Xs).TextColor(t.Foreground)
 		kit.Separator(c, false)
 		kit.Text(c, i18n.T("reader.security.click_to_edit"), t.Text.Xs).TextColor(t.Muted)
 	})

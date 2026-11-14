@@ -157,7 +157,7 @@ func (p *mailPage) draftPane(c *ui.Context) {
 					if editing {
 						kit.Block(c, kit.Text(c, i18n.T("mail.draft.notice"), t.Text.Xs).Padding(th.Space(2), th.Space(3)), kit.ToneTint)
 					}
-					kit.Text(c, cmp.Or(d.Subject, i18n.T("mail.no_subject")), t.Text.Xl).FontWeight(600).LineHeight(theme.LineSubject)
+					kit.Text(c, cmp.Or(d.Subject, i18n.T("mail.no_subject")), t.Text.Xl).FontWeight(600)
 					ui.Column(c).Gap(th.Space(1)).Children(func() {
 						for _, f := range [][2]string{
 							{i18n.T("compose.to"), cmp.Or(strings.Join(d.To, ", "), i18n.T("mail.no_recipient"))},
@@ -165,8 +165,8 @@ func (p *mailPage) draftPane(c *ui.Context) {
 							{i18n.T("compose.from"), p.accountEmail(d.AccountID)},
 						} {
 							ui.Row(c).Gap(th.Space(3)).Children(func() {
-								ui.Text(c, f[0]).TextColor(t.Muted).LineHeight(theme.LineCJK).MinWidth(th.Space(12)).Shrink(0)
-								ui.Text(c, f[1]).LineHeight(theme.LineCJK).Grow(1).Shrink(1)
+								ui.Text(c, f[0]).TextColor(t.Muted).MinWidth(th.Space(12)).Shrink(0)
+								ui.Text(c, f[1]).Grow(1).Shrink(1)
 							})
 						}
 					})

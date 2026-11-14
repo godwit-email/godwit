@@ -770,7 +770,7 @@ func heading(c *ui.Context, title, sub string) {
 
 // lineText is s at size with the design's normal line: taller with CJK in it.
 func lineText(c *ui.Context, s string, size float32) ui.Element {
-	return kit.Text(c, s, size).LineHeight(theme.LineFor(s))
+	return kit.Text(c, s, size)
 }
 
 // mark is a provider's mark: its logo (icons.Brand) on a white tile, else
@@ -911,11 +911,11 @@ func (o *onboarding) pickView(c *ui.Context) {
 	})
 	sp := o.a.pages[PageSettings].(*settingsPage)
 	kit.Button(c, i18n.T("settings.import_accounts"), kit.ButtonOpts{Variant: kit.Link, Disabled: sp.importing}).
-		LineHeight(theme.LineFor(i18n.T("settings.import_accounts"))).AlignSelf(ui.Center).OnClick(sp.importAccounts)
+		AlignSelf(ui.Center).OnClick(sp.importAccounts)
 }
 
 func (o *onboarding) backLink(c *ui.Context) {
-	kit.Button(c, i18n.T("onboarding.change"), kit.ButtonOpts{Variant: kit.Link}).LineHeight(theme.LineFor(i18n.T("onboarding.change"))).AlignSelf(ui.Start).OnClick(o.toPick)
+	kit.Button(c, i18n.T("onboarding.change"), kit.ButtonOpts{Variant: kit.Link}).AlignSelf(ui.Start).OnClick(o.toPick)
 }
 
 func (o *onboarding) providerHeader(c *ui.Context, sub string) {
@@ -1022,7 +1022,7 @@ func (o *onboarding) passwordView(c *ui.Context) {
 		if secretInput(c, &o.secret, &o.showSecret).Submitted() && o.secret != "" {
 			o.connect()
 		}
-	}).Description(i18n.T("onboarding.secret.help")).LineHeight(theme.LineFor(o.secretName())) // the label's line; the description's is the same
+	}).Description(i18n.T("onboarding.secret.help")) // the label's line; the description's is the same
 	secretWhitespaceHint(c, &o.secret)
 	primary(c, i18n.T("onboarding.connect"), o.secret == "" || !validEmail(o.email)).OnClick(o.connect)
 	o.manualView(c)
@@ -1520,11 +1520,11 @@ func (o *onboarding) doneView(c *ui.Context) {
 	}
 	ui.Field(c, i18n.T("onboarding.name"), func() {
 		kit.Input(c, &o.name, kit.InputOpts{Placeholder: i18n.T("onboarding.name.placeholder"), Size: kit.SizeLg}).Disabled(o.adding || o.addedID != 0) // the name saves with the account
-	}).Description(i18n.T("onboarding.name.help")).LineHeight(theme.LineFor(i18n.T("onboarding.name")))
+	}).Description(i18n.T("onboarding.name.help"))
 	opts := rangeOptions()
 	opts[0].Label = i18n.T("onboarding.sync.2000") // （推荐） here only
 	ui.Field(c, i18n.T("onboarding.sync"), func() { kit.SelectWith(c, kit.SelectOpts{Size: kit.SizeLg}, &o.sync, opts).Disabled(o.adding) }).
-		Description(i18n.T("onboarding.sync.help")).LineHeight(theme.LineFor(i18n.T("onboarding.sync")))
+		Description(i18n.T("onboarding.sync.help"))
 	if o.saveErr != nil {
 		kit.Alert(c, kit.Danger, humanize(o.saveErr), func() {
 			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).OnClick(func() { o.finish(o.again) })

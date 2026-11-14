@@ -119,7 +119,7 @@ func ruleNote(c *ui.Context, icon, text string, fill, edge, fg ui.Color) {
 	ui.Row(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Lg).
 		Background(fill).Border(theme.Hairline, edge).TextColor(fg).Children(func() {
 		ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon).Shrink(0)
-		kit.Text(c, text, t.Text.Xs).LineHeight(theme.LineFor(text)).Grow(1).Shrink(1)
+		kit.Text(c, text, t.Text.Xs).Grow(1).Shrink(1)
 	})
 }
 
@@ -892,7 +892,7 @@ func (v *rulesView) confirmDialog(c *ui.Context) {
 		})
 		ui.Column(c).Gap(th.Space(1.5)).Children(func() {
 			for _, s := range []string{outbox, i18n.T("settings.rules.confirm.new_only"), i18n.T("settings.rules.confirm.again")} {
-				kit.Text(c, "· "+s, t.Text.Sm).LineHeight(theme.LineFor(s))
+				kit.Text(c, "· "+s, t.Text.Sm)
 			}
 		})
 	}, func() {
