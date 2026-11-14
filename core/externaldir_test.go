@@ -452,3 +452,26 @@ func TestExternalReselectionKeepsTheChainToTheUsersDefault(t *testing.T) {
 	s.syncExternal(ctx)
 	assert.Equal(t, "mine/x", defaultModel(t, s))
 }
+
+func TestExternalRemovingBothInOneSyncGivesBackTheUsersDefault(t *testing.T) {
+	s, dir := externalSvc(t)
+	ctx := t.Context()
+	_, err := s.AddModelService(ctx, ModelServiceInput{Name: "mine", Kind: "openai", BaseURL: "https://example.com/v1", APIKey: "k", Models: []string{"x"}})
+	require.NoError(t, err)
+	st, err := s.GetSettings(ctx)
+	require.NoError(t, err)
+	st.DefaultModel = "mine/x"
+	_, err = s.SetSettings(ctx, st)
+	require.NoError(t, err)
+	entry := func(name string) map[string]any { return magpieEntry("k-"+name, "m", "m")["magpie"].(map[string]any) }
+
+	writeExternal(t, dir, externalModels, map[string]any{"a": entry("a")})
+	s.syncExternal(ctx)
+	writeExternal(t, dir, externalModels, map[string]any{"a": entry("a"), "b": entry("b")})
+	s.syncExternal(ctx)
+	require.Equal(t, "b/m", defaultModel(t, s))
+
+	writeExternal(t, dir, externalModels, map[string]any{"a": map[string]any{}, "b": map[string]any{}}) // both disconnected at once
+	s.syncExternal(ctx)
+	assert.Equal(t, "mine/x", defaultModel(t, s))
+}

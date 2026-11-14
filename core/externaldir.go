@@ -464,6 +464,9 @@ func (s *Service) updateManagedService(ctx context.Context, id int64, in ModelSe
 // anywhere between is finished by the next poll with the right default to
 // give back.
 func (s *Service) followExternalModel(ctx context.Context, row managedRow, model string) error {
+	if err := s.freshChain(ctx, &row); err != nil {
+		return err
+	}
 	if model == row.fileModel {
 		return nil
 	}
@@ -534,6 +537,9 @@ func (s *Service) setDefaultModel(ctx context.Context, f func(cur string) (strin
 // if the settings cannot be saved, or the process stops in between, the row
 // and its prev_default stay for the next poll to finish.
 func (s *Service) dropManagedService(ctx context.Context, row managedRow) error {
+	if err := s.freshChain(ctx, &row); err != nil {
+		return err
+	}
 	prefix := row.slug + "/"
 	err := s.setDefaultModel(ctx, func(cur string) (string, error) {
 		if !strings.HasPrefix(cur, prefix) {
@@ -552,6 +558,17 @@ func (s *Service) dropManagedService(ctx context.Context, row managedRow) error 
 		return err
 	}
 	return s.removeModelService(ctx, row.id, row.by)
+}
+
+// freshChain reads row's saved default and file choice again: an earlier
+// entry of the same sync may have spliced them since the rows were listed.
+func (s *Service) freshChain(ctx context.Context, row *managedRow) error {
+	rows, err := s.db.Query(ctx, "SELECT file_model, prev_default FROM model_services WHERE id = ?", row.id)
+	if err != nil || len(rows.Values) == 0 {
+		return err
+	}
+	row.fileModel, row.prevDefault = store.Str(rows.Values[0][0]), store.Str(rows.Values[0][1])
+	return nil
 }
 
 // spliceChain gives every other managed service that saved row's model as
