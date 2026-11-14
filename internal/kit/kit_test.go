@@ -26,7 +26,7 @@ func TestKitAvatarImage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, density := range []string{"compact", "comfortable"} {
+	for _, density := range []string{"standard", "comfortable"} {
 		var before ui.Rect
 		for _, src := range []ui.ImageSource{nil, bitmap, svg} {
 			tt := ui.NewTester(themedDensity(density, func(c *ui.Context) {
@@ -63,7 +63,7 @@ func TestKitAvatarImage(t *testing.T) {
 }
 
 // themed runs body under the tokens the settings give, as the app does.
-func themed(body func(c *ui.Context)) func(c *ui.Context) { return themedDensity("compact", body) }
+func themed(body func(c *ui.Context)) func(c *ui.Context) { return themedDensity("standard", body) }
 
 func themedDensity(density string, body func(c *ui.Context)) func(c *ui.Context) {
 	return func(c *ui.Context) {
@@ -218,7 +218,7 @@ func TestKitDensityScales(t *testing.T) {
 		Input(c, &s, InputOpts{}).Label("Name")
 		Card(c, ui.Column(c).Padding(c.Theme().Space(4)), ToneOutline).Label("Box")
 	}
-	st := core.Settings{Theme: "light", Density: "compact", FontSize: 14, BodyFontSize: 14}
+	st := core.Settings{Theme: "light", Density: "standard", FontSize: 14, BodyFontSize: 14}
 	compact := heights(t, st, body, "Archive", "Letter", "Name", "Box")
 	st.Density = "comfortable"
 	roomy := heights(t, st, body, "Archive", "Letter", "Name", "Box")
@@ -240,7 +240,7 @@ func TestKitFontSizeFollows(t *testing.T) {
 		Kbd(c, "KbdText")
 	}
 	names := []string{"BadgeText", "AlertText", "HelpText", "KbdText"}
-	st := core.Settings{Theme: "light", Density: "compact", FontSize: 14, BodyFontSize: 14}
+	st := core.Settings{Theme: "light", Density: "standard", FontSize: 14, BodyFontSize: 14}
 	small := heights(t, st, body, names...)
 	st.FontSize = 18
 	big := heights(t, st, body, names...)
@@ -303,7 +303,7 @@ func TestKitSidebarItemHoverSoft(t *testing.T) {
 		}
 		t.Run(mode, func(t *testing.T) {
 			tt := ui.NewTester(func(c *ui.Context) {
-				tok := theme.FromSettings(core.Settings{Theme: mode, Density: "compact", FontSize: 14}, dark)
+				tok := theme.FromSettings(core.Settings{Theme: mode, Density: "standard", FontSize: 14}, dark)
 				theme.Apply(c, tok)
 				ui.Column(c).Width(240).Children(func() {
 					SidebarItem(c, SidebarItemOpts{Selected: true}).Children(func() { ui.Text(c, "Inbox") })
@@ -338,7 +338,7 @@ func TestKitSidebarItemHoverSoft(t *testing.T) {
 }
 
 func TestKitButtonSizes(t *testing.T) {
-	for _, density := range []string{"compact", "comfortable"} {
+	for _, density := range []string{"standard", "comfortable"} {
 		var th *ui.Theme
 		tt := ui.NewTester(themedDensity(density, func(c *ui.Context) {
 			th = c.Theme()
@@ -1649,7 +1649,7 @@ func TestRadioCardClicks(t *testing.T) {
 func TestKitAvatarImageTransparentLogoOnDarkTheme(t *testing.T) {
 	logo := image.NewRGBA(image.Rect(0, 0, 64, 64)) // every pixel transparent
 	tt := ui.NewTester(func(c *ui.Context) {
-		theme.Apply(c, theme.FromSettings(core.Settings{Theme: "dark", Density: "compact", FontSize: 14, BodyFontSize: 14}, true))
+		theme.Apply(c, theme.FromSettings(core.Settings{Theme: "dark", Density: "standard", FontSize: 14, BodyFontSize: 14}, true))
 		ui.Column(c).Padding(8).Background(theme.Of(c).Background).Children(func() { AvatarImage(c, "Alice", ui.NewBitmap(logo)) })
 	}, 100, 100)
 	r, ok := tt.Find("Alice")

@@ -213,7 +213,7 @@ func (p *settingsPage) generalView(c *ui.Context) {
 		sel(i18n.T("settings.density"), "", func() ui.Element {
 			l := i18n.T("settings.density")
 			return settingSelect(c, l, &st.Density, []kit.Option[string]{
-				{Value: "compact", Label: i18n.T("settings.density.compact")},
+				{Value: "standard", Label: i18n.T("settings.density.standard")},
 				{Value: "comfortable", Label: i18n.T("settings.density.comfortable")},
 			})
 		}),

@@ -795,7 +795,7 @@
   "settings_body_font_size_ui": "Как в интерфейсе",
   "settings_density": "Плотность",
   "settings_density_comfortable": "Свободная",
-  "settings_density_compact": "Компактная (по умолчанию)",
+  "settings_density_standard": "Стандартная (по умолчанию)",
   "settings_ext_allow": "Разрешить и включить",
   "settings_ext_browse": "Открыть каталог плагинов",
   "settings_ext_browse_hint": "Проверенные плагины, которые можно установить.",

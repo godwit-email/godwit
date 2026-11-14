@@ -721,7 +721,7 @@ func TestModelStatusLineDark(t *testing.T) {
 		dot ui.Color
 	}{{lookOK, d.Success}, {lookUntested, d.Attention}, {lookFail, d.Danger}, {lookSlow, d.Attention}, {lookNone, d.Idle}} {
 		tt := ui.NewTester(func(c2 *ui.Context) {
-			theme.Apply(c2, theme.FromSettings(core.Settings{Theme: "dark", Density: "compact", FontSize: 14, BodyFontSize: 14}, false))
+			theme.Apply(c2, theme.FromSettings(core.Settings{Theme: "dark", Density: "standard", FontSize: 14, BodyFontSize: 14}, false))
 			ui.Box(c2).Padding(20).Children(func() { statusLine(c2, line{"状态", c.l}) })
 		}, 200, 100)
 		r, ok := tt.Find("状态")

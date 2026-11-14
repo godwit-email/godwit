@@ -1532,7 +1532,7 @@
   "settings_body_font_size_ui": "Same as interface",
   "settings_density": "Density",
   "settings_density_comfortable": "Comfortable",
-  "settings_density_compact": "Compact (default)",
+  "settings_density_standard": "Standard (default)",
   "settings_ext_allow": "Allow and enable",
   "settings_ext_browse": "Browse the plugin directory",
   "settings_ext_browse_hint": "Reviewed plugins you can install.",

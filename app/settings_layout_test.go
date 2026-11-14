@@ -12,7 +12,7 @@ import (
 func settingRowBoxes(t *testing.T, font int, label, desc string, w int) (row, lab, ctl ui.Rect) {
 	t.Helper()
 	tt := ui.NewTester(func(c *ui.Context) {
-		theme.Apply(c, theme.FromSettings(core.Settings{Theme: "light", Density: "compact", FontSize: font, BodyFontSize: font}, false))
+		theme.Apply(c, theme.FromSettings(core.Settings{Theme: "light", Density: "standard", FontSize: font, BodyFontSize: font}, false))
 		ui.Column(c).FillWidth().Children(func() {
 			settingRow(c, label, desc, func() { kit.Button(c, "Control", kit.ButtonOpts{Variant: kit.Outline}) }).Label("the row")
 		})
@@ -61,7 +61,7 @@ func TestSettingsNoClip(t *testing.T) {
 func TestFixedHeightTextFits(t *testing.T) {
 	var box float32
 	tt := ui.NewTester(func(c *ui.Context) {
-		theme.Apply(c, theme.FromSettings(core.Settings{Theme: "light", Density: "compact", FontSize: 16, BodyFontSize: 16}, false))
+		theme.Apply(c, theme.FromSettings(core.Settings{Theme: "light", Density: "standard", FontSize: 16, BodyFontSize: 16}, false))
 		box = c.Theme().Space(5)
 		ui.Column(c).Children(func() {
 			capChip(c, "chip", true)

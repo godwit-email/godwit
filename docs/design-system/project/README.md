@@ -40,7 +40,7 @@ Mail labels come in sixteen colors (gray, red, orange, amber, yellow, lime, gree
 
 ## Layout
 
-The `size` tokens are the app's fixed measures: sidebars 248 (240–480 by drag), the mail list 340 (280–560), the top bar 44, dialogs 440 / 560 / 640, toasts at most 420, a settings column 760, the reading column 720. Text sizes follow the user's font size (`sm` 14 by default) and comfortable density scales every `space-*` by 1.25; radii and the `size` tokens do not change.
+The `size` tokens are the app's fixed measures: sidebars 248 (240–480 by drag), the mail list 340 (280–560), the top bar 44, dialogs 440 / 560 / 640, toasts at most 420, a settings column 760, the reading column 720. Text sizes follow the user's font size (`sm` 14 by default) and the 宽松 (comfortable) density scales every `space-*` by 1.25; radii and the `size` tokens do not change.
 
 ## Motion
 
