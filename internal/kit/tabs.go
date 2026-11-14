@@ -22,7 +22,7 @@ func segmented(c *ui.Context, sel *int, fill bool, labels []string) ui.Element {
 	return tabs.List.Padding(th.Space(0.5)).Radius(t.Radius.Lg).Background(t.Hover).Gap(th.Space(0.5)).Children(func() {
 		for i, l := range labels {
 			// ponytail: backgrounds fade; a sliding indicator needs the tabs' rects from the last frame
-			tab := tabs.Tab(i).Height(th.Space(6.5)).PaddingX(th.Space(2.5)).Radius(t.Radius.Md).FontSize(t.Text.Xs).FontWeight(400).TextColor(t.Muted).Transition(colors(theme.MotionFast))
+			tab := tabs.Tab(i).Height(th.Space(7)).PaddingX(th.Space(2.5)) // 28 in the track's Space(0.5): a 32 control.Radius(t.Radius.Md).FontSize(t.Text.Xs).FontWeight(400).TextColor(t.Muted).Transition(colors(theme.MotionFast))
 			if fill {
 				tab.Grow(1).Basis(0).Justify(ui.Center)
 			}

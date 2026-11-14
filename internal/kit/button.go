@@ -96,8 +96,8 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 		}
 	case Secondary:
 		b.Background(t.Hover).TextColor(t.Foreground)
-		if hover {
-			b.Background(t.SidebarSelected)
+		if hover { // SidebarSelected is Hover's own gray: a step of its own, half the pressed one
+			b.Background(t.Hover.Mix(t.Foreground, 0.04))
 		}
 	case Outline:
 		b.Background(t.Background).Border(theme.Stroke, t.Input).TextColor(t.Foreground)

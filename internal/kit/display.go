@@ -155,7 +155,10 @@ func AlertAction(c *ui.Context, kind AlertKind, label string, onClick func()) ui
 		fill, text = t.Primary, t.PrimaryText
 	}
 	b := ui.ButtonBase(c).Label(label).Height(th.Space(7)).PaddingX(th.Space(2.5)).Radius(t.Radius.Md).Background(fill).TextColor(text).FontWeight(500).Center()
-	if b.Hovered() {
+	switch { // as a Default button: a step on hover, another pressed
+	case b.Pressed():
+		b.Background(fill.Mix(t.Background, 0.2))
+	case b.Hovered():
 		b.Background(fill.Mix(t.Background, 0.1))
 	}
 	if onClick != nil {

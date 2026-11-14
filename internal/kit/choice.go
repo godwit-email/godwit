@@ -211,8 +211,8 @@ func SelectWith[T comparable](c *ui.Context, o SelectOpts, sel *T, opts []Option
 			if o.Disabled {
 				item.Disabled(true).TextColor(t.Muted)
 			}
-			if item.Highlighted() {
-				item.Background(t.Hover)
+			if item.Highlighted() { // on the popup's glass, as a MenuItem
+				item.Background(t.HoverTint)
 			}
 			item.Children(func() {
 				ui.Text(c, o.Label).Grow(1)
