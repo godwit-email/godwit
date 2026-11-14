@@ -4,6 +4,7 @@
   "settings_collapse_quotes_help": "Ukrywa cytowany tekst za przyciskiem, dzięki czemu widoczne jest tylko to, co napisał nadawca",
   "reader_quote_expand": "Pokaż cytowany tekst",
   "reader_quote_collapse": "Zwiń cytowany tekst",
+  "settings_managed_by": "Zarządzane przez {arg1}",
   "settings_remote_images_keep": "Przechowuj nieużywane obrazy",
   "settings_remote_images_keep_help": "Obrazy z pamięci podręcznej, które nie były otwierane przez ten czas, są usuwane. Załączniki pozostają nietknięte. Starsza wiadomość wczyta te obrazy ponownie, jeśli nadawca nadal je udostępnia.",
   "settings_remote_images_keep_forever": "Do zapełnienia pamięci podręcznej",

@@ -66,7 +66,11 @@ func (m *modelsView) list(c *ui.Context, u usage) {
 	var rows []func()
 	for _, s := range m.services {
 		rows = append(rows, func() {
-			listRow(c.Key(s.ID), 0, false, func() { m.openEdit(s) }, func() {
+			edit := func() { m.openEdit(s) }
+			if s.ManagedBy != "" { // its gateway's file is where it changes (ADR 0041)
+				edit = nil
+			}
+			listRow(c.Key(s.ID), 0, false, edit, func() {
 				m.svcMark(c, s)
 				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
 					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
@@ -82,9 +86,14 @@ func (m *modelsView) list(c *ui.Context, u usage) {
 						if s.JudgeFormat != "" && s.JudgeModel != "" {
 							capChip(c, i18n.Tf("settings.models.judge_chip", s.JudgeModel), u.judgeSvc != nil && u.judgeSvc.ID == s.ID)
 						}
+						if s.ManagedBy != "" {
+							capChip(c, i18n.Tf("settings.managed_by", s.ManagedBy), false)
+						}
 					})
 				})
-				ui.Icon(c, icons.Get("chevron-right")).Size(theme.Icon, theme.Icon).TextColor(t.Muted).Shrink(0)
+				if edit != nil {
+					ui.Icon(c, icons.Get("chevron-right")).Size(theme.Icon, theme.Icon).TextColor(t.Muted).Shrink(0)
+				}
 			}).Padding(th.Space(2), th.Space(4)).ContextMenu(func(menu *ui.Menu) {
 				if menu.Item(i18n.T("settings.models.test")).Chosen() {
 					m.testRow(s)

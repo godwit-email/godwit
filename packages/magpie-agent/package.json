@@ -1,0 +1,34 @@
+{
+  "name": "@godwit/magpie-agent",
+  "version": "1.36.0",
+  "description": "Connect Godwit to magpie: its models, MCP servers, skills and instructions",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/godwit-email/godwit.git",
+    "directory": "packages/magpie-agent"
+  },
+  "homepage": "https://github.com/godwit-email/godwit/tree/main/packages/magpie-agent",
+  "keywords": [
+    "magpie",
+    "magpie-plugin",
+    "godwit"
+  ],
+  "files": [
+    "agent.js",
+    "README.md"
+  ],
+  "magpie": {
+    "agent": "./agent.js",
+    "name": "Godwit",
+    "icon": "https://godwit.email/icon.png",
+    "summary": {
+      "en": "Use magpie's models, MCP servers, skills and instructions in Godwit's Wit.",
+      "zh": "在 Godwit 的 Wit 里使用 magpie 的模型、MCP 服务器、技能和指令。"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

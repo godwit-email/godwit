@@ -4,6 +4,7 @@
   "settings_collapse_quotes_help": "Ocultar lo que cita una respuesta tras un botón, para ver solo lo que escribió el remitente",
   "reader_quote_expand": "Desplegar el texto citado",
   "reader_quote_collapse": "Plegar el texto citado",
+  "settings_managed_by": "Gestionado por {arg1}",
   "settings_remote_images_keep": "Conservar imágenes sin usar",
   "settings_remote_images_keep_help": "Las imágenes en caché que no se abren durante este tiempo se eliminan. Los adjuntos no se tocan nunca. Un mensaje antiguo las vuelve a cargar si el remitente aún las tiene.",
   "settings_remote_images_keep_forever": "Hasta que la caché esté llena",

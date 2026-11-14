@@ -185,7 +185,8 @@ func (s *Service) quote(ctx context.Context, job *runJob, ids []int64) (string, 
 func (s *Service) witSystem(ctx context.Context, job *runJob, tools []toolDesc) (string, error) {
 	switch job.conv.Kind {
 	case "assist":
-		return s.assistSystemPrompt(ctx, job, tools)
+		p, err := s.assistSystemPrompt(ctx, job, tools)
+		return p + s.externalInstructionsBlock(), err
 	case "ask":
 	default:
 		return ai.UntrustedSystemNote, nil
@@ -199,7 +200,7 @@ func (s *Service) witSystem(ctx context.Context, job *runJob, tools []toolDesc) 
 	if st.ReplyLanguage == "match" {
 		drafts = "Write a new email in the language of the recipient's past emails to the user; if there are none, use " + lang + "."
 	}
-	return askSystem + " " + timeSystem + "\n\n" + ai.UntrustedSystemNote + "\n\nAnswer the user in " + lang + ". " + drafts, nil
+	return askSystem + " " + timeSystem + "\n\n" + ai.UntrustedSystemNote + "\n\nAnswer the user in " + lang + ". " + drafts + s.externalInstructionsBlock(), nil
 }
 
 // cite numbers and records the mail a read tool showed the model, for its

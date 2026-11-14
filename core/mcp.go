@@ -28,7 +28,11 @@ import (
 // trusts that exact tool definition, and a trusted one is still approved once
 // the run read mail (egress to "mcp:<name>").
 
-var ErrMCPNotFound = errors.New("MCP server not found")
+var (
+	ErrMCPNotFound = errors.New("MCP server not found")
+	// ErrMCPManaged: an agent gateway's file owns the server (ADR 0041).
+	ErrMCPManaged = errors.New("this MCP server is managed by another app: change it there")
+)
 
 // MCPServerInput configures a server. Transport is "stdio" (Command, Args,
 // Env) or "http" (URL, Headers). Env and Header values go to the keychain;
@@ -39,6 +43,7 @@ type MCPServerInput struct {
 	Env                      map[string]string
 	URL                      string
 	Headers                  map[string]string
+	managedBy, managedHash   string // set only by syncExternal
 }
 
 // MCPServer is a configured server. Granted means the current Version is
@@ -53,6 +58,9 @@ type MCPServer struct {
 	Enabled, Granted          bool
 	Tools                     []MCPTool
 	Error                     string
+	// ManagedBy names the agent gateway whose file added it (ADR 0041); "" for
+	// the user's own. Only that file changes or removes it; the user grants it.
+	ManagedBy string
 }
 
 // MCPTool is a tool of a server. ReadOnlyHint is the server's own claim, for
@@ -105,7 +113,7 @@ func (s *Service) mcpSet(id int64, f func(st *mcpState)) {
 }
 
 func (s *Service) mcpRows(ctx context.Context, id int64) ([]MCPServer, error) {
-	q := `SELECT id, name, transport, command, args, env_keys, url, header_keys, version, enabled, granted_version FROM mcp_servers`
+	q := `SELECT id, name, transport, command, args, env_keys, url, header_keys, version, enabled, granted_version, managed_by FROM mcp_servers`
 	var args []any
 	if id != 0 {
 		q += " WHERE id = ?"
@@ -118,7 +126,7 @@ func (s *Service) mcpRows(ctx context.Context, id int64) ([]MCPServer, error) {
 	out := make([]MCPServer, 0, len(rows.Values))
 	for _, r := range rows.Values {
 		srv := MCPServer{ID: store.Int(r[0]), Name: store.Str(r[1]), Transport: store.Str(r[2]), Command: store.Str(r[3]),
-			URL: store.Str(r[6]), Version: store.Int(r[8]), Enabled: store.Int(r[9]) != 0}
+			URL: store.Str(r[6]), Version: store.Int(r[8]), Enabled: store.Int(r[9]) != 0, ManagedBy: store.Str(r[11])}
 		srv.Granted = store.Int(r[10]) == srv.Version
 		if err := errors.Join(json.Unmarshal([]byte(store.Str(r[4])), &srv.Args), json.Unmarshal([]byte(store.Str(r[5])), &srv.EnvKeys),
 			json.Unmarshal([]byte(store.Str(r[7])), &srv.HeaderKeys)); err != nil {
@@ -291,9 +299,9 @@ func (s *Service) AddMCPServer(ctx context.Context, in MCPServerInput) (MCPServe
 	}
 	s.mcpMu.Lock()
 	defer s.mcpMu.Unlock()
-	r, err := s.db.Execute(ctx, `INSERT INTO mcp_servers(name, transport, command, args, env_keys, url, header_keys, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, in.Name, in.Transport, in.Command, mcpList(in.Args), encodeKeys(in.Env), in.URL,
-		encodeKeys(in.Headers), time.Now().Unix())
+	r, err := s.db.Execute(ctx, `INSERT INTO mcp_servers(name, transport, command, args, env_keys, url, header_keys, created_at, managed_by, managed_hash)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, in.Name, in.Transport, in.Command, mcpList(in.Args), encodeKeys(in.Env), in.URL,
+		encodeKeys(in.Headers), time.Now().Unix(), in.managedBy, in.managedHash)
 	if err != nil {
 		return MCPServer{}, err
 	}
@@ -325,6 +333,12 @@ func (s *Service) UpdateMCPServer(ctx context.Context, id int64, in MCPServerInp
 	old, err := s.mcpRow(ctx, id)
 	if err != nil {
 		return MCPServer{}, err
+	}
+	if old.ManagedBy != in.managedBy {
+		return MCPServer{}, ErrMCPManaged
+	}
+	if in.managedBy == "" {
+		s.extDirty.Store(true)
 	}
 	if err := checkMCPInput(&in, &old); err != nil {
 		return MCPServer{}, err
@@ -360,8 +374,8 @@ func (s *Service) UpdateMCPServer(ctx context.Context, id int64, in MCPServerInp
 		_, terr := s.db.Transaction(ctx, stmts) // the old config stays
 		return MCPServer{}, errors.Join(err, terr)
 	}
-	stmts = append(stmts, sqlite.Statement{SQL: "UPDATE mcp_servers SET name = ?, transport = ?, command = ?, args = ?, url = ? WHERE id = ?",
-		Args: []any{in.Name, in.Transport, in.Command, mcpList(in.Args), in.URL, id}})
+	stmts = append(stmts, sqlite.Statement{SQL: "UPDATE mcp_servers SET name = ?, transport = ?, command = ?, args = ?, url = ?, managed_hash = ? WHERE id = ?",
+		Args: []any{in.Name, in.Transport, in.Command, mcpList(in.Args), in.URL, in.managedHash, id}})
 	if _, err := s.db.Transaction(ctx, stmts); err != nil {
 		return MCPServer{}, err
 	}
@@ -371,6 +385,13 @@ func (s *Service) UpdateMCPServer(ctx context.Context, id int64, in MCPServerInp
 // RemoveMCPServer stops a server and deletes it with its keychain entries;
 // its pending approvals become stale.
 func (s *Service) RemoveMCPServer(ctx context.Context, id int64) error {
+	err := s.removeMCPServer(ctx, id, "")
+	s.extDirty.Store(true)
+	return err
+}
+
+// removeMCPServer removes server id if managedBy manages it ("": the user's own).
+func (s *Service) removeMCPServer(ctx context.Context, id int64, managedBy string) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return err
@@ -382,6 +403,9 @@ func (s *Service) RemoveMCPServer(ctx context.Context, id int64) error {
 	old, err := s.mcpRow(ctx, id)
 	if err != nil {
 		return err
+	}
+	if old.ManagedBy != managedBy {
+		return ErrMCPManaged
 	}
 	// Stopped and disabled first; then the secrets: if one cannot be deleted
 	// the server stays, disabled, listing only the keys left, for a retry.

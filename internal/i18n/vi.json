@@ -4,6 +4,7 @@
   "settings_collapse_quotes_help": "Ẩn phần mà thư trả lời trích dẫn sau một nút, chỉ hiện những gì người gửi đã viết",
   "reader_quote_expand": "Mở rộng văn bản trích dẫn",
   "reader_quote_collapse": "Thu gọn văn bản trích dẫn",
+  "settings_managed_by": "Do {arg1} quản lý",
   "settings_remote_images_keep": "Giữ hình ảnh không dùng",
   "settings_remote_images_keep_help": "Hình ảnh trong bộ nhớ đệm không được mở trong khoảng thời gian này sẽ bị xóa. Tệp đính kèm không bao giờ bị động đến. Thư cũ sẽ tải lại chúng nếu người gửi vẫn còn.",
   "settings_remote_images_keep_forever": "Cho đến khi bộ nhớ đệm đầy",

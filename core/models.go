@@ -40,6 +40,8 @@ var (
 	// running or no longer lists it. Unlike a removed service it never falls
 	// back to the default model.
 	ErrModelUnavailable = errors.New("the model's plugin is not running or no longer offers it")
+	// ErrModelServiceManaged: an agent gateway's file owns the service (ADR 0041).
+	ErrModelServiceManaged = errors.New("this service is managed by another app: change it there")
 )
 
 // ModelService is a model service and its two capabilities. Kind is the
@@ -58,11 +60,15 @@ type ModelService struct {
 	Email                   string // OAuth sign-in address (chatgpt, grok); "" for API-key services
 	HasKey                  bool
 	Version                 int64
+	// ManagedBy names the agent gateway that wrote it into Options.ExternalDir
+	// (ADR 0041); "" for the user's own. Only that file changes or removes it.
+	ManagedBy string
 	// Status is the last test of each capability (CapGen, CapJudge), absent
 	// when untested or when what it tested changed since.
 	Status     map[string]CapStatus
-	keyVersion int64  // its key's keychain entry (model_services.key_version)
-	clientID   string // OAuth client_id issued at sign-in (chatgpt)
+	keyVersion int64               // its key's keychain entry (model_services.key_version)
+	ownModels  map[string]OwnModel // what its gateway says of its models (ManagedBy); before models.dev
+	clientID   string              // OAuth client_id issued at sign-in (chatgpt)
 }
 
 // Providers: which formats a service offers (the add dialog's tiles).
@@ -146,6 +152,15 @@ type ModelServiceInput struct {
 	JudgeFormat, JudgeModel     string
 	oauthEmail, oauthClientID   string
 	oauthGrant                  auth.Grant
+	managedBy, managedHash      string // set only by syncExternal
+	ownModels                   map[string]OwnModel
+}
+
+// OwnModel is what an agent gateway says of one of its models (ADR 0041):
+// its display name and context window in tokens, each 0 or "" when unsaid.
+type OwnModel struct {
+	Name    string `json:"name,omitempty"`
+	Context int    `json:"context,omitempty"`
 }
 
 // Input is m as it is saved, keeping its key.
@@ -325,13 +340,19 @@ func (s *Service) prepare(ctx context.Context, id int64, in *ModelServiceInput) 
 	return "", "", old, fmt.Errorf("invalid key action %q", action)
 }
 
-const modelCols = "id, name, kind, base_url, models, version, slug, key_version, provider, judge_format, judge_model, oauth_email, oauth_client_id"
+const modelCols = "id, name, kind, base_url, models, version, slug, key_version, provider, judge_format, judge_model, oauth_email, oauth_client_id, managed_by, model_info"
 
 func (s *Service) scanModelService(r []any) (ModelService, error) {
 	m := ModelService{ID: store.Int(r[0]), Name: store.Str(r[1]), Kind: store.Str(r[2]), BaseURL: store.Str(r[3]), Version: store.Int(r[5]), Slug: store.Str(r[6]), keyVersion: store.Int(r[7]),
-		Provider: store.Str(r[8]), JudgeFormat: store.Str(r[9]), JudgeModel: store.Str(r[10]), Email: store.Str(r[11]), clientID: store.Str(r[12])}
+		Provider: store.Str(r[8]), JudgeFormat: store.Str(r[9]), JudgeModel: store.Str(r[10]), Email: store.Str(r[11]), clientID: store.Str(r[12]), ManagedBy: store.Str(r[13])}
 	if err := json.Unmarshal([]byte(store.Str(r[4])), &m.Models); err != nil {
 		return m, fmt.Errorf("stored models: %w", err)
+	}
+	if err := json.Unmarshal([]byte(store.Str(r[14])), &m.ownModels); err != nil {
+		return m, fmt.Errorf("stored model info: %w", err)
+	}
+	if len(m.ownModels) == 0 {
+		m.ownModels = nil
 	}
 	k, kerr := s.modelKey(m) // a keychain error is just "no key" here
 	m.HasKey = kerr == nil && k != ""
@@ -394,6 +415,14 @@ func (s *Service) capStatuses(ctx context.Context) (map[int64]map[string]CapStat
 	return out, nil
 }
 
+func ownModelsJSON(n map[string]OwnModel) string {
+	if n == nil {
+		return "{}"
+	}
+	b, _ := json.Marshal(n)
+	return string(b)
+}
+
 func modelsJSON(m []string) string {
 	if m == nil {
 		m = []string{}
@@ -431,9 +460,10 @@ func (s *Service) AddModelService(ctx context.Context, in ModelServiceInput) (Mo
 	if key != "" {
 		kv = 1
 	}
-	res, err := s.db.Execute(ctx, `INSERT INTO model_services(name, kind, base_url, models, slug, created_at, key_version, provider, judge_format, judge_model, oauth_email, oauth_client_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		in.Name, in.Kind, in.BaseURL, modelsJSON(in.Models), slug, time.Now().Unix(), kv, in.Provider, in.JudgeFormat, in.JudgeModel, in.oauthEmail, in.oauthClientID)
+	res, err := s.db.Execute(ctx, `INSERT INTO model_services(name, kind, base_url, models, slug, created_at, key_version, provider, judge_format, judge_model, oauth_email, oauth_client_id, managed_by, managed_hash, model_info)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		in.Name, in.Kind, in.BaseURL, modelsJSON(in.Models), slug, time.Now().Unix(), kv, in.Provider, in.JudgeFormat, in.JudgeModel, in.oauthEmail, in.oauthClientID,
+		in.managedBy, in.managedHash, ownModelsJSON(in.ownModels))
 	if err != nil {
 		return ModelService{}, err
 	}
@@ -479,6 +509,12 @@ func (s *Service) UpdateModelService(ctx context.Context, id int64, in ModelServ
 	if err != nil {
 		return ModelService{}, err
 	}
+	if old.ManagedBy != in.managedBy {
+		return ModelService{}, ErrModelServiceManaged
+	}
+	if in.managedBy == "" {
+		s.extDirty.Store(true) // a rename may free a name an external entry wants
+	}
 	if err := s.checkNameFree(ctx, in.Name, id); err != nil {
 		return ModelService{}, err
 	}
@@ -504,8 +540,8 @@ func (s *Service) UpdateModelService(ctx context.Context, id int64, in ModelServ
 		clientID = in.oauthClientID
 	}
 	stmts := []sqlite.Statement{{SQL: `UPDATE model_services SET name = ?, kind = ?, base_url = ?, models = ?, version = version + 1, key_version = ?,
-		judge_format = ?, judge_model = ?, oauth_email = COALESCE(NULLIF(?, ''), oauth_email), oauth_client_id = ? WHERE id = ?`,
-		Args: []any{in.Name, in.Kind, in.BaseURL, modelsJSON(in.Models), kv, in.JudgeFormat, in.JudgeModel, in.oauthEmail, clientID, id}}}
+		judge_format = ?, judge_model = ?, oauth_email = COALESCE(NULLIF(?, ''), oauth_email), oauth_client_id = ?, managed_hash = ?, model_info = ? WHERE id = ?`,
+		Args: []any{in.Name, in.Kind, in.BaseURL, modelsJSON(in.Models), kv, in.JudgeFormat, in.JudgeModel, in.oauthEmail, clientID, in.managedHash, ownModelsJSON(in.ownModels), id}}}
 	// A test's status no longer holds once what it tested changed: the
 	// address or key for both capabilities, a format (or judge model) for its own.
 	moved := in.BaseURL != old.BaseURL || action == KeyReplace || action == KeyClear && old.keyVersion != 0
@@ -559,6 +595,13 @@ func (s *Service) checkNameFree(ctx context.Context, name string, id int64) erro
 }
 
 func (s *Service) RemoveModelService(ctx context.Context, id int64) error {
+	err := s.removeModelService(ctx, id, "")
+	s.extDirty.Store(true)
+	return err
+}
+
+// removeModelService removes service id if managedBy manages it ("": the user's own).
+func (s *Service) removeModelService(ctx context.Context, id int64, managedBy string) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return err
@@ -572,6 +615,9 @@ func (s *Service) RemoveModelService(ctx context.Context, id int64) error {
 	}
 	if err != nil {
 		return err
+	}
+	if old.ManagedBy != managedBy {
+		return ErrModelServiceManaged
 	}
 	stmts := []sqlite.Statement{{SQL: "DELETE FROM model_services WHERE id = ?", Args: []any{id}}}
 	if old.keyVersion != 0 {

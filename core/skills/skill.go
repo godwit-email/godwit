@@ -34,6 +34,7 @@ type Skill struct {
 	Output, Model           string
 	Tier                    string // godwit-model-tier; only "small" is kept
 	Builtin                 bool
+	External                bool   // loaded with LoadLinkedDir: an agent gateway put it there
 	Version                 string // first 16 hex digits of SHA-256 of SKILL.md
 	FS                      fs.FS  // the skill directory (built-ins)
 	dir                     string // real directory (user skills); read through a fresh os.Root per call
@@ -265,6 +266,18 @@ func Load(root fs.FS, builtin bool) (ok []Skill, failed map[string]error) {
 // LoadDir loads the user skills in dir. A missing dir means none; any other
 // error reading it is returned. Per-skill failures go in failed.
 func LoadDir(dir string) (ok []Skill, failed map[string]error, err error) {
+	return loadDir(dir, false)
+}
+
+// LoadLinkedDir is LoadDir for a directory an agent gateway fills (ADR 0041),
+// which may link each skill's folder from its own library: a top-level
+// symlink to a directory is loaded from where it points. Links inside a skill
+// stay unreadable, as in LoadDir.
+func LoadLinkedDir(dir string) (ok []Skill, failed map[string]error, err error) {
+	return loadDir(dir, true)
+}
+
+func loadDir(dir string, links bool) (ok []Skill, failed map[string]error, err error) {
 	failed = map[string]error{}
 	// Stat first: Windows reports reading a file as a directory as a missing
 	// path, which must not pass for "no skills installed".
@@ -283,10 +296,15 @@ func LoadDir(dir string) (ok []Skill, failed map[string]error, err error) {
 		return nil, nil, err
 	}
 	for _, e := range ents {
-		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") { // 不加载符号链接及未发布的暂存目录。
+		sd := filepath.Join(dir, e.Name())
+		isDir := e.IsDir()
+		if links && e.Type()&fs.ModeSymlink != 0 {
+			st, err := os.Stat(sd)
+			isDir = err == nil && st.IsDir()
+		}
+		if !isDir || strings.HasPrefix(e.Name(), ".") { // 不加载符号链接及未发布的暂存目录。
 			continue
 		}
-		sd := filepath.Join(dir, e.Name())
 		root, err := os.OpenRoot(sd)
 		if err != nil {
 			failed[e.Name()] = err
@@ -298,7 +316,7 @@ func LoadDir(dir string) (ok []Skill, failed map[string]error, err error) {
 			failed[e.Name()] = err
 			continue
 		}
-		sk.FS, sk.dir = nil, sd
+		sk.FS, sk.dir, sk.External = nil, sd, links
 		ok = append(ok, sk)
 	}
 	return ok, failed, nil
