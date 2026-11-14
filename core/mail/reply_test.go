@@ -60,6 +60,8 @@ func TestSubjects(t *testing.T) {
 	assert.Equal(t, "转发：Q4", mail.ForwardSubject("转发：Q4"))
 	assert.Equal(t, "轉寄：Q4", mail.ForwardSubject("轉寄：Q4"))
 	assert.Equal(t, "WG: Angebot", mail.ForwardSubject("WG: Angebot"))
+	assert.Equal(t, "PD: Oferta", mail.ForwardSubject("PD: Oferta"))
+	assert.Equal(t, "ODP: Oferta", mail.ReplySubject("ODP: Oferta"))
 	assert.Equal(t, "TR: Facture", mail.ForwardSubject("TR: Facture"))
 }
 

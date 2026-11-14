@@ -98,6 +98,8 @@ func quoteLead(lang, date, from string) string {
 		return fmt.Sprintf("%s, %s пишет:", date, from)
 	case "nl":
 		return fmt.Sprintf("Op %s schreef %s:", date, from)
+	case "pl":
+		return fmt.Sprintf("%s, %s napisał(a):", date, from)
 	case "tr":
 		return fmt.Sprintf("%s tarihinde %s yazdı:", date, from)
 	case "vi":
@@ -118,7 +120,7 @@ func hasPrefix(s string, prefixes ...string) bool {
 }
 
 func ReplySubject(s string) string {
-	if hasPrefix(s, "re", "aw", "res", "antw", "ynt", "回复", "答复", "回覆", "답장") {
+	if hasPrefix(s, "re", "aw", "res", "antw", "ynt", "odp", "回复", "答复", "回覆", "답장") {
 		return s
 	}
 	return "Re: " + s
@@ -134,5 +136,5 @@ func ForwardSubject(s string) string {
 // IsForwardSubject reports whether s starts with a forward prefix, as every
 // subject from ForwardSubject does.
 func IsForwardSubject(s string) bool {
-	return hasPrefix(s, "fwd", "fw", "wg", "tr", "rv", "enc", "dr", "ilt", "转发", "轉寄", "轉發", "전달")
+	return hasPrefix(s, "fwd", "fw", "wg", "tr", "rv", "enc", "dr", "ilt", "pd", "转发", "轉寄", "轉發", "전달")
 }

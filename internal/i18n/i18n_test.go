@@ -121,6 +121,7 @@ func TestAllSupportedLocales(t *testing.T) {
 		"it-IT": "it",
 		"ru-RU": "ru",
 		"nl-NL": "nl",
+		"pl-PL": "pl",
 		"tr-TR": "tr",
 		"vi-VN": "vi",
 	} {

@@ -102,6 +102,16 @@ func TestLexicons(t *testing.T) {
 			{"Welkom", `<a href="https://acme.example/c/1">Bevestig je e-mailadres</a>`, "https://acme.example/c/1", mail.LinkConfirm},
 			{"Wachtwoord vergeten", `<a href="https://acme.example/r/1">Wachtwoord opnieuw instellen</a>`, "https://acme.example/r/1", mail.LinkReset},
 		}},
+		{"pl", []code{
+			{"Twój kod weryfikacyjny", "Twój kod weryfikacyjny to: 482913", "482913"},
+			{"Acme", "482913 to Twój kod weryfikacyjny.", "482913"},
+			{"Wyprzedaż", "Twój kod: LATO20", ""},
+		}, []link{
+			{"Zaloguj się do Acme", `<p>Ten link jest ważny przez 10 minut.</p><a href="https://acme.example/l/1">Zaloguj się</a>`, "https://acme.example/l/1", mail.LinkSignIn},
+			{"Witamy w Acme", `<a href="https://acme.example/c/1">Potwierdź swój adres e-mail</a>`, "https://acme.example/c/1", mail.LinkConfirm},
+			{"Nie pamiętasz hasła?", `<a href="https://acme.example/r/1">Zresetuj hasło</a>`, "https://acme.example/r/1", mail.LinkReset},
+			{"Nowe logowanie na Twoim koncie", `<p>Ten link pokazuje aktywność.</p><a href="https://acme.example/a">Zaloguj się</a>`, "", ""},
+		}},
 		{"tr", []code{
 			{"Doğrulama kodu", "Doğrulama kodunuz: 482913", "482913"},
 		}, []link{
