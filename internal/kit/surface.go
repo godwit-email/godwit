@@ -64,6 +64,9 @@ const (
 	ToneTint                // the hover gray: one that stands out more, as a note or a group being edited
 	ToneOutline             // the background in a hairline: a region on the page's own white
 	ToneRaised              // the background, bare: a white block on a card
+	ToneWarning             // the status tints, each its -bg in a hairline of its -border under its -text: a note that warns,
+	ToneDanger              // one that says what failed,
+	ToneSuccess             // and one that says what went well
 )
 
 // Block makes e a region inside a page or a card and returns it: tone's
@@ -95,6 +98,12 @@ func toned(e ui.Element, t theme.Tokens, tone Tone, edged bool) ui.Element {
 		e.Background(t.Background).Border(theme.Hairline, t.Border)
 	case ToneRaised:
 		e.Background(t.Background)
+	case ToneWarning:
+		e.Background(t.WarningBg).Border(theme.Hairline, t.WarningBorder).TextColor(t.WarningText)
+	case ToneDanger:
+		e.Background(t.DangerBg).Border(theme.Hairline, t.DangerBorder).TextColor(t.DangerText)
+	case ToneSuccess:
+		e.Background(t.SuccessBg).Border(theme.Hairline, t.SuccessBorder).TextColor(t.SuccessText)
 	}
 	return e
 }

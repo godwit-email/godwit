@@ -1,11 +1,6 @@
 contacts.go 1
 oauth_client_form.go 1
 onboarding.go 1
-reader.go 1
-savedview.go 1
-savedview_editor.go 1
 settings_general.go 1
-settings_models_view.go 1
-settings_plugin_directory.go 1
-settings_rules_editor.go 3
+settings_rules_editor.go 1
 shell.go 1

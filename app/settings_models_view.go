@@ -470,8 +470,8 @@ func capCard(c *ui.Context, title, desc, unsupported, switchLabel string, suppor
 			body()
 		}
 		if warn != "" {
-			ui.Box(c).Padding(th.Space(2), th.Space(2.5)).Radius(t.Radius.Lg).Border(theme.Hairline, t.WarningBorder).Background(t.WarningBg).Label(warn).Children(func() {
-				kit.Text(c, warn, t.Text.Xs).TextColor(t.WarningText)
+			kit.Block(c, ui.Box(c).Padding(th.Space(2), th.Space(2.5)).Label(warn), kit.ToneWarning).Children(func() {
+				kit.Text(c, warn, t.Text.Xs)
 			})
 		}
 	})

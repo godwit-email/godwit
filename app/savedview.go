@@ -602,8 +602,7 @@ func (r *reader) viewBand(c *ui.Context) {
 	}
 	t, th := theme.Of(c), c.Theme()
 	r.column(c).Children(func() {
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2), th.Space(3)).MinHeight(th.Space(10)).
-			Radius(t.Radius.Lg).Background(t.Hover).Border(theme.Hairline, t.Border).Children(func() {
+		kit.Block(c, ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2), th.Space(3)).MinHeight(th.Space(10)), kit.ToneTint).Children(func() {
 			ui.Icon(c, icons.Get(icon)).Size(theme.IconSm, theme.IconSm).Shrink(0).TextColor(t.Muted)
 			kit.Text(c, text, t.Text.Sm).Grow(1).Shrink(1)
 			if w.Status == core.ReplyStatusWaiting {

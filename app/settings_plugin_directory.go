@@ -231,7 +231,7 @@ func (e *extView) installDialog(c *ui.Context) {
 	}
 	kit.Dialog(c, &e.detailOpen, entryTitle(en), kit.DialogOpts{Desc: desc, Close: i18n.T("common.close")}, func() {
 		ui.Column(c).FillWidth().Gap(th.Space(4)).Children(func() {
-			ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Md).Background(t.Card).Children(func() {
+			kit.Block(c, ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(3)), kit.ToneCard).Children(func() {
 				fact := func(label, value string) {
 					ui.Column(c).Grow(1).Basis(0).Gap(th.Space(0.5)).Children(func() {
 						kit.Text(c, label, t.Text.Xs).TextColor(t.Muted)

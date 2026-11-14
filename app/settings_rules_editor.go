@@ -237,8 +237,7 @@ func (v *rulesView) flow(c *ui.Context) {
 	a := v.a
 	t, th := theme.Of(c), c.Theme()
 	d := &v.edit.Doc
-	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).
-		Radius(t.Radius.Xl).Background(t.Hover).Children(func() {
+	kit.Card(c, ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)), kit.ToneTint).Children(func() {
 		kit.Text(c, i18n.T("settings.rules.name"), t.Text.Sm).FontWeight(500).Shrink(0)
 		kit.Input(c, &d.Name, kit.InputOpts{Placeholder: i18n.T("settings.rules.name.placeholder")}).Label(i18n.T("settings.rules.name")).Grow(1).Shrink(1)
 	})
@@ -880,7 +879,7 @@ func (v *rulesView) confirmDialog(c *ui.Context) {
 	kit.Dialog(c, &v.confirming, i18n.T("settings.rules.confirm.title"), kit.DialogOpts{Size: kit.DialogSm, Alert: true,
 		Desc: i18n.Tf("settings.rules.confirm.desc", ruleName(v.edit.Doc)), Close: i18n.T("common.close")}, func() {
 		amber := t.Label("amber")
-		ui.Column(c).FillWidth().Gap(th.Space(1.5)).Padding(th.Space(3.5)).Radius(t.Radius.Lg).Background(t.WarningBg).Border(theme.Hairline, t.WarningBorder).Children(func() {
+		kit.Block(c, ui.Column(c).FillWidth().Gap(th.Space(1.5)).Padding(th.Space(3.5)), kit.ToneWarning).Children(func() {
 			kit.Text(c, i18n.T("settings.rules.confirm.to"), t.Text.Xs).TextColor(t.WarningText)
 			for _, to := range v.unconfirmed {
 				ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {

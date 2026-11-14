@@ -394,9 +394,8 @@ func (e *viewEditor) groupsNote() string {
 // iconButton is the icon chosen, opening the grid of the icons labels use.
 func (e *viewEditor) iconButton(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	b := kit.Pressable(c, kit.PressableOpts{OnClick: func() { e.iconOpen = !e.iconOpen }}).Label(i18n.T("view.editor.icon")).
-		Size(th.Space(9), th.Space(9)).Radius(t.Radius.Lg).Border(theme.Hairline, t.Border).Justify(ui.Center).AlignItems(ui.Center)
-	b.Children(func() { ui.Icon(c, icons.Get(labelIcon(e.box.Icon))).Size(theme.Icon, theme.Icon) })
+	b := kit.IconButton(c, labelIcon(e.box.Icon), i18n.T("view.editor.icon"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeLg, Flat: true}).
+		OnClick(func() { e.iconOpen = !e.iconOpen })
 	if !e.iconOpen {
 		return
 	}

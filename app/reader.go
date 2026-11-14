@@ -1955,12 +1955,8 @@ func (r *reader) attachments(c *ui.Context, b *msgBody) {
 				c := c.Key(att.ID)
 				name := core.FileName(att.Filename, "attachment")
 				checked := multi && b.attSel[att.ID]
-				border, bg := t.Border, ui.Transparent
-				if checked {
-					border, bg = t.Primary, t.Hover.Mix(t.Background, 0.5)
-				}
-				ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1.5)).Padding(th.Space(2), th.Space(2.5)).
-					Border(theme.Hairline, border).Background(bg).Radius(t.Radius.Lg).AlignItems(ui.Center).Children(func() {
+				kit.Choice(c, ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1.5)).Padding(th.Space(2), th.Space(2.5)).
+					Radius(t.Radius.Lg).AlignItems(ui.Center), checked, kit.ChoiceOpts{}).Children(func() {
 					if multi {
 						if kit.Checkbox(c.Key("sel"), &checked, "").Shrink(0).Label(i18n.Tf("reader.attachments.select_item", name)).Changed() {
 							if checked {
