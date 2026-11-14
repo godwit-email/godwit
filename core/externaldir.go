@@ -134,8 +134,12 @@ func (s *Service) startExternalSync() {
 func (s *Service) syncExternal(ctx context.Context) {
 	s.extMu.Lock()
 	defer s.extMu.Unlock()
-	if s.extSeen == nil || s.extDirty.Swap(false) {
+	if s.extSeen == nil {
 		s.extSeen = map[string]string{}
+	}
+	if s.extDirty.Swap(false) { // the files are applied again; the skills stamp is no config and stays
+		delete(s.extSeen, externalModels)
+		delete(s.extSeen, externalMCP)
 	}
 	models, mStamp, mChanged, mErr := s.readExternal(externalModels)
 	var services map[string]externalService

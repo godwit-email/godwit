@@ -528,3 +528,27 @@ func TestExternalMCPShortValue(t *testing.T) {
 	_, err = s.AddMCPServer(ctx, MCPServerInput{Name: "mine", Transport: "stdio", Command: "x", Env: map[string]string{"TOKEN": "short"}})
 	assert.Error(t, err, "the form still asks for a secret long enough to redact")
 }
+
+func TestExternalLastSkillRemovedAfterAConfigChangeNotifies(t *testing.T) {
+	s, dir := externalSvc(t)
+	ctx := t.Context()
+	d := filepath.Join(dir, externalSkills, "only")
+	require.NoError(t, os.MkdirAll(d, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(d, "SKILL.md"), []byte("---\nname: only\ndescription: x\n---\nDo it.\n"), 0o600))
+	s.syncExternal(ctx)
+	ch, stop := s.Subscribe()
+	defer stop()
+	s.extDirty.Store(true) // the user changed a service of their own
+	require.NoError(t, os.RemoveAll(d))
+	s.syncExternal(ctx)
+	for {
+		select {
+		case ev := <-ch:
+			if ev.Type == events.SkillsChanged {
+				return
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("no skills.changed after the last skill went")
+		}
+	}
+}
