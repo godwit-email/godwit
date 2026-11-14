@@ -1231,6 +1231,47 @@ func TestTabsFill(t *testing.T) {
 	}
 }
 
+// TestTabsLook: a segmented tab keeps its look, which a comment in the middle
+// of its chain once took: the chosen one is the background with round corners
+// on the track, the others muted.
+func TestTabsLook(t *testing.T) {
+	sel := 0
+	var tk theme.Tokens
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		tk = theme.Of(c)
+		ui.Column(c).Width(300).Children(func() { TabsFill(c, &sel, "One", "Two") })
+	}), 400, 100)
+	tt.Frame()
+	tt.Advance(2 * theme.MotionBase)
+	img := tt.Image()
+	// The track is 300 by 32 at the origin, the chosen tab inset 2: its corner pixel is cut away, its middle filled.
+	if corner := img.RGBAAt(2, 2); corner.R == tk.Background.R {
+		t.Errorf("the chosen tab's corner pixel is %v: its corners are square", corner)
+	}
+	if mid := img.RGBAAt(12, 16); mid.R != tk.Background.R {
+		t.Errorf("the chosen tab's fill is %v, want the background %v", mid, tk.Background)
+	}
+	one, ok1 := tt.Find("One")
+	two, ok2 := tt.Find("Two")
+	if !ok1 || !ok2 {
+		t.Fatalf("tabs not found: %q", tt.Texts())
+	}
+	dark := func(r ui.Rect) (min uint8) { // the darkest pixel of a label: its text's color
+		min = 255
+		for y := int(r.Y); y < int(r.Y+r.H); y++ {
+			for x := int(r.X); x < int(r.X+r.W); x++ {
+				if p := img.RGBAAt(x, y); p.R < min {
+					min = p.R
+				}
+			}
+		}
+		return min
+	}
+	if a, b := dark(one), dark(two); a >= b || b < tk.Muted.R-30 {
+		t.Errorf("text darkness: chosen %d, other %d: want the other muted (%d)", a, b, tk.Muted.R)
+	}
+}
+
 func TestTabsUnderline(t *testing.T) {
 	sel := 0
 	var tk theme.Tokens

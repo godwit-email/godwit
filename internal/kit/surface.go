@@ -213,7 +213,7 @@ func NavSwitch(c *ui.Context, items ...NavItem) ui.Element {
 					content(ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Opacity(0), it) // sizes the button unseen
 					if it.Selected {
 						pill := ui.Box(c).Absolute().Left(0).Top(0).Right(0).Bottom(0).Radius(t.Radius.Md).Background(t.Background).PassThrough()
-						Elevate(c, pill, theme.ShadowXs).Transition(ui.ElementTransition{Duration: theme.MotionBase, Match: navPill{}})
+						Elevate(c, pill, theme.ShadowSm).Transition(ui.ElementTransition{Duration: theme.MotionBase, Match: navPill{}}) // a segmented tab's (Tabs)
 					}
 				})
 			}
@@ -222,7 +222,7 @@ func NavSwitch(c *ui.Context, items ...NavItem) ui.Element {
 			for i, it := range items {
 				// Keyed by the page shown, so that a new one appears and slides from where its
 				// Match was, clipping the name as it widens.
-				e := segment(ui.Row(c).Key([2]int{shown, i}), it).FontSize(t.Text.Xs).TextColor(t.Muted).Clip().PassThrough().
+				e := segment(ui.Row(c).Key([2]int{shown, i}), it).FontWeight(500).TextColor(t.Muted).Clip().PassThrough().
 					Transition(ui.ElementTransition{Duration: theme.MotionBase, Match: navContent(i)})
 				if it.Selected || hovered[i] {
 					e.TextColor(t.Foreground)

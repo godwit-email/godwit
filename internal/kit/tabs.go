@@ -5,7 +5,10 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
-// Tabs is a segmented tab list choosing *sel, each tab as wide as its label.
+// Tabs is a segmented tab list choosing *sel, each tab as wide as its label:
+// a hover-gray track 32 high at radius-lg, the tabs 28 at radius-md in sm at
+// 500, muted, the chosen one on the background under ShadowSm. NavSwitch is
+// the same control with icons.
 func Tabs(c *ui.Context, sel *int, labels ...string) ui.Element {
 	return segmented(c, sel, false, labels)
 }
@@ -22,7 +25,9 @@ func segmented(c *ui.Context, sel *int, fill bool, labels []string) ui.Element {
 	return tabs.List.Padding(th.Space(0.5)).Radius(t.Radius.Lg).Background(t.Hover).Gap(th.Space(0.5)).Children(func() {
 		for i, l := range labels {
 			// ponytail: backgrounds fade; a sliding indicator needs the tabs' rects from the last frame
-			tab := tabs.Tab(i).Height(th.Space(7)).PaddingX(th.Space(2.5)) // 28 in the track's Space(0.5): a 32 control.Radius(t.Radius.Md).FontSize(t.Text.Xs).FontWeight(400).TextColor(t.Muted).Transition(colors(theme.MotionFast))
+			// 28 in the track's Space(0.5), a 32 control, its corner the track's less that inset. Every
+			// tab is at 500, as what acts is, so that choosing one moves nothing.
+			tab := tabs.Tab(i).Height(th.Space(7)).PaddingX(th.Space(2.5)).Radius(t.Radius.Md).FontWeight(500).TextColor(t.Muted).Transition(colors(theme.MotionFast))
 			if fill {
 				tab.Grow(1).Basis(0).Justify(ui.Center)
 			}
