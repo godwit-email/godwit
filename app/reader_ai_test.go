@@ -45,7 +45,9 @@ func aiHarness(t *testing.T, llm bool, set func(*core.Settings), setup ...func(*
 			t.Fatal(err)
 		}
 	}}, setup...)...)
-	h.until("the mail page", func() bool { return h.app.loaded && h.app.route.Page == PageMail })
+	// The list's first read too: one still under way could list the mail a
+	// test delivers, or only the first of a thread's.
+	h.until("the mail page", func() bool { return h.app.loaded && h.app.route.Page == PageMail && !h.app.mail.list.loading })
 	return h, acc, l
 }
 

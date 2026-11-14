@@ -188,17 +188,23 @@ func (e *extView) startLogin(name string) {
 				finished = true
 				return errors.New(st.Message)
 			}
+			// Polling goes on while the user reads: it keeps the plugin from
+			// going idle. On the app's clock, as its other waits are.
+			tick := make(chan struct{}, 1)
+			stop := a.clock.AfterFunc(time.Second, func() { tick <- struct{}{} })
 			select {
 			case <-ctx.Done():
+				stop()
 				return ctx.Err()
 			case yes := <-answer:
+				stop()
 				if !yes {
 					return context.Canceled
 				}
 				if err := a.plat.OpenURL(page); err != nil {
 					return err
 				}
-			case <-time.After(time.Second): // polling goes on while the user reads: it keeps the plugin from going idle
+			case <-tick:
 			}
 		}
 	}, func(err error) {

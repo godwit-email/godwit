@@ -712,8 +712,12 @@ func TestPluginSignIn(t *testing.T) {
 		t.Fatal("the page opened before the user saw its host")
 	}
 	h.click("打开")
+	h.called("OpenURL https://accounts.example.com/auth")
+	// The plugin is asked again only as the clock moves, so its "done" (the
+	// third answer) cannot come before the click, however slow this test runs.
 	h.until("the flow's end", func() bool {
-		return p.ext.loginFlow == "" && slices.Contains(h.plat.Calls(), "OpenURL https://accounts.example.com/auth")
+		h.clock.advance(time.Second)
+		return p.ext.loginFlow == ""
 	})
 	n := 0
 	for _, c := range h.plat.Calls() {
