@@ -164,6 +164,17 @@ func TestExternalModelServiceRefused(t *testing.T) {
 	assert.Equal(t, "magpie", m.ManagedBy)
 }
 
+func TestExternalDirCreated(t *testing.T) {
+	keyring.MockInit()
+	dir := filepath.Join(t.TempDir(), ".godwit", "external")
+	s, err := New(context.Background(), Options{DataDir: t.TempDir(), ExternalDir: dir})
+	require.NoError(t, err)
+	defer s.Close()
+	st, err := os.Stat(dir)
+	require.NoError(t, err, "a gateway finds Godwit installed by the folder")
+	assert.True(t, st.IsDir())
+}
+
 func TestExternalSurvivesRestart(t *testing.T) {
 	keyring.MockInit()
 	data, dir := t.TempDir(), t.TempDir()

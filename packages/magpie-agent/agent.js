@@ -2,6 +2,7 @@
 // magpie writes these files and restores them when the user disconnects;
 // Godwit mirrors them as read-only settings (ADR 0041 in the Godwit repo).
 // One path on every system: this file runs in moejs and cannot tell them apart.
+// Godwit creates the folder when it starts, which is how magpie finds it installed.
 const dir = "~/.godwit/external"
 
 export const agent = {
@@ -9,7 +10,7 @@ export const agent = {
   name: "Godwit",
   icon: "https://godwit.email/icon.png", // on the agent itself: a plugin loaded from a folder has no package icon
   bin: "godwit",
-  dir: "~/Library/Application Support/Godwit",
+  dir,
   config: `${dir}/models.json`,
   model: "magpie.model", // the default model Godwit switches to
   ua: ["godwit"],

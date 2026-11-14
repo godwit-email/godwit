@@ -68,9 +68,13 @@ type externalMCPServer struct {
 }
 
 // startExternalSync mirrors ExternalDir now and whenever a file in it changes.
+// It creates the folder first: a gateway tells Godwit is installed by it.
 func (s *Service) startExternalSync() {
 	if s.opts.ExternalDir == "" {
 		return
+	}
+	if err := os.MkdirAll(s.opts.ExternalDir, 0o700); err != nil {
+		slog.Warn("external folder", "err", err)
 	}
 	ctx, end, err := s.begin(context.Background(), 0)
 	if err != nil {
