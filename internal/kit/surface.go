@@ -13,7 +13,7 @@ type SidebarItemOpts struct {
 	Selected bool    // the page shown: highlighted, and it does not click
 	Covered  bool    // selected, but something covers the page: it clicks, to show it
 	Muted    bool    // a secondary action, as Add account
-	Small    bool    // 30 high in the small text, as an account's header
+	Small    bool    // 28 high in the small text, as an account's header
 	Indent   float32 // more left padding, in spacing steps, as a folder under its account
 	OnClick  func()
 }
@@ -24,7 +24,7 @@ func SidebarItem(c *ui.Context, o SidebarItemOpts) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	b := ui.ButtonBase(c).Height(th.Space(8)).Padding(0, th.Space(2), 0, th.Space(2+o.Indent)).Gap(th.Space(2)).Radius(t.Radius.Lg).Justify(ui.Start).Transition(colors(theme.MotionFast))
 	if o.Small {
-		b.Height(th.Space(7.5)).Gap(th.Space(1.5)).FontSize(t.Text.Sm)
+		b.Height(th.Space(7)).Gap(th.Space(1.5)).FontSize(t.Text.Xs)
 	}
 	if o.Muted {
 		b.TextColor(t.Muted)
@@ -56,11 +56,56 @@ func SidebarIcon(c *ui.Context, item ui.Element, icon string, selected bool) {
 	ui.Icon(c, svg).Size(theme.Icon, theme.Icon).TextColor(color)
 }
 
-// Card is a bordered panel.
-func Card(c *ui.Context, body func()) ui.Element {
-	t, th := theme.Of(c), c.Theme()
-	card := ui.Column(c).Gap(th.Space(3)).Padding(th.Space(4)).Radius(t.Radius.Xl).Background(t.Background).Border(theme.Hairline, t.Border)
-	return Elevate(c, card, theme.ShadowSm).Children(body)
+// Tone is the fill of a Block or a Card.
+type Tone uint8
+
+const (
+	ToneCard    Tone = iota // the card gray: a region apart from the page around it
+	ToneTint                // the hover tint: one that stands out more, as a note or a group being edited
+	ToneOutline             // the background in a hairline: a region on the page's own white
+	ToneRaised              // the background, bare: a white block on a card
+	ToneWarning             // the status tints, each its -bg in a hairline of its -border under its -text: a note that warns,
+	ToneDanger              // one that says what failed,
+	ToneSuccess             // and one that says what went well
+)
+
+// Block makes e a region inside a page or a card and returns it: tone's
+// fill at radius-lg. Give it its Padding, Gap and Children; a page rounds
+// and fills no box of its own.
+func Block(c *ui.Context, e ui.Element, tone Tone) ui.Element {
+	t := theme.Of(c)
+	return toned(e.Radius(t.Radius.Lg), t, tone, false)
+}
+
+// Card makes e a section of a page and returns it: tone's fill at
+// radius-xl, the card gray in a hairline too.
+func Card(c *ui.Context, e ui.Element, tone Tone) ui.Element {
+	t := theme.Of(c)
+	return toned(e.Radius(t.Radius.Xl), t, tone, true)
+}
+
+// toned fills e as tone; edged also outlines the card gray.
+func toned(e ui.Element, t theme.Tokens, tone Tone, edged bool) ui.Element {
+	switch tone {
+	case ToneCard:
+		e.Background(t.Card)
+		if edged {
+			e.Border(theme.Hairline, t.Border)
+		}
+	case ToneTint:
+		e.Background(tint(t, 1))
+	case ToneOutline:
+		e.Background(t.Background).Border(theme.Hairline, t.Border)
+	case ToneRaised:
+		e.Background(t.Background)
+	case ToneWarning:
+		e.Background(t.WarningBg).Border(theme.Hairline, t.WarningBorder).TextColor(t.WarningText)
+	case ToneDanger:
+		e.Background(t.DangerBg).Border(theme.Hairline, t.DangerBorder).TextColor(t.DangerText)
+	case ToneSuccess:
+		e.Background(t.SuccessBg).Border(theme.Hairline, t.SuccessBorder).TextColor(t.SuccessText)
+	}
+	return e
 }
 
 // PressableOpts say how a Pressable looks and what clicking it does.
@@ -90,10 +135,10 @@ func Pressable(c *ui.Context, o PressableOpts) ui.Element {
 	}
 	if !o.Bare && !o.Glass {
 		switch {
-		case o.Selected:
-			b.Background(t.SidebarSelected)
+		case o.Selected: // tints, as a SidebarItem's: they show on a card too
+			b.Background(tint(t, 1.75))
 		case b.Hovered():
-			b.Background(t.Hover)
+			b.Background(tint(t, 1))
 		}
 	}
 	if o.OnClick != nil && !o.Selected {
@@ -168,7 +213,7 @@ func NavSwitch(c *ui.Context, items ...NavItem) ui.Element {
 					content(ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Opacity(0), it) // sizes the button unseen
 					if it.Selected {
 						pill := ui.Box(c).Absolute().Left(0).Top(0).Right(0).Bottom(0).Radius(t.Radius.Md).Background(t.Background).PassThrough()
-						Elevate(c, pill, theme.ShadowXs).Transition(ui.ElementTransition{Duration: theme.MotionBase, Match: navPill{}})
+						Elevate(c, pill, theme.ShadowSm).Transition(ui.ElementTransition{Duration: theme.MotionBase, Match: navPill{}}) // a segmented tab's (Tabs)
 					}
 				})
 			}
@@ -177,7 +222,7 @@ func NavSwitch(c *ui.Context, items ...NavItem) ui.Element {
 			for i, it := range items {
 				// Keyed by the page shown, so that a new one appears and slides from where its
 				// Match was, clipping the name as it widens.
-				e := segment(ui.Row(c).Key([2]int{shown, i}), it).FontSize(t.Text.Base).TextColor(t.Muted).Clip().PassThrough().
+				e := segment(ui.Row(c).Key([2]int{shown, i}), it).FontWeight(500).TextColor(t.Muted).Clip().PassThrough().
 					Transition(ui.ElementTransition{Duration: theme.MotionBase, Match: navContent(i)})
 				if it.Selected || hovered[i] {
 					e.TextColor(t.Foreground)
@@ -200,9 +245,9 @@ func Panel(c *ui.Context, radius float32) ui.Element {
 func CardHeader(c *ui.Context, title, description string) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Column(c).Gap(th.Space(1)).Children(func() {
-		Text(c, title, t.Text.Lg).FontWeight(600)
+		Text(c, title, t.Text.Base).FontWeight(600)
 		if description != "" {
-			Text(c, description, t.Text.Sm).TextColor(t.Muted)
+			Text(c, description, t.Text.Xs).TextColor(t.Muted)
 		}
 	})
 }

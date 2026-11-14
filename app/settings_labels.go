@@ -53,7 +53,7 @@ func (v *labelsView) view(c *ui.Context, p *settingsPage) {
 	a := v.a
 	pageHeading(c, i18n.T("settings.labels"), i18n.T("settings.labels.sub"), func() {
 		// as 新建规则 and 新建签名
-		kit.Button(c, i18n.T("settings.labels.new"), kit.ButtonOpts{Icon: "plus"}).PaddingX(c.Theme().Space(3)).OnClick(func() { v.open(core.Label{Color: "gray", Icon: "folder-3"}) })
+		kit.Button(c, i18n.T("settings.labels.new"), kit.ButtonOpts{Icon: "plus"}).OnClick(func() { v.open(core.Label{Color: "gray", Icon: "folder-3"}) })
 	})
 	settingsSection(c, i18n.T("settings.labels.list"), i18n.T("settings.labels.list.foot"), func() { v.list(c) })
 
@@ -83,7 +83,7 @@ func (v *labelsView) view(c *ui.Context, p *settingsPage) {
 				if !a.taskModels["labels"] {
 					value = i18n.T("settings.labels.model.none")
 				}
-				kit.Text(c, value, theme.Of(c).Text.Body).TextColor(theme.Of(c).Muted)
+				kit.Text(c, value, theme.Of(c).Text.Sm).TextColor(theme.Of(c).Muted)
 				settingButton(c, i18n.T("settings.labels.model.go"), kit.Outline, false).OnClick(func() { a.navigate(Route{Page: PageSettings, Settings: "models"}) })
 			})
 		})
@@ -121,11 +121,11 @@ func (v *labelsView) row(c *ui.Context, l core.Label) {
 		if desc == "" {
 			desc, color = i18n.T("settings.labels.no_desc"), t.Idle
 		}
-		kit.Text(c, desc, t.Text.Sm).TextColor(color).SingleLine().Grow(1).Shrink(1)
+		kit.Text(c, desc, t.Text.Xs).TextColor(color).SingleLine().Grow(1).Shrink(1)
 		if l.Builtin {
 			kit.Badge(c, i18n.T("settings.labels.builtin")).Background(t.Background)
 		}
-		kit.Text(c, i18n.Tf("settings.labels.count", l.Count), t.Text.Sm).TextColor(t.Muted)
+		kit.Text(c, i18n.Tf("settings.labels.count", l.Count), t.Text.Xs).TextColor(t.Muted)
 		kit.IconButton(c, "pen-line", i18n.Tf("settings.labels.edit", l.Name), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 			OnClick(func() { v.open(l) })
 	})
@@ -187,7 +187,7 @@ func (v *labelsView) dialog(c *ui.Context) {
 	}
 	kit.Dialog(c, &v.dlg, title, kit.DialogOpts{Desc: i18n.T("settings.labels.dialog.sub"), Close: i18n.T("common.close")}, func() {
 		preview := cmpName(v.name)
-		ui.Row(c).Gap(th.Space(6)).Padding(th.Space(3)).Radius(t.Radius.Lg).Background(t.Sidebar).Children(func() {
+		kit.Block(c, ui.Row(c), kit.ToneCard).Gap(th.Space(6)).Padding(th.Space(3)).Children(func() {
 			for _, auto := range []bool{false, true} {
 				caption := i18n.T("settings.labels.preview.manual")
 				if auto {
@@ -195,7 +195,7 @@ func (v *labelsView) dialog(c *ui.Context) {
 				}
 				ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 					kit.LabelChip(c, kit.LabelChipOpts{Text: preview, Icon: v.icon, Color: t.Label(v.color), Auto: auto})
-					kit.Text(c, caption, t.Text.Sm).TextColor(t.Muted)
+					kit.Text(c, caption, t.Text.Xs).TextColor(t.Muted)
 				})
 			}
 		})
@@ -351,7 +351,7 @@ func (v *labelsView) rescan(c *ui.Context) {
 						if ready {
 							ui.Spacer(c)
 						} else {
-							kit.Text(c, i18n.T("settings.labels.rescan.no_model"), t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
+							kit.Text(c, i18n.T("settings.labels.rescan.no_model"), t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
 						}
 						settingButton(c, i18n.T("settings.labels.rescan.start"), kit.Default, !ready).OnClick(v.start)
 					})
@@ -360,12 +360,8 @@ func (v *labelsView) rescan(c *ui.Context) {
 				done := v.total - v.pending
 				ui.Row(c).Gap(th.Space(6)).AlignItems(ui.Center).Children(func() {
 					ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1.5)).Children(func() {
-						kit.Text(c, i18n.Tf("settings.labels.rescan.running", done, v.total), t.Text.Sm)
-						ui.Row(c).FillWidth().Height(th.Space(2)).Radius(t.Radius.Full).Background(t.Border).AlignItems(ui.Stretch).Clip().
-							Label(i18n.T("settings.labels.rescan.progress")).Children(func() {
-							ui.Box(c).Grow(float32(done)).Background(t.Primary)
-							ui.Box(c).Grow(float32(v.pending))
-						})
+						kit.Text(c, i18n.Tf("settings.labels.rescan.running", done, v.total), t.Text.Xs)
+						kit.Progress(c, float32(done), float32(done+v.pending), i18n.T("settings.labels.rescan.progress"))
 					})
 					settingButton(c, i18n.T("settings.labels.rescan.stop"), kit.Outline, false).OnClick(v.stop)
 				})

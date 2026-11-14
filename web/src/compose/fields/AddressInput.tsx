@@ -96,7 +96,7 @@ export function AddressInput({
             role="group"
             aria-label={addr}
             variant={bad ? "destructive" : "secondary"}
-            className="h-auto rounded-full px-2 py-0.5 font-normal text-md leading-4"
+            className="h-auto px-2 py-0.5 text-sm leading-4"
           >
             <Tooltip>
               {/* invalid: the entry as typed, so what is wrong shows */}
@@ -125,7 +125,7 @@ export function AddressInput({
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
         aria-activedescendant={open && active >= 0 ? option(active) : undefined}
-        className="h-5.25 min-w-30 flex-1 bg-transparent text-md outline-none placeholder:text-muted-foreground"
+        className="h-5.25 min-w-30 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         placeholder={list.length ? undefined : placeholder}
         value={pending}
         readOnly={frozen}
@@ -170,7 +170,7 @@ export function AddressInput({
           role="listbox"
           id={listId}
           aria-label={t("shell.nav.contacts")}
-          className="absolute top-full left-0 z-50 mt-2 flex w-80 max-w-full flex-col rounded-lg border border-glass-border bg-glass-bg p-1.5 text-popover-foreground shadow-2xl ring-1 ring-glass-ring backdrop-blur-2xl"
+          className="absolute top-full left-0 z-50 mt-2 flex w-80 max-w-full flex-col rounded-lg border border-glass-border bg-glass-bg p-1.5 text-popover-foreground shadow-md backdrop-blur-2xl"
         >
           {hits.map((h, i) => (
             <div
@@ -189,7 +189,7 @@ export function AddressInput({
               {h.name && <span className="w-full truncate">{h.name}</span>}
               <span
                 className={
-                  h.name ? "w-full truncate text-muted-foreground text-sm" : "w-full truncate"
+                  h.name ? "w-full truncate text-muted-foreground text-xs" : "w-full truncate"
                 }
               >
                 {h.address}

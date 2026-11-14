@@ -56,9 +56,9 @@ func Palette(c *ui.Context, open *bool, query *string, o PaletteOpts, head, body
 	ui.DialogBase(c, open, func(backdrop, panel ui.Element) {
 		dialogShown = true
 		// a dialog's scrim, but fixed near the top: as hits come and go the panel only grows down
-		backdrop.Background(t.Scrim.Alpha(k)).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0)
+		backdrop.Background(t.Scrim.Alpha(k)).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0).Transition(leave(c))
 		panel.Label(o.Label).Opacity(k).Margin(rise(k), 0, 0, 0).Width(theme.DialogWideWidth).MaxHeight(theme.SheetMaxHeight).
-			Radius(t.Radius.X2l).Clip().Border(theme.Hairline, t.Border)
+			Radius(t.Radius.Xl).Clip().Border(theme.Hairline, t.Border)
 		glassPanel(panel, t)
 		Elevate(c, panel, theme.ShadowX2l)
 		var in ui.Element
@@ -67,7 +67,7 @@ func Palette(c *ui.Context, open *bool, query *string, o PaletteOpts, head, body
 			ui.Column(c.Key("send")).Shrink(0).Padding(th.Space(3)).Children(func() {
 				ui.Column(c).Gap(th.Space(2)).Padding(th.Space(3)).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).Background(t.Background).Children(func() {
 					in = ui.TextAreaBase(c, query).Placeholder(o.Placeholder).Label(o.Label).FocusRing(false).AutoFocus().
-						MinHeight(th.Space(14)).MaxHeight(th.Space(60)).FontSize(t.Text.Base)
+						MinHeight(th.Space(14)).MaxHeight(th.Space(60)).FontSize(t.Text.Sm)
 					if o.OnKey != nil {
 						in.OnTextKey(o.OnKey)
 					}
@@ -83,7 +83,7 @@ func Palette(c *ui.Context, open *bool, query *string, o PaletteOpts, head, body
 				if o.Chips != nil {
 					o.Chips()
 				}
-				in = ui.TextInputBase(c, query).Placeholder(o.Placeholder).Label(o.Label).FocusRing(false).AutoFocus().Grow(1).FontSize(t.Text.Base)
+				in = ui.TextInputBase(c, query).Placeholder(o.Placeholder).Label(o.Label).FocusRing(false).AutoFocus().Grow(1).FontSize(t.Text.Sm)
 				if o.OnKey != nil {
 					in.OnTextKey(o.OnKey)
 				}
@@ -139,7 +139,7 @@ func Palette(c *ui.Context, open *bool, query *string, o PaletteOpts, head, body
 func PaletteTab(c *ui.Context, label string, chosen bool) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	b := ui.ButtonBase(c).Role(ui.RoleTab).Selected(chosen).Height(th.Space(7)).PaddingX(th.Space(2.5)).Radius(t.Radius.Md).
-		FontSize(t.Text.Sm).TextColor(t.Muted).Transition(colors(theme.MotionFast))
+		FontSize(t.Text.Xs).TextColor(t.Muted).Transition(colors(theme.MotionFast))
 	if chosen {
 		b.Background(t.HoverTint).TextColor(t.Foreground)
 	}
@@ -188,8 +188,8 @@ func PaletteChip(c *ui.Context, label, remove string) ui.Element {
 	var x ui.Element
 	ui.Row(c).Shrink(0).AlignItems(ui.Center).Gap(th.Space(0.5)).Height(th.Space(6)).Padding(0, th.Space(0.5), 0, th.Space(2)).
 		Radius(t.Radius.Md).Background(t.HoverTint).Children(func() {
-		Text(c, label, t.Text.Sm).SingleLine()
-		x = IconButton(c, "x", remove, ButtonOpts{Variant: Ghost, Size: SizeXs})
+		Text(c, label, t.Text.Xs).SingleLine()
+		x = IconButton(c, "x", remove, ButtonOpts{Variant: Ghost, Size: SizeMini})
 	})
 	return x
 }

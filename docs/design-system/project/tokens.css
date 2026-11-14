@@ -2,6 +2,7 @@
 :root, [data-theme="light"] {
   --background: #ffffff; /* Content area, cards, dialogs, popovers, plain toasts. */
   --foreground: #0a0a0a; /* Body text on background, sidebar and window. */
+  --subdued: #404040; /* Text a step under foreground, for what has been seen: a read mail's lines in a list. */
   --muted: #737373; /* Secondary text, icons at rest, timestamps, counts. */
   --window: #ededed; /* Top bar and icon rail behind the panel (transparent over the window material on macOS and Windows 11). */
   --sidebar: #fafafa; /* Page sidebars (mail folders, settings, Wit conversations); light fills of cards inside panels and kbd. */
@@ -13,7 +14,6 @@
   --primary: #171717; /* Default buttons, a switch that is on, checked boxes. */
   --primary-text: #ffffff; /* Text and icons on primary. */
   --hover: #f5f5f5; /* A hovered row, ghost button or secondary button; badges; tab list track. */
-  --sidebar-selected: #f5f5f5; /* The selected row of a sidebar, at regular weight; its icon is muted until hovered. */
   --rail-selected: #0a0a0a0a; /* The selected icon of the rail: a tint of the foreground over the window material (4%; dark: white 10%). */
   --hover-tint: #0a0a0a0a; /* A hovered rail icon or ghost button: a tint of the foreground over the window material (4%; dark: white 8%); over white it equals hover. */
   --unread: #2b7fff; /* The dot beside unread mail in the list. */
@@ -43,6 +43,7 @@
 [data-theme="dark"] {
   --background: #0a0a0a;
   --foreground: #fafafa;
+  --subdued: #d4d4d4;
   --muted: #a1a1a1;
   --window: #1e1e1e;
   --sidebar: #171717;
@@ -54,7 +55,6 @@
   --primary: #e5e5e5;
   --primary-text: #171717;
   --hover: #262626;
-  --sidebar-selected: #262626;
   --rail-selected: #ffffff1a;
   --hover-tint: #ffffff14;
   --unread: #2b7fff;
@@ -96,77 +96,45 @@
   --radius-full: 9999px;
   --font-sans: Geist, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, monospace;
-  --text-xs: 400 11px/1.4 var(--font-sans);
-  --text-sm: 400 12px/1.45 var(--font-sans);
-  --text-base: 400 13px/1.5 var(--font-sans);
-  --text-body: 400 14px/1.6 var(--font-sans);
-  --text-lg: 500 15px/1.5 var(--font-sans);
-  --text-title: 600 16px/1.4 var(--font-sans);
-  --text-xl: 600 18px/1.35 var(--font-sans);
-  --text-\32 xl: 600 20px/1.3 var(--font-sans);
-  --text-display: 600 29px/1.25 var(--font-sans);
+  --text-xs: 400 12px/1.45 var(--font-sans);
+  --text-sm: 400 14px/1.45 var(--font-sans);
+  --text-base: 600 16px/1.45 var(--font-sans);
+  --text-xl: 600 20px/1.45 var(--font-sans);
+  --text-\33 xl: 600 30px/1.45 var(--font-sans);
   --text-mono: 500 12px/1.5 var(--font-mono);
 }
 .xs {
-  font-family: var(--font-sans);
-  font-size: 11px;
-  line-height: 1.4;
-  font-weight: 400;
-  letter-spacing: 0;
-}
-.sm {
   font-family: var(--font-sans);
   font-size: 12px;
   line-height: 1.45;
   font-weight: 400;
   letter-spacing: 0;
 }
-.base {
-  font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 1.5;
-  font-weight: 400;
-  letter-spacing: 0;
-}
-.body {
+.sm {
   font-family: var(--font-sans);
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.45;
   font-weight: 400;
   letter-spacing: 0;
 }
-.lg {
-  font-family: var(--font-sans);
-  font-size: 15px;
-  line-height: 1.5;
-  font-weight: 500;
-  letter-spacing: 0;
-}
-.title {
+.base {
   font-family: var(--font-sans);
   font-size: 16px;
-  line-height: 1.4;
+  line-height: 1.45;
   font-weight: 600;
   letter-spacing: 0;
 }
 .xl {
   font-family: var(--font-sans);
-  font-size: 18px;
-  line-height: 1.35;
-  font-weight: 600;
-  letter-spacing: 0;
-}
-.\32 xl {
-  font-family: var(--font-sans);
   font-size: 20px;
-  line-height: 1.3;
+  line-height: 1.45;
   font-weight: 600;
   letter-spacing: 0;
 }
-.display {
+.\33 xl {
   font-family: var(--font-sans);
-  font-size: 29px;
-  line-height: 1.25;
+  font-size: 30px;
+  line-height: 1.45;
   font-weight: 600;
   letter-spacing: 0;
 }

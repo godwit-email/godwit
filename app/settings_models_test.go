@@ -698,7 +698,7 @@ func TestModelsDeleteConfirmStrip(t *testing.T) {
 	h := withLLM(t)
 	h.editService("test")
 	h.click("删除此服务")
-	h.see("删除「test」？用到它的 skill 会改用默认模型，Key 会从钥匙串移除。")
+	h.see("删除「test」？用到它的 Skill 会改用默认模型，Key 会从钥匙串移除。")
 	if _, ok := h.modelService("test"); !ok {
 		t.Fatal("asking removed the service")
 	}
@@ -721,7 +721,7 @@ func TestModelStatusLineDark(t *testing.T) {
 		dot ui.Color
 	}{{lookOK, d.Success}, {lookUntested, d.Attention}, {lookFail, d.Danger}, {lookSlow, d.Attention}, {lookNone, d.Idle}} {
 		tt := ui.NewTester(func(c2 *ui.Context) {
-			theme.Apply(c2, theme.FromSettings(core.Settings{Theme: "dark", Density: "compact", FontSize: 14, BodyFontSize: 14}, false))
+			theme.Apply(c2, theme.FromSettings(core.Settings{Theme: "dark", Density: "standard", FontSize: 14, BodyFontSize: 14}, false))
 			ui.Box(c2).Padding(20).Children(func() { statusLine(c2, line{"状态", c.l}) })
 		}, 200, 100)
 		r, ok := tt.Find("状态")

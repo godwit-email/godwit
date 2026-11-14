@@ -15,11 +15,7 @@ export function SendBar({
   t: T;
 }) {
   return (
-    <Button
-      className="ml-auto border-0 px-4 font-semibold text-md"
-      disabled={sending || frozen}
-      onClick={onSend}
-    >
+    <Button className="ml-auto" disabled={sending || frozen} onClick={onSend}>
       {t("compose.send")}
     </Button>
   );

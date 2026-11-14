@@ -940,16 +940,16 @@ const (
 )
 
 // colors are the look's dot and text colors.
-func (l look) colors(t theme.Tokens) (dot, fg ui.Color) {
+func (l look) status(t theme.Tokens) (dot kit.Status, fg ui.Color) {
 	switch l {
 	case lookOK:
-		return t.Success, t.Muted
+		return kit.OK, t.Muted
 	case lookUntested, lookSlow:
-		return t.Attention, t.Muted
+		return kit.Attention, t.Muted
 	case lookFail:
-		return t.Danger, t.DangerText
+		return kit.Error, t.DangerText
 	}
-	return t.Idle, t.Muted
+	return kit.Idle, t.Muted
 }
 
 // line is a status line: a dot and its text.
@@ -1272,10 +1272,7 @@ func avatarImage(av core.Avatar) (ui.ImageSource, error) {
 // Selected (on), it does not click.
 func listRow(c *ui.Context, i int, on bool, onClick func(), children func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	b := kit.Pressable(c, kit.PressableOpts{Bare: true, Selected: on, OnClick: onClick}).Radius(0).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4))
-	if b.Hovered() && !on { // Hover's gray is the card's own fill; a tint shows on it
-		b.Background(t.HoverTint)
-	}
+	b := kit.Pressable(c, kit.PressableOpts{Selected: on, OnClick: onClick}).Radius(0).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4))
 	if i > 0 {
 		b.BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border)
 	}

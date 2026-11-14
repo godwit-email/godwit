@@ -56,7 +56,7 @@ func (f *clientForm) choice(c *ui.Context, pub *auth.PublicClient) {
 	}
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).Gap(th.Space(4)).AlignItems(ui.Center).Wrap().Children(func() {
-		kit.Text(c, i18n.T("onboarding.own_client.choice"), t.Text.Base).TextColor(t.Muted)
+		kit.Text(c, i18n.T("onboarding.own_client.choice"), t.Text.Xs).TextColor(t.Muted)
 		kit.Radio(c.Key("own"), &f.public, false, i18n.T("onboarding.own_client.choice.own"))
 		kit.Radio(c.Key("public"), &f.public, true, i18n.T("onboarding.own_client.choice.public"))
 	})
@@ -132,7 +132,7 @@ func (f *clientForm) view(c *ui.Context, a *App, secretHelp string, pub *auth.Pu
 			}
 			f.row(c, a, t.Danger, false, func() {
 				ui.Icon(c, icons.Get("triangle-alert")).Size(theme.IconSm, theme.IconSm).TextColor(t.Danger)
-				kit.Text(c, msg, t.Text.Sm).TextColor(t.Danger).Grow(1).Shrink(1)
+				kit.Text(c, msg, t.Text.Xs).TextColor(t.Danger).Grow(1).Shrink(1)
 				change()
 			})
 			if why != "" {
@@ -142,23 +142,23 @@ func (f *clientForm) view(c *ui.Context, a *App, secretHelp string, pub *auth.Pu
 	case f.imported:
 		f.row(c, a, t.Border, false, func() {
 			ui.Icon(c, icons.Get("check")).Size(theme.IconSm, theme.IconSm).TextColor(t.Success)
-			kit.Text(c, i18n.T("onboarding.own_client.file.imported"), t.Text.Sm)
+			kit.Text(c, i18n.T("onboarding.own_client.file.imported"), t.Text.Xs)
 			kit.Text(c, f.id, t.Text.Xs).Font(theme.Mono).TextColor(t.Muted).MaxLines(1).Grow(1).Shrink(1)
 			change()
 		})
 	default:
 		f.row(c, a, t.Border, true, func() {
 			ui.Icon(c, icons.Get("file-text")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
-			kit.Text(c, i18n.T("onboarding.own_client.file.drop"), t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
+			kit.Text(c, i18n.T("onboarding.own_client.file.drop"), t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
 			kit.Button(c, i18n.T("onboarding.own_client.file.choose"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).OnClick(func() { f.importFile(a, "") })
 		})
 	}
 	if !f.imported {
 		// Pulled left by its padding, so the chevron lines up with the fields (as manualView).
-		kit.Collapsible(c, &f.manual, func() { lineText(c, i18n.T("onboarding.own_client.manual"), t.Text.Base) }, func() {
+		kit.Collapsible(c, &f.manual, func() { lineText(c, i18n.T("onboarding.own_client.manual"), t.Text.Xs) }, func() {
 			ui.Column(c).Gap(th.Space(4)).Children(func() {
 				ui.Field(c, i18n.T("onboarding.own_client.id"), func() {
-					kit.Input(c, &f.id, kit.InputOpts{Placeholder: "….apps.googleusercontent.com"}).Height(inputHeight(c))
+					kit.Input(c, &f.id, kit.InputOpts{Placeholder: "….apps.googleusercontent.com", Size: kit.SizeLg})
 				})
 				label := i18n.T("onboarding.own_client.secret")
 				ui.Field(c, label, func() { secretInput(c, &f.secret, &f.showSecret) }).Description(secretHelp)

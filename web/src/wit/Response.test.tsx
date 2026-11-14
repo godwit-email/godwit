@@ -20,7 +20,7 @@ describe("answer layout", () => {
       <Response text={"| a | b |\n|---|---|\n| 1 | 2 |"} size="page" onLink={() => {}} t={t} />,
     );
     await screen.findByText("1");
-    expect(container.firstElementChild).toHaveClass("text-md", "leading-[1.75]");
+    expect(container.firstElementChild).toHaveClass("text-sm", "leading-[1.75]");
     // one border, the table's own box: no outer frame around it
     const table = container.querySelector("table");
     expect(table?.parentElement).toHaveClass("border-[0.5px]", "rounded-lg");
@@ -83,11 +83,11 @@ describe("answer layout", () => {
   it("headings stay a step above the text at most", async () => {
     render(<Response text={"# One\n\n## Two\n\n### Three\n\nbody"} onLink={() => {}} t={t} />);
     expect(await screen.findByRole("heading", { level: 1 })).toHaveClass(
-      "text-lg",
+      "text-base",
       "font-semibold",
     );
-    expect(screen.getByRole("heading", { level: 2 })).toHaveClass("text-lg", "font-semibold");
-    expect(screen.getByRole("heading", { level: 3 })).not.toHaveClass("text-lg");
+    expect(screen.getByRole("heading", { level: 2 })).toHaveClass("text-base", "font-semibold");
+    expect(screen.getByRole("heading", { level: 3 })).not.toHaveClass("text-base");
   });
 
   it("[n] opens a popover with what cite(n) gives; one it has none for, code and no cite stay text", async () => {

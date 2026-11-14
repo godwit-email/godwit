@@ -53,21 +53,56 @@
   --radius-4xl: calc(var(--radius) + 24px);
 }
 
-/* The native scales (internal/theme): Space(n) = 4n px at density 1; text steps from the root
-   font size, which applyTheme sets to the native FontSize (14 px): xs −3, sm −2, base −1, md (the
-   default text and mail body, 14 px), lg +1. */
+/* The native scales (internal/theme): Space(n) = 4n px at density 1; the text steps are the
+   native TextScale's, names and sizes, from the root font size, which applyTheme sets to the
+   native FontSize (14 px): xs −2 (never under 12), sm the root itself (the interface's text),
+   base +2, xl +6, 3xl +16, each on the native line (theme.LineUI, 1.45). Tailwind's other steps are cleared, so a class off the scale draws
+   nothing; shadcn's components use only xs, sm and base. */
 @theme {
   --spacing: 4px;
-  --text-xs: calc(1rem - 3px);
-  --text-xs--line-height: 1.4;
-  --text-sm: calc(1rem - 2px);
+  --text-*: initial;
+  --text-xs: max(12px, calc(1rem - 2px));
+  --text-xs--line-height: 1.45;
+  --text-sm: 1rem;
   --text-sm--line-height: 1.45;
-  --text-base: calc(1rem - 1px);
-  --text-base--line-height: 1.5;
-  --text-md: 1rem;
-  --text-md--line-height: 1.6;
-  --text-lg: calc(1rem + 1px);
-  --text-lg--line-height: 1.5;
+  --text-base: calc(1rem + 2px);
+  --text-base--line-height: 1.45;
+  --text-xl: calc(1rem + 6px);
+  --text-xl--line-height: 1.45;
+  --text-3xl: calc(1rem + 16px);
+  --text-3xl--line-height: 1.45;
+}
+
+/* shadcn's small buttons and toggles ask for 0.8rem: 11.2 px at the root's 14, under the
+   scale's floor. They take xs, as the native small button does. Outside any layer, so it wins
+   over the utility whatever the order. */
+.text-\[0\.8rem\] {
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+}
+
+/* Where the native kit differs from shadcn's components on purpose, the pages follow the kit, here
+   and once rather than in each page's classes. A badge has radius-sm and reads at 400 beside the
+   mail label chips (shadcn: a pill at 500). A title is at 600 (shadcn: 500). */
+/* Popups have one edge, their border, and the native ShadowMd: Nova's ring
+   would stack a second line on it. */
+.glass-popover,
+[data-slot="popover-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="dropdown-menu-sub-content"],
+[data-slot="select-content"],
+[data-slot="hover-card-content"] {
+  box-shadow:
+    0 4px 6px -1px rgb(0 0 0 / 0.1),
+    0 2px 4px -2px rgb(0 0 0 / 0.1); /* shadow-md */
+}
+
+[data-slot="badge"] {
+  border-radius: var(--radius-sm);
+  font-weight: 400;
+}
+[data-slot$="-title"] {
+  font-weight: 600;
 }
 
 :root {
@@ -106,7 +141,6 @@
   --sidebar-ring: oklch(0.708 0 0);
   --glass-bg: oklch(1 0 0 / 70%);
   --glass-border: oklch(0.145 0 0 / 12%);
-  --glass-ring: oklch(0.145 0 0 / 5%);
   --glass-hover: oklch(0 0 0 / 6%);
 }
 
@@ -145,7 +179,6 @@
   --sidebar-ring: oklch(0.556 0 0);
   --glass-bg: oklch(0.205 0 0 / 70%);
   --glass-border: oklch(1 0 0 / 15%);
-  --glass-ring: oklch(1 0 0 / 6%);
   --glass-hover: oklch(1 0 0 / 10%);
 }
 
@@ -200,8 +233,6 @@ kbd {
     -webkit-backdrop-filter: blur(24px);
     border-radius: var(--radius-lg);
     border: 1px solid var(--glass-border);
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-    outline: 1px solid var(--glass-ring);
   }
 
   [data-slot="select-scroll-up-button"],
@@ -220,6 +251,5 @@ kbd {
   --color-del-foreground: var(--del-text);
   --color-glass-bg: var(--glass-bg);
   --color-glass-border: var(--glass-border);
-  --color-glass-ring: var(--glass-ring);
   --color-glass-hover: var(--glass-hover);
 }

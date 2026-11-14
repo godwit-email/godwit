@@ -292,7 +292,7 @@ func (h *harness) pickColor(color string) {
 // chooses the cell under it, and the field's title names the choice; dragging
 // along it chooses each cell it passes, and the arrows step it.
 func TestSettingsLabelsColorStrip(t *testing.T) {
-	for _, density := range []string{"compact", "comfortable"} {
+	for _, density := range []string{"standard", "comfortable"} {
 		t.Run(density, func(t *testing.T) {
 			h, _ := withAccount(t)
 			st, err := h.env.Svc.GetSettings(context.Background())

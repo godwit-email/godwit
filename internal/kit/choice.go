@@ -1,6 +1,8 @@
 package kit
 
 import (
+	"cmp"
+
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/theme"
@@ -34,9 +36,9 @@ func SwitchRow(c *ui.Context, on *bool, label, help string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.SwitchBase(c, on).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Label(label).Children(func() {
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-			Text(c, label, t.Text.Body).LineHeight(theme.LineFor(label)).FontWeight(500)
+			Text(c, label, t.Text.Sm).FontWeight(500)
 			if help != "" {
-				Text(c, help, t.Text.Sm).TextColor(t.Muted)
+				Text(c, help, t.Text.Xs).TextColor(t.Muted)
 			}
 		})
 		switchTrack(c, *on)
@@ -51,7 +53,7 @@ func Checkbox(c *ui.Context, on *bool, label string) ui.Element {
 		el.Gap(th.Space(2))
 	}
 	return el.Children(func() {
-		box := ui.Box(c).Size(theme.Control, theme.Control).Shrink(0).Radius(t.Radius.Sm).Border(theme.Stroke, t.Input).Background(t.Background).Center()
+		box := ui.Box(c).Size(theme.Control, theme.Control).Shrink(0).Radius(t.Radius.Sm).Border(theme.Stroke, t.Input).Background(t.Background).Center().Transition(colors(theme.MotionFast))
 		Elevate(c, box, theme.ShadowXs)
 		if *on {
 			box.Background(t.Primary).Border(theme.Stroke, t.Primary).TextColor(t.PrimaryText).Children(func() {
@@ -73,32 +75,71 @@ func Radio[T comparable](c *ui.Context, sel *T, v T, label string) ui.Element {
 	})
 }
 
+// ChoiceOpts say how a Choice looks while it is not the one chosen: Dashed
+// in a dashed outline, as a model on offer but not added; Card on the card
+// gray with no outline, as a tile among others on a card.
+type ChoiceOpts struct{ Dashed, Card bool }
+
+// Choice makes e one of several the user picks among and returns it, drawn
+// the one way a choice is: chosen, the hover gray in a primary outline;
+// else the background in the border's (or as o says), half way to the hover
+// gray under the pointer. e is the caller's control, a RadioBase or a
+// Pressable: its role, state and corner are its own.
+func Choice(c *ui.Context, e ui.Element, on bool, o ChoiceOpts) ui.Element {
+	t := theme.Of(c)
+	fill, edge := t.Background, t.Border
+	if o.Card {
+		fill, edge = t.Card, t.Border.Alpha(0)
+	}
+	switch {
+	case on:
+		fill, edge = tint(t, 1), t.Primary
+	case e.Hovered():
+		fill = t.Hover.Mix(fill, 0.5)
+	}
+	e.Background(fill).Border(theme.Stroke, edge).Transition(colors(theme.MotionFast))
+	if o.Dashed && !on {
+		e.Border(theme.Stroke, t.DividerHover).BorderStyle(ui.BorderDashed)
+	}
+	return e
+}
+
+// ToggleChipFrame is a chip that is on or off without its content: 28 high
+// in xs text, muted while off. Give it its Label, Children and OnClick.
+func ToggleChipFrame(c *ui.Context, on bool, o ChoiceOpts) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	b := ui.ButtonBase(c).Height(th.Space(7)).PaddingX(th.Space(2.5)).Gap(th.Space(1.5)).Radius(controlRadius(c, th.Space(7))).FontSize(t.Text.Xs).TextColor(t.Muted)
+	if on {
+		b.TextColor(t.Foreground)
+	}
+	return Choice(c, b, on, o)
+}
+
+// ToggleChip is a ToggleChipFrame showing label: a filter that is on or
+// off, a model added or not.
+func ToggleChip(c *ui.Context, label string, on bool, o ChoiceOpts) ui.Element {
+	return ToggleChipFrame(c, on, o).Label(label).Children(func() { ui.Text(c, label) })
+}
+
 // RadioCard is a radio whose whole card clicks: the dot, label and help
-// under it, bordered while it is the choice.
+// under it, drawn as a Choice on a card.
 func RadioCard[T comparable](c *ui.Context, sel *T, v T, label, help string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	on := *sel == v
 	card := ui.RadioBase(c, sel, v).FillWidth().AlignItems(ui.Start).Gap(th.Space(2)).Padding(th.Space(2)).
-		Radius(t.Radius.Lg).Label(label).Transition(colors(theme.MotionFast))
-	edge, fill := t.Border.Alpha(0), t.Card
-	switch {
-	case on:
-		edge, fill = t.Foreground, t.Hover.Mix(t.Card, 0.5)
-	case card.Hovered():
-		fill = t.Hover.Mix(t.Card, 0.5)
-	}
-	return card.Background(fill).Border(theme.Hairline, edge).Children(func() {
+		Radius(t.Radius.Lg).Label(label)
+	return Choice(c, card, on, ChoiceOpts{Card: true}).Children(func() {
 		radioDot(c, on)
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 			ui.Text(c, label)
-			Text(c, help, t.Text.Sm).TextColor(t.Muted)
+			Text(c, help, t.Text.Xs).TextColor(t.Muted)
 		})
 	})
 }
 
 func radioDot(c *ui.Context, on bool) {
 	t := theme.Of(c)
-	dot := ui.Box(c).Size(theme.Control, theme.Control).Radius(t.Radius.Full).Border(theme.Stroke, t.Input).Background(t.Background).Center().Shrink(0)
+	dot := ui.Box(c).Size(theme.Control, theme.Control).Radius(t.Radius.Full).Border(theme.Stroke, t.Input).Background(t.Background).Center().Shrink(0).Transition(colors(theme.MotionFast))
 	Elevate(c, dot, theme.ShadowXs)
 	if on {
 		dot.Border(theme.Stroke, t.Primary).Children(func() { ui.Box(c).Size(theme.RadioDot, theme.RadioDot).Radius(t.Radius.Full).Background(t.Primary) })
@@ -112,11 +153,35 @@ type Option[T comparable] struct {
 	Disabled bool // listed, muted, and not chosen
 }
 
-// SelectOpts style a SelectWith: zero Radius is Md, zero MinWidth the
-// default, zero MaxWidth unbounded; Flat drops the shadow.
+// SelectOpts style a SelectWith: Size is its height as an Input's, zero
+// MinWidth the default, zero MaxWidth unbounded; Flat drops the shadow.
 type SelectOpts struct {
-	Radius, MinWidth, MaxWidth float32
-	Flat                       bool
+	Size               Size
+	MinWidth, MaxWidth float32
+	Flat               bool
+}
+
+// selectFace makes e a select's face showing current: the input frame with
+// the text and a chevron.
+func selectFace(c *ui.Context, e ui.Element, current string, o SelectOpts) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	inputFrame(c, e, InputOpts{Flat: o.Flat, Size: o.Size})
+	h, padX := inputSize(c, o.Size)
+	e.Height(h).Padding(0, padX-th.Space(0.5), 0, padX).Gap(th.Space(1.5)).MinWidth(cmp.Or(o.MinWidth, theme.SelectMinWidth)).Children(func() { // the chevron's side is half a step tighter
+		ui.Text(c, current).SingleLine().Grow(1).Shrink(1)
+		ui.Icon(c, icons.Get("chevron-down")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
+	})
+	if o.MaxWidth > 0 {
+		e.MaxWidth(o.MaxWidth)
+	}
+	return e
+}
+
+// SelectButton is a button with a select's face showing text, for a choice
+// a Select cannot hold, as several at once: it opens the caller's popover.
+// Give it a Label and an OnClick.
+func SelectButton(c *ui.Context, text string, o SelectOpts) ui.Element {
+	return selectFace(c, ui.ButtonBase(c).Justify(ui.Start), text, o)
 }
 
 // Select is a 32-high select of opts; give it a Label.
@@ -134,21 +199,7 @@ func SelectWith[T comparable](c *ui.Context, o SelectOpts, sel *T, opts []Option
 			current = o.Label
 		}
 	}
-	inputFrame(c, s.Trigger, InputOpts{Flat: o.Flat})
-	radius, minW := o.Radius, o.MinWidth
-	if radius == 0 {
-		radius = t.Radius.Md
-	}
-	if minW == 0 {
-		minW = theme.SelectMinWidth
-	}
-	s.Trigger.Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(2)).Radius(radius).MinWidth(minW).Children(func() {
-		ui.Text(c, current).SingleLine().Grow(1).Shrink(1)
-		ui.Icon(c, icons.Get("chevron-down")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
-	})
-	if o.MaxWidth > 0 {
-		s.Trigger.MaxWidth(o.MaxWidth)
-	}
+	selectFace(c, s.Trigger, current, o)
 	s.Popup(func(panel ui.Element) {
 		panel.Margin(theme.PopupOffset, 0, 0, 0).Padding(th.Space(1)).
 			Radius(t.Radius.Lg).Clip().
@@ -156,12 +207,12 @@ func SelectWith[T comparable](c *ui.Context, o SelectOpts, sel *T, opts []Option
 			Border(theme.Hairline, t.GlassBorder)
 		Elevate(c, panel, theme.ShadowMd)
 		for _, o := range opts {
-			item := s.Item(o.Value).Height(th.Space(8)).PaddingX(th.Space(2)).Gap(th.Space(2)).Radius(t.Radius.Md)
+			item := s.Item(o.Value).Height(th.Space(7)).PaddingX(th.Space(1.5)).Gap(th.Space(1.5)).Radius(t.Radius.Md) // as a MenuItem
 			if o.Disabled {
 				item.Disabled(true).TextColor(t.Muted)
 			}
-			if item.Highlighted() {
-				item.Background(t.Hover)
+			if item.Highlighted() { // on the popup's glass, as a MenuItem
+				item.Background(t.HoverTint)
 			}
 			item.Children(func() {
 				ui.Text(c, o.Label).Grow(1)

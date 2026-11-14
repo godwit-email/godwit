@@ -24,7 +24,7 @@ func TestSettingsDefaults(t *testing.T) {
 	s := settingsService(t, t.TempDir(), "")
 	got, err := s.GetSettings(t.Context())
 	require.NoError(t, err)
-	assert.Equal(t, Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: 6, ReplyLanguage: "match",
+	assert.Equal(t, Settings{Theme: "system", Density: "standard", FontSize: 14, SettingsVersion: 7, ReplyLanguage: "match",
 		BackgroundReceive: "until_quit", ShowTrayIcon: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, ThreadCollapse: true, ThreadCollapseThreshold: 5, RemoteImages: "auto", AutoLabel: true, LabelDisplay: "both", JudgeThreshold: 0.8, BackgroundSync: "inbox",
 		MCPSend: "confirm", Masking: true, MaskCategories: defaultMaskCategories(),
 		SecurityWarnings: true, VerifiedBadge: true, ProxyMode: "system"}, got)
@@ -261,6 +261,23 @@ func TestSettingsBackgroundSyncMigration(t *testing.T) {
 		got, err := s.GetSettings(t.Context())
 		require.NoError(t, err)
 		assert.Equal(t, want, got.BackgroundSync, stored)
+	}
+}
+
+// Version 6's default Density "compact" became "standard"; "comfortable" stays.
+func TestSettingsDensityMigration(t *testing.T) {
+	for stored, want := range map[string]string{
+		`{"Density":"compact","SettingsVersion":6}`:     "standard",
+		`{"Density":"comfortable","SettingsVersion":6}`: "comfortable",
+		`{"SettingsVersion":6}`:                         "standard",
+		`{"Density":"standard","SettingsVersion":7}`:    "standard",
+	} {
+		s := settingsService(t, t.TempDir(), "")
+		_, err := s.db.Execute(t.Context(), "INSERT INTO settings(key, value) VALUES ('app', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", stored)
+		require.NoError(t, err)
+		got, err := s.GetSettings(t.Context())
+		require.NoError(t, err)
+		assert.Equal(t, want, got.Density, stored)
 	}
 }
 

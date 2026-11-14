@@ -289,7 +289,7 @@ func TestAccountInputOuterHeights(t *testing.T) {
 		theme.Apply(c, theme.Light())
 		ui.Column(c).Fill().Padding(20).Gap(12).Children(func() {
 			ui.Box(c).Label("email-frame").Children(func() {
-				kit.Input(c, &email, kit.InputOpts{}).Height(inputHeight(c))
+				kit.Input(c, &email, kit.InputOpts{Size: kit.SizeLg})
 			})
 			ui.Box(c).Label("password-frame").Children(func() {
 				secretInput(c, &password, &shown)

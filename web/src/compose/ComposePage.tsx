@@ -176,7 +176,7 @@ function Failed({ error, retry }: { error: string; retry: () => void }) {
   return (
     <main className={cn("flex h-screen flex-col", material ? "bg-window-material" : "bg-window")}>
       <header className="compose-titlebar shrink-0" />
-      <div className="flex items-center gap-2 px-5 py-3 text-muted-foreground text-sm">
+      <div className="flex items-center gap-2 px-5 py-3 text-muted-foreground text-xs">
         <span>{errorText(error, t)}</span>
         <Button variant="ghost" size="icon-sm" aria-label={t("common.retry")} onClick={retry}>
           <RiRefreshLine />
@@ -264,7 +264,7 @@ function AdjustInput({
         }}
       />
       <div className="flex justify-end gap-1.5">
-        <Button size="xs" variant="outline" className="font-normal" onClick={onCancel}>
+        <Button size="xs" variant="outline" onClick={onCancel}>
           {t("common.cancel")}
         </Button>
         <Button size="xs" disabled={busy || !text.trim()} onClick={send}>
@@ -792,18 +792,18 @@ function Compose({
       {signature && (
         <div
           data-slot="signature-preview"
-          className="text-base text-muted-foreground [&_a]:underline [&_img]:max-w-full"
+          className="text-xs text-muted-foreground [&_a]:underline [&_img]:max-w-full"
           // biome-ignore lint/security/noDangerouslySetInnerHtml: Go sanitized it (SanitizeDraft) before inlining its images
           dangerouslySetInnerHTML={{ __html: signature }}
         />
       )}
       {quote && (
-        <div className="mt-2 text-base text-muted-foreground">
+        <div className="mt-2 text-xs text-muted-foreground">
           <Button
             variant="link"
             size="sm"
             aria-expanded={showQuote}
-            className="h-auto gap-1.25 px-0 font-normal text-base text-muted-foreground hover:text-foreground hover:no-underline"
+            className="h-auto gap-1.25 px-0 font-normal text-xs text-muted-foreground hover:text-foreground hover:no-underline"
             onClick={() => setShowQuote(!showQuote)}
           >
             <RiPlayFill
@@ -847,8 +847,8 @@ function Compose({
       }}
     >
       <header className="compose-titlebar flex shrink-0 items-center gap-2 pr-4">
-        <h1 className="min-w-0 truncate font-semibold text-md">{title}</h1>
-        <p className="shrink-0 text-muted-foreground text-sm">
+        <h1 className="min-w-0 truncate font-semibold text-sm">{title}</h1>
+        <p className="shrink-0 text-muted-foreground text-xs">
           {status === "saved" ? t("compose.status.saved", savedAt) : t(`compose.status.${status}`)}
         </p>
       </header>
@@ -895,16 +895,16 @@ function Compose({
                   </Alert>
                 )}
                 {running && (
-                  <div className="flex items-center gap-2 bg-sidebar px-4 py-2 text-base">
+                  <div className="flex items-center gap-2 bg-sidebar px-4 py-2 text-sm">
                     <RiSparkling2Line className="size-3.5 shrink-0" />
                     <span className="flex-1">{t("wit.compose.writing_banner")}</span>
-                    <Button variant="outline" size="sm" className="text-base" onClick={stop}>
+                    <Button variant="outline" size="sm" onClick={stop}>
                       {t("wit.stop")}
                     </Button>
                   </div>
                 )}
                 {applied && !witLocked && !locked && (
-                  <div className="mx-4 mt-2 flex items-center gap-2 text-muted-foreground text-sm">
+                  <div className="mx-4 mt-2 flex items-center gap-2 text-muted-foreground text-xs">
                     <span>{t("wit.compose.applied")}</span>
                     <Button variant="link" size="sm" className="h-auto px-0" onClick={undo}>
                       {t("wit.compose.undo")}
@@ -1037,7 +1037,6 @@ function Compose({
                         <>
                           <Button
                             size="sm"
-                            className="px-3 font-normal text-base"
                             disabled={deciding}
                             onClick={() => decide((id) => api.decide(id, true), true)}
                           >
@@ -1046,7 +1045,6 @@ function Compose({
                           <Button
                             size="sm"
                             variant="outline"
-                            className="font-normal text-base"
                             disabled={deciding}
                             onClick={() => decide((id) => api.decide(id, false), false)}
                           >

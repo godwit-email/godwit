@@ -795,7 +795,7 @@
   "settings_body_font_size_ui": "Zelfde als interface",
   "settings_density": "Weergavedichtheid",
   "settings_density_comfortable": "Ruim",
-  "settings_density_compact": "Compact (standaard)",
+  "settings_density_standard": "Normaal (standaard)",
   "settings_ext_allow": "Toestaan en inschakelen",
   "settings_ext_browse": "Plug-inmap bekijken",
   "settings_ext_browse_hint": "Gecontroleerde plug-ins die je kunt installeren.",

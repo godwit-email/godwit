@@ -182,7 +182,7 @@ func (v *rulesView) view(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	pageHeading(c, i18n.T("settings.rules"), i18n.T("settings.rules.sub"), func() {
 		if len(v.rules) > 0 {
-			kit.Button(c, i18n.T("settings.rules.new"), kit.ButtonOpts{Icon: "plus"}).PaddingX(th.Space(3)).OnClick(v.create)
+			kit.Button(c, i18n.T("settings.rules.new"), kit.ButtonOpts{Icon: "plus"}).OnClick(v.create)
 		}
 	})
 	if len(v.rules) == 0 {
@@ -197,7 +197,7 @@ func (v *rulesView) view(c *ui.Context) {
 	ui.Column(c).Gap(theme.SectionGap).Children(func() {
 		ui.Column(c).Gap(th.Space(0.5)).Children(func() {
 			sectionTitle(c, i18n.T("settings.rules.templates"))
-			kit.Text(c, i18n.T("settings.rules.templates.foot"), t.Text.Sm).TextColor(t.Muted).PaddingX(th.Space(4))
+			kit.Text(c, i18n.T("settings.rules.templates.foot"), t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(4))
 		})
 		for i := 0; i < len(ruleTemplates); i += 2 {
 			ui.Row(c.Key(i)).FillWidth().Gap(th.Space(2)).AlignItems(ui.Stretch).Children(func() {
@@ -209,7 +209,7 @@ func (v *rulesView) view(c *ui.Context) {
 		// Emptying Trash and Junk is not a rule: it stays with the account's mailboxes.
 		if len(a.accounts) > 0 {
 			id := a.accounts[0].ID
-			kit.TextLink(c, i18n.T("settings.rules.empty_trash"), t.Muted, t.Text.Sm).PaddingX(th.Space(4)).AlignSelf(ui.Start).
+			kit.TextLink(c, i18n.T("settings.rules.empty_trash"), t.Muted, t.Text.Xs).PaddingX(th.Space(4)).AlignSelf(ui.Start).
 				OnClick(func() { a.navigate(Route{Page: PageSettings, Settings: accountRoute(id)}) })
 		}
 	})
@@ -223,12 +223,12 @@ func (v *rulesView) templateCard(c *ui.Context, key, icon string, d core.RuleDoc
 	kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { v.fromTemplate(d, name) }}).
 		Label(i18n.Tf("settings.rules.template.use.label", name)).Grow(1).Basis(0).Shrink(1).
 		AlignItems(ui.Start).Gap(th.Space(3)).Padding(th.Space(3), th.Space(3.5)).Radius(t.Radius.Xl).Children(func() {
-		ui.Box(c).Size(th.Space(8), th.Space(8)).Radius(t.Radius.Lg).Background(t.Hover).Center().Shrink(0).Children(func() {
+		kit.Tile(c, th.Space(8), th.Space(8), kit.ToneTint).Children(func() {
 			ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
 		})
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-			kit.Text(c, name, t.Text.Body).FontWeight(500)
-			kit.Text(c, i18n.T("settings.rules.template."+key+".desc"), t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, name, t.Text.Sm).FontWeight(500)
+			kit.Text(c, i18n.T("settings.rules.template."+key+".desc"), t.Text.Xs).TextColor(t.Muted)
 		})
 	})
 }
@@ -241,7 +241,7 @@ func ruleTag(c *ui.Context, text string, fill, fg ui.Color, icon string) ui.Elem
 		if icon != "" {
 			ui.Icon(c, icons.Get(icon)).Size(theme.IconSm, theme.IconSm)
 		}
-		kit.Text(c, text, t.Text.Sm).SingleLine()
+		kit.Text(c, text, t.Text.Xs).SingleLine()
 	})
 }
 
@@ -313,17 +313,17 @@ func (v *rulesView) row(c *ui.Context, r core.Rule) {
 				kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: toggle}).Label(name).Grow(1).Shrink(1).Children(func() {
 					ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 						ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-							kit.Text(c, name, t.Text.Body).FontWeight(500).TextColor(fg).SingleLine().Shrink(1)
+							kit.Text(c, name, t.Text.Sm).FontWeight(500).TextColor(fg).SingleLine().Shrink(1)
 							v.badges(c, r)
 						})
-						kit.Text(c, v.summary(r.Doc), t.Text.Sm).TextColor(t.Muted).SingleLine()
+						kit.Text(c, v.summary(r.Doc), t.Text.Xs).TextColor(t.Muted).SingleLine()
 					})
 				})
 				hits := i18n.T("settings.rules.off")
 				if r.Enabled {
 					hits = i18n.Tf("settings.rules.hits.count", v.counts[r.ID])
 				}
-				kit.Text(c, hits, t.Text.Sm).TextColor(t.Muted).SingleLine().Shrink(0)
+				kit.Text(c, hits, t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(0)
 				chev, label := "chevron-right", i18n.T("settings.rules.hits.show")
 				if open {
 					chev, label = "chevron-down", i18n.T("settings.rules.hits.hide")
@@ -380,14 +380,14 @@ func (v *rulesView) hitList(c *ui.Context, r core.Rule) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(0, th.Space(4), th.Space(3), th.Space(4)+th.Space(11.5)).Children(func() {
 		box := func() ui.Element {
-			return ui.Column(c).FillWidth().MaxHeight(th.Space(42)).Radius(t.Radius.Lg).Background(t.Background).Border(theme.Hairline, t.Border).Clip()
+			return kit.Block(c, ui.Column(c), kit.ToneOutline).FillWidth().MaxHeight(th.Space(42)).Clip()
 		}
 		if len(v.hits) == 0 {
 			box().Padding(th.Space(4), th.Space(3)).AlignItems(ui.Center).Children(func() {
-				kit.Text(c, i18n.T("settings.rules.hits.none"), t.Text.Sm).TextColor(t.Muted)
+				kit.Text(c, i18n.T("settings.rules.hits.none"), t.Text.Xs).TextColor(t.Muted)
 			})
 		} else {
-			kit.Text(c, i18n.Tf("settings.rules.hits.head", len(v.hits)), t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, i18n.Tf("settings.rules.hits.head", len(v.hits)), t.Text.Xs).TextColor(t.Muted)
 			box().Children(func() {
 				ui.Scroll(c).Shrink(1).Children(func() {
 					now := time.Now()
@@ -412,15 +412,15 @@ func (v *rulesView) hitList(c *ui.Context, r core.Rule) {
 func (v *rulesView) hit(c *ui.Context, r core.Rule, h core.RuleHit, now time.Time) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(2.5), th.Space(3)).Children(func() {
-		kit.Text(c, listTime(now, h.At), t.Text.Sm).TextColor(t.Muted).Width(th.Space(22)).Shrink(0)
+		kit.Text(c, listTime(now, h.At), t.Text.Xs).TextColor(t.Muted).Width(th.Space(22)).Shrink(0)
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1.5)).Children(func() {
 			ui.Row(c).Gap(th.Space(2)).Children(func() {
 				if h.MessageID == 0 {
-					kit.Text(c, i18n.T("settings.rules.hits.gone"), t.Text.Body).TextColor(t.Muted)
+					kit.Text(c, i18n.T("settings.rules.hits.gone"), t.Text.Sm).TextColor(t.Muted)
 					return
 				}
-				kit.Text(c, displayName(h.From), t.Text.Body).FontWeight(500).Shrink(0)
-				kit.Text(c, h.Subject, t.Text.Body).SingleLine().Shrink(1)
+				kit.Text(c, displayName(h.From), t.Text.Sm).FontWeight(500).Shrink(0)
+				kit.Text(c, h.Subject, t.Text.Sm).SingleLine().Shrink(1)
 			})
 			ui.Row(c).Wrap().Gap(th.Space(1.5)).Children(func() {
 				for i, res := range h.Actions {
@@ -436,7 +436,7 @@ func (v *rulesView) hit(c *ui.Context, r core.Rule, h core.RuleHit, now time.Tim
 			})
 		})
 		if h.State == core.RuleRunUndone {
-			kit.Text(c, i18n.T("settings.rules.hits.undone"), t.Text.Sm).TextColor(t.Muted).Shrink(0)
+			kit.Text(c, i18n.T("settings.rules.hits.undone"), t.Text.Xs).TextColor(t.Muted).Shrink(0)
 			return
 		}
 		if slices.ContainsFunc(h.Actions, func(x core.RuleActionResult) bool {

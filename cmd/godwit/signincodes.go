@@ -280,7 +280,7 @@ func (p *platform) signInCodeView(c *ui.Context, b *signInBanner) {
 			kit.AvatarImage(c, sender, b.avatar)
 			action, icon := i18n.T("codes.copy_button"), "copy"
 			if b.code.Code != "" {
-				ui.Text(c, gomail.GroupCode(b.code.Code)).Font(theme.Mono).FontSize(t.Text.X2l).FontWeight(500).Shrink(0)
+				ui.Text(c, gomail.GroupCode(b.code.Code)).Font(theme.Mono).FontSize(t.Text.Xl).FontWeight(500).Shrink(0)
 				note, noteColor := sender, t.Muted
 				switch {
 				case b.copied:
@@ -288,11 +288,11 @@ func (p *platform) signInCodeView(c *ui.Context, b *signInBanner) {
 				case b.failed:
 					note, noteColor, action = i18n.T("codes.copy_failed"), t.DangerText, i18n.T("codes.retry")
 				}
-				kit.Text(c, note, t.Text.Base).TextColor(noteColor).Grow(1).Shrink(1).SingleLine()
+				kit.Text(c, note, t.Text.Xs).TextColor(noteColor).Grow(1).Shrink(1).SingleLine()
 			} else {
 				ui.Column(c).Grow(1).Shrink(1).Children(func() {
-					kit.Text(c, i18n.T("codes.card."+b.code.LinkKind), t.Text.Base).FontWeight(500).SingleLine()
-					kit.Text(c, sender+" · "+gomail.LinkHost(b.code.Link), t.Text.Sm).TextColor(t.Muted).SingleLine()
+					kit.Text(c, i18n.T("codes.card."+b.code.LinkKind), t.Text.Sm).FontWeight(500).SingleLine()
+					kit.Text(c, sender+" · "+gomail.LinkHost(b.code.Link), t.Text.Xs).TextColor(t.Muted).SingleLine()
 				})
 				action, icon = i18n.T("codes.open"), "external-link"
 			}
