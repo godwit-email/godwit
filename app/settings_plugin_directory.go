@@ -25,7 +25,7 @@ func (e *extView) directoryView(c *ui.Context) {
 	})
 	switch {
 	case len(e.reg.Entries) == 0 && e.reg.Stale != "":
-		ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Lg).Background(t.Card).AlignItems(ui.Center).Children(func() {
+		kit.Block(c, ui.Row(c), kit.ToneCard).FillWidth().Gap(th.Space(6)).Padding(th.Space(3), th.Space(4)).AlignItems(ui.Center).Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 				kit.Text(c, i18n.T("settings.ext.directory.offline"), t.Text.Sm).FontWeight(500)
 				kit.Text(c, i18n.T("settings.ext.directory.offline.hint"), t.Text.Xs).TextColor(t.Muted)
@@ -103,7 +103,7 @@ func entryIconBox(c *ui.Context, en core.RegistryEntry, bg ui.Color) {
 func (e *extView) directoryCard(c *ui.Context, en core.RegistryEntry) {
 	t, th := theme.Of(c), c.Theme()
 	title := entryTitle(en)
-	ui.Row(c).Grow(1).Shrink(1).Basis(0).MinWidth(0).Gap(th.Space(2)).Padding(th.Space(3)).Radius(t.Radius.Lg).Background(t.Card).AlignItems(ui.Start).Children(func() {
+	kit.Block(c, ui.Row(c), kit.ToneCard).Grow(1).Shrink(1).Basis(0).MinWidth(0).Gap(th.Space(2)).Padding(th.Space(3)).AlignItems(ui.Start).Children(func() {
 		kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { e.openEntry(en) }}).Label(i18n.Tf("settings.ext.directory.view", title)).Grow(1).Shrink(1).Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(2)).Children(func() {
 				ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
@@ -292,7 +292,7 @@ func (e *extView) installDialog(c *ui.Context) {
 // dataFlowCard is the reviewers' statement of where the plugin's data goes.
 func dataFlowCard(c *ui.Context, en core.RegistryEntry) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).FillWidth().Gap(th.Space(1)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Lg).Background(t.Card).Children(func() {
+	kit.Block(c, ui.Column(c), kit.ToneCard).FillWidth().Gap(th.Space(1)).Padding(th.Space(3), th.Space(4)).Children(func() {
 		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 			kit.Text(c, i18n.T("settings.ext.dialog.flow"), t.Text.Sm).FontWeight(500)
 			if l := flowLabel(en.DataFlow); l != "" {
@@ -309,7 +309,7 @@ func dataFlowCard(c *ui.Context, en core.RegistryEntry) {
 // script all it declares, which is what the dialog's button grants.
 func entryPermissions(c *ui.Context, en core.RegistryEntry) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).FillWidth().Gap(th.Space(1.5)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Lg).Background(t.Card).Children(func() {
+	kit.Block(c, ui.Column(c), kit.ToneCard).FillWidth().Gap(th.Space(1.5)).Padding(th.Space(3), th.Space(4)).Children(func() {
 		kit.Text(c, i18n.T("settings.ext.dialog.perm"), t.Text.Sm).FontWeight(500)
 		if en.Native {
 			text := i18n.T("settings.ext.dialog.perm.native")

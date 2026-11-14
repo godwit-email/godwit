@@ -380,7 +380,7 @@ func (v *rulesView) hitList(c *ui.Context, r core.Rule) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(0, th.Space(4), th.Space(3), th.Space(4)+th.Space(11.5)).Children(func() {
 		box := func() ui.Element {
-			return ui.Column(c).FillWidth().MaxHeight(th.Space(42)).Radius(t.Radius.Lg).Background(t.Background).Border(theme.Hairline, t.Border).Clip()
+			return kit.Block(c, ui.Column(c), kit.ToneOutline).FillWidth().MaxHeight(th.Space(42)).Clip()
 		}
 		if len(v.hits) == 0 {
 			box().Padding(th.Space(4), th.Space(3)).AlignItems(ui.Center).Children(func() {

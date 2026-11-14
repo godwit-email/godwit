@@ -133,11 +133,22 @@ func Gallery(c *ui.Context, g *GalleryState) {
 				Collapsible(c, &g.Collapsible, func() { ui.Text(c, "Show details") }, func() { ui.Text(c, "Collapsible sample text") })
 			})
 			section("Card", func() {
-				Card(c, func() {
+				Card(c, ui.Column(c).Gap(th.Space(3)).Padding(th.Space(4)).Width(theme.SheetWidth), ToneOutline).Children(func() {
 					CardHeader(c, "Card title", "Card description")
 					ui.Text(c, "Card body")
 					CardFooter(c, func() { Button(c, "Card action", ButtonOpts{}) })
-				}).Width(theme.SheetWidth)
+				})
+				row(func() {
+					for _, k := range []struct {
+						name string
+						tone Tone
+					}{{"Card", ToneCard}, {"Tint", ToneTint}, {"Outline", ToneOutline}} {
+						Block(c, ui.Column(c).Padding(th.Space(3)).Width(th.Space(30)), k.tone).Children(func() { ui.Text(c, "Block · "+k.name) })
+					}
+					Card(c, ui.Column(c).Padding(th.Space(3)), ToneCard).Children(func() {
+						Block(c, ui.Column(c).Padding(th.Space(3)).Width(th.Space(30)), ToneRaised).Children(func() { ui.Text(c, "Block · Raised") })
+					})
+				})
 			})
 			section("Badge", func() {
 				row(func() {

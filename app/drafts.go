@@ -155,7 +155,7 @@ func (p *mailPage) draftPane(c *ui.Context) {
 			ui.Column(c).FillWidth().Padding(th.Space(5), th.Space(7)).Children(func() {
 				ui.Column(c).FillWidth().MaxWidth(theme.ReaderMaxWidth).Gap(th.Space(4)).Children(func() {
 					if editing {
-						kit.Text(c, i18n.T("mail.draft.notice"), t.Text.Xs).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Lg).Background(t.Hover)
+						kit.Block(c, kit.Text(c, i18n.T("mail.draft.notice"), t.Text.Xs).Padding(th.Space(2), th.Space(3)), kit.ToneTint)
 					}
 					kit.Text(c, cmp.Or(d.Subject, i18n.T("mail.no_subject")), t.Text.Xl).FontWeight(600).LineHeight(theme.LineSubject)
 					ui.Column(c).Gap(th.Space(1)).Children(func() {
@@ -184,7 +184,7 @@ func draftAttachments(c *ui.Context, atts []core.DraftAttachment) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).Wrap().Gap(th.Space(2)).Children(func() {
 		for _, att := range atts {
-			ui.Row(c).Width(theme.DraftAttachmentWidth).Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Border(theme.Hairline, t.Border).Radius(t.Radius.Lg).Children(func() {
+			kit.Block(c, ui.Row(c), kit.ToneOutline).Width(theme.DraftAttachmentWidth).Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).Children(func() {
 				ui.Box(c).Size(th.Space(7), th.Space(8.5)).Radius(t.Radius.Sm).Background(t.Hover).Center().Shrink(0).Children(func() {
 					kit.Text(c, fileKind(core.AttachmentInfo{Filename: att.Filename, ContentType: att.ContentType}), t.Text.Xs).TextColor(t.Muted)
 				})

@@ -197,7 +197,7 @@ func (v *rulesView) banners(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	d := &v.edit.Doc
 	if v.from != "" {
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2.5)).Padding(th.Space(2.5), th.Space(3.5)).Radius(t.Radius.Lg).Background(t.Hover).Children(func() {
+		kit.Block(c, ui.Row(c), kit.ToneTint).FillWidth().AlignItems(ui.Center).Gap(th.Space(2.5)).Padding(th.Space(2.5), th.Space(3.5)).Children(func() {
 			ui.Icon(c, icons.Get("mail")).Size(theme.Icon, theme.Icon).TextColor(t.Muted).Shrink(0)
 			kit.Text(c, i18n.Tf("settings.rules.from_mail.banner", v.from), t.Text.Sm).Grow(1).Shrink(1)
 			for i, cd := range v.suggest {
@@ -498,7 +498,7 @@ func condEditor(c *ui.Context, conds *[]core.RuleCondition, match *string, menu 
 				}
 				condRail(c, true, g == 0, g == last, btn, true)
 				ui.Column(c).Grow(1).Shrink(1).Basis(0).MinWidth(0).PaddingY(th.Space(1)).Children(func() {
-					ui.Column(c).FillWidth().Padding(th.Space(1), th.Space(2.5)).Radius(t.Radius.Lg).Background(t.Hover).Border(theme.Hairline, t.Border).
+					kit.Block(c, ui.Column(c), kit.ToneTint).FillWidth().Padding(th.Space(1), th.Space(2.5)).
 						Label(i18n.T("settings.rules.cond_group")).Children(func() {
 						rows(&cg.Group, &cg.Match, true, func(i int) {
 							cg.Group = slices.Delete(cg.Group, i, i+1)
@@ -706,7 +706,7 @@ func (v *rulesView) addAction(c *ui.Context) {
 func (v *rulesView) aside(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	// 运行方式 first: a choice of the rule's, over the preview that only shows.
-	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(3)).Radius(t.Radius.Xl).Background(t.Card).Border(theme.Hairline, t.Border).Children(func() {
+	kit.Card(c, ui.Column(c), kit.ToneCard).FillWidth().Gap(th.Space(2)).Padding(th.Space(3)).Children(func() {
 		kit.Text(c, i18n.T("settings.rules.run"), t.Text.Sm).FontWeight(600).PaddingX(th.Space(1))
 		for _, o := range []struct {
 			bg  bool
@@ -715,14 +715,14 @@ func (v *rulesView) aside(c *ui.Context) {
 			kit.RadioCard(c.Key(o.key), &v.edit.Background, o.bg, i18n.T("settings.rules.run."+o.key), i18n.T("settings.rules.run."+o.key+".help"))
 		}
 	})
-	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(3)).Radius(t.Radius.Xl).Background(t.Hover).Children(func() {
+	kit.Card(c, ui.Column(c), kit.ToneTint).FillWidth().Gap(th.Space(2)).Padding(th.Space(3)).Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Baseline).Gap(th.Space(2)).PaddingX(th.Space(1)).Children(func() {
 			kit.Text(c, i18n.T("settings.rules.preview"), t.Text.Sm).FontWeight(600).Grow(1)
 			kit.Text(c, i18n.Tf("settings.rules.preview.recent", core.RulePreviewDays), t.Text.Xs).TextColor(t.Muted)
 		})
 		p := v.prev
 		muted := func(key string) {
-			ui.Column(c).FillWidth().Padding(th.Space(4), th.Space(3)).Radius(t.Radius.Lg).Background(t.Background).Border(theme.Hairline, t.Border).
+			kit.Block(c, ui.Column(c), kit.ToneOutline).FillWidth().Padding(th.Space(4), th.Space(3)).
 				AlignItems(ui.Center).Children(func() { kit.Text(c, i18n.T(key), t.Text.Xs).TextColor(t.Muted).TextAlign(ui.Center) })
 		}
 		switch {
@@ -735,7 +735,7 @@ func (v *rulesView) aside(c *ui.Context) {
 		default:
 			kit.Text(c, i18n.Tf("settings.rules.preview.count", p.Count), t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(1))
 			now := time.Now()
-			ui.Column(c).FillWidth().Radius(t.Radius.Lg).Background(t.Background).Border(theme.Hairline, t.Border).Clip().Children(func() {
+			kit.Block(c, ui.Column(c), kit.ToneOutline).FillWidth().Clip().Children(func() {
 				for i, m := range p.Messages {
 					if i > 0 {
 						kit.Separator(c, false)
@@ -850,7 +850,7 @@ func (v *rulesView) saveDialog(c *ui.Context) {
 			v.runExisting = false
 			return
 		}
-		ui.Column(c).Gap(th.Space(1)).Padding(th.Space(3)).Radius(t.Radius.Lg).Background(t.Background).Border(theme.Hairline, t.Border).Children(func() {
+		kit.Block(c, ui.Column(c), kit.ToneOutline).Gap(th.Space(1)).Padding(th.Space(3)).Children(func() {
 			if len(now) == 0 {
 				v.runExisting = false
 				kit.Text(c, i18n.T("settings.rules.save.existing.nothing"), t.Text.Xs).TextColor(t.Muted)

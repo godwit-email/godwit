@@ -578,7 +578,7 @@ func (v *addressBooksView) addDialogView(c *ui.Context) {
 			}
 		} else {
 			if hint := presetHint(v.preset); hint != "" {
-				ui.Column(c).Gap(th.Space(1)).Padding(th.Space(3)).Radius(t.Radius.Lg).Background(t.Sidebar).Children(func() {
+				kit.Block(c, ui.Column(c), kit.ToneCard).Gap(th.Space(1)).Padding(th.Space(3)).Children(func() {
 					kit.Text(c, hint, t.Text.Xs).TextColor(t.Muted)
 					if curPreset.HelpURL != "" {
 						u := curPreset.HelpURL

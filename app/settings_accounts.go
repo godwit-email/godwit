@@ -728,7 +728,7 @@ func (p *settingsPage) importDialog(c *ui.Context) {
 			if len(p.importPreview.Accounts) == 0 {
 				kit.Text(c, i18n.T("settings.account.import.empty"), t.Text.Xs).TextColor(t.Muted)
 			} else {
-				ui.Column(c).Radius(t.Radius.Lg).Border(theme.Hairline, t.Border).Clip().Children(func() {
+				kit.Block(c, ui.Column(c), kit.ToneOutline).Clip().Children(func() {
 					for i, entry := range p.importPreview.Accounts {
 						if i > 0 {
 							hairline(c)
@@ -1119,10 +1119,10 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 		title, size = i18n.T("settings.account.icon.title"), kit.DialogMd
 		desc = i18n.T("settings.account.icon.desc")
 		body = func() {
-			t, th := theme.Of(c), c.Theme()
+			th := c.Theme()
 			tempAcc := acc
 			tempAcc.Icon = p.iconSelected
-			ui.Row(c).Gap(th.Space(4)).AlignItems(ui.Center).Padding(th.Space(3)).Radius(t.Radius.Lg).Background(t.Sidebar).Children(func() {
+			kit.Block(c, ui.Row(c), kit.ToneCard).Gap(th.Space(4)).AlignItems(ui.Center).Padding(th.Space(3)).Children(func() {
 				if p.iconPreview != nil {
 					markTile(c, p.iconPreview, theme.MarkLg)
 				} else {

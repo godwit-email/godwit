@@ -554,7 +554,7 @@ func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 		if p.Native {
 			nativeCard(c, p)
 		} else {
-			ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Lg).Background(t.Background).Children(func() {
+			kit.Block(c, ui.Column(c), kit.ToneRaised).FillWidth().Gap(th.Space(2)).Padding(th.Space(3), th.Space(4)).Children(func() {
 				kit.Text(c, i18n.T("settings.ext.perms"), t.Text.Sm).LineHeight(theme.LineFor(i18n.T("settings.ext.perms"))).FontWeight(500)
 				if p.Trust == "listed" {
 					kit.Text(c, i18n.T("settings.ext.native.trust.listed"), t.Text.Xs).TextColor(t.Muted)
@@ -614,7 +614,7 @@ func nativeCard(c *ui.Context, p core.PluginInfo) {
 	if len(h) > 12 {
 		h = h[:8] + "…" + h[len(h)-4:]
 	}
-	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Lg).Background(t.Background).Children(func() {
+	kit.Block(c, ui.Column(c), kit.ToneRaised).FillWidth().Gap(th.Space(2)).Padding(th.Space(3), th.Space(4)).Children(func() {
 		title, body := i18n.T("settings.ext.native.risk.title"), i18n.T("settings.ext.native.risk.body")
 		if p.Trust == "listed" && p.Error == "" {
 			title, body, trust = trust, i18n.T("settings.ext.native.reviewed.body"), ""

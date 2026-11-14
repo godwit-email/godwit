@@ -1131,7 +1131,7 @@ const ownClientHelpURL = "https://developers.google.com/workspace/guides/create-
 // optional note under them and a help link.
 func (o *onboarding) hintBox(c *ui.Context, hint, steps, note, help, helpURL string) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).Gap(th.Space(2.5)).Padding(th.Space(3.5), th.Space(4)).Radius(t.Radius.Xl).Background(t.Sidebar).Border(theme.Hairline, t.Hover).Children(func() {
+	kit.Card(c, ui.Column(c), kit.ToneCard).Gap(th.Space(2.5)).Padding(th.Space(3.5), th.Space(4)).Children(func() {
 		lineText(c, hint, t.Text.Sm).FontWeight(500)
 		ui.Column(c).Gap(th.Space(1)).Padding(0, 0, 0, th.Space(1.5)).Children(func() {
 			for i, line := range strings.Split(steps, "\n") {
@@ -1277,7 +1277,7 @@ func (o *onboarding) oauthView(c *ui.Context) {
 			return
 		}
 	}
-	ui.Column(c).Gap(th.Space(3)).Padding(th.Space(5)).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).BorderStyle(ui.BorderDashed).AlignItems(ui.Center).Children(func() {
+	kit.Card(c, ui.Column(c), kit.ToneOutline).Gap(th.Space(3)).Padding(th.Space(5)).BorderStyle(ui.BorderDashed).AlignItems(ui.Center).Children(func() {
 		if o.oauthErr != nil {
 			kit.Alert(c, kit.Danger, humanize(o.oauthErr), func() {
 				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).OnClick(o.startOAuth)
@@ -1439,7 +1439,7 @@ func (o *onboarding) checkView(c *ui.Context) {
 		title = i18n.T("onboarding.check.failed")
 	}
 	heading(c, title, strings.TrimSpace(o.email))
-	ui.Column(c).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).Clip().Children(func() {
+	kit.Card(c, ui.Column(c), kit.ToneOutline).Clip().Children(func() {
 		for i, st := range steps {
 			text, detail, status := o.checkRow(st)
 			row := ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Start).Padding(th.Space(3), th.Space(3.5))

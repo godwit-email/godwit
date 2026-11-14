@@ -350,7 +350,7 @@ func (p *settingsPage) maskValueRow(c *ui.Context, r core.MaskRecord, blocked bo
 	case r.Action == core.MaskWarn:
 		color = t.WarningText
 	}
-	ui.Row(c).FillWidth().MinHeight(th.Space(8)).Padding(th.Space(1), th.Space(2.5)).Gap(th.Space(2.5)).AlignItems(ui.Center).Radius(t.Radius.Lg).Background(t.Background).Children(func() {
+	kit.Block(c, ui.Row(c), kit.ToneRaised).FillWidth().MinHeight(th.Space(8)).Padding(th.Space(1), th.Space(2.5)).Gap(th.Space(2.5)).AlignItems(ui.Center).Children(func() {
 		kit.Text(c, maskCategoryName(r.Category), t.Text.Sm).FontWeight(500).Shrink(0)
 		kit.Text(c, r.Kind, t.Text.Xs).Font(theme.Mono).TextColor(t.Muted).Shrink(0)
 		kit.Text(c, shape, t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)

@@ -460,8 +460,7 @@ func sectionTitle(c *ui.Context, title string) {
 // settingsCard is a section's card of rows, with hairlines between them: a
 // Card fill in a hairline border, so gray chips in its rows are drawn on Background.
 func settingsCard(c *ui.Context, rows ...func()) {
-	t := theme.Of(c)
-	ui.Column(c).Radius(t.Radius.Xl).Background(t.Card).Border(theme.Hairline, t.Border).Clip().Children(func() {
+	kit.Card(c, ui.Column(c), kit.ToneCard).Clip().Children(func() {
 		for i, row := range rows {
 			if i > 0 {
 				hairline(c)

@@ -449,7 +449,7 @@ func (m *modelsView) accountRow(c *ui.Context, f *modelForm) {
 // says what turning it off does to the defaults.
 func capCard(c *ui.Context, title, desc, unsupported, switchLabel string, supported bool, on *bool, warn string, body func()) {
 	t, th := theme.Of(c), c.Theme()
-	card := ui.Column(c).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Xl).Border(theme.Hairline, t.Border).Background(t.Background)
+	card := kit.Card(c, ui.Column(c), kit.ToneOutline).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4))
 	if !supported {
 		card.Background(t.Sidebar)
 		desc = unsupported

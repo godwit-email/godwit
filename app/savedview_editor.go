@@ -304,7 +304,7 @@ func (e *viewEditor) form(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	d := &e.box.Doc
 	if e.note != "" {
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2.5)).Padding(th.Space(2.5), th.Space(3.5)).Radius(t.Radius.Lg).Background(t.Hover).Children(func() {
+		kit.Block(c, ui.Row(c), kit.ToneTint).FillWidth().AlignItems(ui.Center).Gap(th.Space(2.5)).Padding(th.Space(2.5), th.Space(3.5)).Children(func() {
 			ui.Icon(c, icons.Get("mail")).Size(theme.Icon, theme.Icon).TextColor(t.Muted).Shrink(0)
 			kit.Text(c, e.note, t.Text.Sm).Grow(1).Shrink(1)
 		})
@@ -630,7 +630,7 @@ func (e *viewEditor) undoException(thread int64) {
 // preview is 实时预览: what the document shows, as the list will show it.
 func (e *viewEditor) preview(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(3)).Radius(t.Radius.Xl).Background(t.Hover).Children(func() {
+	kit.Card(c, ui.Column(c), kit.ToneTint).FillWidth().Gap(th.Space(2)).Padding(th.Space(3)).Children(func() {
 		total := 0
 		if e.prev != nil {
 			for _, g := range e.prev.Groups {
@@ -644,7 +644,7 @@ func (e *viewEditor) preview(c *ui.Context) {
 			}
 		})
 		note := func(title, desc string) {
-			ui.Column(c).FillWidth().Gap(th.Space(1)).Padding(th.Space(4), th.Space(3)).Radius(t.Radius.Lg).Background(t.Background).Border(theme.Hairline, t.Border).
+			kit.Block(c, ui.Column(c), kit.ToneOutline).FillWidth().Gap(th.Space(1)).Padding(th.Space(4), th.Space(3)).
 				AlignItems(ui.Center).Children(func() {
 				kit.Text(c, title, t.Text.Xs).FontWeight(500).TextAlign(ui.Center)
 				kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted).TextAlign(ui.Center)
@@ -659,7 +659,7 @@ func (e *viewEditor) preview(c *ui.Context) {
 			note(i18n.T("view.empty"), i18n.T("view.preview.empty.desc"))
 		default:
 			now := e.p.a.clock.Now()
-			ui.Column(c).FillWidth().Radius(t.Radius.Lg).Background(t.Background).Border(theme.Hairline, t.Border).Clip().Children(func() {
+			kit.Block(c, ui.Column(c), kit.ToneOutline).FillWidth().Clip().Children(func() {
 				grouped := len(e.box.Doc.Groups) > 0
 				for gi, g := range e.prev.Groups {
 					if grouped {

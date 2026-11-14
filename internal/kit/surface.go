@@ -56,11 +56,47 @@ func SidebarIcon(c *ui.Context, item ui.Element, icon string, selected bool) {
 	ui.Icon(c, svg).Size(theme.Icon, theme.Icon).TextColor(color)
 }
 
-// Card is a bordered panel.
-func Card(c *ui.Context, body func()) ui.Element {
-	t, th := theme.Of(c), c.Theme()
-	card := ui.Column(c).Gap(th.Space(3)).Padding(th.Space(4)).Radius(t.Radius.Xl).Background(t.Background).Border(theme.Hairline, t.Border)
-	return Elevate(c, card, theme.ShadowSm).Children(body)
+// Tone is the fill of a Block or a Card.
+type Tone uint8
+
+const (
+	ToneCard    Tone = iota // the card gray: a region apart from the page around it
+	ToneTint                // the hover gray: one that stands out more, as a note or a group being edited
+	ToneOutline             // the background in a hairline: a region on the page's own white
+	ToneRaised              // the background, bare: a white block on a card
+)
+
+// Block makes e a region inside a page or a card and returns it: tone's
+// fill at radius-lg. Give it its Padding, Gap and Children; a page rounds
+// and fills no box of its own.
+func Block(c *ui.Context, e ui.Element, tone Tone) ui.Element {
+	t := theme.Of(c)
+	return toned(e.Radius(t.Radius.Lg), t, tone, false)
+}
+
+// Card makes e a section of a page and returns it: tone's fill at
+// radius-xl, the card gray in a hairline too.
+func Card(c *ui.Context, e ui.Element, tone Tone) ui.Element {
+	t := theme.Of(c)
+	return toned(e.Radius(t.Radius.Xl), t, tone, true)
+}
+
+// toned fills e as tone; edged also outlines the card gray.
+func toned(e ui.Element, t theme.Tokens, tone Tone, edged bool) ui.Element {
+	switch tone {
+	case ToneCard:
+		e.Background(t.Card)
+		if edged {
+			e.Border(theme.Hairline, t.Border)
+		}
+	case ToneTint:
+		e.Background(t.Hover)
+	case ToneOutline:
+		e.Background(t.Background).Border(theme.Hairline, t.Border)
+	case ToneRaised:
+		e.Background(t.Background)
+	}
+	return e
 }
 
 // PressableOpts say how a Pressable looks and what clicking it does.

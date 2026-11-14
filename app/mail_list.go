@@ -763,8 +763,8 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 		})
 		if p.searched && len(p.results) > 0 && p.hlQuery != "" {
 			q := p.hlQuery
-			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.a.askWit(q) }}).Label(i18n.Tf("mail.search.ask_wit_row", q)).
-				Margin(0, th.Space(2), th.Space(1), th.Space(2)).Padding(th.Space(2), th.Space(3)).Gap(th.Space(2)).Radius(t.Radius.Lg).Background(t.Sidebar).Children(func() {
+			kit.Block(c, kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.a.askWit(q) }}), kit.ToneCard).Label(i18n.Tf("mail.search.ask_wit_row", q)).
+				Margin(0, th.Space(2), th.Space(1), th.Space(2)).Padding(th.Space(2), th.Space(3)).Gap(th.Space(2)).Children(func() {
 				ui.Icon(c, icons.Get("sparkles")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
 				kit.Text(c, i18n.Tf("mail.search.ask_wit_row", q), t.Text.Xs).SingleLine().Grow(1).Shrink(1)
 			})

@@ -106,7 +106,7 @@ func (p *settingsPage) signaturesView(c *ui.Context) {
 						kit.Text(c, usedBy(len(a.signatureUsers(sig.ID))), t.Text.Xs).TextColor(t.Muted).SingleLine()
 					})
 					lines := core.SignaturePreview(sig.HTML, 2)
-					ui.Column(c).FillWidth().Padding(th.Space(2), th.Space(2.5)).Radius(t.Radius.Lg).Background(t.Background).Children(func() {
+					kit.Block(c, ui.Column(c), kit.ToneRaised).FillWidth().Padding(th.Space(2), th.Space(2.5)).Children(func() {
 						if len(lines) == 0 {
 							kit.Text(c, i18n.T("settings.signatures.blank"), t.Text.Xs).TextColor(t.Idle)
 						}
@@ -409,7 +409,7 @@ func (p *settingsPage) accountSignatureView(c *ui.Context, acc core.Account) {
 		rows = append(rows, func() {
 			settingBlock(c, func() {
 				kit.Text(c, i18n.T("settings.account.signature.preview"), t.Text.Xs).TextColor(t.Muted)
-				ui.Column(c).FillWidth().Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Lg).Background(t.Background).Children(func() {
+				kit.Block(c, ui.Column(c), kit.ToneRaised).FillWidth().Padding(th.Space(2.5), th.Space(3)).Children(func() {
 					if doc, ok := p.signaturePreview(*cur); ok {
 						richtext.Render(c, doc, richtext.RenderOptions{OnLink: a.openLink})
 					} else {

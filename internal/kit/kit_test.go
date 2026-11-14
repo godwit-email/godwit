@@ -171,7 +171,7 @@ func TestKitDialogEscapeCloses(t *testing.T) {
 func TestKitDarkRenders(t *testing.T) {
 	tt := ui.NewTester(themed(func(c *ui.Context) {
 		ui.Column(c).Fill().Padding(20).Background(theme.Of(c).Window).Children(func() {
-			Card(c, func() { ui.Text(c, "Inside") })
+			Card(c, ui.Column(c).Padding(c.Theme().Space(4)), ToneOutline).Children(func() { ui.Text(c, "Inside") })
 		})
 	}), 300, 200)
 	tt.SetDark(true)
@@ -216,7 +216,7 @@ func TestKitDensityScales(t *testing.T) {
 		IconButton(c, "archive", "Archive", ButtonOpts{Variant: Ghost})
 		Select(c, &sel, []Option[int]{{Value: 1, Label: "Alpha"}}).Label("Letter")
 		Input(c, &s, InputOpts{}).Label("Name")
-		Card(c, func() {}).Label("Box")
+		Card(c, ui.Column(c).Padding(c.Theme().Space(4)), ToneOutline).Label("Box")
 	}
 	st := core.Settings{Theme: "light", Density: "compact", FontSize: 14, BodyFontSize: 14}
 	compact := heights(t, st, body, "Archive", "Letter", "Name", "Box")

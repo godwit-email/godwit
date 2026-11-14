@@ -187,7 +187,7 @@ func (v *labelsView) dialog(c *ui.Context) {
 	}
 	kit.Dialog(c, &v.dlg, title, kit.DialogOpts{Desc: i18n.T("settings.labels.dialog.sub"), Close: i18n.T("common.close")}, func() {
 		preview := cmpName(v.name)
-		ui.Row(c).Gap(th.Space(6)).Padding(th.Space(3)).Radius(t.Radius.Lg).Background(t.Sidebar).Children(func() {
+		kit.Block(c, ui.Row(c), kit.ToneCard).Gap(th.Space(6)).Padding(th.Space(3)).Children(func() {
 			for _, auto := range []bool{false, true} {
 				caption := i18n.T("settings.labels.preview.manual")
 				if auto {
