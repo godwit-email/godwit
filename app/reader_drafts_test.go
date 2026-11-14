@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/godwit-email/godwit/core"
@@ -39,7 +41,7 @@ func programReply(t *testing.T, h *harness, acc core.Account, src int64, text st
 	mcp := core.WithExternalSource(context.Background(), core.AuditMCP)
 	d, err := h.env.Svc.NewDraft(mcp, acc.ID, "reply", src)
 	if err == nil {
-		d.HTML = "<p>" + text + "</p>"
+		d.HTML, d.Cc, d.Bcc = "<p>"+text+"</p>", []string{"carol@example.com"}, []string{"hidden@example.net"}
 		d, err = h.env.Svc.SaveDraft(mcp, d)
 	}
 	if err != nil {
@@ -53,6 +55,26 @@ func TestThreadProgramDraftApproveSends(t *testing.T) {
 	d := programReply(t, h, acc, src, "Yes, Friday works.")
 	h.waitMail("the program's draft", func() bool { return h.tt.HasText("Yes, Friday works.") })
 	h.see("来自程序的草稿")
+	h.see("carol@example.com") // every address it goes to shows before the approval
+	h.see("hidden@example.net")
+	h.click("批准并发送")
+	h.draftQueued(d.ID)
+}
+
+// A program's attachment change while the thread is open shows at once: the
+// card is the revision an approval sends.
+func TestThreadProgramDraftAttachmentShows(t *testing.T) {
+	h, acc, src := programReplyHarness(t)
+	d := programReply(t, h, acc, src, "Yes, Friday works.")
+	h.waitMail("the program's draft", func() bool { return h.tt.HasText("Yes, Friday works.") })
+	path := filepath.Join(t.TempDir(), "agenda.txt")
+	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := h.env.Svc.AddAttachmentAt(core.WithExternalSource(context.Background(), core.AuditMCP), d.ID, d.Revision, path); err != nil {
+		t.Fatal(err)
+	}
+	h.waitMail("the attachment on the card", func() bool { return h.tt.HasText("agenda.txt") })
 	h.click("批准并发送")
 	h.draftQueued(d.ID)
 }

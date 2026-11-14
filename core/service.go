@@ -119,6 +119,10 @@ type Options struct {
 	// when the interface started it (ADR 0038). nil: the user started it, and
 	// the ui role's StopUIBackend is refused.
 	StopUIBackend func()
+	// ExternalDir is where an agent gateway such as magpie writes the model
+	// services, MCP servers, skills and instructions Godwit mirrors (ADR 0041);
+	// "" turns that off. The apps set ~/.godwit/external.
+	ExternalDir string
 	// StopWithUI runs StopUIBackend once the last interface's connection
 	// ends, however it ended and whatever 后台收信 says: the backend of a
 	// mygo dev session goes with its interface (ADR 0038).
@@ -156,8 +160,13 @@ type Service struct {
 	quitStop   func()                  // the tray's 退出并停止收信 waiting for the interface to quit (StopWhenUIQuits)
 
 	callsMu     sync.Mutex
-	modelMu     sync.RWMutex // writers: a model service's row and key change together; readers see both or neither (ponytail: global, per-id if contended)
-	modelHTTP   *http.Client // model-service HTTP; nil = ai.NoRedirectClient; tests swap it
+	extMu       sync.Mutex        // one syncExternal at a time, and extSeen
+	extSeen     map[string]string // each external file's stamp at its last sync
+	extBy       atomic.Pointer[string]
+	extDirty    atomic.Bool                         // the user changed a service or server: a name an entry was skipped for may be free now
+	extModels   atomic.Pointer[map[string]OwnModel] // managed services' models by base URL + "\n" + ID, for historyBudget
+	modelMu     sync.RWMutex                        // writers: a model service's row and key change together; readers see both or neither (ponytail: global, per-id if contended)
+	modelHTTP   *http.Client                        // model-service HTTP; nil = ai.NoRedirectClient; tests swap it
 	aiMu        sync.Mutex
 	ai          *ai.Engine         // created on first use; see aiEngine
 	appleClient *http.Client       // cached client for Apple Intelligence on-device model
@@ -408,6 +417,7 @@ func New(ctx context.Context, opts Options) (*Service, error) {
 		return nil, err
 	}
 	s.startJanitor()
+	s.startExternalSync()
 	s.startReclaim()
 	s.startImageRetention()
 	if err := s.startRules(ctx); err != nil {

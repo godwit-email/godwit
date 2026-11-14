@@ -320,7 +320,7 @@ func TestShots(t *testing.T) {
 		s.see("正在撰写窗口里编辑")
 		shot(s.harness, "MainDrafts")
 	})
-	t.Run("MainProgramDraft", func(t *testing.T) { // a reply godwit mcp wrote, under its thread (ADR 0041; no artboard)
+	t.Run("MainProgramDraft", func(t *testing.T) { // a reply godwit mcp wrote, under its thread (ADR 0042; no artboard)
 		s := shotMail(t, noAuto)
 		ctx := context.Background()
 		page, err := s.env.Svc.Search(ctx, s.you.ID, "Q4 partnership proposal", 1)

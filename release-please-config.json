@@ -18,6 +18,11 @@
           "type": "json",
           "path": "sdk/package.json",
           "jsonpath": "$.version"
+        },
+        {
+          "type": "json",
+          "path": "packages/magpie-agent/package.json",
+          "jsonpath": "$.version"
         }
       ],
       "include-commit-authors": true

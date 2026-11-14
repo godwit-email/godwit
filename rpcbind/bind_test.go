@@ -307,6 +307,7 @@ func TestWireCodesPinned(t *testing.T) {
 		"folder_name_empty": core.ErrFolderNameEmpty, "folder_exists": core.ErrFolderExists,
 		"provider_mismatch": core.ErrProviderMismatch, "needs_grant": core.ErrNeedsGrant,
 		"plugin_not_found": core.ErrPluginNotFound, "mcp_not_found": core.ErrMCPNotFound,
+		"mcp_managed": core.ErrMCPManaged, "model_service_managed": core.ErrModelServiceManaged,
 		"registry_off": core.ErrRegistryOff, "registry_signature": core.ErrRegistrySignature,
 		"translator_unavailable": core.ErrTranslatorUnavailable, "model_unavailable": core.ErrModelUnavailable,
 		"system_language_not_installed": core.ErrSystemLanguageNotInstalled, "system_language_unsupported": core.ErrSystemLanguageUnsupported,

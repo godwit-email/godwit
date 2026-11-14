@@ -55,7 +55,7 @@ type Thread struct {
 	ReplyTarget int64
 	// Drafts are the drafts a program wrote (FromProgram) that answer or
 	// forward a message of the thread and are not in the outbox, oldest first:
-	// the thread shows them with 批准并发送 (ADR 0041).
+	// the thread shows them with 批准并发送 (ADR 0042).
 	Drafts []Draft
 }
 

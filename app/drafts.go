@@ -122,7 +122,7 @@ func draftChip(c *ui.Context, text string) {
 	})
 }
 
-// programNotice is what heads a draft a program wrote (ADR 0041): its label
+// programNotice is what heads a draft a program wrote (ADR 0042): its label
 // and the ask to check it before 批准并发送.
 func programNotice(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
@@ -189,18 +189,7 @@ func (p *mailPage) draftPane(c *ui.Context) {
 						programNotice(c)
 					}
 					kit.Text(c, cmp.Or(d.Subject, i18n.T("mail.no_subject")), t.Text.X2l).FontWeight(600).LineHeight(theme.LineSubject)
-					ui.Column(c).Gap(th.Space(1)).Children(func() {
-						for _, f := range [][2]string{
-							{i18n.T("compose.to"), cmp.Or(strings.Join(d.To, ", "), i18n.T("mail.no_recipient"))},
-							{i18n.T("compose.subject"), cmp.Or(d.Subject, i18n.T("mail.no_subject"))},
-							{i18n.T("compose.from"), p.accountEmail(d.AccountID)},
-						} {
-							ui.Row(c).Gap(th.Space(3)).Children(func() {
-								ui.Text(c, f[0]).TextColor(t.Muted).LineHeight(theme.LineCJK).MinWidth(th.Space(12)).Shrink(0)
-								ui.Text(c, f[1]).LineHeight(theme.LineCJK).Grow(1).Shrink(1)
-							})
-						}
-					})
+					p.draftFields(c, d)
 					ui.Column(c).Padding(th.Space(4), 0, 0, 0).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
 						richtext.Render(c, info.doc, richtext.RenderOptions{OnLink: p.a.openLink})
 					})
@@ -208,6 +197,29 @@ func (p *mailPage) draftPane(c *ui.Context) {
 				})
 			})
 		})
+	})
+}
+
+// draftFields are the draft's headers: every address it goes to (Cc and Bcc
+// when it has them: approving sends to all of them), its subject and sender.
+func (p *mailPage) draftFields(c *ui.Context, d core.Draft) {
+	t, th := theme.Of(c), c.Theme()
+	fields := [][2]string{{i18n.T("compose.to"), cmp.Or(strings.Join(d.To, ", "), i18n.T("mail.no_recipient"))}}
+	if len(d.Cc) > 0 {
+		fields = append(fields, [2]string{i18n.T("compose.cc"), strings.Join(d.Cc, ", ")})
+	}
+	if len(d.Bcc) > 0 {
+		fields = append(fields, [2]string{i18n.T("compose.bcc"), strings.Join(d.Bcc, ", ")})
+	}
+	fields = append(fields, [2]string{i18n.T("compose.subject"), cmp.Or(d.Subject, i18n.T("mail.no_subject"))},
+		[2]string{i18n.T("compose.from"), p.accountEmail(d.AccountID)})
+	ui.Column(c).Gap(th.Space(1)).Children(func() {
+		for _, f := range fields {
+			ui.Row(c).Gap(th.Space(3)).Children(func() {
+				ui.Text(c, f[0]).TextColor(t.Muted).LineHeight(theme.LineCJK).MinWidth(th.Space(12)).Shrink(0)
+				ui.Text(c, f[1]).LineHeight(theme.LineCJK).Grow(1).Shrink(1)
+			})
+		}
 	})
 }
 
@@ -284,6 +296,9 @@ func (p *mailPage) doSend(id, rev int64, call func(context.Context) error) {
 			return
 		default:
 			a.toastErr(err) // blocked, stale and the rest read from humanize
+			if errors.Is(err, core.ErrStaleDraft) && a.route.ThreadID != 0 {
+				p.reader.sync(true) // a thread's program draft (programDrafts) shows its new revision
+			}
 		}
 		p.reload()
 	})

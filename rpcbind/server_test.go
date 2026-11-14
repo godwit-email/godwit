@@ -308,7 +308,7 @@ func TestAuditSendRevision(t *testing.T) {
 	assert.Equal(t, [][]any{{"local_api", "SendRevision", d.ID, ""}}, auditRows(t, e.DataDir))
 }
 
-// 批准并发送 (ADR 0041) sends from the interface alone, audited as the ui's
+// 批准并发送 (ADR 0042) sends from the interface alone, audited as the ui's
 // send; the draft is the one godwit mcp wrote, and mcp cannot approve it.
 func TestAuditApproveDraft(t *testing.T) {
 	e := coretest.New(t, coretest.WithoutAutoSync())

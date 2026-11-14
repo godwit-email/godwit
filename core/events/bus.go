@@ -23,7 +23,7 @@ const (
 	MCPSendsChanged     = "mcp_sends.changed"     // godwit mcp's send requests waiting for the user changed
 	ImportProgress      = "import.progress"       // an .eml import into AccountID handled Done of Total files
 	AddressBooksChanged = "address_books.changed" // address books, collections, order or synced cards changed
-	DraftsChanged       = "drafts.changed"        // a program created or changed a draft of AccountID (ADR 0041)
+	DraftsChanged       = "drafts.changed"        // a program created or changed a draft (ADR 0042)
 	// NotificationClicked: the backend got a click on notification Notification
 	// while a ui client is connected; the interface opens what it shows. With
 	// none, the backend starts the interface for it instead.

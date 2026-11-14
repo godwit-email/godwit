@@ -39,6 +39,9 @@ const defaultHistoryBudget = 60000
 // shortcut: a rune counted as a token, safe for CJK but trims English JSON at
 // about a third of the window; count with the provider's tokens if that bites.
 func (s *Service) historyBudget(baseURL, model string) int {
+	if own := s.extModels.Load(); own != nil && (*own)[baseURL+"\n"+model].Context > 0 {
+		return (*own)[baseURL+"\n"+model].Context * 8 / 10 // the gateway's own (ADR 0041), models.dev knows no routing group
+	}
 	if m, _ := s.catalogModel(baseURL, model); m.Context > 0 {
 		return m.Context * 8 / 10
 	}
@@ -48,28 +51,31 @@ func (s *Service) historyBudget(baseURL, model string) int {
 // refHistoryBudget is historyBudget for a conversation's model ref ("": the
 // default model), without resolving its key.
 func (s *Service) refHistoryBudget(ctx context.Context, ref string) int {
-	baseURL, model, ok := s.refModel(ctx, ref)
+	svc, model, ok := s.refModel(ctx, ref)
 	if !ok {
 		return defaultHistoryBudget
 	}
-	return s.historyBudget(baseURL, model)
+	return s.historyBudget(svc.BaseURL, model)
 }
 
-// ModelName is models.dev's display name for a "slug/model" ref's model; ""
+// ModelName is the display name for a "slug/model" ref's model (its gateway's,
+// else models.dev's); ""
 // when it lists none.
 func (s *Service) ModelName(ctx context.Context, ref string) string {
-	baseURL, model, ok := s.refModel(ctx, ref)
+	svc, model, ok := s.refModel(ctx, ref)
 	if !ok {
 		return ""
 	}
-	m, _ := s.catalogModel(baseURL, model)
+	if n := svc.ownModels[model].Name; n != "" {
+		return n
+	}
+	m, _ := s.catalogModel(svc.BaseURL, model)
 	return m.Name
 }
 
-// refModel is a model ref's ("": the default model) service address and
-// model ID, without resolving its key; a plugin's or a gone service's has no
-// address.
-func (s *Service) refModel(ctx context.Context, ref string) (baseURL, model string, ok bool) {
+// refModel is a model ref's ("": the default model) service and model ID,
+// without resolving its key; a plugin's or a gone service's is empty.
+func (s *Service) refModel(ctx context.Context, ref string) (svc ModelService, model string, ok bool) {
 	if ref == "" {
 		if st, err := s.loadSettings(ctx); err == nil {
 			ref = st.DefaultModel
@@ -77,20 +83,25 @@ func (s *Service) refModel(ctx context.Context, ref string) (baseURL, model stri
 	}
 	r, err := ai.ParseModelRef(ref)
 	if err != nil {
-		return "", "", false
+		return ModelService{}, "", false
 	}
 	s.modelMu.RLock()
 	m, _ := s.modelServiceBy(ctx, "slug = ?", r.Service)
 	s.modelMu.RUnlock()
-	return m.BaseURL, r.Model, true
+	return m, r.Model, true
 }
 
-// catalogNames is models.dev's display names for the service's models, nil
-// when it lists none.
+// catalogNames is the display names of the service's models: its gateway's
+// own (ADR 0041), else models.dev's; nil when there are none.
 func (s *Service) catalogNames(m ModelService) map[string]string {
 	var names map[string]string
 	for _, id := range m.Models {
-		if c, _ := s.catalogModel(m.BaseURL, id); c.Name != "" {
+		if n := m.ownModels[id].Name; n != "" {
+			if names == nil {
+				names = map[string]string{}
+			}
+			names[id] = n
+		} else if c, _ := s.catalogModel(m.BaseURL, id); c.Name != "" {
 			if names == nil {
 				names = map[string]string{}
 			}

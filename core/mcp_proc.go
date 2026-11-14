@@ -45,11 +45,21 @@ func (p *mcpProc) Close() error {
 	return nil
 }
 
-// startMCPProcess starts srv's command with only PATH and its Env in its
-// environment. The user granted running it: it is not sandboxed.
+// mcpHomeVars name the home folder: HOME, and USERPROFILE on Windows.
+var mcpHomeVars = []string{"HOME", "USERPROFILE"}
+
+// startMCPProcess starts srv's command with only PATH, the home folder and
+// its Env in its environment: nothing of Godwit's own (keys, proxies) leaks
+// in, but a server can find its files (npx, magpie's). The user granted
+// running it: it is not sandboxed.
 func startMCPProcess(srv MCPServer, env map[string]string) (mcp.Transport, *mcpProc, error) {
 	cmd := exec.Command(srv.Command, srv.Args...)
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH")}
+	for _, k := range mcpHomeVars {
+		if v := os.Getenv(k); v != "" {
+			cmd.Env = append(cmd.Env, k+"="+v)
+		}
+	}
 	for _, k := range slices.Sorted(maps.Keys(env)) {
 		cmd.Env = append(cmd.Env, k+"="+env[k])
 	}

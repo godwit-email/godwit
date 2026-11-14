@@ -208,7 +208,7 @@ func TestAskCreateDraftEditedKeepsSignature(t *testing.T) {
 	assert.Equal(t, "Hi there", r.Values[0][0])
 	assert.Equal(t, `<p>Line one</p><p>Bob &lt;bob@x.com&gt;</p><div data-godwit="signature"><p>Me</p></div>`, r.Values[0][1])
 	assert.Equal(t, `["carol@y"]`, r.Values[0][2], "only the subject and body are editable")
-	assert.Equal(t, 1, e.count(t, "SELECT COUNT(*) FROM drafts WHERE from_program = 1"), "Wit's draft is marked (ADR 0041)")
+	assert.Equal(t, 1, e.count(t, "SELECT COUNT(*) FROM drafts WHERE from_program = 1"), "Wit's draft is marked (ADR 0042)")
 }
 
 func TestAskCreateDraftNeedsApproval(t *testing.T) {

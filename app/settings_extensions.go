@@ -297,6 +297,9 @@ func (e *extView) skillsView(c *ui.Context) {
 			if s.Builtin {
 				desc += " · " + i18n.T("settings.ext.builtin")
 			}
+			if s.ManagedBy != "" {
+				desc += " · " + i18n.Tf("settings.managed_by", s.ManagedBy)
+			}
 			settingRow(c.Key(s.Name), s.Label(), desc, func() {
 				on := s.Enabled
 				if kit.Switch(c, &on).Label(i18n.Tf("settings.ext.skill.enable", s.Label())).Changed() {
@@ -902,6 +905,9 @@ func (e *extView) serverView(c *ui.Context, s core.MCPServer) {
 		if !s.Granted {
 			desc = i18n.T("settings.ext.mcp.grant.help")
 		}
+		if s.ManagedBy != "" {
+			desc += " · " + i18n.Tf("settings.managed_by", s.ManagedBy)
+		}
 		if s.Error != "" {
 			desc += " · " + s.Error
 		}
@@ -954,6 +960,9 @@ func (e *extView) serverView(c *ui.Context, s core.MCPServer) {
 		})
 	}
 	rows = append(rows, func() {
+		if s.ManagedBy != "" { // its gateway's file is where it changes (ADR 0041)
+			return
+		}
 		settingBlock(c, func() {
 			ui.Row(c).Gap(th.Space(2)).Children(func() {
 				kit.Button(c, i18n.T("settings.ext.mcp.edit"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { e.editServer(s) })

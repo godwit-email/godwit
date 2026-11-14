@@ -139,7 +139,7 @@ func TestMailRead(t *testing.T) {
 
 func TestCompose(t *testing.T) {
 	runContract(t, func(t *testing.T, api contract.API, env *coretest.Env) any {
-		// As the full role writes it, typed too: a program's draft (ADR 0041).
+		// As the full role writes it, typed too: a program's draft (ADR 0042).
 		ctx := core.WithExternalSource(t.Context(), core.AuditLocalAPI)
 		acc := env.AddAccount(t, "alice@example.com")
 		out := map[string]any{}
@@ -248,6 +248,9 @@ func TestSettings(t *testing.T) {
 		}
 		bv, sv := reflect.ValueOf(before), reflect.ValueOf(st)
 		for i := range sv.NumField() { // every field must make the round trip
+			if sv.Type().Field(i).Name == "DefaultModelBy" {
+				continue // read from a gateway's file, never saved (ADR 0041)
+			}
 			if reflect.DeepEqual(bv.Field(i).Interface(), sv.Field(i).Interface()) {
 				t.Errorf("field %s keeps its default; change it", sv.Type().Field(i).Name)
 			}

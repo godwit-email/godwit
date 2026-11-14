@@ -86,8 +86,10 @@ var table = []Error{
 	{Code: "recognition_model_missing", Err: core.ErrRecognitionModelMissing},
 	{Code: "recognition_model_mismatch", Err: core.ErrRecognitionModelMismatch},
 	{Code: "mcp_not_found", Err: core.ErrMCPNotFound},
+	{Code: "mcp_managed", Err: core.ErrMCPManaged},
 	{Code: "ai_not_configured", Err: core.ErrAINotConfigured},
 	{Code: "model_service_not_found", Err: core.ErrModelServiceNotFound},
+	{Code: "model_service_managed", Err: core.ErrModelServiceManaged},
 	{Code: "model_not_found", Err: core.ErrModelNotFound},
 	{Code: "model_auth", Err: core.ErrModelAuth},
 	{Code: "model_login", Err: core.ErrModelLogin},
@@ -262,7 +264,7 @@ var uiOnly = map[string]bool{
 	"DevPreviewSignInCode": true,
 	// Whether the backend's tray shows its icon: the interface's window hides only where it can come back.
 	"TrayShown": true,
-	// 批准并发送 on a program's draft (ADR 0041): the approval stands for the user's click,
+	// 批准并发送 on a program's draft (ADR 0042): the approval stands for the user's click,
 	// so no program may give it. It sends nothing SendRevision could not.
 	"ApproveDraft": true,
 }

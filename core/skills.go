@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -26,12 +27,15 @@ type SkillInfo struct {
 	Builtin, Enabled  bool
 	UI                bool // has godwit-action-*
 	Error             string
+	ManagedBy         string // the agent gateway whose library it comes from (ADR 0041); "" otherwise
 }
 
 func (s SkillInfo) Label() string { return skills.Label(s.Name, s.DisplayName) }
 
 // loadSkills merges the built-ins with DataDir/skills; a user skill replaces a
 // built-in of the same name, even a broken one (it is reported, not hidden).
+// Skills an agent gateway put in ExternalDir/skills come last and replace
+// nothing (ADR 0041).
 func (s *Service) loadSkills() (ok map[string]skills.Skill, failed map[string]error, err error) {
 	ok = map[string]skills.Skill{}
 	for _, b := range skills.Builtins() {
@@ -46,6 +50,24 @@ func (s *Service) loadSkills() (ok map[string]skills.Skill, failed map[string]er
 	}
 	for _, u := range good {
 		ok[u.Name] = u
+	}
+	if s.opts.ExternalDir == "" {
+		return ok, failed, nil
+	}
+	ext, extFailed, err := skills.LoadLinkedDir(filepath.Join(s.opts.ExternalDir, externalSkills))
+	if err != nil { // the gateway's folder must not take the user's skills down with it
+		slog.Warn("external skills unreadable", "err", err)
+		return ok, failed, nil
+	}
+	for _, e := range ext {
+		if _, taken := ok[e.Name]; !taken && failed[e.Name] == nil {
+			ok[e.Name] = e
+		}
+	}
+	for n, e := range extFailed {
+		if _, taken := ok[n]; !taken && failed[n] == nil {
+			failed[n] = e
+		}
 	}
 	return ok, failed, nil
 }
@@ -72,7 +94,7 @@ func (s *Service) ListSkills(ctx context.Context) ([]SkillInfo, error) {
 	var out []SkillInfo
 	for n, sk := range ok {
 		out = append(out, SkillInfo{Name: n, DisplayName: sk.DisplayName, Icon: sk.Icon, Description: sk.Description, On: sk.On, Output: sk.Output, Model: sk.Model, Tier: sk.Tier,
-			Builtin: sk.Builtin, Enabled: !slices.Contains(off, n), UI: len(sk.On) > 0})
+			Builtin: sk.Builtin, Enabled: !slices.Contains(off, n), UI: len(sk.On) > 0, ManagedBy: s.managedBy(sk.External)})
 	}
 	for n, e := range failed {
 		out = append(out, SkillInfo{Name: n, Icon: skills.IconOrDefault(""), Enabled: !slices.Contains(off, n), Error: e.Error()})

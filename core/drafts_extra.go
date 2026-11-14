@@ -94,6 +94,7 @@ func (s *Service) SetDraftAccount(ctx context.Context, id, accountID, revision i
 	if r.Changes == 0 {
 		return Draft{}, fmt.Errorf("draft %d changed or was deleted meanwhile", id)
 	}
+	s.programChanged(ctx, nil)
 	return s.GetDraft(ctx, id)
 }
 
@@ -112,7 +113,7 @@ func (s *Service) SendRevision(ctx context.Context, draftID, revision int64) err
 var ErrNotProgramDraft = errors.New("no program wrote this draft")
 
 // ApproveDraft is the user's 批准并发送 on a draft a program wrote
-// (FromProgram, ADR 0041): Send for exactly the revision the interface
+// (FromProgram, ADR 0042): Send for exactly the revision the interface
 // showed, else ErrStaleDraft, so a program's change after the user looked
 // voids it; any other draft is ErrNotProgramDraft. Plugins' message.beforeSend
 // checks run as for Send (warnings: SendAcknowledgedRevision, same revision),

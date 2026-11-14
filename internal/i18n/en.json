@@ -4,6 +4,14 @@
   "settings_collapse_quotes_help": "Hide what a reply quotes behind a button, so only what the sender wrote shows",
   "reader_quote_expand": "Show quoted text",
   "reader_quote_collapse": "Fold quoted text",
+  "settings_managed_by": "Managed by {arg1}",
+  "@settings_managed_by": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "settings_remote_images_keep": "Keep unused images",
   "settings_remote_images_keep_help": "Cached images not opened for this long are deleted. Attachments are never touched. An old message loads them again if its sender still has them.",
   "settings_remote_images_keep_forever": "Until the cache is full",

@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A program's draft (ADR 0041) is marked whichever Local API role wrote it, and
+// A program's draft (ADR 0042) is marked whichever Local API role wrote it, and
 // the mark outlives the user's edits; the user's own drafts are not marked.
 func TestProgramDraftMarked(t *testing.T) {
 	e := coretest.New(t, coretest.WithoutAutoSync())

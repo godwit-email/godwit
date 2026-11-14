@@ -39,7 +39,7 @@ type Draft struct {
 	Revision int64
 	// FromProgram: a program (the Local API, godwit mcp, a plugin or Wit)
 	// created or changed it, so the interface labels it and offers
-	// ApproveDraft. Local only; the user's own edits keep it (ADR 0041).
+	// ApproveDraft. Local only; the user's own edits keep it (ADR 0042).
 	FromProgram bool
 }
 
@@ -289,7 +289,7 @@ func (s *Service) auditMCPDraft(ctx context.Context, action string, target int64
 type programKey struct{}
 
 // withProgram marks ctx as a program's draft write that comes in through no
-// Local API role: a plugin's or a Wit rule's (ADR 0041).
+// Local API role: a plugin's or a Wit rule's (ADR 0042).
 func withProgram(ctx context.Context) context.Context {
 	return context.WithValue(ctx, programKey{}, true)
 }
@@ -303,15 +303,17 @@ func fromProgram(ctx context.Context) int {
 	return 0
 }
 
+// programChanged tells the interface a program's draft write succeeded
+// (err nil), so an open thread shows the draft as it is now (GetThread).
+func (s *Service) programChanged(ctx context.Context, err error) {
+	if err == nil && fromProgram(ctx) == 1 {
+		s.bus.Publish(events.Event{Type: events.DraftsChanged})
+	}
+}
+
 // saveDraft is SaveDraft, unaudited.
 func (s *Service) saveDraft(ctx context.Context, d Draft) (out Draft, err error) {
-	if fromProgram(ctx) == 1 { // an open thread shows it (GetThread)
-		defer func() {
-			if err == nil {
-				s.bus.Publish(events.Event{Type: events.DraftsChanged, AccountID: out.AccountID})
-			}
-		}()
-	}
+	defer func() { s.programChanged(ctx, err) }()
 	// Draft changes and Send never interleave.
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
@@ -494,6 +496,7 @@ func (s *Service) addAttachment(ctx context.Context, draftID, rev int64, filenam
 		return DraftAttachment{}, now, errors.Join(err, derr)
 	}
 	now, err := s.draftRevision(ctx, draftID)
+	s.programChanged(ctx, err)
 	return DraftAttachment{ID: id, Filename: filename, ContentType: contentType, Size: len(data)}, now, err
 }
 
@@ -559,6 +562,7 @@ func (s *Service) removeAttachment(ctx context.Context, draftID, attachmentID, r
 		{SQL: "DELETE FROM draft_attachments WHERE id = ?", Args: []any{attachmentID}}, bumpRevision(ctx, draftID)}); err != nil {
 		return 0, err
 	}
+	s.programChanged(ctx, nil) // removed: the file left behind changes nothing shown
 	if err := os.Remove(store.Str(rows.Values[0][0])); err != nil && !os.IsNotExist(err) {
 		return 0, err
 	}
