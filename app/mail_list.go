@@ -1680,7 +1680,9 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 		return slices.Contains(m.FolderIDs, v.FolderID)
 	}
 	l, exec := p.ls(), p.exec
+	unchoose := p.choiceGoes(l, rows)
 	var op string
+	var removed []int64 // the messages a removing op took out of the view
 	failed, byAcc := 0, map[int64][]int64{}
 	start := a.clock.Now() // a purge's undo window starts after this
 	// Expansions run in the order asked, so the writes they chain do too.
@@ -1753,6 +1755,8 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 			}
 			if removes(op) {
 				l.sel.Clear()
+				p.closeReaderOf(removed) // as the reader's own act does
+				unchoose()
 			}
 			if op == "purge" && len(purged) > 0 {
 				p.offerUndoPurge(i18n.Tf("mail.purge.toast", len(purged)), purged, start)
@@ -1788,10 +1792,13 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 					skipped = append(skipped, names[acc])
 				} else if err != nil {
 					failed += len(ids)
-				} else if op == "purge" && !a.isArchiveID(acc) { // an archive's are gone at once: no undo
-					purged = append(purged, ids...)
-				} else if op == "archive" {
-					archived = append(archived, undo)
+				} else {
+					removed = append(removed, ids...)
+					if op == "purge" && !a.isArchiveID(acc) { // an archive's are gone at once: no undo
+						purged = append(purged, ids...)
+					} else if op == "archive" {
+						archived = append(archived, undo)
+					}
 				}
 				if pending--; pending == 0 {
 					finish()
@@ -1802,6 +1809,24 @@ func (p *mailPage) batchScoped(act string, rows []mailItem, anywhere bool) {
 			finish()
 		}
 	})
+}
+
+// choiceGoes is a removing action's hold on l's choice, for rows: run once
+// the action is done, it unchooses the row chosen as the action started when
+// that row was among rows and the choice has not moved since. Without it the
+// row that slides into the gone row's place shows as chosen while the reader
+// does not show it, and the next key acts on mail the user has not seen.
+func (p *mailPage) choiceGoes(l *listSel, rows []mailItem) func() {
+	cur, shown := l.cur, p.shown()
+	i := rowOf(p.entries(shown), cur)
+	if i < 0 || !slices.ContainsFunc(rows, func(it mailItem) bool { return it.key() == shown[i].key() }) {
+		return func() {}
+	}
+	return func() {
+		if l.cur == cur {
+			l.cur = -1
+		}
+	}
 }
 
 // offerUndoPurge follows a permanent delete of ids queued after start: the
