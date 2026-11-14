@@ -238,7 +238,9 @@ func checkMCPInput(in *MCPServerInput, old *MCPServer) error {
 				return fmt.Errorf("invalid %s name %q", kind, k)
 			case v == "" && (old == nil || !slices.Contains(had, k)):
 				return fmt.Errorf("%s %s needs a value", kind, k)
-			case v != "" && utf8.RuneCountInString(v) < 8:
+			// The form takes a secret of 8 or more, which redaction can find (ai.Redact);
+			// a gateway's file holds plain config too (DEBUG=1), kept and never redacted.
+			case v != "" && utf8.RuneCountInString(v) < 8 && in.managedBy == "":
 				return fmt.Errorf("%s %s: a value must be at least 8 characters", kind, k)
 			case !validValue(v):
 				return fmt.Errorf("%s %s: the value has invalid characters", kind, k)

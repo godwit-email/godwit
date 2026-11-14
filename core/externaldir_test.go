@@ -513,3 +513,18 @@ func TestExternalMCPEmptyValueRemovesTheSecret(t *testing.T) {
 	_, err = keychainGet(s.mcpSecretUser(list[0].ID, "header", "X-Two"))
 	assert.Error(t, err)
 }
+
+func TestExternalMCPShortValue(t *testing.T) {
+	s, dir := externalSvc(t)
+	ctx := t.Context()
+	writeExternal(t, dir, externalModels, magpieEntry("k", "", "m"))
+	writeExternal(t, dir, externalMCP, map[string]any{"mcpServers": map[string]any{
+		"tool": map[string]any{"command": "magpie-tool", "env": map[string]string{"DEBUG": "1"}}}})
+	s.syncExternal(ctx)
+	list, err := s.ListMCPServers(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 1, "a short config value does not keep the server out")
+	assert.Equal(t, []string{"DEBUG"}, list[0].EnvKeys)
+	_, err = s.AddMCPServer(ctx, MCPServerInput{Name: "mine", Transport: "stdio", Command: "x", Env: map[string]string{"TOKEN": "short"}})
+	assert.Error(t, err, "the form still asks for a secret long enough to redact")
+}
