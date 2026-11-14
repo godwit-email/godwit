@@ -1580,8 +1580,8 @@ func TestConnectAIApp(t *testing.T) {
 		b, err := os.ReadFile(config)
 		return err == nil && strings.Contains(string(b), `"godwit"`) && strings.Contains(string(b), `"mcp"`)
 	})
-	// A click acts on how the page last read the app, and it reads it again after the toast.
-	h.until("read as connected", func() bool { return p.clients[mcpclients.ClaudeCode] == mcpclients.On })
+	// A click toggles the state last read, and the toast comes before the read after it.
+	h.until("the row shows it connected", func() bool { return p.clients[mcpclients.ClaudeCode] == mcpclients.On })
 	h.click("Claude Code")
 	h.see("已断开 Claude Code。")
 	h.until("taken out", func() bool { b, _ := os.ReadFile(config); return !strings.Contains(string(b), `"godwit"`) })
@@ -1601,7 +1601,7 @@ func TestConnectClaudeExtension(t *testing.T) {
 	installClaudeExtension(t, h.home, h.app.mcpServer())
 	h.openSettings("general") // back: the AI apps are read again
 	p := h.aiTab(aiApps)
-	h.until("read as installed", func() bool { return p.clients[mcpclients.Claude] == mcpclients.On })
+	h.until("the row shows it installed", func() bool { return p.clients[mcpclients.Claude] == mcpclients.On })
 	h.click("Claude")
 	h.see("请在 Claude 的设置 › 扩展中移除 Godwit。")
 }
