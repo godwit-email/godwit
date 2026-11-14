@@ -436,3 +436,37 @@ func TestExternalStaleSnapshotKeepsTheUsersDefault(t *testing.T) {
 	assert.Equal(t, "mine/x", st.DefaultModel)
 	assert.Equal(t, "dark", st.Theme)
 }
+
+func TestExternalMCPPartialSecretsRepairedWhenTheFileGoesBack(t *testing.T) {
+	s, dir := externalSvc(t)
+	ctx := t.Context()
+	server := func(one, two string) map[string]any {
+		return map[string]any{"mcpServers": map[string]any{"search": map[string]any{"type": "http", "url": "http://127.0.0.1:3425/mcp",
+			"headers": map[string]string{"X-One": one, "X-Two": two}}}}
+	}
+	writeExternal(t, dir, externalModels, magpieEntry("k", "", "m"))
+	writeExternal(t, dir, externalMCP, server("secret-a1", "secret-a2"))
+	s.syncExternal(ctx)
+
+	// The file changes; the keychain saves one new value, then refuses the other.
+	set := keyringSet
+	setFor(t, &keyringSet, func(service, user, pass string) error {
+		if pass == "secret-b2" {
+			return errors.New("keychain locked")
+		}
+		return set(service, user, pass)
+	})
+	writeExternal(t, dir, externalMCP, server("secret-b1", "secret-b2"))
+	s.syncExternal(ctx)
+
+	// The gateway goes back to the first config: its secrets are written again.
+	setFor(t, &keyringSet, set)
+	writeExternal(t, dir, externalMCP, server("secret-a1", "secret-a2"))
+	s.syncExternal(ctx)
+	list, err := s.ListMCPServers(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	one, err := keychainGet(s.mcpSecretUser(list[0].ID, "header", "X-One"))
+	require.NoError(t, err)
+	assert.Equal(t, "secret-a1", one)
+}

@@ -354,7 +354,8 @@ func (s *Service) UpdateMCPServer(ctx context.Context, id int64, in MCPServerInp
 	s.disconnectMCP(id, "")
 	newEnv, newHeaders := slices.Collect(maps.Keys(in.Env)), slices.Collect(maps.Keys(in.Headers))
 	if _, err := s.db.Transaction(ctx, []sqlite.Statement{
-		{SQL: "UPDATE mcp_servers SET version = version + 1, enabled = 0, granted_version = 0 WHERE id = ?", Args: []any{id}},
+		// managed_hash too: until the new config is saved whole, no file matches it (ADR 0041)
+		{SQL: "UPDATE mcp_servers SET version = version + 1, enabled = 0, granted_version = 0, managed_hash = '' WHERE id = ?", Args: []any{id}},
 		{SQL: "DELETE FROM mcp_tool_trust WHERE server_id = ?", Args: []any{id}},
 		listMCPKeys(id, slices.Concat(old.EnvKeys, newEnv), slices.Concat(old.HeaderKeys, newHeaders)),
 	}); err != nil {
@@ -416,7 +417,7 @@ func (s *Service) removeMCPServer(ctx context.Context, id int64, managedBy strin
 	}
 	// Stopped and disabled first; then the secrets: if one cannot be deleted
 	// the server stays, disabled, listing only the keys left, for a retry.
-	if _, err := s.db.DurableExecute(ctx, "UPDATE mcp_servers SET enabled = 0 WHERE id = ?", id); err != nil {
+	if _, err := s.db.DurableExecute(ctx, "UPDATE mcp_servers SET enabled = 0, managed_hash = '' WHERE id = ?", id); err != nil {
 		return err
 	}
 	s.disconnectMCP(id, "")
