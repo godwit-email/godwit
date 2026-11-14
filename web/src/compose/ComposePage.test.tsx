@@ -457,7 +457,7 @@ test("send flushes first and freezes", async () => {
   fireEvent.change(el, { target: { value: "正文!" } });
   await userEvent.click(screen.getByRole("button", { name: "发送" }));
   expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ body: "正文!", revision: 7 }));
-  expect(api.send).toHaveBeenCalledWith(8, "");
+  expect(api.send).toHaveBeenCalledWith(8, "", 0);
   expect(order(vi.mocked(api.save))).toBeLessThan(order(vi.mocked(api.send)));
   // typing while it sends is refused, and says so
   await userEvent.type(el, "y");
@@ -496,7 +496,7 @@ test("clicking 发送 commits a typed address", async () => {
     target: { value: "x@y.z" },
   });
   await userEvent.click(screen.getByRole("button", { name: "发送" }));
-  await waitFor(() => expect(api.send).toHaveBeenCalledWith(8, ""));
+  await waitFor(() => expect(api.send).toHaveBeenCalledWith(8, "", 0));
   expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ to: ["a@x.com", "x@y.z"] }));
 });
 
@@ -509,7 +509,7 @@ test("cmd-enter commits pending address", async () => {
   await act(async () => {
     fireEvent.keyDown(el, { key: "Enter", metaKey: true });
   });
-  await waitFor(() => expect(api.send).toHaveBeenCalledWith(8, ""));
+  await waitFor(() => expect(api.send).toHaveBeenCalledWith(8, "", 0));
   expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ to: ["a@x.com", "x@y.z"] }));
 });
 
@@ -519,10 +519,24 @@ test("send warnings then send anyway", async () => {
   render(<ComposePage />);
   await body();
   await userEvent.click(screen.getByRole("button", { name: "发送" }));
-  expect(api.send).toHaveBeenCalledWith(7, "");
+  expect(api.send).toHaveBeenCalledWith(7, "", 0);
   expect(screen.getByText("发送前检查：没有附件")).toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "仍然发送" }));
-  expect(api.send).toHaveBeenLastCalledWith(7, "d");
+  expect(api.send).toHaveBeenLastCalledWith(7, "d", 0);
+});
+
+test("send later: warnings keep the time for send anyway", async () => {
+  const w = { plugin: "p", message: "没有附件" };
+  vi.mocked(api.send).mockResolvedValueOnce({ ...noWarnings, warnings: [w], digest: "d" });
+  render(<ComposePage />);
+  await body();
+  await userEvent.click(screen.getByRole("button", { name: "稍后发送…" }));
+  await userEvent.click(await screen.findByRole("button", { name: "排定发送" }));
+  const at = vi.mocked(api.send).mock.calls[0][2];
+  expect(at).toBeGreaterThan(Date.now());
+  expect(api.send).toHaveBeenCalledWith(7, "", at);
+  await userEvent.click(screen.getByRole("button", { name: "仍然发送" }));
+  expect(api.send).toHaveBeenLastCalledWith(7, "d", at);
 });
 
 test("an edit clears the warnings", async () => {
@@ -682,18 +696,20 @@ test("a failed read of the latest offers 重试", async () => {
   expect(await body()).toHaveValue("最新");
 });
 
-test("the bottom bar holds the format toolbar and 发送 only: no discard, no note", async () => {
+test("the bottom bar holds the format toolbar, 稍后发送 and 发送 only: no discard, no note", async () => {
   render(<ComposePage />);
   await body();
   const bar = document.querySelector("[data-bar]") as HTMLElement;
   expect(within(bar).getByRole("button", { name: "发送" })).toBeInTheDocument();
   expect(within(bar).queryByRole("button", { name: "丢弃草稿" })).toBeNull();
   expect(bar).not.toHaveTextContent("只能写草稿");
-  // a narrow window wraps it, the toolbar first and 发送 kept at the end (ml-auto)
+  // a narrow window wraps it, the toolbar first and 稍后发送, 发送 kept at the end (ml-auto)
   expect(bar).toHaveClass("flex-wrap");
   const send = within(bar).getByRole("button", { name: "发送" });
-  expect(send).toHaveClass("ml-auto");
-  expect(bar.lastElementChild).toBe(send);
+  const end = bar.lastElementChild as HTMLElement;
+  expect(end).toHaveClass("ml-auto");
+  expect(end.lastElementChild).toBe(send);
+  expect(within(end).getByRole("button", { name: "稍后发送…" })).toBeInTheDocument();
 });
 
 test("send during composition: a composition that never ends sends nothing", async () => {

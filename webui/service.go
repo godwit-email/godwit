@@ -3,6 +3,7 @@ package webui
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/mail"
@@ -55,6 +56,7 @@ type Service interface {
 	SaveDraft(ctx context.Context, d core.Draft) (core.Draft, error)
 	SearchWith(ctx context.Context, q core.SearchQuery, limit int) ([]core.MessageSummary, error)
 	SendAcknowledgedRevision(ctx context.Context, draftID, revision int64, digest string) error
+	SendLater(ctx context.Context, draftID, revision int64, at time.Time, digest string) error
 	SendRevision(ctx context.Context, draftID, revision int64) error
 	SenderAvatar(ctx context.Context, messageID int64, allowRemote bool) (core.Avatar, error)
 	SetConversationModel(ctx context.Context, id int64, ref, effort string) error

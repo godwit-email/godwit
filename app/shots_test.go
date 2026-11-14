@@ -255,6 +255,26 @@ func TestShots(t *testing.T) {
 	})
 	noAuto := func(st *core.Settings) { st.QuickReplies, st.Summary = false, false }
 
+	t.Run("Scheduled", func(t *testing.T) {
+		s := shotMail(t, noAuto)
+		ctx := context.Background()
+		d, err := s.env.Svc.NewDraft(ctx, s.you.ID, "new", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d.To, d.Subject, d.HTML = []string{"lena@partner.example"}, "Re: Q4 partnership proposal", "<p>November works.</p>"
+		if d, err = s.env.Svc.SaveDraft(ctx, d); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.env.Svc.SendLater(ctx, d.ID, d.Revision, day(10, 12, 8, 0), ""); err != nil {
+			t.Fatal(err)
+		}
+		s.waitMail("listed under 已排定", func() bool { return len(s.app.mail.scheduled) == 1 })
+		s.click("已排定")
+		s.see("Re: Q4 partnership proposal")
+		shot(s.harness, "Scheduled")
+	})
+
 	t.Run("Main", func(t *testing.T) {
 		s := shotMail(t, noQuick)
 		openLena(s)

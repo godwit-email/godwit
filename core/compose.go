@@ -586,6 +586,41 @@ func (s *Service) Send(ctx context.Context, draftID int64) error {
 	return s.send(ctx, draftID, -1, apiSend(ctx, "Send", draftID, s.secrets.Redact))
 }
 
+// SendLater is SendRevision, or SendAcknowledgedRevision for a digest, that
+// holds the message in the outbox until at (ADR 0042): until it is sent it is
+// listed with its OutboxItem.SendAt and CancelOutbox takes it back. Only a
+// running backend sends it, so one due while Godwit was closed goes when it
+// starts (OutboxExpiry still counts from at). The send checks run now, on
+// the draft that is sent. Only Godwit's interface can call it (rpcbind
+// uiOnly); the audit row, written with the item, says when it is due.
+func (s *Service) SendLater(ctx context.Context, draftID, revision int64, at time.Time, digest string) error {
+	if at.IsZero() {
+		return errors.New("send later: no time given")
+	}
+	e, ok := apiAudit(ctx, "SendLater", draftID)
+	if !ok {
+		e.Source = AuditUI // uiOnly: the caller is the interface's user, audited even in process
+	}
+	e.Reason = "scheduled for " + at.UTC().Format(time.RFC3339)
+	rs := &ruleSend{at: at, stmts: []sqlite.Statement{gateway.Audit(e, s.secrets.Redact)}}
+	if digest != "" {
+		return s.sendAcknowledged(ctx, draftID, max(revision, 0), digest, rs)
+	}
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	return s.send(ctx, draftID, max(revision, 0), rs)
+}
+
+func latest(a, b time.Time) time.Time {
+	if a.After(b) {
+		return a
+	}
+	return b
+}
+
 // apiSend is a send over the Local API: queued, the mail leaves unattended,
 // so its audit row (apiAudit) goes in with the outbox item; nil for none.
 func apiSend(ctx context.Context, action string, draftID int64, redact func(string) string) *ruleSend {
@@ -742,7 +777,13 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 		}
 		o.Attachments = append(o.Attachments, mail.Attachment{Filename: store.Str(a[0]), ContentType: store.Str(a[1]), Data: data})
 	}
-	raw, messageID, err := mail.Build(o, s.clk().Now())
+	now := s.clk().Now()
+	sendAfter, date, sendAt := now.Add(UndoSendWindow), now, any(nil)
+	if rs != nil && !rs.at.IsZero() {
+		// Dated when it is due, as it would be if sent then; never before the undo window ends.
+		sendAt, sendAfter, date = rs.at.UnixMilli(), latest(rs.at, sendAfter), latest(rs.at, now)
+	}
+	raw, messageID, err := mail.Build(o, date)
 	if err != nil {
 		return err
 	}
@@ -763,9 +804,9 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 			Args: []any{s.clk().Now().Unix(), d.SourceMessageID}}}, stmts...)
 	}
 	if _, err := s.db.DurableTransaction(ctx, append([]sqlite.Statement{{SQL: `INSERT INTO outbox(account_id, message_id_hdr, raw_path, rcpts, state, subject, created_at,
-		draft_id, send_after) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
-		Args: []any{d.AccountID, messageID, rawPath, encodeList(rcpts), d.Subject, s.clk().Now().Unix(), draftID,
-			s.clk().Now().Add(UndoSendWindow).UnixMilli()}}}, stmts...)); err != nil {
+		draft_id, send_after, send_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)`,
+		Args: []any{d.AccountID, messageID, rawPath, encodeList(rcpts), d.Subject, now.Unix(), draftID,
+			sendAfter.UnixMilli(), sendAt}}}, stmts...)); err != nil {
 		os.Remove(rawPath)
 		return err
 	}
