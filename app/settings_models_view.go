@@ -241,7 +241,7 @@ func usageRow(c *ui.Context, label, desc string, l *line, control func()) {
 			kit.Text(c, label, t.Text.Sm).LineHeight(theme.LineFor(label)).FontWeight(500)
 			kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted)
 			if l != nil {
-				statusLine(c, *l).Margin(th.Space(1.25), 0, 0, 0) // the design's 4, and the pixel its CJK line height adds
+				statusLine(c, *l).Margin(th.Space(1), 0, 0, 0)
 			}
 		})
 		control()

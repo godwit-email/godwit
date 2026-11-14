@@ -81,7 +81,6 @@ color: var(--muted);
 | `primary` | #171717 | #e5e5e5 | Default buttons, a switch that is on, checked boxes. |
 | `primary-text` | #ffffff | #171717 | Text and icons on primary. |
 | `hover` | #f5f5f5 | #262626 | A hovered row, ghost button or secondary button; badges; tab list track. |
-| `sidebar-selected` | #f5f5f5 | #262626 | The selected row of a sidebar, at regular weight; its icon is muted until hovered. |
 | `rail-selected` | #0a0a0a0a | #ffffff1a | The selected icon of the rail: a tint of the foreground over the window material (4%; dark: white 10%). |
 | `hover-tint` | #0a0a0a0a | #ffffff14 | A hovered rail icon or ghost button: a tint of the foreground over the window material (4%; dark: white 8%); over white it equals hover. |
 | `unread` | #2b7fff | #2b7fff | The dot beside unread mail in the list. |

@@ -13,7 +13,7 @@ The content panel is `background`. Its column is centered, at most 760 wide, wit
 - Title 设置 in `xl`, then a search field (32 high, `radius-lg`, `window` fill, a 16 px search icon in `muted`), then two groups labelled in `xs` `muted`.
 - **账户**: one row per account — provider logo (a 20 px tile, `radius-sm`, `shadow-xs`), address, status dot (6, `success` healthy, `attention` needs a look). Last row: **+ 添加账户** in `muted`.
 - **应用**: 通用, 模型服务, 扩展, 隐私与安全, 关于, each with a 16 px icon: line icon in `muted` at rest, the filled icon in `foreground` when selected.
-- Rows are 32 high, `radius-lg`, `space-0-5` apart. The selected row is `sidebar-selected` at regular weight.
+- Rows are 32 high, `radius-lg`, `space-0-5` apart. The selected row is `hover-tint` at 1.75 steps at regular weight.
 
 ## Page header
 

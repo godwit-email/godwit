@@ -707,7 +707,7 @@ func (o *onboarding) Content(c *ui.Context) {
 			ui.Column(c).Gap(th.Space(4.5)).Children(func() {
 				for _, p := range []struct{ icon, key string }{{"lock", "keychain"}, {"monitor", "local"}, {"sparkles", "ai"}} {
 					ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Start).Children(func() {
-						ui.Icon(c, icons.Get(p.icon)).Size(theme.IconMd, theme.IconMd).Margin(th.Space(0.5), 0, 0, 0).TextColor(t.Foreground.Mix(t.Background, 0.25))
+						ui.Icon(c, icons.Get(p.icon)).Size(theme.IconMd, theme.IconMd).Margin(th.Space(0.5), 0, 0, 0).TextColor(t.Subdued)
 						ui.Column(c).Gap(th.Space(0.5)).Shrink(1).Children(func() {
 							lineText(c, i18n.T("onboarding.promise."+p.key), t.Text.Sm).FontWeight(500)
 							kit.Text(c, i18n.T("onboarding.promise."+p.key+".sub"), t.Text.Xs).TextColor(t.Muted).LineHeight(theme.LineProse)
@@ -791,7 +791,7 @@ func mark(c *ui.Context, p auth.Provider, size float32) {
 		fs = t.Text.Sm
 	}
 	ui.Box(c).Size(size, size).Center().Children(func() {
-		kit.Text(c, text, fs).FontWeight(600).LineHeight(theme.LineTight).TextColor(t.Foreground.Mix(t.Background, 0.25))
+		kit.Text(c, text, fs).FontWeight(600).LineHeight(theme.LineTight).TextColor(t.Subdued)
 	})
 }
 
@@ -1135,7 +1135,7 @@ func (o *onboarding) hintBox(c *ui.Context, hint, steps, note, help, helpURL str
 		lineText(c, hint, t.Text.Sm).FontWeight(500)
 		ui.Column(c).Gap(th.Space(1)).Padding(0, 0, 0, th.Space(1.5)).Children(func() {
 			for i, line := range strings.Split(steps, "\n") {
-				ui.Text(c, strconv.Itoa(i+1)+". "+line).TextColor(t.Foreground.Mix(t.Background, 0.25)).LineHeight(theme.LineProse)
+				ui.Text(c, strconv.Itoa(i+1)+". "+line).TextColor(t.Subdued).LineHeight(theme.LineProse)
 			}
 		})
 		if note != "" {

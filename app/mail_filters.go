@@ -152,7 +152,7 @@ func (p *mailPage) labelFilter(c *ui.Context) {
 	b := kit.Pressable(c, kit.PressableOpts{Glass: true, Bordered: true, OnClick: func() { p.sf.labelOpen = !p.sf.labelOpen }}).
 		Label(i18n.T("mail.filter.label.name")).Expanded(p.sf.labelOpen).Height(th.Space(6)).PaddingX(th.Space(2)).Gap(th.Space(1)).Radius(t.Radius.Md)
 	if set {
-		b.Background(t.SidebarSelected)
+		b.Background(t.Hover)
 	}
 	b.Children(func() {
 		if set {
@@ -215,7 +215,7 @@ func filterChip(c *ui.Context, label string, on bool, open *bool, click func()) 
 		}
 	}}).Label(label).Height(th.Space(6)).PaddingX(th.Space(2)).Gap(th.Space(1)).Radius(t.Radius.Md)
 	if on {
-		b.Background(t.SidebarSelected)
+		b.Background(t.Hover)
 	}
 	if open != nil {
 		b.Expanded(*open)

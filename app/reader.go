@@ -1430,7 +1430,7 @@ func (r *reader) folded(c *ui.Context, m core.MessageSummary) {
 			r.securityBadge(c, m.ID, m.Security)
 			if g := r.gist(m.ID); g != "" { // a step darker than the text it stands for, and marked the AI's
 				ui.Row(c).Grow(1).Shrink(1).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, g).TextColor(t.Foreground.Alpha(0.7)).SingleLine().Shrink(1)
+					ui.Text(c, g).TextColor(t.Subdued).SingleLine().Shrink(1)
 					mark := ui.Box(c).Shrink(0).Label(i18n.T("reader.gist")).Children(func() {
 						ui.Icon(c, icons.Get("sparkles")).Size(theme.IconXs, theme.IconXs).TextColor(t.Idle)
 					})

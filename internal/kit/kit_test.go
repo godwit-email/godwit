@@ -1057,7 +1057,7 @@ func TestKitListSelectedGray(t *testing.T) {
 		t.Fatal("no row")
 	}
 	got := tt.Image().RGBAAt(int(r.X)+4, int(r.Y+r.H/2)) // in the text's padding
-	if want := th.SidebarSelected; got.R != want.R || got.G != want.G || got.B != want.B {
+	if want := th.Hover; got.R != want.R || got.G != want.G || got.B != want.B {
 		t.Errorf("selected row %v, want %v", got, want)
 	}
 }

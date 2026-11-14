@@ -24,7 +24,7 @@ func List(c *ui.Context, s *ui.ListState, n int, row func(i int)) ui.Element {
 	q, ok := soft.Load(base)
 	if !ok {
 		t, th := theme.Of(c), *base
-		th.Accent, th.AccentText = t.SidebarSelected, t.Foreground
+		th.Accent, th.AccentText = t.Hover, t.Foreground
 		th.SurfaceHover = t.Hover.Mix(t.Background, 0.5)
 		q, _ = soft.LoadOrStore(base, &th)
 	}

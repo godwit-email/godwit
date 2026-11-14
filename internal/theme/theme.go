@@ -23,7 +23,7 @@ import (
 type Tokens struct {
 	Dark                                                            bool
 	Window, Sidebar, Background, Foreground, Muted, Border, Primary ui.Color
-	PrimaryText, SidebarSelected, Hover, Success                    ui.Color
+	PrimaryText, Hover, Success                                     ui.Color
 	// GlassBg, GlassBorder and GlassHover are the semantic tokens for frosted liquid glass surfaces
 	// (popovers, dropdowns, and floating menus).
 	GlassBg, GlassBorder, GlassHover ui.Color
@@ -97,17 +97,17 @@ type TextScale struct{ Xs, Sm, Base, Xl, X3l float32 }
 // tokens.json's, but Sm is 1.3, the font's normal line height,
 // which the design's screens render (its 1.5 and 1.6 make list rows 13 px
 // taller than the design's). Reading is mail bodies, translations and the
-// drafts pane; Summary a summary's points; Prose onboarding's and empty
+// drafts pane; Prose onboarding's and empty
 // states' paragraphs; Lede onboarding's lede; Tight text in a box of fixed
 // height.
 const (
-	LineXs, LineSm                      = 1.45, 1.3
-	LineBase, LineXl, LineX3l           = 1.4, 1.3, 1.25
-	LineReading, LineSummary, LineProse = 1.75, 1.65, 1.6
-	LineLede, LineTight                 = 1.7, 1
-	LineCJK                             = 1.4  // a CJK line at the fallback font's normal height (the drafts pane's fields, an AI panel's title, the remote-image notice)
-	LineSubject                         = 1.35 // a mail's subject over the reader and the drafts pane
-	LineRow                             = 1.45 // settings' labels, subtitles and section titles with CJK in them (LineFor)
+	LineXs, LineSm            = 1.45, 1.3
+	LineBase, LineXl, LineX3l = 1.4, 1.3, 1.25
+	LineReading, LineProse    = 1.75, 1.6
+	LineLede, LineTight       = 1.7, 1
+	LineCJK                   = 1.4  // a CJK line at the fallback font's normal height (the drafts pane's fields, an AI panel's title, the remote-image notice)
+	LineSubject               = 1.35 // a mail's subject over the reader and the drafts pane
+	LineRow                   = 1.45 // settings' labels, subtitles and section titles with CJK in them (LineFor)
 )
 
 // LineFor is the line height of a settings label, subtitle or section title
@@ -176,7 +176,6 @@ const (
 	RuleFieldWidth      = 108  // a rule condition's field select
 	RuleOpWidth         = 96   // a rule condition's comparison select
 	RuleActionWidth     = 200  // a rule action's kind select
-	ControlWidth        = 220  // settings' wide buttons
 	SettingsMaxWidth    = 760  // a settings page's column
 	SettingsSelectMin   = 200  // a select in a settings row
 	SettingsSelectMax   = 280
@@ -217,8 +216,6 @@ const (
 	ReaderFullMaxWidth    = 4096 // and with no practical limit: the pane's own width
 	AttachmentWidth       = 282  // an attachment in the reading pane, with its download button
 	DraftAttachmentWidth  = 286  // an attachment in the drafts pane
-	WitMaxWidth           = 760  // the Ask page's conversation column
-	CitationsWidth        = 320  // the Ask page's cited mail column
 )
 
 // MinText is the smallest text the interface draws, at any font-size setting.
@@ -253,8 +250,7 @@ const (
 	TabUnderline                                     = 2              // the selected underline tab's bottom border
 	Watermark                                        = 96             // the empty reader pane's bird
 	FormLabelWidth, ModelIDInputWidth                = 96, 132        // a dialog form's label column; the add-model-ID field
-	SummaryIndent, CardTracking                      = 18, 3          // a summary's bullets; a card value's letter spacing
-	SummaryDot                                       = 5              // a summary point's disc
+	CardTracking                                     = 3              // a card value's letter spacing
 )
 
 // ShadowLayer is one layer of a drop shadow: its offset down, blur and
@@ -376,9 +372,9 @@ func Light() Tokens {
 		Background: p.White.Color(), Foreground: p.Neutral950.Color(), Subdued: p.Neutral700.Color(), Muted: p.Neutral500.Color(),
 		Border: p.Neutral200.Color(), Input: p.Neutral200.Color(), Ring: p.Neutral400.Color(), Idle: p.Neutral400.Color(), Outline: p.Neutral950.Color().Alpha(0.05), DividerHover: p.Neutral300.Color(), MarkTile: p.White.Color(), OnSolid: p.White.Color(), Raised: p.White.Color(), Card: p.Neutral50.Color(), Scrim: p.Black.Color().Alpha(0.2), AlertScrim: p.MacAlertGray.Color().Alpha(0.6),
 		Primary: p.Neutral900.Color(), PrimaryText: p.White.Color(),
-		SidebarSelected: p.Neutral100.Color(), HoverTint: p.Neutral950.Color().Alpha(0.04),
-		Hover:   p.Neutral100.Color(),
-		GlassBg: p.White.Color().Alpha(0.70), GlassBorder: p.Neutral950.Color().Alpha(0.12), GlassHover: p.Neutral100.Color().Alpha(0.80),
+		HoverTint: p.Neutral950.Color().Alpha(0.04),
+		Hover:     p.Neutral100.Color(),
+		GlassBg:   p.White.Color().Alpha(0.70), GlassBorder: p.Neutral950.Color().Alpha(0.12), GlassHover: p.Neutral100.Color().Alpha(0.80),
 	})
 }
 
@@ -390,9 +386,9 @@ func Dark() Tokens {
 		Background: p.Neutral950.Color(), Foreground: p.Neutral50.Color(), Subdued: p.Neutral300.Color(), Muted: p.Neutral400.Color(),
 		Border: p.White.Color().Alpha(0.1), Input: p.White.Color().Alpha(0.15), Ring: p.Neutral500.Color(), Idle: p.Neutral500.Color(), Outline: p.White.Color().Alpha(0.05), DividerHover: p.Neutral700.Color(), MarkTile: p.White.Color(), OnSolid: p.White.Color(), FloatInset: p.White.Color().Alpha(0.2), Raised: p.Neutral900.Color(), Card: p.Neutral900.Color(), Scrim: p.Black.Color().Alpha(0.2), AlertScrim: p.Neutral900.Color().Alpha(0.6),
 		Primary: p.Neutral200.Color(), PrimaryText: p.Neutral900.Color(),
-		SidebarSelected: p.Neutral800.Color(), HoverTint: p.White.Color().Alpha(0.08),
-		Hover:   p.Neutral800.Color(),
-		GlassBg: p.Neutral900.Color().Alpha(0.70), GlassBorder: p.White.Color().Alpha(0.15), GlassHover: p.Neutral800.Color().Alpha(0.80),
+		HoverTint: p.White.Color().Alpha(0.08),
+		Hover:     p.Neutral800.Color(),
+		GlassBg:   p.Neutral900.Color().Alpha(0.70), GlassBorder: p.White.Color().Alpha(0.15), GlassHover: p.Neutral800.Color().Alpha(0.80),
 	})
 }
 
