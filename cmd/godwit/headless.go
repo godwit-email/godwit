@@ -135,8 +135,9 @@ func mygoHeadlessDesktop() *headlessDesktop {
 // the server, the notifier, the Service and the lock, in that order. Logs go
 // to stderr through Service.Redact. uiStarted: the interface started it, so
 // external access follows Settings.LocalAPI and the interface's quit stops it
-// (StopUIBackend); a user's --headless serves external clients always and
-// outlives any interface. A failed start exits with the code the interface
+// (StopUIBackend), and under mygo dev its going in any way (StopWithUI); a
+// user's --headless serves external clients always and outlives any
+// interface. A failed start exits with the code the interface
 // tells the user by (exitAnotherOwner, exitLockFailed, exitOpenDenied, else 1).
 func headless(ctx context.Context, dataDir string, stderr io.Writer, uiStarted bool) int {
 	ignoreSIGPIPE()
@@ -222,6 +223,7 @@ func startHeadlessServer(ctx context.Context, dataDir string, stderr io.Writer, 
 	var trayShown func() bool // set with the platform, before the Local API serves
 	if uiStarted {
 		opts.StopUIBackend = onStop
+		opts.StopWithUI = os.Getenv("MYGO_ENV") == "development" // mygo dev runs the interface so; we inherit it
 	}
 	opts.TrayShown = func() bool { return trayShown != nil && trayShown() }
 	var notifyMCP func(id int64) bool // set with the platform, before the Local API serves

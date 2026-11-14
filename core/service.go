@@ -119,6 +119,10 @@ type Options struct {
 	// when the interface started it (ADR 0038). nil: the user started it, and
 	// the ui role's StopUIBackend is refused.
 	StopUIBackend func()
+	// StopWithUI runs StopUIBackend once the last interface's connection
+	// ends, however it ended and whatever 后台收信 says: the backend of a
+	// mygo dev session goes with its interface (ADR 0038).
+	StopWithUI bool
 }
 
 // Service owns the database and event bus of one Godwit data directory.

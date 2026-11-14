@@ -44,6 +44,9 @@ func (s *Service) removeUISession(sess *uiSession) {
 	var stop func()
 	if len(s.uiSessions) == 0 {
 		stop, s.quitStop = s.quitStop, nil // the tray's 退出并停止收信: the interface has quit
+		if stop == nil && s.opts.StopWithUI {
+			stop = s.opts.StopUIBackend
+		}
 	}
 	s.uiMu.Unlock()
 	if stop != nil {
