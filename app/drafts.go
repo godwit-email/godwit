@@ -153,7 +153,7 @@ func (p *mailPage) draftPane(c *ui.Context) {
 		})
 		ui.Scroll(c).Grow(1).Children(func() {
 			ui.Column(c).FillWidth().Padding(th.Space(5), th.Space(7)).Children(func() {
-				ui.Column(c).FillWidth().MaxWidth(theme.ReaderMaxWidth).Gap(th.Space(4)).Children(func() {
+				ui.Column(c).FillWidth().MaxWidth(p.a.readerMaxWidth()).AlignSelf(ui.Center).Gap(th.Space(4)).Children(func() { // the reader's column
 					if editing {
 						kit.Block(c, kit.Text(c, i18n.T("mail.draft.notice"), t.Text.Xs).Padding(th.Space(2), th.Space(3)), kit.ToneTint)
 					}

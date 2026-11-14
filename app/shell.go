@@ -340,7 +340,8 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 			return
 		}
 		if title, sub := a.page().Title(); title != "" {
-			ui.Row(c).Gap(th.Space(2)).Padding(0, 0, 0, th.Space(4)).Children(func() {
+			// over the list's own heading: the panel's edge and its Space(4), less the row's gap
+			ui.Row(c).Gap(th.Space(2)).Padding(0, 0, 0, th.Space(2)).Children(func() {
 				ui.Text(c, title).FontWeight(600).SingleLine()
 				if sub != "" {
 					kit.Text(c, sub, t.Text.Xs).TextColor(t.Muted).SingleLine()
