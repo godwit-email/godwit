@@ -1,11 +1,14 @@
 package mcpserver
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +27,10 @@ var tools = []tool{
 		`{"type":"object","properties":{"account_id":{"type":"integer","minimum":1}},"required":["account_id"],"additionalProperties":false}`, listFolders},
 	{"list_threads", "List conversations, newest first, in one folder (folder_id) or across every account's inbox or starred mail (unified); give exactly one. Pass next_cursor back as cursor for the next page.", true,
 		`{"type":"object","properties":{"folder_id":{"type":"integer","minimum":1},"unified":{"type":"string","enum":["inbox","starred"]},"cursor":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":50}},"additionalProperties":false}`, listThreads},
+	{"list_views", "List the user's views (saved lists of the conversations that meet a view's conditions, such as the built-in To handle): each view's ID and name, its groups, and how many of its conversations have unread mail. Read one with list_view_threads.", true,
+		`{"type":"object","additionalProperties":false}`, listViews},
+	{"list_view_threads", "List the conversations in a view (view: its ID or name from list_views), group by group in the view's order, then Other (those in no group), newest first in each. Each conversation says why it is there as Godwit's reader does: its group, and unreplied, new reply, waiting N days for a reply, or added by hand. It only reads; nothing is marked read or changed. For more of a group, pass its group ID and next_cursor back as group and cursor.", true,
+		`{"type":"object","properties":{"view":{"type":"string","minLength":1},"group":{"type":"string","minLength":1},"cursor":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":50}},"required":["view"],"additionalProperties":false}`, listViewThreads},
 	{"get_thread", "Get a conversation's messages, oldest first, without their bodies (use get_message).", true,
 		`{"type":"object","properties":{"thread_id":{"type":"integer","minimum":1}},"required":["thread_id"],"additionalProperties":false}`, getThread},
 	{"get_message", "Get a message's plain-text body (up to 64 KB) and metadata; attachments are listed by name, type and size, never fetched.", true,
@@ -128,6 +135,106 @@ func listThreads(ctx context.Context, c *rpc.Client, args json.RawMessage) (stri
 		fmt.Fprintf(&b, "next_cursor: %s\n", page.NextCursor)
 	}
 	return orNone(b.String(), "no threads"), nil
+}
+
+func listViews(ctx context.Context, c *rpc.Client, _ json.RawMessage) (string, error) {
+	var views []core.SavedView
+	if err := c.Call(ctx, "SavedViews", &views); err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	for _, v := range views {
+		fmt.Fprintf(&b, "view %d · %q · %d with unread mail\n", v.ID, v.Name, v.Unread)
+		for _, g := range v.Doc.Groups {
+			fmt.Fprintf(&b, "  group %s · %q\n", g.ID, g.Name)
+		}
+	}
+	return orNone(b.String(), "no views"), nil
+}
+
+func listViewThreads(ctx context.Context, c *rpc.Client, args json.RawMessage) (string, error) {
+	var a struct {
+		View   string `json:"view"`
+		Group  string `json:"group"`
+		Cursor string `json:"cursor"`
+		Limit  int    `json:"limit"`
+	}
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
+	if a.Cursor != "" && a.Group == "" {
+		return "", errors.New("give group with cursor")
+	}
+	if a.Limit == 0 {
+		a.Limit = 50
+	}
+	var views []core.SavedView
+	if err := c.Call(ctx, "SavedViews", &views); err != nil {
+		return "", err
+	}
+	at := slices.IndexFunc(views, func(v core.SavedView) bool {
+		return strconv.FormatInt(v.ID, 10) == a.View || strings.EqualFold(v.Name, a.View)
+	})
+	if at < 0 {
+		return "", errors.New("no such view; list_views lists them")
+	}
+	v := views[at]
+	var groups []core.ViewGroupPage
+	if a.Group == "" {
+		var contents core.ViewContents
+		if err := c.Call(ctx, "ViewContents", &contents, v.ID, a.Limit); err != nil {
+			return "", err
+		}
+		groups = contents.Groups
+	} else {
+		var g core.ViewGroupPage
+		if err := c.Call(ctx, "ViewGroupPage", &g, v.ID, a.Group, a.Cursor, a.Limit); err != nil {
+			return "", err
+		}
+		groups = []core.ViewGroupPage{g}
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "view %d · %q\n", v.ID, v.Name)
+	if len(groups) == 0 || len(groups) == 1 && len(groups[0].Items) == 0 {
+		return b.String() + "no threads", nil
+	}
+	for _, g := range groups {
+		fmt.Fprintf(&b, "\ngroup %s · %q · %d threads\n", g.ID, cmp.Or(g.Name, "Other"), g.Total)
+		for _, r := range g.Items {
+			fmt.Fprintf(&b, "thread %d · %d messages, %d unread · last %s", r.ID, r.Count, r.Unread, stamp(r.LastDate))
+			if w := viewWhy(r); w != "" {
+				b.WriteString(" · " + w)
+			}
+			b.WriteByte('\n')
+			id := fmt.Sprintf("thread-%d", r.ID)
+			untrusted(&b, id, "subject", r.Subject)
+			untrusted(&b, id, "participants", strings.Join(r.Participants, ", "))
+			untrusted(&b, id, "snippet", r.Snippet)
+		}
+		if g.NextCursor != "" {
+			fmt.Fprintf(&b, "next_cursor: %s (pass with group %s)\n", g.NextCursor, g.ID)
+		}
+	}
+	return b.String(), nil
+}
+
+// viewWhy is a view row's status as the reader's band above the messages
+// says it (app/savedview.go viewBand), plus a hand-added mark.
+func viewWhy(r core.ViewRow) string {
+	var w []string
+	switch r.Status {
+	case core.ReplyStatusUnreplied:
+		w = append(w, "unreplied")
+		if r.NewReply {
+			w = append(w, "new reply")
+		}
+	case core.ReplyStatusWaiting:
+		w = append(w, fmt.Sprintf("waiting %d days for a reply", r.WaitingDays))
+	}
+	if r.Manual {
+		w = append(w, "added by hand")
+	}
+	return strings.Join(w, ", ")
 }
 
 func getThread(ctx context.Context, c *rpc.Client, args json.RawMessage) (string, error) {
