@@ -172,9 +172,11 @@ func listViewThreads(ctx context.Context, c *rpc.Client, args json.RawMessage) (
 	if err := c.Call(ctx, "SavedViews", &views); err != nil {
 		return "", err
 	}
-	at := slices.IndexFunc(views, func(v core.SavedView) bool {
-		return strconv.FormatInt(v.ID, 10) == a.View || strings.EqualFold(v.Name, a.View)
-	})
+	// An ID first: a view may be named like another's ID.
+	at := slices.IndexFunc(views, func(v core.SavedView) bool { return strconv.FormatInt(v.ID, 10) == a.View })
+	if at < 0 {
+		at = slices.IndexFunc(views, func(v core.SavedView) bool { return strings.EqualFold(v.Name, a.View) })
+	}
 	if at < 0 {
 		return "", errors.New("no such view; list_views lists them")
 	}

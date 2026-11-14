@@ -286,6 +286,14 @@ func TestMCPListViewThreads(t *testing.T) {
 	views, err = e.Svc.SavedViews(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, 2, views[0].Unread, "reading a view marks nothing read")
+
+	// A view named like a later view's ID does not shadow it.
+	shadow := fmt.Sprint(v.ID + 2)
+	for _, name := range []string{shadow, "Later"} {
+		_, err := e.Svc.SaveView(t.Context(), core.SavedView{Name: name, Icon: v.Icon, Doc: core.SavedViewDoc{Match: core.MatchAll}})
+		require.NoError(t, err)
+	}
+	assert.True(t, strings.HasPrefix(ok(t, cs, "list_view_threads", map[string]any{"view": shadow}), fmt.Sprintf("view %s · \"Later\"\n", shadow)))
 }
 
 // Only the show tools carry a view (ADR 0022): each ui:// resource is the
