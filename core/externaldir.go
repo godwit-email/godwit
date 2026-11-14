@@ -543,7 +543,7 @@ func (s *Service) syncExternalMCP(ctx context.Context, servers map[string]extern
 	}
 	for _, name := range slices.Sorted(maps.Keys(servers)) {
 		e := servers[name]
-		in := MCPServerInput{Name: name, Command: e.Command, Args: e.Args, Env: e.Env, URL: e.URL, Headers: e.Headers,
+		in := MCPServerInput{Name: name, Command: e.Command, Args: e.Args, Env: nonEmpty(e.Env), URL: e.URL, Headers: nonEmpty(e.Headers),
 			managedBy: by, managedHash: entryHash(e)}
 		switch {
 		case e.Command != "":
@@ -583,6 +583,18 @@ func (s *Service) syncExternalMCP(ctx context.Context, servers map[string]extern
 		}
 	}
 	return failed
+}
+
+// nonEmpty is m without its empty values. A file's values are values: an
+// empty one is no value, where a user's edit means "keep the saved one".
+func nonEmpty(m map[string]string) map[string]string {
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		if v != "" {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 func (s *Service) mcpHashes(ctx context.Context) (map[int64]string, error) {

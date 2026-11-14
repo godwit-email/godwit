@@ -493,3 +493,23 @@ func TestExternalSkillsChangeNotifies(t *testing.T) {
 		}
 	}
 }
+
+func TestExternalMCPEmptyValueRemovesTheSecret(t *testing.T) {
+	s, dir := externalSvc(t)
+	ctx := t.Context()
+	server := func(two string) map[string]any {
+		return map[string]any{"mcpServers": map[string]any{"search": map[string]any{"type": "http", "url": "http://127.0.0.1:3425/mcp",
+			"headers": map[string]string{"X-One": "secret-one", "X-Two": two}}}}
+	}
+	writeExternal(t, dir, externalModels, magpieEntry("k", "", "m"))
+	writeExternal(t, dir, externalMCP, server("secret-two"))
+	s.syncExternal(ctx)
+	writeExternal(t, dir, externalMCP, server("")) // emptied in the file
+	s.syncExternal(ctx)
+	list, err := s.ListMCPServers(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, []string{"X-One"}, list[0].HeaderKeys, "an empty value is no value, not the old one kept")
+	_, err = keychainGet(s.mcpSecretUser(list[0].ID, "header", "X-Two"))
+	assert.Error(t, err)
+}
