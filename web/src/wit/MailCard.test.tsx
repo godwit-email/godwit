@@ -17,9 +17,9 @@ describe("MailCard", () => {
   it("gives a sender the avatar colour internal/kit Avatar gives them", () => {
     // fnv-1a of the name over the label colours but gray, as Go computes it
     expect(avatarTone("Lena Fischer")).toContain("bg-sky-100");
-    expect(avatarTone("Bob")).toContain("bg-lime-100");
-    expect(avatarTone("Acme Cloud")).toContain("bg-lime-100");
-    expect(avatarTone("陈小明")).toContain("bg-amber-100");
+    expect(avatarTone("Bob")).toContain("bg-blue-100");
+    expect(avatarTone("Acme Cloud")).toContain("bg-cyan-100");
+    expect(avatarTone("陈小明")).toContain("bg-lime-100");
   });
 
   it("shows the mail and its actions", async () => {

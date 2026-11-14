@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 )
 
 // CodeApp is the wire code of a registered (application) error.
@@ -110,6 +111,12 @@ func (c *Codec) Encode(err error, redact func(string) string) *WireError {
 	return internalError()
 }
 
+// IsSentinel reports whether we carries a registered sentinel: its message is
+// the fixed one, not the text of the error that wrapped the sentinel.
+func (c *Codec) IsSentinel(we *WireError) bool {
+	return we.Data != nil && slices.ContainsFunc(c.sentinels, func(s sentinel) bool { return s.code == we.Data.Code })
+}
+
 // sentinelFor is the first registered sentinel err is, or nil.
 func (c *Codec) sentinelFor(err error) *sentinel {
 	for i := range c.sentinels {
@@ -119,6 +126,16 @@ func (c *Codec) sentinelFor(err error) *sentinel {
 	}
 	return nil
 }
+
+// withText is a decoded sentinel under the text the server sent for it: what
+// wrapped it there, which the server sends only to Godwit's own interface.
+type withText struct {
+	text string
+	err  error
+}
+
+func (w *withText) Error() string { return w.text }
+func (w *withText) Unwrap() error { return w.err }
 
 // withCause is a decoded type that also is a sentinel, as it was on the server.
 type withCause struct{ err, cause error }
@@ -148,7 +165,8 @@ func DecodeDetail[V any](raw json.RawMessage) (*V, error) {
 	return v, nil
 }
 
-// Decode maps a wire error back: a registered sentinel to the same value, a
+// Decode maps a wire error back: a registered sentinel to the same value
+// (under the wire's text when that says more than the sentinel's own), a
 // registered type to that type (wrapped so it also is its registered cause;
 // an unknown cause is dropped), anything else to a *RemoteError.
 func (c *Codec) Decode(we *WireError) error {
@@ -158,6 +176,11 @@ func (c *Codec) Decode(we *WireError) error {
 	if we.Data != nil {
 		if decode, ok := c.codes[we.Data.Code]; ok {
 			err := decode(we.Data.Detail)
+			for _, s := range c.sentinels {
+				if s.code == we.Data.Code && we.Message != "" && we.Message != s.message {
+					return &withText{we.Message, err}
+				}
+			}
 			for _, s := range c.sentinels {
 				if s.code == we.Data.Cause && !errors.Is(err, ErrBadErrorData) && !errors.Is(err, s.err) {
 					return &withCause{err, s.err}

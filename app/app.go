@@ -265,6 +265,7 @@ type App struct {
 
 	syncBatch  *syncBatch          // the Sync All in flight; nil when none
 	syncing    map[int64]bool      // accounts syncing now
+	syncAsked  map[int64]bool      // accounts whose SyncNow, asked for here, has not returned
 	syncErr    map[int64]syncFail  // each account's failing sync, until it syncs
 	syncOpen   bool                // the sync status's account list shows
 	syncedAt   time.Time           // the last successful sync; zero before one
@@ -336,7 +337,7 @@ func New(d Deps) *App {
 	a.pages[PageOnboarding] = newOnboarding(a, false)
 	a.pages[PageKit] = &kitPage{}
 	a.dev = d.Dev
-	a.syncing, a.syncErr, a.syncedAtBy = map[int64]bool{}, map[int64]syncFail{}, map[int64]time.Time{}
+	a.syncing, a.syncAsked, a.syncErr, a.syncedAtBy = map[int64]bool{}, map[int64]bool{}, map[int64]syncFail{}, map[int64]time.Time{}
 	a.undoToasts = map[int64]bool{}
 	a.ctx, a.cancel = context.WithCancel(context.Background())
 	a.quit = d.Quit
@@ -457,9 +458,10 @@ func (a *App) load() {
 		}
 		a.loadFailing = false
 		first := !a.loaded
+		avatars := settingsSettled
 		for _, old := range a.accounts {
 			if !slices.ContainsFunc(accs, func(acc core.Account) bool { return acc.ID == old.ID }) {
-				a.mail.reader.invalidateAvatars(true)
+				avatars = trustChanged
 				break
 			}
 		}
@@ -479,7 +481,7 @@ func (a *App) load() {
 		}
 		if listsRead {
 			if !slices.Equal(a.trusted, trusted) {
-				a.mail.reader.invalidateAvatars(true)
+				avatars = trustChanged
 			}
 			a.trusted, a.blocked = trusted, blocked
 		}
@@ -505,8 +507,8 @@ func (a *App) load() {
 				a.settingsEffects(old, st)
 			}
 		}
-		a.mail.reader.refreshAvatars() // after any invalidation above; loadAvatar holds them while a local change is unsaved
-		a.refreshTasks()               // skills or services may have changed too
+		a.mail.reader.avatarsChanged(avatars) // with the settings above: loadAvatar holds them while a local change is unsaved
+		a.refreshTasks()                      // skills or services may have changed too
 		a.inboxUnread = inbox
 		a.showUnread(inbox)
 		if first {

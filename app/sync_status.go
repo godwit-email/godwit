@@ -48,9 +48,10 @@ type syncHealth struct {
 }
 
 type syncButton struct {
-	label   string
-	primary bool
-	do      func()
+	label    string
+	primary  bool
+	disabled bool // a sync is running: another would only wait behind it
+	do       func()
 }
 
 func (a *App) syncHealth(acc core.Account) syncHealth {
@@ -58,9 +59,7 @@ func (a *App) syncHealth(acc core.Account) syncHealth {
 	f, failed := a.syncErr[acc.ID]
 	h.err = f.err
 	id, host := acc.ID, acc.Receiving.Host
-	retry := syncButton{label: i18n.T("shell.sync.retry"), do: func() {
-		a.do(func(ctx context.Context) error { return a.svc.SyncNow(ctx, id) }, a.toastErr)
-	}}
+	retry := syncButton{label: i18n.T("shell.sync.retry"), disabled: a.syncBusy(id), do: func() { a.syncNow(id) }}
 	servers := syncButton{label: i18n.T("shell.sync.servers"), do: func() { a.navigate(Route{Page: PageSettings, Settings: accountRoute(id)}) }}
 	switch {
 	case acc.Status == "reauth_required" || failed && f.kind == "auth":
@@ -87,7 +86,7 @@ func (a *App) syncHealth(acc core.Account) syncHealth {
 	case failed:
 		h.level, h.status, h.short = syncRetrying, i18n.T("shell.sync.retrying"), i18n.T("shell.sync.retrying.short")
 		h.reason, h.actions = i18n.Tf("shell.sync.retrying.reason", failCause(f.kind, host)), []syncButton{retry}
-	case a.syncing[id] || a.batchPending(id):
+	case a.syncBusy(id):
 		h.level, h.status = syncBusy, i18n.T("shell.sync.syncing")
 	default:
 		if at, ok := a.syncedAtBy[id]; ok {
@@ -249,7 +248,7 @@ func (a *App) syncAccounts(c *ui.Context, hs []syncHealth, indent float32, act f
 			if len(h.actions) > 0 {
 				ui.Row(c).Gap(th.Space(2)).Padding(th.Space(1), 0, 0, indent).Children(func() {
 					for _, b := range h.actions {
-						o := kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}
+						o := kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Disabled: b.disabled}
 						if b.primary {
 							o.Variant = kit.Default
 						}

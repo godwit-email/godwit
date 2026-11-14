@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/godwit-email/godwit/backend"
+	"github.com/godwit-email/godwit/backend/conn"
 )
 
 // Receiver is a Microsoft Graph account's receiving backend. A folder's
@@ -1063,10 +1064,9 @@ func (r *Receiver) purge(ctx context.Context, op backend.Purge) (backend.Result,
 		if op.Confirm != nil && !op.Confirm() {
 			return backend.Result{Outcome: backend.Failed, Reason: backend.Cancelled}, nil
 		}
-		_, err := r.c.doRetrying(ctx, http.MethodPost, "/me/messages/"+url.PathEscape(id)+"/permanentDelete", "", nil, 0)
-		var busy *busyError
-		if errors.As(err, &busy) && try < maxRetries {
-			if err := r.c.wait(ctx, busy.backOff); err != nil {
+		_, err := r.c.doRetrying(ctx, http.MethodPost, "/me/messages/"+url.PathEscape(id)+"/permanentDelete", "", nil, false)
+		if d, ok := conn.BackOff(err, try); ok {
+			if err := r.c.wait(ctx, d); err != nil {
 				return backend.Result{}, err
 			}
 			continue

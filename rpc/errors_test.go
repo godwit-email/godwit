@@ -44,6 +44,12 @@ func TestCodecSentinel(t *testing.T) {
 	assert.Equal(t, "it is gone", we.Message)
 	assert.Equal(t, "gone", we.Data.Code)
 	assert.Same(t, errGone, got)
+
+	// text the server sent in place of the fixed message stays over the sentinel
+	we.Message = "op: gone away"
+	got = c.Decode(we)
+	assert.ErrorIs(t, got, errGone)
+	assert.Equal(t, "op: gone away", got.Error())
 }
 
 func TestCodecTypeRedactsEveryString(t *testing.T) {

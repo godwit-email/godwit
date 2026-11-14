@@ -17,7 +17,7 @@ import (
 )
 
 // LabelColors are the colors a label may take, in the picker's order.
-var LabelColors = []string{"gray", "red", "orange", "amber", "yellow", "lime", "green", "teal", "sky", "blue", "violet", "pink"}
+var LabelColors = []string{"gray", "red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal", "cyan", "sky", "blue", "indigo", "violet", "fuchsia", "pink"}
 
 // LabelIcons are the icons a label may take, in the picker's order; the GUI
 // draws each as "label-<name>".

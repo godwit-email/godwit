@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -38,6 +39,8 @@ type labelsView struct {
 	total   int // the running rescan's messages; pending of them left
 	pending int
 	poll    func() // stops the progress poll
+
+	colorAt float64 // the dialog's color strip, a slider: color's index in core.LabelColors
 }
 
 func newLabelsView(a *App) *labelsView {
@@ -49,7 +52,8 @@ func (v *labelsView) view(c *ui.Context, p *settingsPage) {
 	defer p.syncSettings()
 	a := v.a
 	pageHeading(c, i18n.T("settings.labels"), i18n.T("settings.labels.sub"), func() {
-		settingButton(c, i18n.T("settings.labels.new"), kit.Outline, false).OnClick(func() { v.open(core.Label{Color: "gray", Icon: "folder-3"}) })
+		// as 新建规则 and 新建签名
+		kit.Button(c, i18n.T("settings.labels.new"), kit.ButtonOpts{Icon: "plus"}).PaddingX(c.Theme().Space(3)).OnClick(func() { v.open(core.Label{Color: "gray", Icon: "folder-3"}) })
 	})
 	settingsSection(c, i18n.T("settings.labels.list"), i18n.T("settings.labels.list.foot"), func() { v.list(c) })
 
@@ -201,21 +205,52 @@ func (v *labelsView) dialog(c *ui.Context) {
 		kit.Field(c, i18n.T("settings.labels.desc"), "", descErr, func() {
 			kit.TextArea(c, &v.desc, kit.InputOpts{Placeholder: i18n.T("settings.labels.desc.placeholder"), Invalid: descErr != ""}).Label(i18n.T("settings.labels.desc"))
 		})
-		kit.Field(c, i18n.T("settings.labels.color"), "", "", func() {
-			// One row across the field: the gap is a floor, the space left spreads between.
-			ui.Row(c).FillWidth().Justify(ui.SpaceBetween).Gap(th.Space(2)).Children(func() {
-				for _, name := range core.LabelColors {
-					on := name == v.color
-					dot := t.Label(name).Dot
-					sw := kit.Pressable(c.Key(name), kit.PressableOpts{Bare: true, Selected: on, OnClick: func() { v.color = name }}).
-						Label(i18n.T("label.color."+name)).Checked(on).Size(theme.LabelSwatch, theme.LabelSwatch).Radius(t.Radius.Full).
-						Justify(ui.Center).AlignItems(ui.Center)
-					if on {
-						sw.Border(theme.LabelSwatchRing, dot)
+		// kit.Field's layout, its label followed by the chosen color's name.
+		ui.Column(c).Gap(th.Space(1.5)).Children(func() {
+			ui.Row(c).Gap(th.Space(1)).Children(func() {
+				ui.Text(c, i18n.T("settings.labels.color")).FontWeight(500)
+				ui.Text(c, "· "+i18n.T("label.color."+v.color)).TextColor(t.Muted)
+			})
+			// One strip across the field, warm to cool, the cells touching, under a thumb
+			// of the chosen color lifted on a ring of the background. It is a slider:
+			// press, drag along it, or the arrows. Padded by half a cell (of the last
+			// frame's width), so each value sits at its cell's middle; the cells cover
+			// the padding.
+			last := len(core.LabelColors) - 1
+			strip := ui.SliderBase(c, &v.colorAt, 0, float64(last)).Step(1).FillWidth().Height(theme.LabelStrip).MarginY(th.Space(1)).Radius(t.Radius.Md)
+			cell := strip.LayoutBounds().W / float32(len(core.LabelColors))
+			half := cell / 2
+			strip.PaddingX(half)
+			if strip.Changed() {
+				v.color = core.LabelColors[max(0, min(last, int(math.Round(v.colorAt))))]
+			} else {
+				v.colorAt = float64(max(0, slices.Index(core.LabelColors, v.color)))
+			}
+			strip.Label(i18n.T("settings.labels.color")).Value(i18n.T("label.color." + v.color))
+			// The thumb follows the pointer while the strip is pressed, then settles on
+			// the chosen cell; a quick spring carries it, so it glides rather than hops.
+			at := float32(v.colorAt)
+			if x, _, _ := strip.PointerPosition(); strip.Pressed() && cell > 0 {
+				at = max(0, min(float32(last), x/cell-0.5))
+			}
+			at = strip.Spring("thumb", at, ui.SpringOptions{Duration: theme.MotionFast})
+			strip.Children(func() {
+				ui.Row(c).Absolute().Top(0).Left(0).Right(0).Children(func() {
+					for i, name := range core.LabelColors {
+						sw := ui.Box(c.Key(name)).Height(theme.LabelStrip).Grow(1).Background(t.Label(name).Dot)
+						switch i {
+						case 0:
+							sw.Radius(t.Radius.Md, 0, 0, t.Radius.Md)
+						case last:
+							sw.Radius(0, t.Radius.Md, t.Radius.Md, 0)
+						}
 					}
-					sw.Children(func() {
-						ui.Box(c).Size(theme.LabelSwatchDot, theme.LabelSwatchDot).Radius(t.Radius.Full).Background(dot)
-					})
+				})
+				if cell > 0 { // the first frame has no width yet
+					grow := float32(theme.LabelThumb - theme.LabelStrip)
+					thumb := ui.Box(c).Absolute().Left(at*cell-grow/2).Top(-grow/2).Size(cell+grow, theme.LabelThumb).Radius(t.Radius.Sm).Shadow(0, 0, 0, theme.LabelThumbRing, t.Background)
+					thumb.Background(thumb.AnimateColor("dot", t.Label(v.color).Dot, ui.Animation{Duration: theme.MotionFast}))
+					kit.Elevate(c, thumb, theme.ShadowMd)
 				}
 			})
 		})

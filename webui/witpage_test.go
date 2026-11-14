@@ -519,6 +519,7 @@ func TestWitPageFollowRaces(t *testing.T) {
 				break
 			}
 		}
+		f.llm.Rearm() // the second run hangs until after the read, as the asserts below expect
 		next, err := f.e.Svc.Ask(t.Context(), conv, "again")
 		require.NoError(t, err)
 		second = (<-next).RunID

@@ -260,6 +260,22 @@ func TestRefreshNetworkError(t *testing.T) {
 	require.Error(t, err)
 	assert.False(t, errors.Is(err, auth.ErrInvalidGrant))
 	assert.NotContains(t, err.Error(), "rt-secret")
+	assert.Equal(t, "oauth: could not reach the token endpoint 127.0.0.1:1", err.Error())
+}
+
+// A token endpoint that never answers: the deadline names the request and
+// the endpoint's host, not just the context error (#755).
+func TestRefreshDeadlineNamesHost(t *testing.T) {
+	srv := testoauth.Start(t)
+	cfg := srv.Config()
+	defer srv.Hang(t)()
+	c, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer cancel()
+	_, err := auth.Refresh(c, cfg, nil, "rt-secret")
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	u, perr := url.Parse(cfg.TokenURL)
+	require.NoError(t, perr)
+	assert.Equal(t, "oauth: token request "+u.Host+": context deadline exceeded", err.Error())
 }
 
 func must[T any](v T, err error) T {

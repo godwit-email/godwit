@@ -48,19 +48,19 @@ func (a *App) changeSettings(st core.Settings) {
 			a.settingsVer++
 			a.settingsSavedVer = a.settingsVer
 			a.settingsEffects(cur, a.settings)
-			a.mail.reader.refreshAvatars()
+			a.mail.reader.avatarsChanged(settingsSettled)
 			a.toastErr(err)
 			return
 		}
 		a.settings = saved
-		a.mail.reader.refreshAvatars()
+		a.mail.reader.avatarsChanged(settingsSettled)
 	})
 }
 
 // settingsEffects tells the platform and the catalog what changed from old to st.
 func (a *App) settingsEffects(old, st core.Settings) {
 	if st.RemoteImages != old.RemoteImages {
-		a.mail.reader.invalidateAvatars(true)
+		a.mail.reader.avatarsChanged(trustChanged)
 	}
 	if st.Theme != old.Theme {
 		a.plat.SetThemeSource(st.Theme)

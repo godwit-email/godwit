@@ -59,7 +59,7 @@ func (c *client) stream(ctx context.Context, subscription string, wake func([]ba
 	defer cancel(nil)
 	idle := time.AfterFunc(streamIdle, func() { cancel(errIdle) })
 	defer idle.Stop()
-	resp, err := c.post(ctx, getStreamingEventsRequest{SubscriptionIDs: []string{subscription}, Timeout: int(streamTimeout / time.Minute)}, cr)
+	resp, err := c.post(ctx, c.streaming, getStreamingEventsRequest{SubscriptionIDs: []string{subscription}, Timeout: int(streamTimeout / time.Minute)}, cr)
 	if err != nil {
 		return silent(ctx, err)
 	}

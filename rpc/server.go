@@ -327,10 +327,11 @@ func (s *Server) encode(err error) *WireError {
 
 // encodeUI is encode for RoleUI, Godwit's own interface: an unregistered
 // error keeps its redacted text, which the interface shows as it would in
-// process.
+// process. So does a sentinel: what wrapped it names the step and the host
+// that failed (#755), and the client still decodes the sentinel under it.
 func (s *Server) encodeUI(err error) *WireError {
 	we := s.encode(err)
-	if we.Code == CodeInternal {
+	if we.Code == CodeInternal || s.opts.Codec != nil && s.opts.Codec.IsSentinel(we) {
 		we.Message = s.redact(err.Error())
 	}
 	return we

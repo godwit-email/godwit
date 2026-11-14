@@ -327,11 +327,6 @@ func (p *settingsPage) readUsage(id int64) {
 	})
 }
 
-func (p *settingsPage) syncNow(id int64) {
-	a := p.a
-	a.do(func(ctx context.Context) error { return a.svc.SyncNow(ctx, id) }, a.toastErr)
-}
-
 // recheckSending checks a receive-only account's servers again: a pass makes
 // it send, a failure says which step failed.
 func (p *settingsPage) recheckSending(id int64) {
@@ -565,7 +560,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	}
 	settingsSection(c, i18n.T("settings.account.sync"), "",
 		row(i18n.T("settings.account.sync.status"), desc, func() {
-			settingButton(c, i18n.T("settings.account.sync_now"), kit.Outline, a.syncing[acc.ID]).OnClick(func() { p.syncNow(acc.ID) })
+			settingButton(c, i18n.T("settings.account.sync_now"), kit.Outline, a.syncBusy(acc.ID)).OnClick(func() { a.syncNow(acc.ID) })
 		}),
 		row(i18n.T("settings.account.sync.range"), "", func() {
 			if settingSelect(c, i18n.T("settings.account.sync.range"), &f.sync, rangeOptions(f.sync)).Changed() {
@@ -894,6 +889,9 @@ func rangeOptions(cur ...core.SyncRange) []kit.Option[core.SyncRange] {
 
 func (p *settingsPage) syncState(acc core.Account) string {
 	a := p.a
+	if a.syncBusy(acc.ID) { // why 立即同步 is disabled, whatever failed before
+		return i18n.T("shell.sync.syncing")
+	}
 	if acc.Status != "ok" {
 		return i18n.T("settings.account.sync.stopped")
 	}
