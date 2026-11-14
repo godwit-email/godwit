@@ -41,9 +41,12 @@ const (
 	maxExternalModels    = 1000            // per service
 	maxInstructions      = 16 << 10        // bytes of AGENTS.md Wit reads
 	externalDefaultBy    = "external"      // ManagedBy when models.json names no gateway
-	externalSyncEvery    = 3 * time.Second // the gateway writes rarely; a stat is cheap
 	externalByKey        = "external.by"   // settings row: the gateway models.json last named
 )
+
+// externalSyncEvery is how often the folder is checked: the gateway writes
+// rarely, and a stat is cheap. A var for tests that sync by hand.
+var externalSyncEvery = 3 * time.Second
 
 var externalKinds = []string{ai.KindOpenAI, ai.KindResponses, ai.KindAnthropic}
 

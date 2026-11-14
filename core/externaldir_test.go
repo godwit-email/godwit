@@ -19,10 +19,16 @@ import (
 func externalSvc(t *testing.T) (*Service, string) {
 	t.Helper()
 	keyring.MockInit()
+	setFor(t, &externalSyncEvery, time.Hour) // the test syncs by hand: no poll races its stubs
 	dir := t.TempDir()
 	s, err := New(context.Background(), Options{DataDir: t.TempDir(), ExternalDir: dir})
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
+	require.Eventually(t, func() bool { // the startup sync, of the empty folder, is over
+		s.extMu.Lock()
+		defer s.extMu.Unlock()
+		return s.extSeen != nil
+	}, 5*time.Second, time.Millisecond)
 	return s, dir
 }
 
