@@ -282,13 +282,14 @@ func (p *mailPage) viewShown(v core.View) bool {
 func (p *mailPage) account(c *ui.Context, acc core.Account) {
 	t := theme.Of(c)
 	name := accountName(acc)
-	row := kit.SidebarCollapsible(c, p.accountOpen(acc.ID), false, func() {
+	count := "" // at the row's end, under the counts above it; the chevron follows the name
+	if n := p.a.unread[acc.ID]; n > 0 {
+		count = strconv.Itoa(n)
+	}
+	row := kit.SidebarCollapsibleCount(c, p.accountOpen(acc.ID), false, func() {
 		p.a.accountMark(c, acc) // as in the settings sidebar
-		ui.Text(c, name).SingleLine().Grow(1).Shrink(1).TextColor(t.Foreground)
-		if n := p.a.unread[acc.ID]; n > 0 {
-			kit.Text(c, strconv.Itoa(n), t.Text.Xs).TextColor(t.Muted)
-		}
-	}, func() {
+		ui.Text(c, name).SingleLine().Shrink(1).TextColor(t.Foreground)
+	}, count, func() {
 		hide := "" // the subtree of a folded folder
 		for _, f := range sidebarFolders(acc.ID, p.folders[acc.ID]) {
 			if f.Role == "drafts" {

@@ -29,6 +29,14 @@ func Collapsible(c *ui.Context, open *bool, trigger, panel func()) ui.Element {
 // right, turned a quarter while open. Muted is a group's title: small muted
 // text. *open must outlive the frame. It returns the trigger.
 func SidebarCollapsible(c *ui.Context, open *bool, muted bool, trigger, panel func()) ui.Element {
+	return SidebarCollapsibleCount(c, open, muted, trigger, "", panel)
+}
+
+// SidebarCollapsibleCount is a SidebarCollapsible with count at its end, in
+// the column the counts of the sidebar's plain rows are in: the chevron
+// follows the trigger's content, and room is left between them. An empty
+// count is none.
+func SidebarCollapsibleCount(c *ui.Context, open *bool, muted bool, trigger func(), count string, panel func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	parts := ui.CollapsibleBase(c, open)
 	tr := parts.Trigger.Height(th.Space(8)).PaddingX(th.Space(2)).Gap(th.Space(2)).Radius(t.Radius.Lg).
@@ -42,6 +50,10 @@ func SidebarCollapsible(c *ui.Context, open *bool, muted bool, trigger, panel fu
 	tr.Children(func() {
 		trigger()
 		SidebarChevron(c, parts.Progress())
+		if count != "" {
+			ui.Spacer(c)
+			Text(c, count, t.Text.Xs).TextColor(t.Muted)
+		}
 	})
 	parts.Panel(func() { // the sidebar's own gap, above and between the rows
 		ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(0.5), 0, 0, 0).Children(panel)

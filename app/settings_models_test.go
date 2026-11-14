@@ -698,7 +698,7 @@ func TestModelsDeleteConfirmStrip(t *testing.T) {
 	h := withLLM(t)
 	h.editService("test")
 	h.click("删除此服务")
-	h.see("删除「test」？用到它的 skill 会改用默认模型，Key 会从钥匙串移除。")
+	h.see("删除「test」？用到它的 Skill 会改用默认模型，Key 会从钥匙串移除。")
 	if _, ok := h.modelService("test"); !ok {
 		t.Fatal("asking removed the service")
 	}
