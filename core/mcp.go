@@ -299,9 +299,11 @@ func (s *Service) AddMCPServer(ctx context.Context, in MCPServerInput) (MCPServe
 	}
 	s.mcpMu.Lock()
 	defer s.mcpMu.Unlock()
-	r, err := s.db.Execute(ctx, `INSERT INTO mcp_servers(name, transport, command, args, env_keys, url, header_keys, created_at, managed_by, managed_hash)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, in.Name, in.Transport, in.Command, mcpList(in.Args), encodeKeys(in.Env), in.URL,
-		encodeKeys(in.Headers), time.Now().Unix(), in.managedBy, in.managedHash)
+	// managed_hash only once the secrets are saved: a row left by a failed
+	// cleanup must not look applied to the next sync, which then retries it.
+	r, err := s.db.Execute(ctx, `INSERT INTO mcp_servers(name, transport, command, args, env_keys, url, header_keys, created_at, managed_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, in.Name, in.Transport, in.Command, mcpList(in.Args), encodeKeys(in.Env), in.URL,
+		encodeKeys(in.Headers), time.Now().Unix(), in.managedBy)
 	if err != nil {
 		return MCPServer{}, err
 	}
@@ -314,6 +316,11 @@ func (s *Service) AddMCPServer(ctx context.Context, in MCPServerInput) (MCPServe
 			_, derr = s.db.Execute(context.WithoutCancel(ctx), "DELETE FROM mcp_servers WHERE id = ?", id)
 		}
 		return MCPServer{}, errors.Join(err, derr)
+	}
+	if in.managedHash != "" {
+		if _, err := s.db.Execute(ctx, "UPDATE mcp_servers SET managed_hash = ? WHERE id = ?", in.managedHash, id); err != nil {
+			return MCPServer{}, err
+		}
 	}
 	return s.mcpServer(ctx, id)
 }

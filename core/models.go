@@ -460,10 +460,10 @@ func (s *Service) AddModelService(ctx context.Context, in ModelServiceInput) (Mo
 	if key != "" {
 		kv = 1
 	}
-	res, err := s.db.Execute(ctx, `INSERT INTO model_services(name, kind, base_url, models, slug, created_at, key_version, provider, judge_format, judge_model, oauth_email, oauth_client_id, managed_by, managed_hash, model_info)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	res, err := s.db.Execute(ctx, `INSERT INTO model_services(name, kind, base_url, models, slug, created_at, key_version, provider, judge_format, judge_model, oauth_email, oauth_client_id, managed_by, model_info)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		in.Name, in.Kind, in.BaseURL, modelsJSON(in.Models), slug, time.Now().Unix(), kv, in.Provider, in.JudgeFormat, in.JudgeModel, in.oauthEmail, in.oauthClientID,
-		in.managedBy, in.managedHash, ownModelsJSON(in.ownModels))
+		in.managedBy, ownModelsJSON(in.ownModels))
 	if err != nil {
 		return ModelService{}, err
 	}
@@ -484,6 +484,11 @@ func (s *Service) AddModelService(ctx context.Context, in ModelServiceInput) (Mo
 	if in.OAuthFlowID != "" {
 		s.takeGrant(in.OAuthFlowID)
 		s.cacheModelToken(id, int64(kv), in.oauthGrant)
+	}
+	if in.managedHash != "" { // only with its key saved: a row a failed rollback left is retried, not taken as applied
+		if _, err := s.db.Execute(ctx, "UPDATE model_services SET managed_hash = ? WHERE id = ?", in.managedHash, id); err != nil {
+			return ModelService{}, err
+		}
 	}
 	return s.modelServiceBy(ctx, "id = ?", id)
 }

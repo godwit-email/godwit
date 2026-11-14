@@ -354,3 +354,26 @@ func TestExternalRemovalReleasesUsersDefault(t *testing.T) {
 	require.False(t, ok)
 	assert.Empty(t, defaultModel(t, s), "no default left naming the removed service")
 }
+
+func TestExternalMCPRetriesAfterSecretsAndCleanupFail(t *testing.T) {
+	s, dir := externalSvc(t)
+	ctx := t.Context()
+	set, del := keyringSet, keyringDelete
+	setFor(t, &keyringSet, func(service, user, pass string) error { return errors.New("keychain locked") })
+	setFor(t, &keyringDelete, func(service, user string) error { return errors.New("keychain locked") })
+	writeExternal(t, dir, externalModels, magpieEntry("k", "", "m"))
+	writeExternal(t, dir, externalMCP, map[string]any{"mcpServers": map[string]any{
+		"search": map[string]any{"type": "http", "url": "http://127.0.0.1:3425/mcp", "headers": map[string]string{"Authorization": "Bearer secret-1"}}}})
+	s.syncExternal(ctx)
+
+	// The keychain is back: the row the failed cleanup left is completed, its secret saved.
+	setFor(t, &keyringSet, set)
+	setFor(t, &keyringDelete, del)
+	s.syncExternal(ctx)
+	list, err := s.ListMCPServers(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	sec, err := keychainGet(s.mcpSecretUser(list[0].ID, "header", "Authorization"))
+	require.NoError(t, err)
+	assert.Equal(t, "Bearer secret-1", sec)
+}
