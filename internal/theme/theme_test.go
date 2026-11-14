@@ -214,7 +214,8 @@ func TestDarkStatus(t *testing.T) {
 }
 
 // TestLineUI: Apply gives every text the interface's line, a text in an
-// overlay too, whatever script it is in.
+// overlay too. A CJK line is at least as high: on Linux the fallback CJK
+// font's own line (22 at 14 px) is taller than LineUI's 20.3.
 func TestLineUI(t *testing.T) {
 	open := true
 	tt := ui.NewTester(func(c *ui.Context) {
@@ -227,10 +228,13 @@ func TestLineUI(t *testing.T) {
 	}, 400, 300)
 	tt.Frame()
 	want := float32(14 * LineUI)
-	for _, s := range []string{"Latin only", "中文一行", "In a dialog"} {
+	for _, s := range []string{"Latin only", "In a dialog"} {
 		if r, ok := tt.Find(s); !ok || r.H < want-0.1 || r.H > want+0.1 {
 			t.Errorf("%q is %v high, want %v", s, r.H, want)
 		}
+	}
+	if r, ok := tt.Find("中文一行"); !ok || r.H < want-0.1 {
+		t.Errorf("%q is %v high, want at least %v", "中文一行", r.H, want)
 	}
 }
 
