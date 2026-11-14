@@ -512,9 +512,6 @@ func (s *Service) UpdateModelService(ctx context.Context, id int64, in ModelServ
 	if old.ManagedBy != in.managedBy {
 		return ModelService{}, ErrModelServiceManaged
 	}
-	if in.managedBy == "" {
-		s.extDirty.Store(true) // a rename may free a name an external entry wants
-	}
 	if err := s.checkNameFree(ctx, in.Name, id); err != nil {
 		return ModelService{}, err
 	}
@@ -558,6 +555,9 @@ func (s *Service) UpdateModelService(ctx context.Context, id int64, in ModelServ
 	}
 	if _, err := s.db.DurableTransaction(ctx, stmts); err != nil {
 		return ModelService{}, err // a new key's entry stays listed in the trash
+	}
+	if in.managedBy == "" {
+		s.extDirty.Store(true) // committed: a rename may have freed a name an external entry wants
 	}
 	if in.OAuthFlowID != "" {
 		s.takeGrant(in.OAuthFlowID)

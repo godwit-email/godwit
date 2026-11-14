@@ -411,8 +411,11 @@ func (s *Service) updateManagedService(ctx context.Context, id int64, in ModelSe
 }
 
 // followExternalModel sets the default model when the file chooses a new one,
-// and gives the user's back when it chooses none or the service goes. Only a
-// change in the file moves it: a default the user picked since stays.
+// and gives the user's back when it chooses none. Only a change in the file
+// moves it: a default the user picked since stays. The default it replaces is
+// saved before the default changes, and file_model only after, so a stop
+// anywhere between is finished by the next poll with the right default to
+// give back.
 func (s *Service) followExternalModel(ctx context.Context, row managedRow, model string) error {
 	if model == row.fileModel {
 		return nil
@@ -428,6 +431,9 @@ func (s *Service) followExternalModel(ctx context.Context, row managedRow, model
 	case model != "":
 		if !ours {
 			prev = st.DefaultModel
+			if _, err := s.db.DurableExecute(ctx, "UPDATE model_services SET prev_default = ? WHERE id = ?", prev, row.id); err != nil {
+				return err
+			}
 		}
 		st.DefaultModel = prefix + model
 	case ours:

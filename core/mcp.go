@@ -337,9 +337,6 @@ func (s *Service) UpdateMCPServer(ctx context.Context, id int64, in MCPServerInp
 	if old.ManagedBy != in.managedBy {
 		return MCPServer{}, ErrMCPManaged
 	}
-	if in.managedBy == "" {
-		s.extDirty.Store(true)
-	}
 	if err := checkMCPInput(&in, &old); err != nil {
 		return MCPServer{}, err
 	}
@@ -378,6 +375,9 @@ func (s *Service) UpdateMCPServer(ctx context.Context, id int64, in MCPServerInp
 		Args: []any{in.Name, in.Transport, in.Command, mcpList(in.Args), in.URL, in.managedHash, id}})
 	if _, err := s.db.Transaction(ctx, stmts); err != nil {
 		return MCPServer{}, err
+	}
+	if in.managedBy == "" {
+		s.extDirty.Store(true) // committed: a rename may have freed a name an external entry wants
 	}
 	return s.mcpServer(ctx, id)
 }
