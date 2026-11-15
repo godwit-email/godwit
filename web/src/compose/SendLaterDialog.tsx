@@ -1,5 +1,5 @@
 import { RiInformationLine } from "@remixicon/react";
-import { useState } from "react";
+import { type ComponentProps, useEffect, useRef, useState } from "react";
 import type { Locale } from "react-day-picker";
 import {
   de,
@@ -28,7 +28,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
+import { Calendar, CalendarDayButton } from "@/components/ui/calendar";
 import { currentLocale, type T } from "@/shared/i18n";
 
 const day0 = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -40,6 +40,20 @@ export function dayLocale(tag: string): Locale {
   if (l.language === "zh") return l.script === "Hant" ? zhTW : zhCN;
   const all: Record<string, Locale> = { de, es, fr, it, ja, ko, nl, pl, pt, ru, tr, vi };
   return all[l.language] ?? enUS;
+}
+
+/**
+ * shadcn's day button, focused as the arrow keys move: its own focus effect holds a ref the
+ * generated code never attaches, so focus would stay on the first day and Enter pick that one.
+ */
+function DayButton(props: ComponentProps<typeof CalendarDayButton>) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const focused = props.modifiers.focused;
+  useEffect(() => {
+    if (focused) ref.current?.focus();
+  }, [focused]);
+  // React 19 passes ref as a prop: CalendarDayButton spreads it onto its Button.
+  return <CalendarDayButton {...props} {...({ ref } as object)} />;
 }
 
 /** at as the dialog's header shows it: "今天 · 11月15日周日 16:00", the relative day only for today and tomorrow. */
@@ -92,7 +106,8 @@ export function SendLaterDialog({
   const at = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, mins);
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="data-[size=default]:max-w-[480px] data-[size=default]:sm:max-w-[480px]">
+      {/* data-size="md" (after the component's own) is styles.css's DialogMd width, for a form. */}
+      <AlertDialogContent data-size="md">
         <form
           className="contents"
           onKeyDown={(e) => {
@@ -114,7 +129,7 @@ export function SendLaterDialog({
             onSchedule(at.getTime());
           }}
         >
-          <AlertDialogHeader className="gap-0.5">
+          <AlertDialogHeader>
             <AlertDialogTitle>{t("compose.send_later.title")}</AlertDialogTitle>
             <p
               aria-live="polite"
@@ -123,7 +138,7 @@ export function SendLaterDialog({
               {past ? t("compose.send_later.past") : readout(loc, at)}
             </p>
           </AlertDialogHeader>
-          <div className="flex flex-wrap items-center justify-center gap-4">
+          <div className="flex flex-wrap items-center justify-evenly gap-8">
             <Calendar
               mode="single"
               required
@@ -135,6 +150,7 @@ export function SendLaterDialog({
               defaultMonth={day}
               disabled={{ before: day0(new Date()) }}
               locale={dayLocale(loc)}
+              components={{ DayButton }}
               aria-label={t("compose.send_later.date")}
               className="bg-transparent p-0"
             />
