@@ -213,7 +213,7 @@ export function Cite({
             type="button"
             className={
               className ??
-              "mx-0.5 inline-flex h-5 min-w-5 cursor-pointer items-center justify-center rounded-sm bg-muted px-1.25 align-text-bottom text-[11px] text-muted-foreground tabular-nums leading-none hover:text-foreground data-popup-open:bg-border data-popup-open:text-foreground"
+              "mx-0.5 inline-flex h-5 min-w-5 cursor-pointer items-center justify-center rounded-sm bg-muted px-1.25 align-text-bottom text-xs text-muted-foreground tabular-nums leading-none hover:text-foreground data-popup-open:bg-border data-popup-open:text-foreground"
             }
           />
         }
@@ -223,7 +223,7 @@ export function Cite({
       <PopoverContent
         side="bottom"
         align="start"
-        className="w-80 gap-1.5 rounded-xl p-3 text-base"
+        className="w-80 gap-1.5 rounded-xl p-3 text-sm"
         onClick={(e) => {
           if ((e.target as Element).closest("button, a")) setOpen(false);
         }}
@@ -273,10 +273,10 @@ export function Response({
       img: () => null,
       // Headings a step above the text at most, as chat apps set them, not a document's sizes.
       h1: ({ children }: { children?: ReactNode }) => (
-        <h1 className="pt-1.5 font-semibold text-lg">{children}</h1>
+        <h1 className="pt-1.5 font-semibold text-base">{children}</h1>
       ),
       h2: ({ children }: { children?: ReactNode }) => (
-        <h2 className="pt-1.5 font-semibold text-lg">{children}</h2>
+        <h2 className="pt-1.5 font-semibold text-base">{children}</h2>
       ),
       h3: ({ children }: { children?: ReactNode }) => (
         <h3 className="pt-1 font-semibold">{children}</h3>
@@ -342,7 +342,7 @@ export function Response({
   return (
     <>
       <Streamdown
-        className={cn("space-y-2.5 text-md", size === "page" && "leading-[1.75]")}
+        className={cn("space-y-2.5 text-sm", size === "page" && "leading-[1.75]")}
         mode={streaming ? "streaming" : "static"}
         skipHtml
         remarkPlugins={/<mail\s+id=/.test(text) ? remarkPlugins : legacyPlugins}

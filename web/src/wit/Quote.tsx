@@ -106,7 +106,7 @@ export function QuotePicker({
       ref={box}
       role="dialog"
       aria-label={t("wit.quote")}
-      className="absolute bottom-full left-0 z-3 mb-2 flex w-80 max-w-full flex-col gap-1 rounded-lg border border-glass-border bg-glass-bg p-1.5 text-popover-foreground shadow-2xl backdrop-blur-2xl ring-1 ring-glass-ring outline-none"
+      className="absolute bottom-full left-0 z-3 mb-2 flex w-80 max-w-full flex-col gap-1 rounded-lg border border-glass-border bg-glass-bg p-1.5 text-popover-foreground shadow-md backdrop-blur-2xl outline-none"
     >
       {own && (
         <div className="relative flex items-center">
@@ -135,7 +135,7 @@ export function QuotePicker({
         </div>
       )}
       {hits?.length === 0 && (
-        <p className="px-2.5 py-2 text-muted-foreground text-sm">{t("wit.quote.none")}</p>
+        <p className="px-2.5 py-2 text-muted-foreground text-xs">{t("wit.quote.none")}</p>
       )}
       {!!hits?.length && !q.trim() && (
         <p className="px-2.5 pt-1 text-muted-foreground text-xs">{t("wit.quote.recent")}</p>
@@ -157,7 +157,7 @@ export function QuotePicker({
               onKeyDown={key}
             >
               <span className="w-full truncate">{subjectOf(h, t)}</span>
-              <span className="w-full truncate text-muted-foreground text-sm">{h.from}</span>
+              <span className="w-full truncate text-muted-foreground text-xs">{h.from}</span>
             </div>
           ))}
         </div>
@@ -184,7 +184,7 @@ export function QuotedMail({
         <Badge
           key={h.id}
           variant="secondary"
-          className="h-6 max-w-full gap-1 rounded-sm font-normal text-sm [button]:hover:bg-secondary/80"
+          className="h-6 max-w-full gap-1 [button]:hover:bg-secondary/80"
           title={h.from}
           render={
             onOpen && !gone(h.id) ? (
@@ -213,11 +213,7 @@ export function QuoteChips({
   return (
     <div className="flex w-full flex-wrap gap-1.5">
       {items.map((h) => (
-        <Badge
-          key={h.id}
-          variant="secondary"
-          className="h-6 max-w-full gap-1 rounded-sm pr-1 font-normal text-sm"
-        >
+        <Badge key={h.id} variant="secondary" className="h-6 max-w-full gap-1 pr-1">
           <RiMailLine className="size-3.5 text-muted-foreground" />
           <span className="truncate">{subjectOf(h, t)}</span>
           <button

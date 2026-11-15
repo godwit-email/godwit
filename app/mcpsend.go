@@ -130,12 +130,12 @@ func (a *App) mcpSendDialog(c *ui.Context) {
 	kit.Dialog(c, &s.open, i18n.T("mcp_send.title"), kit.DialogOpts{Desc: i18n.T("mcp_send.desc"), Close: i18n.T("common.close")}, func() {
 		field := func(label string, body func()) {
 			ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Start).Children(func() {
-				kit.Text(c, label, t.Text.Sm).TextColor(t.Muted).Width(th.Space(16)).Shrink(0)
+				kit.Text(c, label, t.Text.Xs).TextColor(t.Muted).Width(th.Space(16)).Shrink(0)
 				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(body)
 			})
 		}
 		if s.changed {
-			kit.Text(c, i18n.T("mcp_send.changed"), t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, i18n.T("mcp_send.changed"), t.Text.Xs).TextColor(t.Muted)
 		}
 		field(i18n.T("compose.from"), func() { ui.Text(c, r.From).Selectable() })
 		for _, l := range []struct {

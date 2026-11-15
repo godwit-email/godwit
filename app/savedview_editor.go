@@ -273,7 +273,7 @@ func (e *viewEditor) view(c *ui.Context) {
 				pageHeading(c, title, sub, func() {
 					ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2)).Children(func() {
 						if problem != "" {
-							kit.Text(c, problem, t.Text.Sm).TextColor(t.Muted)
+							kit.Text(c, problem, t.Text.Xs).TextColor(t.Muted)
 						}
 						settingButton(c, i18n.T("common.cancel"), kit.Outline, false).OnClick(e.p.closeViewEditor)
 						settingButton(c, primary, kit.Default, problem != "").OnClick(e.save)
@@ -304,9 +304,9 @@ func (e *viewEditor) form(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	d := &e.box.Doc
 	if e.note != "" {
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2.5)).Padding(th.Space(2.5), th.Space(3.5)).Radius(t.Radius.Lg).Background(t.Hover).Children(func() {
+		kit.Block(c, ui.Row(c), kit.ToneTint).FillWidth().AlignItems(ui.Center).Gap(th.Space(2.5)).Padding(th.Space(2.5), th.Space(3.5)).Children(func() {
 			ui.Icon(c, icons.Get("mail")).Size(theme.Icon, theme.Icon).TextColor(t.Muted).Shrink(0)
-			kit.Text(c, e.note, t.Text.Body).Grow(1).Shrink(1)
+			kit.Text(c, e.note, t.Text.Sm).Grow(1).Shrink(1)
 		})
 	}
 	settingsCard(c, func() {
@@ -328,7 +328,7 @@ func (e *viewEditor) form(c *ui.Context) {
 		sectionTitle(c, i18n.T("view.editor.conditions"))
 		settingsCard(c, func() { e.conditionRows(c, &d.Conditions, &d.Match, "view") })
 		if note := e.conditionsNote(); note != "" {
-			kit.Text(c, note, t.Text.Sm).TextColor(t.Muted).PaddingX(th.Space(4))
+			kit.Text(c, note, t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(4))
 		}
 	})
 	ui.Column(c).FillWidth().Gap(theme.SectionGap).Children(func() {
@@ -338,7 +338,7 @@ func (e *viewEditor) form(c *ui.Context) {
 		}
 		kit.Button(c, i18n.T("view.editor.group.add"), kit.ButtonOpts{Variant: kit.Outline, Flat: true, Icon: "plus", Disabled: len(d.Groups) >= core.MaxViewGroups}).
 			AlignSelf(ui.Start).OnClick(e.addGroup)
-		kit.Text(c, e.groupsNote(), t.Text.Sm).TextColor(t.Muted).PaddingX(th.Space(4))
+		kit.Text(c, e.groupsNote(), t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(4))
 	})
 	if len(e.templates) > 0 {
 		ui.Column(c).FillWidth().Gap(theme.SectionGap).Children(func() {
@@ -394,9 +394,8 @@ func (e *viewEditor) groupsNote() string {
 // iconButton is the icon chosen, opening the grid of the icons labels use.
 func (e *viewEditor) iconButton(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	b := kit.Pressable(c, kit.PressableOpts{OnClick: func() { e.iconOpen = !e.iconOpen }}).Label(i18n.T("view.editor.icon")).
-		Size(th.Space(9), th.Space(9)).Radius(t.Radius.Lg).Border(theme.Hairline, t.Border).Justify(ui.Center).AlignItems(ui.Center)
-	b.Children(func() { ui.Icon(c, icons.Get(labelIcon(e.box.Icon))).Size(theme.Icon, theme.Icon) })
+	b := kit.IconButton(c, labelIcon(e.box.Icon), i18n.T("view.editor.icon"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeLg, Flat: true}).
+		OnClick(func() { e.iconOpen = !e.iconOpen })
 	if !e.iconOpen {
 		return
 	}
@@ -507,7 +506,7 @@ func (e *viewEditor) condRow(c *ui.Context, cd *core.RuleCondition) {
 		}
 		if cd.Op == core.OpOlderThan {
 			kit.Input(c, &cd.Value, kit.InputOpts{Placeholder: "3"}).Label(i18n.T("settings.rules.days")).Width(th.Space(16))
-			kit.Text(c, i18n.T("view.field.reply.days"), t.Text.Sm).Shrink(0)
+			kit.Text(c, i18n.T("view.field.reply.days"), t.Text.Xs).Shrink(0)
 		}
 	case core.FieldDate:
 		ruleSelect(c, i18n.T("settings.rules.op"), &cd.Op, []kit.Option[string]{is, {Value: core.OpNotContains, Label: i18n.T("view.op.not")}}, theme.RuleOpWidth)
@@ -523,7 +522,7 @@ func (e *viewEditor) condRow(c *ui.Context, cd *core.RuleCondition) {
 		ruleSelect(c, i18n.T("settings.rules.field.date"), &cd.Value, dates, 0)
 		if days == cd.Value {
 			kit.Input(c, &cd.Value, kit.InputOpts{Placeholder: "7"}).Label(i18n.T("settings.rules.days")).Width(th.Space(16))
-			kit.Text(c, i18n.T("view.field.reply.days"), t.Text.Sm).Shrink(0)
+			kit.Text(c, i18n.T("view.field.reply.days"), t.Text.Xs).Shrink(0)
 		}
 	case core.FieldStarred:
 		ruleSelect(c, i18n.T("settings.rules.field.starred"), &cd.Value, []kit.Option[string]{
@@ -568,7 +567,7 @@ func (e *viewEditor) groupCard(c *ui.Context, i int) {
 	}, func() {
 		e.conditionRows(c, &g.Conditions, &g.Match, g.ID)
 		if len(g.Conditions) == 0 {
-			kit.Text(c, i18n.T("view.editor.group.empty"), t.Text.Sm).TextColor(t.Muted).Padding(0, th.Space(4), th.Space(2.5), th.Space(4))
+			kit.Text(c, i18n.T("view.editor.group.empty"), t.Text.Xs).TextColor(t.Muted).Padding(0, th.Space(4), th.Space(2.5), th.Space(4))
 		}
 	})
 }
@@ -603,8 +602,8 @@ func (e *viewEditor) exceptionsCard(c *ui.Context) {
 				if x.Kind == core.ViewExceptionRemoved {
 					word = i18n.T("view.exception.removed")
 				}
-				kit.Text(c, word, t.Text.Sm).TextColor(t.Muted).Shrink(0)
-				kit.Text(c, i18n.Tf("view.exception.row", x.From, cmpSubject(x.Subject)), t.Text.Base).SingleLine().Grow(1).Shrink(1)
+				kit.Text(c, word, t.Text.Xs).TextColor(t.Muted).Shrink(0)
+				kit.Text(c, i18n.Tf("view.exception.row", x.From, cmpSubject(x.Subject)), t.Text.Sm).SingleLine().Grow(1).Shrink(1)
 				settingButton(c, i18n.T("compose.undo"), kit.Ghost, false).OnClick(func() { e.undoException(x.ThreadID) })
 			})
 		}
@@ -630,7 +629,7 @@ func (e *viewEditor) undoException(thread int64) {
 // preview is 实时预览: what the document shows, as the list will show it.
 func (e *viewEditor) preview(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(3)).Radius(t.Radius.Xl).Background(t.Hover).Children(func() {
+	kit.Card(c, ui.Column(c), kit.ToneTint).FillWidth().Gap(th.Space(2)).Padding(th.Space(3)).Children(func() {
 		total := 0
 		if e.prev != nil {
 			for _, g := range e.prev.Groups {
@@ -638,16 +637,16 @@ func (e *viewEditor) preview(c *ui.Context) {
 			}
 		}
 		ui.Row(c).FillWidth().AlignItems(ui.Baseline).Gap(th.Space(2)).PaddingX(th.Space(1)).Children(func() {
-			kit.Text(c, i18n.T("view.preview"), t.Text.Body).FontWeight(600).Grow(1)
+			kit.Text(c, i18n.T("view.preview"), t.Text.Sm).FontWeight(600).Grow(1)
 			if e.prev != nil {
-				kit.Text(c, i18n.Tf("view.count", total), t.Text.Sm).TextColor(t.Muted)
+				kit.Text(c, i18n.Tf("view.count", total), t.Text.Xs).TextColor(t.Muted)
 			}
 		})
 		note := func(title, desc string) {
-			ui.Column(c).FillWidth().Gap(th.Space(1)).Padding(th.Space(4), th.Space(3)).Radius(t.Radius.Lg).Background(t.Background).Border(theme.Hairline, t.Border).
+			kit.Block(c, ui.Column(c), kit.ToneOutline).FillWidth().Gap(th.Space(1)).Padding(th.Space(4), th.Space(3)).
 				AlignItems(ui.Center).Children(func() {
-				kit.Text(c, title, t.Text.Sm).FontWeight(500).TextAlign(ui.Center)
-				kit.Text(c, desc, t.Text.Sm).TextColor(t.Muted).TextAlign(ui.Center)
+				kit.Text(c, title, t.Text.Xs).FontWeight(500).TextAlign(ui.Center)
+				kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted).TextAlign(ui.Center)
 			})
 		}
 		switch {
@@ -659,7 +658,7 @@ func (e *viewEditor) preview(c *ui.Context) {
 			note(i18n.T("view.empty"), i18n.T("view.preview.empty.desc"))
 		default:
 			now := e.p.a.clock.Now()
-			ui.Column(c).FillWidth().Radius(t.Radius.Lg).Background(t.Background).Border(theme.Hairline, t.Border).Clip().Children(func() {
+			kit.Block(c, ui.Column(c), kit.ToneOutline).FillWidth().Clip().Children(func() {
 				grouped := len(e.box.Doc.Groups) > 0
 				for gi, g := range e.prev.Groups {
 					if grouped {
@@ -671,18 +670,18 @@ func (e *viewEditor) preview(c *ui.Context) {
 							if name == "" {
 								name = i18n.T("view.other")
 							}
-							kit.Text(c, name, t.Text.Sm).FontWeight(500).TextColor(t.Muted).Grow(1).Shrink(1).SingleLine()
-							kit.Text(c, strconv.Itoa(g.Total), t.Text.Sm).TextColor(t.Muted).Shrink(0)
+							kit.Text(c, name, t.Text.Xs).FontWeight(500).TextColor(t.Muted).Grow(1).Shrink(1).SingleLine()
+							kit.Text(c, strconv.Itoa(g.Total), t.Text.Xs).TextColor(t.Muted).Shrink(0)
 						})
 					}
 					for _, r := range g.Items {
 						kit.Separator(c.Key(fmt.Sprintf("s:%d", r.ID)), false)
 						ui.Column(c.Key(r.ID)).FillWidth().Gap(th.Space(0.5)).Padding(th.Space(2), th.Space(3)).Children(func() {
 							ui.Row(c).FillWidth().Gap(th.Space(2)).Children(func() {
-								kit.Text(c, strings.Join(r.Participants, ", "), t.Text.Sm).FontWeight(500).SingleLine().Grow(1).Shrink(1)
-								kit.Text(c, listTime(now, r.LastDate), t.Text.Sm).TextColor(t.Muted).Shrink(0)
+								kit.Text(c, strings.Join(r.Participants, ", "), t.Text.Xs).FontWeight(500).SingleLine().Grow(1).Shrink(1)
+								kit.Text(c, listTime(now, r.LastDate), t.Text.Xs).TextColor(t.Muted).Shrink(0)
 							})
-							kit.Text(c, cmpSubject(r.Subject), t.Text.Sm).SingleLine()
+							kit.Text(c, cmpSubject(r.Subject), t.Text.Xs).SingleLine()
 						})
 					}
 				}

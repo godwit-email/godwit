@@ -47,14 +47,14 @@ func TemplateField(c *ui.Context, value *string, o TemplateOpts) ui.Element {
 		inputFrame(c, box, InputOpts{Invalid: o.Error != "", Flat: true}).Children(func() {
 			for i, s := range segs {
 				if s.id == "" {
-					Text(c.Key(i), s.text, t.Text.Sm).Font(theme.Mono)
+					Text(c.Key(i), s.text, t.Text.Xs).Font(theme.Mono)
 					continue
 				}
 				l := label(s.id)
 				ui.Row(c.Key(i)).Height(th.Space(6)).AlignItems(ui.Center).Gap(th.Space(0.5)).Padding(0, th.Space(1), 0, th.Space(2)).
-					Radius(t.Radius.Sm).Background(t.Hover).Children(func() {
-					Text(c, l, t.Text.Sm).TextColor(t.Foreground)
-					IconButton(c, "x", o.Remove(l), ButtonOpts{Variant: Ghost, Size: SizeXs}).
+					Radius(t.Radius.Sm).Background(tint(t, 1)).Children(func() {
+					Text(c, l, t.Text.Xs).TextColor(t.Foreground)
+					IconButton(c, "x", o.Remove(l), ButtonOpts{Variant: Ghost, Size: SizeMini}).
 						OnClick(func() { *value = formatTemplate(slices.Delete(slices.Clone(segs), i, i+1)) + tail })
 				})
 			}
@@ -63,7 +63,7 @@ func TemplateField(c *ui.Context, value *string, o TemplateOpts) ui.Element {
 				ph = o.Placeholder
 			}
 			ui.TextInputBase(c.Key("input"), &tail).Label(o.Label).Placeholder(ph).FocusRing(false).Grow(1).MinWidth(th.Space(16)).Height(th.Space(6)).
-				Font(theme.Mono).FontSize(t.Text.Sm).
+				Font(theme.Mono).FontSize(t.Text.Xs).
 				OnChange(func() { *value = head + tail }).
 				OnTextKey(func(k ui.TextKey) bool {
 					if k.Key != ui.KeyBackspace || k.Mods != 0 || k.Text() != "" || len(segs) == 0 {
@@ -74,7 +74,7 @@ func TemplateField(c *ui.Context, value *string, o TemplateOpts) ui.Element {
 				})
 		})
 		ui.Row(c).Wrap().AlignItems(ui.Center).Gap(th.Space(1)).Children(func() {
-			Text(c, o.Insert, t.Text.Sm).TextColor(t.Muted)
+			Text(c, o.Insert, t.Text.Xs).TextColor(t.Muted)
 			for _, k := range o.Tokens {
 				Button(c.Key(k.ID), k.Label, ButtonOpts{Variant: Outline, Size: SizeSm, Icon: "plus"}).
 					OnClick(func() { *value += "{" + k.ID + "}" })
@@ -82,13 +82,13 @@ func TemplateField(c *ui.Context, value *string, o TemplateOpts) ui.Element {
 		})
 		switch {
 		case o.Error != "":
-			Text(c, o.Error, t.Text.Sm).TextColor(t.Danger)
+			Text(c, o.Error, t.Text.Xs).TextColor(t.Danger)
 		case o.Preview != "":
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(1.5)).Children(func() {
 				if o.PreviewLabel != "" {
-					Text(c, o.PreviewLabel, t.Text.Sm).TextColor(t.Muted).Shrink(0)
+					Text(c, o.PreviewLabel, t.Text.Xs).TextColor(t.Muted).Shrink(0)
 				}
-				Text(c, o.Preview, t.Text.Sm).TextColor(t.Muted).Font(theme.Mono).SingleLine().Shrink(1)
+				Text(c, o.Preview, t.Text.Xs).TextColor(t.Muted).Font(theme.Mono).SingleLine().Shrink(1)
 			})
 		}
 	})

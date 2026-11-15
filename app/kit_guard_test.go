@@ -2,11 +2,16 @@ package app
 
 import (
 	"cmp"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -125,4 +130,94 @@ func TestNoGeist(t *testing.T) {
 			t.Errorf("%s names the Geist font; use theme.Mono", f)
 		}
 	}
+}
+
+var (
+	roundedBox   = regexp.MustCompile(`Radius\(t\.Radius\.\w+\)`)
+	filledBox    = regexp.MustCompile(`Background\(|Border\(`)
+	kitControl   = regexp.MustCompile(`kit\.(Input|InputGroup|Select|SelectWith|Button|IconButton|ButtonFrame)\(`)
+	kitField     = regexp.MustCompile(`kit\.(Input|InputGroup|Select|SelectWith|SelectButton)\(`)
+	fieldResized = regexp.MustCompile(`\.(Height|Radius)\(`)
+	spaceHeight  = regexp.MustCompile(`\.Height\((?:th|c\.Theme\(\))\.Space\(([0-9.]+)\)\)`)
+	controlSteps = []string{"6", "7", "8", "9"} // 24, 28, 32, 36: the scale of the design system's README
+)
+
+// appLines calls fn with each line of app/'s Go files that are not tests.
+func appLines(t *testing.T, fn func(file string, n int, line string)) {
+	t.Helper()
+	paths, err := filepath.Glob("*.go")
+	if err != nil || len(paths) == 0 {
+		t.Fatalf("no Go files: %v", err)
+	}
+	for _, p := range paths {
+		if strings.HasSuffix(p, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, line := range strings.Split(string(src), "\n") {
+			fn(p, i+1, line)
+		}
+	}
+}
+
+// TestNoNewHandStyledBoxes: a page draws no surface of its own, a box it
+// rounds and fills or outlines by hand, where a kit component (Card, Panel,
+// BadgeWith, Alert, StatusDot) belongs. testdata/hand_styled.txt pins how
+// many each file still has: the count only goes down, and the pin with it.
+// shortcut: reads line by line, so a chain broken across lines escapes it; walk the AST as rawCalls does once they slip through.
+func TestNoNewHandStyledBoxes(t *testing.T) {
+	got := map[string]int{}
+	appLines(t, func(file string, _ int, line string) {
+		if roundedBox.MatchString(line) && filledBox.MatchString(line) {
+			got[file]++
+		}
+	})
+	var want []string
+	for _, f := range slices.Sorted(maps.Keys(got)) {
+		want = append(want, fmt.Sprintf("%s %d", f, got[f]))
+	}
+	pinned, err := os.ReadFile("testdata/hand_styled.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pins := map[string]int{}
+	for _, l := range strings.Fields(strings.ReplaceAll(strings.TrimSpace(string(pinned)), " ", ":")) {
+		f, n, _ := strings.Cut(l, ":")
+		pins[f], _ = strconv.Atoi(n)
+	}
+	for f, n := range got {
+		if n > pins[f] {
+			t.Errorf("%s draws %d surfaces by hand, %d pinned: build the new one with internal/kit (or add what kit lacks)", f, n, pins[f])
+		}
+	}
+	for f, n := range pins {
+		if got[f] < n {
+			t.Errorf("%s is down to %d hand-drawn surfaces from %d: lower its line in testdata/hand_styled.txt", f, got[f], n)
+		}
+	}
+	if t.Failed() {
+		t.Logf("testdata/hand_styled.txt as it is now:\n%s", strings.Join(want, "\n"))
+	}
+}
+
+// TestControlHeightsOnScale: a single-line kit control is 24, 28, 32 or 36 high;
+// a page gives it no height between, and an input or a select none at all,
+// nor a corner: its Size says both.
+func TestControlHeightsOnScale(t *testing.T) {
+	appLines(t, func(file string, n int, line string) {
+		if kitField.MatchString(line) && fieldResized.MatchString(line) {
+			t.Errorf("%s:%d: an input or select given its own height or corner; set InputOpts.Size or SelectOpts.Size (a bare input in a group takes AlignSelf(ui.Stretch))", file, n)
+		}
+		if !kitControl.MatchString(line) {
+			return
+		}
+		for _, m := range spaceHeight.FindAllStringSubmatch(line, -1) {
+			if !slices.Contains(controlSteps, m[1]) {
+				t.Errorf("%s:%d: a control Space(%s) high; the scale is Space(6), Space(7), Space(8) and Space(9)", file, n, m[1])
+			}
+		}
+	})
 }

@@ -152,14 +152,14 @@ func (p *mailPage) labelFilter(c *ui.Context) {
 	b := kit.Pressable(c, kit.PressableOpts{Glass: true, Bordered: true, OnClick: func() { p.sf.labelOpen = !p.sf.labelOpen }}).
 		Label(i18n.T("mail.filter.label.name")).Expanded(p.sf.labelOpen).Height(th.Space(6)).PaddingX(th.Space(2)).Gap(th.Space(1)).Radius(t.Radius.Md)
 	if set {
-		b.Background(t.SidebarSelected)
+		b.Background(t.Hover)
 	}
 	b.Children(func() {
 		if set {
 			ui.Icon(c, icons.Get("label-"+cur.Icon)).Size(theme.IconXs, theme.IconXs).TextColor(t.Label(cur.Color).Text)
-			kit.Text(c, cur.Name, t.Text.Sm).SingleLine()
+			kit.Text(c, cur.Name, t.Text.Xs).SingleLine()
 		} else {
-			kit.Text(c, i18n.T("mail.filter.label"), t.Text.Sm).SingleLine()
+			kit.Text(c, i18n.T("mail.filter.label"), t.Text.Xs).SingleLine()
 		}
 		ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted)
 	})
@@ -171,7 +171,7 @@ func (p *mailPage) labelFilter(c *ui.Context) {
 				Label(i18n.Tf("mail.filter.label.item", l.Name)).Checked(on).MinWidth(theme.FilterMenuMin).Padding(th.Space(1.5), th.Space(2)).
 				Gap(th.Space(2)).AlignItems(ui.Center).Radius(t.Radius.Md).Children(func() {
 				ui.Icon(c, icons.Get("label-"+l.Icon)).Size(theme.IconXs, theme.IconXs).TextColor(t.Label(l.Color).Text)
-				kit.Text(c, l.Name, t.Text.Sm).SingleLine()
+				kit.Text(c, l.Name, t.Text.Xs).SingleLine()
 			})
 		}
 	})
@@ -215,13 +215,13 @@ func filterChip(c *ui.Context, label string, on bool, open *bool, click func()) 
 		}
 	}}).Label(label).Height(th.Space(6)).PaddingX(th.Space(2)).Gap(th.Space(1)).Radius(t.Radius.Md)
 	if on {
-		b.Background(t.SidebarSelected)
+		b.Background(t.Hover)
 	}
 	if open != nil {
 		b.Expanded(*open)
 	}
 	b.Children(func() {
-		kit.Text(c, label, t.Text.Sm).SingleLine()
+		kit.Text(c, label, t.Text.Xs).SingleLine()
 		if open != nil {
 			ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted)
 		}
@@ -234,6 +234,6 @@ func filterItem(c *ui.Context, label string, on bool, click func()) {
 	t, th := theme.Of(c), c.Theme()
 	kit.Pressable(c, kit.PressableOpts{Selected: on, OnClick: click}).Label(label).Checked(on).
 		MinWidth(theme.FilterMenuMin).Padding(th.Space(1.5), th.Space(2)).Radius(t.Radius.Md).Children(func() {
-		kit.Text(c, label, t.Text.Sm).SingleLine()
+		kit.Text(c, label, t.Text.Xs).SingleLine()
 	})
 }

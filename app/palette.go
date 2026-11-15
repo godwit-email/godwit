@@ -145,16 +145,16 @@ func (p *palette) view(c *ui.Context) {
 			p.filterList(c)
 			return
 		case p.err != nil:
-			kit.Text(c, humanize(p.err), t.Text.Sm).TextColor(t.Danger).Padding(th.Space(2))
+			kit.Text(c, humanize(p.err), t.Text.Xs).TextColor(t.Danger).Padding(th.Space(2))
 			return
 		case len(p.rows) == 0 && p.hl != "":
 			ui.Column(c).Gap(th.Space(1)).Padding(th.Space(6), th.Space(4)).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, i18n.Tf("palette.empty.title", p.hl)).FontWeight(500)
-				kit.Text(c, i18n.T("palette.empty.desc"), t.Text.Sm).TextColor(t.Muted)
+				kit.Text(c, i18n.T("palette.empty.desc"), t.Text.Xs).TextColor(t.Muted)
 			})
 			return
 		case len(p.rows) == 0 && p.hf:
-			kit.Text(c, i18n.T("mail.search.empty_filtered"), t.Text.Sm).TextColor(t.Muted).Padding(th.Space(6), th.Space(4)).AlignSelf(ui.Center)
+			kit.Text(c, i18n.T("mail.search.empty_filtered"), t.Text.Xs).TextColor(t.Muted).Padding(th.Space(6), th.Space(4)).AlignSelf(ui.Center)
 			return
 		}
 		i := 0
@@ -201,7 +201,7 @@ func (p *palette) row(c *ui.Context, i int, it palItem) ui.Element {
 		ui.Icon(c, icons.Get(it.icon)).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
 		marked(c, it.title, p.hl).SingleLine().Shrink(1)
 		if it.sub != "" {
-			marked(c, it.sub, p.hl).FontSize(t.Text.Sm).TextColor(t.Muted).SingleLine().Shrink(1)
+			marked(c, it.sub, p.hl).FontSize(t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(1)
 		}
 		ui.Spacer(c)
 		if it.unread {

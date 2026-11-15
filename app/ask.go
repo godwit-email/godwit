@@ -81,7 +81,7 @@ func (p *askPage) Sidebar(c *ui.Context) {
 	if len(p.convs) == 0 {
 		return
 	}
-	kit.Text(c, i18n.T("ask.recent"), t.Text.Sm).TextColor(t.Muted).Padding(th.Space(3.5), th.Space(2)+sidebarInset(c), th.Space(1.5), th.Space(2))
+	kit.Text(c, i18n.T("ask.recent"), t.Text.Xs).TextColor(t.Muted).Padding(th.Space(3.5), th.Space(2)+sidebarInset(c), th.Space(1.5), th.Space(2))
 	sidebarScroll(c, func() {
 		for _, conv := range p.convs {
 			id := conv.ID
@@ -94,9 +94,7 @@ func (p *askPage) Sidebar(c *ui.Context) {
 					case conv.Answering:
 						kit.Spinner(c).Size(th.Space(3.5), th.Space(3.5)).Shrink(0).Label(i18n.T("wit.thinking"))
 					case conv.Awaiting:
-						ui.Box(c).Padding(th.Space(0.5), th.Space(1.5)).Radius(t.Radius.Sm).Background(t.WarningBg).Shrink(0).Children(func() {
-							kit.Text(c, i18n.T("wit.approval.pending"), t.Text.Xs).TextColor(t.WarningText)
-						})
+						kit.BadgeWith(c, i18n.T("wit.approval.pending"), kit.BadgeOpts{Tone: kit.BadgeWarning}).Shrink(0)
 					}
 				}).
 				ContextMenu(func(m *ui.Menu) {

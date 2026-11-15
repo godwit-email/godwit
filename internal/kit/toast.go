@@ -15,9 +15,12 @@ const (
 
 // ToastHost draws the window's toasts (c.Toast, c.AddToast) centered under
 // the top bar, the oldest first and at most theme.ToastMax; call it once in
-// the view. closeLabel names the close buttons (pass the translated
-// "Close"). A success, warning or error toast is tinted: its color's 50 behind, 200 around, 700 for the
-// text and its leading icon; a plain one is white, without an icon.
+// the view. A toast is a control high (36) with a menu's corners; its action
+// is a small filled button at its end. One that goes by itself has no close
+// button (Escape closes it); one that stays (Timeout < 0) has, named
+// closeLabel (pass the translated "Close"). A success, warning or error toast
+// is tinted: its color's 50 behind, 200 around and under its action, 700 for
+// the text and its leading icon; a plain one is white, without an icon.
 func ToastHost(c *ui.Context, closeLabel string) {
 	t, th := theme.Of(c), c.Theme()
 	ui.ToastViewportBase(c, func(viewport ui.Element, toasts []ui.Toast) {
@@ -29,28 +32,39 @@ func ToastHost(c *ui.Context, closeLabel string) {
 		for _, tst := range toasts {
 			toast := ui.ToastBase(c, tst)
 			look := toastLook(t, tst.Type)
-			toast.Root.Row().Gap(th.Space(2.5)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.X2l).Background(look.bg).Border(theme.Hairline, look.border).
-				TextColor(look.fg).MaxWidth(theme.ToastMaxWidth).
+			// Space(1) around, so a 28 action ends Space(1) from the edge; the text makes it Space(3).
+			toast.Root.Row().AlignItems(ui.Center).Gap(th.Space(1)).MinHeight(th.Space(9)).Padding(th.Space(1), th.Space(1), th.Space(1), th.Space(3)).
+				Radius(t.Radius.Lg).Background(look.bg).Border(theme.Hairline, look.border).
+				TextColor(look.fg).FontSize(t.Text.Sm).MaxWidth(theme.ToastMaxWidth).
 				Transition(ui.ElementTransition{Enter: &ui.Motion{Y: -2 * theme.MotionOffset}, Exit: &ui.Motion{Y: -2 * theme.MotionOffset}})
 			Elevate(c, toast.Root, theme.ShadowLg)
 			toast.Root.Children(func() {
 				if look.icon != "" {
-					ui.Icon(c, icons.Get(look.icon)).Size(theme.Icon, theme.Icon)
+					ui.Icon(c, icons.Get(look.icon)).Size(theme.Icon, theme.Icon).Margin(0, th.Space(1), 0, 0)
 				}
-				ui.Column(c).Grow(1).Gap(th.Space(0.5)).Children(func() {
-					ui.Text(c, tst.Title).FontWeight(500)
-					if tst.Description != "" {
-						Text(c, tst.Description, t.Text.Sm).TextColor(look.muted)
+				ui.Column(c).Grow(1).Gap(th.Space(0.5)).Padding(th.Space(1), th.Space(2), th.Space(1), 0).Children(func() {
+					title := ui.Text(c, tst.Title)
+					if tst.Description != "" { // a heading over its line
+						title.FontWeight(500)
+						Text(c, tst.Description, t.Text.Xs).TextColor(look.muted)
 					}
 				})
 				if tst.Action != "" {
-					toast.ActionButton().Height(th.Space(7)).PaddingX(th.Space(2.5)).Radius(t.Radius.Md).Border(theme.Stroke, look.border).Children(func() {
-						ui.Text(c, tst.Action)
+					b := toast.ActionButton().Height(th.Space(7)).PaddingX(th.Space(2)).Radius(t.Radius.Md).FontWeight(500).Transition(colors(theme.MotionFast))
+					fill := look.action
+					switch { // as Button: a step on hover, another pressed
+					case b.Pressed():
+						fill = fill.Mix(look.fg, 0.12)
+					case b.Hovered():
+						fill = fill.Mix(look.fg, 0.06)
+					}
+					b.Background(fill).Children(func() { ui.Text(c, tst.Action) })
+				}
+				if tst.Timeout < 0 {
+					toast.CloseButton().Label(closeLabel).Size(th.Space(7), th.Space(7)).Radius(t.Radius.Md).Center().TextColor(look.muted).Children(func() {
+						ui.Icon(c, icons.Get("x")).Size(theme.Icon, theme.Icon)
 					})
 				}
-				toast.CloseButton().Label(closeLabel).Size(theme.CloseButton, theme.CloseButton).Radius(t.Radius.Sm).Center().TextColor(look.muted).Children(func() {
-					ui.Icon(c, icons.Get("x")).Size(theme.IconSm, theme.IconSm)
-				})
 			})
 		}
 	})
@@ -59,8 +73,8 @@ func ToastHost(c *ui.Context, closeLabel string) {
 // toastStyle is how a toast of a kind looks: its leading icon ("" for
 // none), its colors, and the color of its secondary text and close button.
 type toastStyle struct {
-	icon                  string
-	bg, border, fg, muted ui.Color
+	icon                          string
+	bg, border, fg, muted, action ui.Color // action is the fill under its action button
 }
 
 // toastLook is the style of a toast of typ: tinted for success, warning and
@@ -68,11 +82,11 @@ type toastStyle struct {
 func toastLook(t theme.Tokens, typ string) toastStyle {
 	switch typ {
 	case ToastSuccess:
-		return toastStyle{"circle-check", t.SuccessBg, t.SuccessBorder, t.SuccessText, t.SuccessText}
+		return toastStyle{"circle-check", t.SuccessBg, t.SuccessBorder, t.SuccessText, t.SuccessText, t.SuccessBorder}
 	case ToastWarning:
-		return toastStyle{"triangle-alert", t.WarningBg, t.WarningBorder, t.WarningText, t.WarningText}
+		return toastStyle{"triangle-alert", t.WarningBg, t.WarningBorder, t.WarningText, t.WarningText, t.WarningBorder}
 	case ToastError:
-		return toastStyle{"circle-x", t.DangerBg, t.DangerBorder, t.DangerText, t.DangerText}
+		return toastStyle{"circle-x", t.DangerBg, t.DangerBorder, t.DangerText, t.DangerText, t.DangerBorder}
 	}
-	return toastStyle{"", t.Background, t.Border, t.Foreground, t.Muted}
+	return toastStyle{"", t.Raised, t.Border, t.Foreground, t.Muted, t.Hover}
 }

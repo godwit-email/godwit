@@ -25,10 +25,10 @@ func (e *extView) directoryView(c *ui.Context) {
 	})
 	switch {
 	case len(e.reg.Entries) == 0 && e.reg.Stale != "":
-		ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Lg).Background(t.Card).AlignItems(ui.Center).Children(func() {
+		kit.Block(c, ui.Row(c), kit.ToneCard).FillWidth().Gap(th.Space(6)).Padding(th.Space(3), th.Space(4)).AlignItems(ui.Center).Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-				kit.Text(c, i18n.T("settings.ext.directory.offline"), t.Text.Body).FontWeight(500)
-				kit.Text(c, i18n.T("settings.ext.directory.offline.hint"), t.Text.Sm).TextColor(t.Muted)
+				kit.Text(c, i18n.T("settings.ext.directory.offline"), t.Text.Sm).FontWeight(500)
+				kit.Text(c, i18n.T("settings.ext.directory.offline.hint"), t.Text.Xs).TextColor(t.Muted)
 			})
 			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(e.refreshRegistry)
 		})
@@ -52,7 +52,7 @@ func (e *extView) directoryView(c *ui.Context) {
 	if e.reg.Stale != "" && len(e.reg.Entries) > 0 {
 		foot = i18n.T("settings.ext.registry.stale") + " " + foot
 	}
-	kit.Text(c, foot, t.Text.Sm).TextColor(t.Muted).PaddingX(th.Space(4))
+	kit.Text(c, foot, t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(4))
 	e.installDialog(c)
 }
 
@@ -93,41 +93,41 @@ func flowLabel(flow string) string {
 	return ""
 }
 
-func entryIconBox(c *ui.Context, en core.RegistryEntry, bg ui.Color) {
+func entryIconBox(c *ui.Context, en core.RegistryEntry, tone kit.Tone) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Box(c).Width(th.Space(10)).Height(th.Space(10)).Radius(t.Radius.Md).Background(bg).TextColor(t.Muted).AlignItems(ui.Center).Justify(ui.Center).Shrink(0).Children(func() {
-		ui.Icon(c, icons.Get(entryIcon(en))).Size(th.Space(5), th.Space(5))
+	kit.Tile(c, th.Space(10), th.Space(10), tone).TextColor(t.Muted).Children(func() {
+		ui.Icon(c, icons.Get(entryIcon(en))).Size(theme.IconLg, theme.IconLg)
 	})
 }
 
 func (e *extView) directoryCard(c *ui.Context, en core.RegistryEntry) {
 	t, th := theme.Of(c), c.Theme()
 	title := entryTitle(en)
-	ui.Row(c).Grow(1).Shrink(1).Basis(0).MinWidth(0).Gap(th.Space(2)).Padding(th.Space(3)).Radius(t.Radius.Lg).Background(t.Card).AlignItems(ui.Start).Children(func() {
+	kit.Block(c, ui.Row(c), kit.ToneCard).Grow(1).Shrink(1).Basis(0).MinWidth(0).Gap(th.Space(2)).Padding(th.Space(3)).AlignItems(ui.Start).Children(func() {
 		kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { e.openEntry(en) }}).Label(i18n.Tf("settings.ext.directory.view", title)).Grow(1).Shrink(1).Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(2)).Children(func() {
 				ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
-					entryIconBox(c, en, t.Background)
+					entryIconBox(c, en, kit.ToneRaised)
 					ui.Column(c).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-						kit.Text(c, title, t.Text.Body).LineHeight(theme.LineFor(title)).FontWeight(500)
+						kit.Text(c, title, t.Text.Sm).FontWeight(500)
 						if en.Publisher != "" {
-							kit.Text(c, en.Publisher, t.Text.Sm).TextColor(t.Muted)
+							kit.Text(c, en.Publisher, t.Text.Xs).TextColor(t.Muted)
 						}
 					})
 				})
 				if s := en.Summary.For(i18n.Language()); s != "" {
-					kit.Tooltip(c, kit.Text(c, s, t.Text.Sm).TextColor(t.Muted).MaxLines(2).Shrink(1), s)
+					kit.Tooltip(c, kit.Text(c, s, t.Text.Xs).TextColor(t.Muted).MaxLines(2).Shrink(1), s)
 				}
 				ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Wrap().Children(func() {
 					if l := flowLabel(en.DataFlow); l != "" {
 						if en.DataFlow == plugins.DataFlowThirdParty {
 							statusPill(c, l, false)
 						} else {
-							kit.Text(c, l, t.Text.Sm).TextColor(t.Muted)
+							kit.Text(c, l, t.Text.Xs).TextColor(t.Muted)
 						}
 					}
 					if m := strings.TrimPrefix(strings.TrimSuffix(entryKind(en)+" · "+cmp.Or(en.Version, en.Installed), " · "), " · "); m != "" {
-						kit.Text(c, m, t.Text.Sm).TextColor(t.Muted)
+						kit.Text(c, m, t.Text.Xs).TextColor(t.Muted)
 					}
 				})
 			})
@@ -146,7 +146,7 @@ func (e *extView) entryAction(c *ui.Context, en core.RegistryEntry) {
 	case e.installing == en.Name:
 		e.installProgressView(c)
 	case en.Version == "":
-		kit.Text(c, unavailable(en.Unavailable), t.Text.Sm).TextColor(t.Muted).Shrink(1)
+		kit.Text(c, unavailable(en.Unavailable), t.Text.Xs).TextColor(t.Muted).Shrink(1)
 	case en.Installed == "":
 		dialog(i18n.T("settings.ext.registry.install"))
 	case en.Update:
@@ -154,7 +154,7 @@ func (e *extView) entryAction(c *ui.Context, en core.RegistryEntry) {
 	case en.InstalledTrust != "listed":
 		dialog(i18n.T("settings.ext.registry.replace"))
 	default:
-		kit.Text(c, i18n.T("settings.ext.registry.installed"), t.Text.Sm).TextColor(t.Muted)
+		kit.Text(c, i18n.T("settings.ext.registry.installed"), t.Text.Xs).TextColor(t.Muted)
 	}
 }
 
@@ -231,11 +231,11 @@ func (e *extView) installDialog(c *ui.Context) {
 	}
 	kit.Dialog(c, &e.detailOpen, entryTitle(en), kit.DialogOpts{Desc: desc, Close: i18n.T("common.close")}, func() {
 		ui.Column(c).FillWidth().Gap(th.Space(4)).Children(func() {
-			ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Md).Background(t.Card).Children(func() {
+			kit.Block(c, ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(3)), kit.ToneCard).Children(func() {
 				fact := func(label, value string) {
 					ui.Column(c).Grow(1).Basis(0).Gap(th.Space(0.5)).Children(func() {
-						kit.Text(c, label, t.Text.Sm).TextColor(t.Muted)
-						kit.Text(c, value, t.Text.Body).LineHeight(theme.LineFor(value))
+						kit.Text(c, label, t.Text.Xs).TextColor(t.Muted)
+						kit.Text(c, value, t.Text.Sm)
 					})
 				}
 				fact(i18n.T("settings.ext.dialog.version"), en.Version)
@@ -248,7 +248,7 @@ func (e *extView) installDialog(c *ui.Context) {
 				kit.Alert(c, kit.Warning, strings.TrimSpace(i18n.Tf("settings.ext.registry.confirm.replace", en.Name)), nil)
 			}
 			if en.Homepage != "" {
-				kit.TextLink(c, i18n.T("settings.ext.dialog.home"), t.Muted, t.Text.Sm).AlignSelf(ui.Start).OnClick(func() {
+				kit.TextLink(c, i18n.T("settings.ext.dialog.home"), t.Muted, t.Text.Xs).AlignSelf(ui.Start).OnClick(func() {
 					home, plat := en.Homepage, e.a.plat
 					e.a.do(func(context.Context) error { return plat.OpenURL(home) }, e.a.toastErr)
 				})
@@ -256,9 +256,9 @@ func (e *extView) installDialog(c *ui.Context) {
 			r := e.readmes[e.detail+"\x00"+i18n.Language()]
 			switch {
 			case r != nil && r.loading:
-				kit.Text(c, i18n.T("settings.ext.dialog.readme.loading"), t.Text.Sm).TextColor(t.Muted)
+				kit.Text(c, i18n.T("settings.ext.dialog.readme.loading"), t.Text.Xs).TextColor(t.Muted)
 			case r != nil && len(r.blocks) > 0:
-				kit.Text(c, i18n.T("settings.ext.dialog.readme.note"), t.Text.Sm).TextColor(t.Muted)
+				kit.Text(c, i18n.T("settings.ext.dialog.readme.note"), t.Text.Xs).TextColor(t.Muted)
 				readmeView(c, r.blocks)
 			}
 		})
@@ -267,7 +267,7 @@ func (e *extView) installDialog(c *ui.Context) {
 		if en.Native {
 			foot = i18n.T("settings.ext.dialog.foot.native")
 		}
-		kit.Text(c, foot, t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
+		kit.Text(c, foot, t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
 		kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { e.detailOpen = false })
 		// A script's config comes first when it has any: its row opens pending.
 		enable := en.Script && !en.Configurable
@@ -292,15 +292,15 @@ func (e *extView) installDialog(c *ui.Context) {
 // dataFlowCard is the reviewers' statement of where the plugin's data goes.
 func dataFlowCard(c *ui.Context, en core.RegistryEntry) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).FillWidth().Gap(th.Space(1)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Lg).Background(t.Card).Children(func() {
+	kit.Block(c, ui.Column(c), kit.ToneCard).FillWidth().Gap(th.Space(1)).Padding(th.Space(3), th.Space(4)).Children(func() {
 		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-			kit.Text(c, i18n.T("settings.ext.dialog.flow"), t.Text.Body).FontWeight(500)
+			kit.Text(c, i18n.T("settings.ext.dialog.flow"), t.Text.Sm).FontWeight(500)
 			if l := flowLabel(en.DataFlow); l != "" {
 				statusPill(c, l, false)
 			}
 		})
 		if s := en.Summary.For(i18n.Language()); s != "" {
-			kit.Text(c, s, t.Text.Body).LineHeight(theme.LineFor(s))
+			kit.Text(c, s, t.Text.Sm)
 		}
 	})
 }
@@ -309,11 +309,11 @@ func dataFlowCard(c *ui.Context, en core.RegistryEntry) {
 // script all it declares, which is what the dialog's button grants.
 func entryPermissions(c *ui.Context, en core.RegistryEntry) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).FillWidth().Gap(th.Space(1.5)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Lg).Background(t.Card).Children(func() {
-		kit.Text(c, i18n.T("settings.ext.dialog.perm"), t.Text.Body).FontWeight(500)
+	kit.Block(c, ui.Column(c), kit.ToneCard).FillWidth().Gap(th.Space(1.5)).Padding(th.Space(3), th.Space(4)).Children(func() {
+		kit.Text(c, i18n.T("settings.ext.dialog.perm"), t.Text.Sm).FontWeight(500)
 		if en.Native {
 			text := i18n.T("settings.ext.dialog.perm.native")
-			kit.Text(c, text, t.Text.Body).LineHeight(theme.LineFor(text))
+			kit.Text(c, text, t.Text.Sm)
 			return
 		}
 		permissionList(c, en.Permissions, en.Capabilities)
@@ -406,16 +406,16 @@ func readmeView(c *ui.Context, blocks []readmeBlock) {
 			cc := c.Key(i)
 			switch b.kind {
 			case "h":
-				kit.Text(cc, b.text, t.Text.Body).LineHeight(theme.LineFor(b.text)).FontWeight(600).Margin(th.Space(2), 0, 0, 0)
+				kit.Text(cc, b.text, t.Text.Sm).FontWeight(600).Margin(th.Space(2), 0, 0, 0)
 			case "li":
 				ui.Row(cc).FillWidth().Gap(th.Space(2)).Children(func() {
-					kit.Text(cc, b.mark, t.Text.Body).TextColor(t.Muted).Shrink(0)
-					kit.Text(cc, b.text, t.Text.Body).LineHeight(theme.LineFor(b.text)).Shrink(1)
+					kit.Text(cc, b.mark, t.Text.Sm).TextColor(t.Muted).Shrink(0)
+					kit.Text(cc, b.text, t.Text.Sm).Shrink(1)
 				})
 			case "code":
-				kit.Text(cc, b.text, t.Text.Sm).Font(theme.Mono).TextColor(t.Muted)
+				kit.Text(cc, b.text, t.Text.Xs).Font(theme.Mono).TextColor(t.Muted)
 			default:
-				kit.Text(cc, b.text, t.Text.Body).LineHeight(theme.LineFor(b.text))
+				kit.Text(cc, b.text, t.Text.Sm)
 			}
 		}
 	})

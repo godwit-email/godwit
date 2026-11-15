@@ -37,12 +37,12 @@ func (p *palette) preview(c *ui.Context, m core.MessageSummary) {
 	}
 	marked(c, cmp.Or(m.Subject, i18n.T("mail.no_subject")), p.hl).FontWeight(600).MaxLines(2)
 	if m.Snippet != "" {
-		marked(c, m.Snippet, p.hl).FontSize(t.Text.Sm).TextColor(t.Muted).MaxLines(4)
+		marked(c, m.Snippet, p.hl).FontSize(t.Text.Xs).TextColor(t.Muted).MaxLines(4)
 	}
 	for _, f := range pc.atts {
 		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, icons.Get("paperclip")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
-			kit.Text(c, f, t.Text.Sm).SingleLine().Shrink(1)
+			kit.Text(c, f, t.Text.Xs).SingleLine().Shrink(1)
 		})
 	}
 }

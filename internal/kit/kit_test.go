@@ -26,7 +26,7 @@ func TestKitAvatarImage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, density := range []string{"compact", "comfortable"} {
+	for _, density := range []string{"standard", "comfortable"} {
 		var before ui.Rect
 		for _, src := range []ui.ImageSource{nil, bitmap, svg} {
 			tt := ui.NewTester(themedDensity(density, func(c *ui.Context) {
@@ -63,7 +63,7 @@ func TestKitAvatarImage(t *testing.T) {
 }
 
 // themed runs body under the tokens the settings give, as the app does.
-func themed(body func(c *ui.Context)) func(c *ui.Context) { return themedDensity("compact", body) }
+func themed(body func(c *ui.Context)) func(c *ui.Context) { return themedDensity("standard", body) }
 
 func themedDensity(density string, body func(c *ui.Context)) func(c *ui.Context) {
 	return func(c *ui.Context) {
@@ -171,7 +171,7 @@ func TestKitDialogEscapeCloses(t *testing.T) {
 func TestKitDarkRenders(t *testing.T) {
 	tt := ui.NewTester(themed(func(c *ui.Context) {
 		ui.Column(c).Fill().Padding(20).Background(theme.Of(c).Window).Children(func() {
-			Card(c, func() { ui.Text(c, "Inside") })
+			Card(c, ui.Column(c).Padding(c.Theme().Space(4)), ToneOutline).Children(func() { ui.Text(c, "Inside") })
 		})
 	}), 300, 200)
 	tt.SetDark(true)
@@ -216,9 +216,9 @@ func TestKitDensityScales(t *testing.T) {
 		IconButton(c, "archive", "Archive", ButtonOpts{Variant: Ghost})
 		Select(c, &sel, []Option[int]{{Value: 1, Label: "Alpha"}}).Label("Letter")
 		Input(c, &s, InputOpts{}).Label("Name")
-		Card(c, func() {}).Label("Box")
+		Card(c, ui.Column(c).Padding(c.Theme().Space(4)), ToneOutline).Label("Box")
 	}
-	st := core.Settings{Theme: "light", Density: "compact", FontSize: 14, BodyFontSize: 14}
+	st := core.Settings{Theme: "light", Density: "standard", FontSize: 14, BodyFontSize: 14}
 	compact := heights(t, st, body, "Archive", "Letter", "Name", "Box")
 	st.Density = "comfortable"
 	roomy := heights(t, st, body, "Archive", "Letter", "Name", "Box")
@@ -240,7 +240,7 @@ func TestKitFontSizeFollows(t *testing.T) {
 		Kbd(c, "KbdText")
 	}
 	names := []string{"BadgeText", "AlertText", "HelpText", "KbdText"}
-	st := core.Settings{Theme: "light", Density: "compact", FontSize: 14, BodyFontSize: 14}
+	st := core.Settings{Theme: "light", Density: "standard", FontSize: 14, BodyFontSize: 14}
 	small := heights(t, st, body, names...)
 	st.FontSize = 18
 	big := heights(t, st, body, names...)
@@ -303,7 +303,7 @@ func TestKitSidebarItemHoverSoft(t *testing.T) {
 		}
 		t.Run(mode, func(t *testing.T) {
 			tt := ui.NewTester(func(c *ui.Context) {
-				tok := theme.FromSettings(core.Settings{Theme: mode, Density: "compact", FontSize: 14}, dark)
+				tok := theme.FromSettings(core.Settings{Theme: mode, Density: "standard", FontSize: 14}, dark)
 				theme.Apply(c, tok)
 				ui.Column(c).Width(240).Children(func() {
 					SidebarItem(c, SidebarItemOpts{Selected: true}).Children(func() { ui.Text(c, "Inbox") })
@@ -338,21 +338,22 @@ func TestKitSidebarItemHoverSoft(t *testing.T) {
 }
 
 func TestKitButtonSizes(t *testing.T) {
-	for _, density := range []string{"compact", "comfortable"} {
+	for _, density := range []string{"standard", "comfortable"} {
 		var th *ui.Theme
 		tt := ui.NewTester(themedDensity(density, func(c *ui.Context) {
 			th = c.Theme()
 			ui.Column(c).Gap(4).Children(func() {
 				for _, k := range []struct {
 					l string
-					s ButtonSize
+					s Size
 				}{{"probe-sm", SizeSm}, {"probe-def", SizeDefault}, {"probe-lg", SizeLg}} {
 					ButtonFrame(c, ButtonOpts{Size: k.s}).Label(k.l).Children(func() { ui.Text(c, "x") })
 				}
-				IconButton(c, "check", "probe-xs", ButtonOpts{Size: SizeXs})
+				ButtonFrame(c, ButtonOpts{Size: SizeXs}).Label("probe-24").Children(func() { ui.Text(c, "x") })
+				IconButton(c, "check", "probe-xs", ButtonOpts{Size: SizeMini})
 			})
 		}), 300, 300)
-		for l, want := range map[string]float32{"probe-sm": th.Space(7), "probe-def": th.Space(8), "probe-lg": th.Space(9), "probe-xs": th.Space(4)} {
+		for l, want := range map[string]float32{"probe-sm": th.Space(7), "probe-def": th.Space(8), "probe-lg": th.Space(9), "probe-24": th.Space(6), "probe-xs": th.Space(4)} {
 			r, ok := tt.Find(l)
 			if !ok {
 				t.Fatalf("%s: %s not found", density, l)
@@ -770,7 +771,7 @@ func TestKitBareInputMatchesBase(t *testing.T) {
 	if !ok1 || !ok2 || !ok3 {
 		t.Fatalf("missing inputs in %q", tt.Texts())
 	}
-	if rb.H != rr.H {
+	if d := rb.H - rr.H; d < -0.01 || d > 0.01 { // a float's rounding apart
 		t.Errorf("bare height %v, base %v", rb.H, rr.H)
 	}
 	px := func(r ui.Rect) [3]uint8 {
@@ -856,6 +857,31 @@ func TestKitOverlayEnters(t *testing.T) {
 		last := tt.Image().RGBAAt(2, 2)
 		if moved := first != last; moved == reduce {
 			t.Errorf("reduce motion %v: backdrop corner %v then %v", reduce, first, last)
+		}
+	}
+}
+
+// TestKitOverlayLeaves: a closed dialog fades out over MotionFast, and goes
+// at once under reduced motion.
+func TestKitOverlayLeaves(t *testing.T) {
+	for _, reduce := range []bool{false, true} {
+		open := true
+		tt := ui.NewTester(themed(func(c *ui.Context) {
+			Dialog(c, &open, "Title", DialogOpts{Close: "Close"}, func() { ui.Text(c, "inside") }, nil)
+		}), 400, 300)
+		tt.SetPreferences(ui.Preferences{ReduceMotion: reduce})
+		tt.Frame()
+		tt.Advance(2 * theme.MotionBase)
+		bare := color.RGBA{255, 255, 255, 255}
+		open = false
+		tt.Frame()
+		tt.Advance(theme.MotionFast / 2)
+		if mid := tt.Image().RGBAAt(2, 2); (mid != bare) == reduce {
+			t.Errorf("reduce motion %v: backdrop corner %v halfway out", reduce, mid)
+		}
+		tt.Advance(2 * theme.MotionFast)
+		if end := tt.Image().RGBAAt(2, 2); end != bare {
+			t.Errorf("reduce motion %v: backdrop corner %v after leaving", reduce, end)
 		}
 	}
 }
@@ -1031,7 +1057,7 @@ func TestKitListSelectedGray(t *testing.T) {
 		t.Fatal("no row")
 	}
 	got := tt.Image().RGBAAt(int(r.X)+4, int(r.Y+r.H/2)) // in the text's padding
-	if want := th.SidebarSelected; got.R != want.R || got.G != want.G || got.B != want.B {
+	if want := th.Hover; got.R != want.R || got.G != want.G || got.B != want.B {
 		t.Errorf("selected row %v, want %v", got, want)
 	}
 }
@@ -1205,6 +1231,68 @@ func TestTabsFill(t *testing.T) {
 	}
 }
 
+// TestTabsLook: a segmented tab keeps its look, which a comment in the middle
+// of its chain once took: the chosen one is the background with round corners
+// on the track, the others muted.
+func TestTabsLook(t *testing.T) {
+	sel := 0
+	var tk theme.Tokens
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		tk = theme.Of(c)
+		ui.Column(c).Width(300).Children(func() { TabsFill(c, &sel, "One", "Two") })
+	}), 400, 100)
+	tt.Frame()
+	tt.Advance(2 * theme.MotionBase)
+	img := tt.Image()
+	// The track is 300 by 32 at the origin, the chosen tab inset 2: its corner pixel is cut away, its middle filled.
+	if corner := img.RGBAAt(2, 2); corner.R == tk.Background.R {
+		t.Errorf("the chosen tab's corner pixel is %v: its corners are square", corner)
+	}
+	if mid := img.RGBAAt(12, 16); mid.R != tk.Background.R {
+		t.Errorf("the chosen tab's fill is %v, want the background %v", mid, tk.Background)
+	}
+	one, ok1 := tt.Find("One")
+	two, ok2 := tt.Find("Two")
+	if !ok1 || !ok2 {
+		t.Fatalf("tabs not found: %q", tt.Texts())
+	}
+	dark := func(r ui.Rect) (min uint8) { // the darkest pixel of a label: its text's color
+		min = 255
+		for y := int(r.Y); y < int(r.Y+r.H); y++ {
+			for x := int(r.X); x < int(r.X+r.W); x++ {
+				if p := img.RGBAAt(x, y); p.R < min {
+					min = p.R
+				}
+			}
+		}
+		return min
+	}
+	if a, b := dark(one), dark(two); a >= b || b < tk.Muted.R-30 {
+		t.Errorf("text darkness: chosen %d, other %d: want the other muted (%d)", a, b, tk.Muted.R)
+	}
+}
+
+// TestTintShowsOffWhite: what stands a step off its surface is a tint of the
+// foreground, so it shows where a solid hover gray is the surface's own color
+// or lighter: a tab list's track on a dialog's frost, a badge on a gray card.
+func TestTintShowsOffWhite(t *testing.T) {
+	sel := 0
+	var tk theme.Tokens
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		tk = theme.Of(c)
+		ui.Column(c).Fill().Background(tk.Hover).Children(func() { // the hover gray itself as the surface
+			ui.Column(c).Width(300).Children(func() { TabsFill(c, &sel, "One", "Two") })
+		})
+	}), 400, 100)
+	tt.Frame()
+	tt.Advance(2 * theme.MotionBase)
+	img := tt.Image()
+	surface, track := img.RGBAAt(350, 50), img.RGBAAt(220, 4) // beside the list; the track over the unchosen tab
+	if track.R >= surface.R {
+		t.Errorf("the track %v is not darker than the surface %v it is on", track, surface)
+	}
+}
+
 func TestTabsUnderline(t *testing.T) {
 	sel := 0
 	var tk theme.Tokens
@@ -1372,6 +1460,33 @@ func TestDialogWidths(t *testing.T) {
 // dimming of all it covers: a Default one its primary at half opacity, so it
 // stays a button on any surface (white, frosted, dark), an Outline one's
 // text Idle.
+// TestKitButtonPressed: a button held down goes a step past its hover.
+func TestKitButtonPressed(t *testing.T) {
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Column(c).Padding(8).AlignItems(ui.Start).Children(func() { Button(c, "Save", ButtonOpts{Variant: Outline}) })
+	}), 300, 200)
+	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
+	tt.Frame()
+	r, ok := tt.Find("Save")
+	if !ok {
+		t.Fatal("Save not found")
+	}
+	x, y := r.X+r.W/2, r.Y+r.H/2
+	corner := func() color.RGBA {
+		tt.Frame()
+		tt.Advance(2 * theme.MotionBase)
+		return tt.Image().RGBAAt(int(r.X)+4, int(y))
+	} // inside the button, left of its label
+	tt.Move(x, y)
+	hover := corner()
+	tt.Press(x, y)
+	pressed := corner()
+	tt.Release(x, y)
+	if tok := theme.Light(); hover.R != tok.Hover.R || pressed == hover {
+		t.Errorf("hover %v (want %v), pressed %v: want pressed past hover", hover, tok.Hover, pressed)
+	}
+}
+
 func TestKitButtonDisabledColors(t *testing.T) {
 	tt := ui.NewTester(themed(func(c *ui.Context) {
 		ui.Column(c).Gap(8).Padding(8).Children(func() {
@@ -1534,7 +1649,7 @@ func TestRadioCardClicks(t *testing.T) {
 func TestKitAvatarImageTransparentLogoOnDarkTheme(t *testing.T) {
 	logo := image.NewRGBA(image.Rect(0, 0, 64, 64)) // every pixel transparent
 	tt := ui.NewTester(func(c *ui.Context) {
-		theme.Apply(c, theme.FromSettings(core.Settings{Theme: "dark", Density: "compact", FontSize: 14, BodyFontSize: 14}, true))
+		theme.Apply(c, theme.FromSettings(core.Settings{Theme: "dark", Density: "standard", FontSize: 14, BodyFontSize: 14}, true))
 		ui.Column(c).Padding(8).Background(theme.Of(c).Background).Children(func() { AvatarImage(c, "Alice", ui.NewBitmap(logo)) })
 	}, 100, 100)
 	r, ok := tt.Find("Alice")

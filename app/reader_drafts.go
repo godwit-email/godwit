@@ -15,7 +15,7 @@ func (r *reader) programDrafts(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	p := r.p
 	for i, d := range r.thread.Drafts {
-		r.column(c).Key(threadDraft{d.ID}).Gap(th.Space(3)).Padding(th.Space(4)).Border(theme.Hairline, t.Border).Radius(t.Radius.Lg).Children(func() {
+		kit.Block(c, r.column(c), kit.ToneOutline).Key(threadDraft{d.ID}).Gap(th.Space(3)).Padding(th.Space(4)).Children(func() {
 			programNotice(c)
 			p.draftFields(c, d)
 			if i < len(r.draftDocs) {
