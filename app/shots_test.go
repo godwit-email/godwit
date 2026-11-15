@@ -269,8 +269,8 @@ func TestShots(t *testing.T) {
 		if err := s.env.Svc.SendLater(ctx, d.ID, d.Revision, day(10, 12, 8, 0), ""); err != nil {
 			t.Fatal(err)
 		}
-		s.waitMail("listed under 已排定", func() bool { return len(s.app.mail.scheduled) == 1 })
-		s.click("已排定")
+		s.waitMail("listed under 定时邮件", func() bool { return len(s.app.mail.scheduled) == 1 })
+		s.click("定时邮件")
 		s.see("Re: Q4 partnership proposal")
 		shot(s.harness, "Scheduled")
 	})

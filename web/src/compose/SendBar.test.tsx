@@ -91,7 +91,7 @@ test("send later…: a dialog for any time, that says only a running Godwit send
     "aria-valuenow",
     String(next.getHours() * 60),
   );
-  await userEvent.click(screen.getByRole("button", { name: "排定发送" }));
+  await userEvent.click(screen.getByRole("button", { name: "定时发送" }));
   expect(onSendLater).toHaveBeenCalledWith(next.getTime());
   expect(onSend).not.toHaveBeenCalled();
 });
@@ -133,7 +133,7 @@ describe("at 15:30 on Sunday 15 November 2026", () => {
     await userEvent.click(screen.getByRole("button", { name: /11月16日/ }));
     expect(screen.getByText("明天 · 11月16日周一 17:05")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /11月14日/ })).toBeDisabled();
-    await userEvent.click(screen.getByRole("button", { name: "排定发送" }));
+    await userEvent.click(screen.getByRole("button", { name: "定时发送" }));
     expect(onSendLater).toHaveBeenCalledWith(new Date(2026, 10, 16, 17, 5).getTime());
   });
 
@@ -182,7 +182,7 @@ describe("at 15:30 on Sunday 15 November 2026", () => {
     const { onSendLater, clock } = await open();
     fireEvent.keyDown(clock, { key: "ArrowDown" });
     fireEvent.keyDown(clock, { key: "ArrowDown" });
-    await userEvent.click(screen.getByRole("button", { name: "排定发送" }));
+    await userEvent.click(screen.getByRole("button", { name: "定时发送" }));
     expect(onSendLater).not.toHaveBeenCalled();
     expect(screen.getByText("请选择一个将来的时间。")).toBeInTheDocument();
     fireEvent.keyDown(clock, { key: "ArrowUp" });
