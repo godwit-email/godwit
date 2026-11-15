@@ -2533,7 +2533,7 @@ export function Panel({
     <Alert variant="destructive" className="border-0 bg-destructive/10">
       <AlertDescription>{witError(chat.error?.message ?? failed ?? "", t)}</AlertDescription>
       <AlertAction>
-        <Button variant="ghost" size="sm" onClick={() => void chat.regenerate()}>
+        <Button variant="danger" size="sm" onClick={() => void chat.regenerate()}>
           {t("common.retry")}
         </Button>
       </AlertAction>

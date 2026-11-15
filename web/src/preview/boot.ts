@@ -23,10 +23,14 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
       "signature",
       "translate",
       "program",
+      "warned",
+      "conflict",
     ],
     entry: () => import("@/compose/main"),
     setup() {
-      const withBody = ["inline", "rewrite", "cmdk", "program"].includes(state);
+      const withBody = ["inline", "rewrite", "cmdk", "program", "warned", "conflict"].includes(
+        state,
+      );
       let revision = 1;
       let followed = false;
       const body = () => (revision > 1 || withBody ? fx.compose(mode, true).body : "");
@@ -109,11 +113,20 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "ComposePage.DecideAll": async () => changed(),
         "ComposePage.Finish": async () => changed(),
         "ComposePage.Undo": async () => changed(),
+        // warned: a plugin's warning answers 发送; conflict: the draft changed elsewhere
         "ComposePage.Send": async () => ({
           sent: false,
-          conflict: false,
-          warnings: [],
-          digest: "",
+          conflict: state === "conflict",
+          warnings:
+            state === "warned"
+              ? [
+                  {
+                    plugin: "Attachment check",
+                    message: "The text mentions an attachment, but none is attached",
+                  },
+                ]
+              : [],
+          digest: state === "warned" ? "d" : "",
           blocked: null,
         }),
       });

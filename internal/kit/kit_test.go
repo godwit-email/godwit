@@ -1368,7 +1368,7 @@ func TestDestructiveOutline(t *testing.T) {
 
 func TestAlertAction(t *testing.T) {
 	for _, dark := range []bool{false, true} {
-		for _, kind := range []AlertKind{Warning, Info} {
+		for _, kind := range []AlertKind{Warning, Danger, Info} {
 			var tk theme.Tokens
 			n := 0
 			tt := ui.NewTester(themed(func(c *ui.Context) {
@@ -1382,10 +1382,9 @@ func TestAlertAction(t *testing.T) {
 			if !ok {
 				t.Fatal("no button")
 			}
-			want := tk.WarningText
-			if kind == Info {
-				want = tk.Primary
-			}
+			// a step deeper than its alert's fill: halfway from the tone's fill to its border
+			bg, border, _, _ := toneColors(tk, alertTone(kind))
+			want := bg.Mix(border, 0.5)
 			p := tt.Image().RGBAAt(int(r.X)+3, int(r.Y+r.H/2))
 			if p.R != want.R || p.G != want.G || p.B != want.B {
 				t.Errorf("dark=%v kind=%v fill %v, want %v", dark, kind, p, want)

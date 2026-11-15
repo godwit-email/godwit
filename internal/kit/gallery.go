@@ -193,9 +193,12 @@ func Gallery(c *ui.Context, g *GalleryState) {
 			})
 			section("Alert", func() {
 				ui.Column(c).Gap(th.Space(2)).MaxWidth(theme.ContentMaxWidth).Children(func() {
-					Alert(c, Warning, "Warning alert", nil)
-					Alert(c, Danger, "Danger alert", nil)
-					Alert(c, Info, "Info alert", func() { Button(c, "Alert action", ButtonOpts{Variant: Outline, Size: SizeSm}) })
+					for _, k := range []struct {
+						name string
+						kind AlertKind
+					}{{"Warning", Warning}, {"Danger", Danger}, {"Info", Info}} {
+						Alert(c, k.kind, k.name+" alert", func() { AlertAction(c, k.kind, "Alert action", nil) })
+					}
 				})
 			})
 			section("Avatar", func() {

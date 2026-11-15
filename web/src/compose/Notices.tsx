@@ -13,7 +13,6 @@ function From({ w, t }: { w: SendWarning; t: T }) {
 const box = "gap-1 border-0 px-3.5 py-3 text-sm";
 const warn = `${box} bg-(--warning-bg) text-(--warning-text) *:data-[slot=alert-description]:text-(--warning-text)`;
 const danger = `${box} bg-destructive/10`;
-const small = "bg-background";
 
 /** Plugin warnings (sendable anyway), a blocking refusal and the save conflict. */
 export function Notices({
@@ -55,12 +54,7 @@ export function Notices({
       ))}
       {warnings.length > 0 && !blocked && (
         <div>
-          <Button
-            variant="outline"
-            className="border-(--warning-border) bg-transparent text-(--warning-text)"
-            disabled={frozen}
-            onClick={() => !frozen && onSendAnyway()}
-          >
+          <Button variant="warning" disabled={frozen} onClick={() => !frozen && onSendAnyway()}>
             {t("compose.send_anyway")}
           </Button>
         </div>
@@ -71,9 +65,8 @@ export function Notices({
           <div className="mt-2 flex gap-1.5">
             {latestFailed ? (
               <Button
-                variant="outline"
+                variant="danger"
                 size="sm"
-                className={small}
                 disabled={frozen}
                 onClick={() => !frozen && onRetry()}
               >
@@ -82,18 +75,16 @@ export function Notices({
             ) : (
               <>
                 <Button
-                  variant="outline"
+                  variant="danger"
                   size="sm"
-                  className={small}
                   disabled={frozen}
                   onClick={() => !frozen && onKeepMine()}
                 >
                   {t("compose.conflict.keep")}
                 </Button>
                 <Button
-                  variant="outline"
+                  variant="danger"
                   size="sm"
-                  className={small}
                   disabled={frozen}
                   onClick={() => !frozen && onUseLatest()}
                 >

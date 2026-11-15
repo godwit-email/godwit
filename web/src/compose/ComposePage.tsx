@@ -904,7 +904,7 @@ function Compose({
                   >
                     <AlertDescription>{reloadErr}</AlertDescription>
                     <AlertAction>
-                      <Button variant="ghost" size="sm" onClick={() => void reload()}>
+                      <Button variant="danger" size="sm" onClick={() => void reload()}>
                         {t("common.retry")}
                       </Button>
                     </AlertAction>

@@ -112,17 +112,11 @@ const (
 	Info
 )
 
-// Alert is a bordered message bar with optional actions after the text.
+// Alert is a bordered message bar with optional actions after the text: a
+// Block of the kind's tone. Its actions are AlertActions, which follow it.
 func Alert(c *ui.Context, kind AlertKind, text string, actions func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	tone := ToneOutline
-	switch kind {
-	case Warning:
-		tone = ToneWarning
-	case Danger:
-		tone = ToneDanger
-	}
-	return Block(c, ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), th.Space(2.5)), tone).
+	return Block(c, ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), th.Space(2.5)), alertTone(kind)).
 		FontSize(t.Text.Sm).Children(func() {
 		ui.Text(c, text).Grow(1).Shrink(1) // the text wraps; the actions stay on its right
 		if actions != nil {
@@ -131,39 +125,25 @@ func Alert(c *ui.Context, kind AlertKind, text string, actions func()) ui.Elemen
 	})
 }
 
-func alertLook(t theme.Tokens, kind AlertKind) (bg, border, fg ui.Color) {
+// alertTone is the Block tone of an Alert of kind.
+func alertTone(kind AlertKind) Tone {
 	switch kind {
 	case Warning:
-		return t.WarningBg, t.WarningBorder, t.WarningText
+		return ToneWarning
 	case Danger:
-		return t.DangerBg, t.DangerBorder, t.DangerText
+		return ToneDanger
 	}
-	return t.Background, t.Border, t.Foreground
+	return ToneInfo
 }
 
-// AlertAction is a solid button for an Alert's actions: filled with the
-// kind's text color and white text (the kind's background in dark) (Info: Primary with PrimaryText).
+// AlertAction is a button for an Alert's actions, in the kind's tone
+// (ButtonOpts.Tone): a fill a step deeper than the alert's, under its text.
 func AlertAction(c *ui.Context, kind AlertKind, label string, onClick func()) ui.Element {
-	t, th := theme.Of(c), c.Theme()
-	bg, _, fill := alertLook(t, kind)
-	text := t.OnSolid
-	if t.Dark { // the dark fill is the light -300 text colour: the dark -950 background reads on it
-		text = bg
-	}
-	if kind == Info { // Foreground flips with the appearance; Primary pairs with PrimaryText
-		fill, text = t.Primary, t.PrimaryText
-	}
-	b := ui.ButtonBase(c).Label(label).Height(th.Space(7)).PaddingX(th.Space(2.5)).Radius(t.Radius.Md).Background(fill).TextColor(text).FontWeight(500).Center()
-	switch { // as a Default button: a step on hover, another pressed
-	case b.Pressed():
-		b.Background(fill.Mix(t.Background, 0.2))
-	case b.Hovered():
-		b.Background(fill.Mix(t.Background, 0.1))
-	}
+	b := Button(c, label, ButtonOpts{Size: SizeSm, Tone: alertTone(kind)}).Shrink(0)
 	if onClick != nil {
 		b.OnClick(onClick)
 	}
-	return b.Children(func() { ui.Text(c, label) })
+	return b
 }
 
 // Status is what a StatusDot tells.
