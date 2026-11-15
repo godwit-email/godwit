@@ -128,6 +128,15 @@ describe("at 15:30 on Sunday 15 November 2026", () => {
     expect(onSendLater).toHaveBeenCalledWith(new Date(2026, 10, 16, 17, 5).getTime());
   });
 
+  test("the arrow keys move through the calendar's days, Enter picks one", async () => {
+    await open();
+    screen.getByRole("button", { name: /11月15日/ }).focus();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(screen.getByRole("button", { name: /11月16日/ })).toHaveFocus();
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+    expect(screen.getByText("11月23日周一 16:00")).toBeInTheDocument();
+  });
+
   test("the minute hand drags round, and past 12 it carries the hour", async () => {
     const { clock } = await open();
     // The face is 184 px: its centre at 92, the minute hand's tip at 12 near the top.
