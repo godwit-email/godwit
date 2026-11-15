@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.39.0](https://github.com/godwit-email/godwit/compare/v1.38.0...v1.39.0) (2026-11-15)
+
+
+### Features
+
+* **cmd:** opt-in encrypted file keyring for headless servers ([#786](https://github.com/godwit-email/godwit/issues/786)) ([a956c56](https://github.com/godwit-email/godwit/commit/a956c56c1da7fc5e3f3317aba13fa702d01de4af))
+* **compose:** send later, at a chosen date and time ([#788](https://github.com/godwit-email/godwit/issues/788)) ([c468efa](https://github.com/godwit-email/godwit/commit/c468efa6db8ddaeb3392f4fed4fe6c43eb8d8346))
+* **drafts:** mark drafts a program wrote, with Approve and send ([#787](https://github.com/godwit-email/godwit/issues/787)) ([227214c](https://github.com/godwit-email/godwit/commit/227214c0f402aaf773e872c0a2483ffc8e8b4648))
+
 ## [1.38.0](https://github.com/godwit-email/godwit/compare/v1.37.0...v1.38.0) (2026-11-15)
 
 
