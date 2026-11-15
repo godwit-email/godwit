@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.38.0](https://github.com/godwit-email/godwit/compare/v1.37.0...v1.38.0) (2026-11-15)
+
+
+### Features
+
+* judge with magpie's decision models; name models in Godwit's words ([#790](https://github.com/godwit-email/godwit/issues/790)) ([af4b17a](https://github.com/godwit-email/godwit/commit/af4b17ab3b345cccc1a6699c55c380e38fd4f8a1))
+* **mcp:** list views and their threads, read-only ([#785](https://github.com/godwit-email/godwit/issues/785)) ([aea0537](https://github.com/godwit-email/godwit/commit/aea0537a077de7295afb29e5f79744f264310b22))
+* **ui:** one design scale for the native kit and web pages ([#791](https://github.com/godwit-email/godwit/issues/791)) ([fbc93a0](https://github.com/godwit-email/godwit/commit/fbc93a0c4eb09e30c216d9fd78dd76f82f85a8fa))
+
+
+### Bug Fixes
+
+* **cmd:** keep the backend out of the Dock when Godwit is reopened ([#796](https://github.com/godwit-email/godwit/issues/796)) ([c90047f](https://github.com/godwit-email/godwit/commit/c90047fcaabfc632840856d1d7ca04ece70279c1)), closes [#793](https://github.com/godwit-email/godwit/issues/793)
+
 ## [1.37.0](https://github.com/godwit-email/godwit/compare/v1.36.0...v1.37.0) (2026-11-14)
 
 
