@@ -530,8 +530,8 @@ test("send later: warnings keep the time for send anyway", async () => {
   vi.mocked(api.send).mockResolvedValueOnce({ ...noWarnings, warnings: [w], digest: "d" });
   render(<ComposePage />);
   await body();
-  await userEvent.click(screen.getByRole("button", { name: "稍后发送…" }));
-  await userEvent.click(await screen.findByRole("button", { name: "排定发送" }));
+  await userEvent.click(screen.getByRole("button", { name: "发送选项" }));
+  await userEvent.click(await screen.findByRole("menuitem", { name: /^明天/ }));
   const at = vi.mocked(api.send).mock.calls[0][2];
   expect(at).toBeGreaterThan(Date.now());
   expect(api.send).toHaveBeenCalledWith(7, "", at);
@@ -703,13 +703,13 @@ test("the bottom bar holds the format toolbar, 稍后发送 and 发送 only: no 
   expect(within(bar).getByRole("button", { name: "发送" })).toBeInTheDocument();
   expect(within(bar).queryByRole("button", { name: "丢弃草稿" })).toBeNull();
   expect(bar).not.toHaveTextContent("只能写草稿");
-  // a narrow window wraps it, the toolbar first and 发送 with 稍后发送 kept at the end (ml-auto)
+  // a narrow window wraps it, the toolbar first and 发送 with its options kept at the end (ml-auto)
   expect(bar).toHaveClass("flex-wrap");
   const send = within(bar).getByRole("button", { name: "发送" });
   const end = bar.lastElementChild as HTMLElement;
   expect(end).toHaveClass("ml-auto");
   expect(end.firstElementChild).toBe(send);
-  expect(end.lastElementChild).toBe(within(end).getByRole("button", { name: "稍后发送…" }));
+  expect(end.lastElementChild).toBe(within(end).getByRole("button", { name: "发送选项" }));
 });
 
 test("send during composition: a composition that never ends sends nothing", async () => {

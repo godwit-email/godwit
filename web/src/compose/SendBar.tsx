@@ -1,25 +1,45 @@
 import { RiArrowDownSLine } from "@remixicon/react";
-import { useEffect, useId, useState } from "react";
+import { useState } from "react";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import type { T } from "@/shared/i18n";
+import { currentLocale, type T } from "@/shared/i18n";
 
-/** A datetime-local value (local time, to the minute) for d. */
+/** A datetime-local value (local time, to the minute) for d: date, "T", time. */
 export function localInput(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-/** Tomorrow at 8:00, local time: the time Send later suggests. */
-function tomorrowMorning(now: Date): Date {
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 8, 0);
+/** The presets Send later offers at now: tonight at 21:00 while it is before then, tomorrow at 8:00. */
+export function presets(now: Date): { key: string; at: Date }[] {
+  const [y, m, d] = [now.getFullYear(), now.getMonth(), now.getDate()];
+  const tonight = new Date(y, m, d, 21, 0);
+  return [
+    ...(now < tonight ? [{ key: "compose.send_tonight", at: tonight }] : []),
+    { key: "compose.send_tomorrow", at: new Date(y, m, d + 1, 8, 0) },
+  ];
 }
 
 /**
- * The send button, at the bottom bar's end (ml-auto keeps it right when the bar wraps),
- * split with Send later: a date and time, and the note that only a running Godwit sends.
+ * The send button, at the bottom bar's end (ml-auto keeps it right when the bar wraps), split
+ * with a menu: send now, the presets, and Send later…, a dialog for any date and time that says
+ * only a running Godwit sends.
  */
 export function SendBar({
   sending,
@@ -36,70 +56,106 @@ export function SendBar({
   onSendLater(at: number): void;
   t: T;
 }) {
-  const id = useId();
-  const [open, setOpen] = useState(false);
-  const [when, setWhen] = useState("");
+  const [dialog, setDialog] = useState(false);
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
   const [past, setPast] = useState(false);
-  useEffect(() => {
-    if (open) {
-      setWhen(localInput(tomorrowMorning(new Date())));
-      setPast(false);
-    }
-  }, [open]);
+  const [now, setNow] = useState(() => new Date());
+  const hm = new Intl.DateTimeFormat(currentLocale(), { hour: "numeric", minute: "2-digit" });
+  const openDialog = () => {
+    const next = new Date();
+    next.setHours(next.getHours() + 1, 0, 0, 0); // the next whole hour
+    const [d, tm] = localInput(next).split("T");
+    setDate(d);
+    setTime(tm);
+    setPast(false);
+    setDialog(true);
+  };
+  const off = sending || frozen;
   return (
     <div className="ml-auto flex items-center">
-      <Button className="rounded-r-none" disabled={sending || frozen} onClick={onSend}>
+      <Button className="rounded-r-none" disabled={off} onClick={onSend}>
         {t("compose.send")}
       </Button>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger
+      <DropdownMenu onOpenChange={(o) => o && setNow(new Date())}>
+        <DropdownMenuTrigger
           render={
             <Button
               className="w-6 rounded-l-none border-l-primary-foreground/20"
               size="icon"
-              disabled={sending || frozen}
-              aria-label={t("compose.send_later")}
-              title={t("compose.send_later")}
+              disabled={off}
+              aria-label={t("compose.send_options")}
+              title={t("compose.send_options")}
             />
           }
         >
           <RiArrowDownSLine />
-        </PopoverTrigger>
-        <PopoverContent side="top" align="end" className="w-80">
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="top" align="end" className="w-auto">
+          <DropdownMenuItem onClick={onSend}>{t("compose.send_now")}</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          {presets(now).map((p) => (
+            <DropdownMenuItem key={p.key} onClick={() => onSendLater(p.at.getTime())}>
+              {t(p.key, hm.format(p.at))}
+            </DropdownMenuItem>
+          ))}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={openDialog}>{t("compose.send_later")}</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <AlertDialog open={dialog} onOpenChange={setDialog}>
+        <AlertDialogContent>
           <form
-            className="flex flex-col gap-2"
+            className="contents"
             onSubmit={(e) => {
               e.preventDefault();
-              const at = new Date(when).getTime(); // datetime-local is local time
+              const at = new Date(`${date}T${time}`).getTime(); // local time
               if (!(at > Date.now())) {
                 setPast(true);
                 return;
               }
-              setOpen(false);
+              setDialog(false);
               onSendLater(at);
             }}
           >
-            <Label htmlFor={id} className="font-normal text-muted-foreground">
-              {t("compose.send_later.when")}
-            </Label>
-            <Input
-              id={id}
-              type="datetime-local"
-              value={when}
-              aria-invalid={past}
-              onChange={(e) => {
-                setWhen(e.target.value);
-                setPast(false);
-              }}
-            />
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t("compose.send_later.title")}</AlertDialogTitle>
+              <AlertDialogDescription>{t("scheduled.note")}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                type="date"
+                required
+                value={date}
+                aria-label={t("compose.send_later.date")}
+                aria-invalid={past}
+                onChange={(e) => {
+                  setDate(e.target.value);
+                  setPast(false);
+                }}
+              />
+              <Input
+                type="time"
+                required
+                value={time}
+                aria-label={t("compose.send_later.time")}
+                aria-invalid={past}
+                onChange={(e) => {
+                  setTime(e.target.value);
+                  setPast(false);
+                }}
+              />
+            </div>
             {past && <p className="text-destructive text-xs">{t("compose.send_later.past")}</p>}
-            <p className="text-muted-foreground text-xs">{t("scheduled.note")}</p>
-            <Button type="submit" className="self-end" disabled={sending || frozen}>
-              {t("compose.send_later.schedule")}
-            </Button>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+              <Button type="submit" disabled={off}>
+                {t("compose.send_later.schedule")}
+              </Button>
+            </AlertDialogFooter>
           </form>
-        </PopoverContent>
-      </Popover>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
