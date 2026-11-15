@@ -10,6 +10,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
 import { Input } from "@/components/ui/input";
 import { currentLocale, type T } from "@/shared/i18n";
 
@@ -81,12 +82,12 @@ export function SendBar({
   };
   const off = sending || frozen;
   return (
-    <div className="ml-auto flex items-center">
-      <Button className="rounded-r-none" disabled={off} onClick={onSend}>
+    <ButtonGroup className="ml-auto">
+      <Button disabled={off} onClick={onSend}>
         {t("compose.send")}
       </Button>
       <Button
-        className="w-6 rounded-l-none border-l-primary-foreground/20"
+        className="w-6"
         size="icon"
         disabled={off}
         aria-label={t("compose.send_options")}
@@ -157,6 +158,6 @@ export function SendBar({
           </form>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </ButtonGroup>
   );
 }
