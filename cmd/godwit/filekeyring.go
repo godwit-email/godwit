@@ -1,3 +1,5 @@
+//go:build unix
+
 package main
 
 import (
@@ -15,6 +17,7 @@ import (
 	"sync"
 
 	"github.com/godwit-email/godwit/core"
+	"golang.org/x/sys/unix"
 )
 
 // The two variables that, set together, keep credentials in an encrypted file
@@ -44,7 +47,9 @@ func keyringFromEnv() (core.Keyring, error) {
 
 // fileKeyring is a core.Keyring in one file: a JSON map of "service\x00user"
 // to secret, sealed with AES-256-GCM as nonce || ciphertext. Every call reads
-// the file, so a failed write leaves nothing stale in memory.
+// the file, so a failed write leaves nothing stale in memory. Writes hold
+// flock on <file>.lock, so backends of different data directories that share
+// the file do not drop each other's updates.
 type fileKeyring struct {
 	mu   sync.Mutex
 	path string
@@ -145,28 +150,43 @@ func (k *fileKeyring) Get(service, user string) (string, error) {
 	return v, nil
 }
 
-func (k *fileKeyring) Set(service, user, secret string) error {
+// update runs load, change, save under the in-process mutex and a blocking
+// flock on <file>.lock, which other processes' writes take too.
+func (k *fileKeyring) update(change func(map[string]string) error) error {
 	k.mu.Lock()
 	defer k.mu.Unlock()
+	f, err := os.OpenFile(k.path+".lock", os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return fmt.Errorf("%s: %w", keyringFileEnv, err)
+	}
+	defer f.Close() // releases the lock
+	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX); err != nil {
+		return fmt.Errorf("%s: lock: %w", keyringFileEnv, err)
+	}
 	m, err := k.load()
 	if err != nil {
 		return err
 	}
-	m[entryKey(service, user)] = secret
+	if err := change(m); err != nil {
+		return err
+	}
 	return k.save(m)
+}
+
+func (k *fileKeyring) Set(service, user, secret string) error {
+	return k.update(func(m map[string]string) error {
+		m[entryKey(service, user)] = secret
+		return nil
+	})
 }
 
 // Delete of a missing entry is ErrSecretNotFound, as go-keyring's is.
 func (k *fileKeyring) Delete(service, user string) error {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	m, err := k.load()
-	if err != nil {
-		return err
-	}
-	if _, ok := m[entryKey(service, user)]; !ok {
-		return core.ErrSecretNotFound
-	}
-	delete(m, entryKey(service, user))
-	return k.save(m)
+	return k.update(func(m map[string]string) error {
+		if _, ok := m[entryKey(service, user)]; !ok {
+			return core.ErrSecretNotFound
+		}
+		delete(m, entryKey(service, user))
+		return nil
+	})
 }

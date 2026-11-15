@@ -1,3 +1,5 @@
+//go:build unix
+
 package main
 
 import (
@@ -6,8 +8,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/godwit-email/godwit/core"
@@ -44,7 +47,7 @@ func TestFileKeyringRoundTrip(t *testing.T) {
 	if err := k.Set("godwit", "b", "other"); err != nil {
 		t.Fatal(err)
 	}
-	if fi, err := os.Stat(path); err != nil || (runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600) {
+	if fi, err := os.Stat(path); err != nil || fi.Mode().Perm() != 0o600 {
 		t.Fatalf("store: %v %v", fi.Mode(), err)
 	}
 	if b, _ := os.ReadFile(path); strings.Contains(string(b), "hunter2") {
@@ -66,7 +69,7 @@ func TestFileKeyringRoundTrip(t *testing.T) {
 	if v, err := k.Get("godwit", "b"); err != nil || v != "other" {
 		t.Fatalf("other entry = %q, %v", v, err)
 	}
-	if ents, _ := os.ReadDir(filepath.Dir(path)); len(ents) != 1 {
+	if ents, _ := os.ReadDir(filepath.Dir(path)); len(ents) != 2 { // the store and its .lock
 		t.Fatalf("temporary files left: %v", ents)
 	}
 }
@@ -102,9 +105,6 @@ func TestFileKeyringKeyFile(t *testing.T) {
 	if _, err := openFileKeyring(path, writeKey(t, "abcd")); err == nil {
 		t.Fatal("short key accepted")
 	}
-	if runtime.GOOS == "windows" {
-		return // no Unix modes
-	}
 	keyPath := writeKey(t, testKeyHex)
 	if err := os.Chmod(keyPath, 0o640); err != nil {
 		t.Fatal(err)
@@ -117,6 +117,40 @@ func TestFileKeyringKeyFile(t *testing.T) {
 	}
 	if _, err := openFileKeyring(path, keyPath); err != nil {
 		t.Fatalf("0400 key: %v", err)
+	}
+}
+
+// Two backends of different data directories sharing the file keep every
+// write: each one's load, change and save holds the file's lock.
+func TestFileKeyringConcurrentWriters(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "keyring")
+	keyPath := writeKey(t, testKeyHex)
+	var ks [2]*fileKeyring
+	for i := range ks {
+		k, err := openFileKeyring(path, keyPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ks[i] = k
+	}
+	const n = 50
+	var wg sync.WaitGroup
+	for i, k := range ks {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range n {
+				if err := k.Set("godwit", string(rune('a'+i))+strconv.Itoa(j), "v"); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	m, err := ks[0].load()
+	if err != nil || len(m) != 2*n {
+		t.Fatalf("kept %d of %d writes: %v", len(m), 2*n, err)
 	}
 }
 
