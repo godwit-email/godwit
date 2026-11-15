@@ -182,6 +182,15 @@ describe("at 15:30 on Sunday 15 November 2026", () => {
     expect(clock).toHaveAttribute("aria-valuetext", "10:00");
   });
 
+  test("a cleared time field schedules nothing", async () => {
+    const { onSendLater } = await open();
+    fireEvent.change(screen.getByLabelText("时间", { selector: "input" }), {
+      target: { value: "" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "定时发送" }));
+    expect(onSendLater).not.toHaveBeenCalled();
+  });
+
   test("a past time is refused, in the header", async () => {
     const { onSendLater, clock } = await open();
     fireEvent.keyDown(clock, { key: "ArrowDown" });

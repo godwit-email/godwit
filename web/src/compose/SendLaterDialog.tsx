@@ -257,6 +257,8 @@ export function Clock({
       <div className="flex h-(--cell-size) items-center">
         <Input
           type="time"
+          // A cleared or half-typed field schedules nothing, not the time before.
+          required
           aria-label={label}
           value={typed}
           onChange={(e) => {
