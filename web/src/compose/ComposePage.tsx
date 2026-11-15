@@ -4,7 +4,7 @@ import { currentWindow } from "mygo-runtime";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
 import { toast } from "sonner";
-import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Toaster } from "@/components/ui/sonner";
@@ -873,13 +873,11 @@ function Compose({
           <section className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)">
             <div className="flex min-h-0 flex-1 flex-col overflow-auto">
               {fromProgram && (
-                // blue, as the native notice (kit.ToneInfo); outset so its text lines up with the fields (mx-4 less its padding)
-                <Alert className="mx-0.5 mt-3 w-auto gap-0.5 border-[0.5px] border-blue-200 bg-blue-100/50 px-3.5 py-2.5 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300">
-                  <AlertTitle>{t("mail.draft.from_program")}</AlertTitle>
-                  <AlertDescription className="text-xs text-blue-700 dark:text-blue-300">
-                    {t("mail.draft.from_program_help")}
-                  </AlertDescription>
-                </Alert>
+                // A strip across the card's top, as the Wit banner below, its text in line with the fields; blue, as the native notice (kit.ToneInfo).
+                <div className="flex flex-wrap gap-x-2 border-b-[0.5px] border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-700 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-300">
+                  <span className="font-medium">{t("mail.draft.from_program")}</span>
+                  <span>{t("mail.draft.from_program_help")}</span>
+                </div>
               )}
               <Fields
                 key={fieldsKey}
