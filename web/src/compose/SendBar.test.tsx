@@ -86,18 +86,86 @@ test("send later…: a dialog for any time, that says only a running Godwit send
   expect(screen.getByText(/只在 Godwit 运行时发出/)).toBeInTheDocument();
   const next = new Date();
   next.setHours(next.getHours() + 1, 0, 0, 0);
+  expect(screen.getByRole("slider", { name: "时间" })).toHaveAttribute(
+    "aria-valuenow",
+    String(next.getHours() * 60),
+  );
   await userEvent.click(screen.getByRole("button", { name: "排定发送" }));
   expect(onSendLater).toHaveBeenCalledWith(next.getTime());
   expect(onSend).not.toHaveBeenCalled();
 });
 
-test("send later…: a past time is refused", async () => {
-  const { onSendLater } = setup(false, false, "稍后发送");
-  await options();
-  fireEvent.change(await screen.findByLabelText("日期"), { target: { value: "2000-01-01" } });
-  await userEvent.click(screen.getByRole("button", { name: "排定发送" }));
-  expect(onSendLater).not.toHaveBeenCalled();
-  expect(screen.getByText("请选择一个将来的时间。")).toBeInTheDocument();
+describe("at 15:30 on Sunday 15 November 2026", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 15, 15, 30));
+    vi.spyOn(navigator, "language", "get").mockReturnValue("zh-Hans"); // the header's and calendar's locale
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  const open = async () => {
+    const r = setup(false, false, "稍后发送");
+    await options();
+    return { ...r, clock: await screen.findByRole("slider", { name: "时间" }) };
+  };
+
+  test("the keys step the clock, the calendar picks the day, the header reads it out", async () => {
+    const { onSendLater, clock } = await open();
+    expect(screen.getByText("今天 · 11月15日周日 16:00")).toBeInTheDocument();
+    fireEvent.keyDown(clock, { key: "ArrowRight" });
+    fireEvent.keyDown(clock, { key: "ArrowUp" });
+    expect(screen.getByText("今天 · 11月15日周日 17:05")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "上午" }));
+    expect(screen.getByText("今天 · 11月15日周日 5:05")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "下午" }));
+    await userEvent.click(screen.getByRole("button", { name: /11月16日/ }));
+    expect(screen.getByText("明天 · 11月16日周一 17:05")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /11月14日/ })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "排定发送" }));
+    expect(onSendLater).toHaveBeenCalledWith(new Date(2026, 10, 16, 17, 5).getTime());
+  });
+
+  test("the minute hand drags round, and past 12 it carries the hour", async () => {
+    const { clock } = await open();
+    // The face is 184 px: its centre at 92, the minute hand's tip at 12 near the top.
+    const at = (x: number, y: number) => ({ clientX: x, clientY: y, pointerId: 1 });
+    fireEvent.pointerDown(clock, at(92, 30));
+    fireEvent.pointerMove(clock, at(180, 92));
+    expect(clock).toHaveAttribute("aria-valuetext", "16:15");
+    for (const [x, y] of [
+      [92, 180],
+      [4, 92],
+      [92, 4],
+    ])
+      fireEvent.pointerMove(clock, at(x, y));
+    fireEvent.pointerUp(clock, at(92, 4));
+    expect(clock).toHaveAttribute("aria-valuetext", "17:00");
+  });
+
+  test("the hour hand drags back through 12 into the morning", async () => {
+    const { clock } = await open();
+    const at = (x: number, y: number) => ({ clientX: x, clientY: y, pointerId: 1 });
+    // At 16:00 the hour hand points to 4, its tip 42 px out.
+    fireEvent.pointerDown(clock, at(92 + 36, 92 + 21));
+    fireEvent.pointerMove(clock, at(92, 4));
+    fireEvent.pointerMove(clock, at(30, 56));
+    fireEvent.pointerUp(clock, at(30, 56));
+    expect(clock).toHaveAttribute("aria-valuetext", "10:00");
+  });
+
+  test("a past time is refused, in the header", async () => {
+    const { onSendLater, clock } = await open();
+    fireEvent.keyDown(clock, { key: "ArrowDown" });
+    fireEvent.keyDown(clock, { key: "ArrowDown" });
+    await userEvent.click(screen.getByRole("button", { name: "排定发送" }));
+    expect(onSendLater).not.toHaveBeenCalled();
+    expect(screen.getByText("请选择一个将来的时间。")).toBeInTheDocument();
+    fireEvent.keyDown(clock, { key: "ArrowUp" });
+    expect(screen.queryByText("请选择一个将来的时间。")).toBeNull();
+  });
 });
 
 test("frozen or sending: send is disabled", () => {

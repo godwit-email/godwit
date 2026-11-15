@@ -1,24 +1,9 @@
 import { RiArrowDownSLine } from "@remixicon/react";
 import { useState } from "react";
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
-import { Input } from "@/components/ui/input";
 import { currentLocale, type T } from "@/shared/i18n";
-
-/** A datetime-local value (local time, to the minute) for d: date, "T", time. */
-export function localInput(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-}
+import { SendLaterDialog } from "./SendLaterDialog";
 
 /** The presets Send later offers at now: tonight at 21:00 while it is before then, tomorrow at 8:00. */
 export function presets(now: Date): { key: string; at: Date }[] {
@@ -32,8 +17,7 @@ export function presets(now: Date): { key: string; at: Date }[] {
 
 /**
  * The send button, at the bottom bar's end (ml-auto keeps it right when the bar wraps), split
- * with a native menu: send now, the presets, and Send later…, a dialog for any date and time
- * that says only a running Godwit sends.
+ * with a native menu: send now, the presets, and Send later…, a dialog for any date and time.
  */
 export function SendBar({
   sending,
@@ -54,16 +38,11 @@ export function SendBar({
   t: T;
 }) {
   const [dialog, setDialog] = useState(false);
-  const [date, setDate] = useState("");
-  const [time, setTime] = useState("");
-  const [past, setPast] = useState(false);
+  const [initial, setInitial] = useState(() => new Date());
   const openDialog = () => {
     const next = new Date();
     next.setHours(next.getHours() + 1, 0, 0, 0); // the next whole hour
-    const [d, tm] = localInput(next).split("T");
-    setDate(d);
-    setTime(tm);
-    setPast(false);
+    setInitial(next);
     setDialog(true);
   };
   const options = async (e: React.MouseEvent<HTMLElement>) => {
@@ -96,68 +75,15 @@ export function SendBar({
       >
         <RiArrowDownSLine />
       </Button>
-      <AlertDialog open={dialog} onOpenChange={setDialog}>
-        <AlertDialogContent>
-          <form
-            className="contents"
-            onKeyDown={(e) => {
-              // Keys stay in the dialog (it is portaled, React bubbles them to the compose page):
-              // ⌘↩ schedules here instead of the page's send now.
-              e.stopPropagation();
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
-                e.preventDefault();
-                e.currentTarget.requestSubmit();
-              }
-            }}
-            onSubmit={(e) => {
-              e.preventDefault();
-              const at = new Date(`${date}T${time}`).getTime(); // local time
-              if (!(at > Date.now())) {
-                setPast(true);
-                return;
-              }
-              setDialog(false);
-              onSendLater(at);
-            }}
-          >
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t("compose.send_later.title")}</AlertDialogTitle>
-              <AlertDialogDescription>{t("scheduled.note")}</AlertDialogDescription>
-            </AlertDialogHeader>
-            <div className="grid grid-cols-2 gap-2">
-              <Input
-                type="date"
-                required
-                value={date}
-                aria-label={t("compose.send_later.date")}
-                aria-invalid={past}
-                onChange={(e) => {
-                  setDate(e.target.value);
-                  setPast(false);
-                }}
-              />
-              <Input
-                type="time"
-                required
-                value={time}
-                aria-label={t("compose.send_later.time")}
-                aria-invalid={past}
-                onChange={(e) => {
-                  setTime(e.target.value);
-                  setPast(false);
-                }}
-              />
-            </div>
-            {past && <p className="text-destructive text-xs">{t("compose.send_later.past")}</p>}
-            <AlertDialogFooter>
-              <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-              <Button type="submit" disabled={off}>
-                {t("compose.send_later.schedule")}
-              </Button>
-            </AlertDialogFooter>
-          </form>
-        </AlertDialogContent>
-      </AlertDialog>
+      <SendLaterDialog
+        key={initial.getTime()}
+        open={dialog}
+        onOpenChange={setDialog}
+        initial={initial}
+        off={off}
+        onSchedule={onSendLater}
+        t={t}
+      />
     </ButtonGroup>
   );
 }

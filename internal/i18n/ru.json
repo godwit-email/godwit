@@ -101,6 +101,7 @@
   "compose_send_later_title": "Отправить позже",
   "compose_send_later_date": "Дата",
   "compose_send_later_time": "Время",
+  "compose_send_later_note": "Отправляется, только пока Godwit запущен; если в это время он не запущен — при следующем запуске.",
   "compose_send_later_schedule": "Запланировать",
   "compose_send_later_past": "Выберите время в будущем.",
   "compose_send_anyway": "Отправить всё равно",

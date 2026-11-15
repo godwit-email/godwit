@@ -101,6 +101,7 @@
   "compose_send_later_title": "Daha sonra gönder",
   "compose_send_later_date": "Tarih",
   "compose_send_later_time": "Saat",
+  "compose_send_later_note": "Yalnızca Godwit çalışırken gönderilir; o saatte çalışmıyorsa bir sonraki açılışta gönderilir.",
   "compose_send_later_schedule": "Zamanla",
   "compose_send_later_past": "İleri bir zaman seçin.",
   "compose_send_anyway": "Yine de gönder",

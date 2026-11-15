@@ -101,6 +101,7 @@
   "compose_send_later_title": "Later versturen",
   "compose_send_later_date": "Datum",
   "compose_send_later_time": "Tijd",
+  "compose_send_later_note": "Wordt alleen verstuurd terwijl Godwit draait; draait het dan niet, dan bij de volgende start.",
   "compose_send_later_schedule": "Inplannen",
   "compose_send_later_past": "Kies een tijdstip in de toekomst.",
   "compose_send_anyway": "Toch versturen",

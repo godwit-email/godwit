@@ -101,6 +101,7 @@
   "compose_send_later_title": "나중에 보내기",
   "compose_send_later_date": "날짜",
   "compose_send_later_time": "시각",
+  "compose_send_later_note": "Godwit이 실행 중일 때만 보내집니다. 그때 실행 중이 아니면 다음 시작 시 보내집니다.",
   "compose_send_later_schedule": "예약",
   "compose_send_later_past": "미래의 시각을 선택하세요.",
   "compose_send_anyway": "그래도 보내기",

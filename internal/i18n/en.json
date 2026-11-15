@@ -153,6 +153,7 @@
   "compose_send_later_title": "Send later",
   "compose_send_later_date": "Date",
   "compose_send_later_time": "Time",
+  "compose_send_later_note": "Sends only while Godwit is running; if it isn't then, it goes out the next time Godwit starts.",
   "compose_send_later_schedule": "Schedule",
   "compose_send_later_past": "Pick a time in the future.",
   "compose_send_anyway": "Send anyway",

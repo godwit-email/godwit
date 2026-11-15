@@ -101,6 +101,7 @@
   "compose_send_later_title": "Enviar más tarde",
   "compose_send_later_date": "Fecha",
   "compose_send_later_time": "Hora",
+  "compose_send_later_note": "Solo se envía mientras Godwit está en ejecución; si no lo está, sale la próxima vez que se inicie.",
   "compose_send_later_schedule": "Programar",
   "compose_send_later_past": "Elige una hora futura.",
   "compose_send_anyway": "Enviar de todos modos",

@@ -101,6 +101,7 @@
   "compose_send_later_title": "Gửi sau",
   "compose_send_later_date": "Ngày",
   "compose_send_later_time": "Giờ",
+  "compose_send_later_note": "Chỉ gửi khi Godwit đang chạy; nếu lúc đó không chạy, thư sẽ gửi khi Godwit khởi động lần tới.",
   "compose_send_later_schedule": "Lên lịch",
   "compose_send_later_past": "Hãy chọn một thời điểm trong tương lai.",
   "compose_send_anyway": "Vẫn gửi",

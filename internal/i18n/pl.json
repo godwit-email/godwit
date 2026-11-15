@@ -101,6 +101,7 @@
   "compose_send_later_title": "Wyślij później",
   "compose_send_later_date": "Data",
   "compose_send_later_time": "Godzina",
+  "compose_send_later_note": "Wysyłane tylko, gdy Godwit działa; jeśli wtedy nie działa, przy następnym uruchomieniu.",
   "compose_send_later_schedule": "Zaplanuj",
   "compose_send_later_past": "Wybierz termin w przyszłości.",
   "compose_send_anyway": "Wyślij mimo to",

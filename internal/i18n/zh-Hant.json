@@ -101,6 +101,7 @@
   "compose_send_later_title": "稍後傳送",
   "compose_send_later_date": "日期",
   "compose_send_later_time": "時間",
+  "compose_send_later_note": "只在 Godwit 執行時傳送；屆時沒在執行，會在下次啟動時傳送。",
   "compose_send_later_schedule": "排定傳送",
   "compose_send_later_past": "請選擇未來的時間。",
   "compose_send_anyway": "仍然傳送",

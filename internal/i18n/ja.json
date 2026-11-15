@@ -101,6 +101,7 @@
   "compose_send_later_title": "あとで送信",
   "compose_send_later_date": "日付",
   "compose_send_later_time": "時刻",
+  "compose_send_later_note": "Godwit の実行中にのみ送信されます。その時刻に実行されていなければ、次回の起動時に送信されます。",
   "compose_send_later_schedule": "送信を予約",
   "compose_send_later_past": "未来の日時を選んでください。",
   "compose_send_anyway": "そのまま送信",

@@ -547,7 +547,7 @@ test("send later…: ⌘↩ in the dialog schedules, it does not send now", asyn
   render(<ComposePage />);
   await body();
   await userEvent.click(screen.getByRole("button", { name: "发送选项" }));
-  await userEvent.click(await screen.findByLabelText("日期"));
+  (await screen.findByRole("slider", { name: "时间" })).focus();
   await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
   expect(api.send).toHaveBeenCalledTimes(1);
   const at = vi.mocked(api.send).mock.calls[0][2];
