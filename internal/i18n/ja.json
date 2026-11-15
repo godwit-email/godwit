@@ -70,6 +70,7 @@
   "compose_cc_input": "Cc を追加",
   "compose_cc_bcc": "Cc · Bcc",
   "compose_conflict": "この下書きは別の場所で変更されました",
+  "compose_conflict_desc": "編集中に、この下書きが別の場所（別のウィンドウやプログラム）で変更されました。「自分のバージョンを保持」はその変更を上書きし、「最新バージョンを使用」は変更後の下書きを表示します。",
   "compose_conflict_keep": "自分のバージョンを保持",
   "compose_conflict_latest": "最新バージョンを使用",
   "compose_format": "書式",

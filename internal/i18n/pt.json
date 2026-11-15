@@ -70,6 +70,7 @@
   "compose_cc_input": "Adicionar destinatários em Cc",
   "compose_cc_bcc": "Cc · Cco",
   "compose_conflict": "Este rascunho foi alterado em outro lugar",
+  "compose_conflict_desc": "Este rascunho foi alterado em outro lugar enquanto você o editava (em outra janela ou por um programa). \"Manter minha versão\" substitui essa alteração; \"Usar a versão mais recente\" mostra o rascunho alterado.",
   "compose_conflict_keep": "Manter minha versão",
   "compose_conflict_latest": "Usar a versão mais recente",
   "compose_format": "Formatação",

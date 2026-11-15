@@ -70,6 +70,7 @@
   "compose_cc_input": "Cc alıcıları ekle",
   "compose_cc_bcc": "Cc · Bcc",
   "compose_conflict": "Bu taslak başka bir yerde değiştirildi",
+  "compose_conflict_desc": "Siz düzenlerken bu taslak başka bir yerde (başka bir pencerede veya bir program tarafından) değiştirildi. \"Benim sürümümü koru\" bu değişikliğin üzerine yazar; \"En son sürümü kullan\" değiştirilmiş taslağı gösterir.",
   "compose_conflict_keep": "Benim sürümümü koru",
   "compose_conflict_latest": "En son sürümü kullan",
   "compose_format": "Biçimlendirme",

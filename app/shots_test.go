@@ -363,6 +363,11 @@ func TestShots(t *testing.T) {
 		s.post(func() { s.app.mail.draftSel = d.ID })
 		s.see("这封草稿由程序")
 		shot(s.harness, "MainProgramDraftFolder")
+		// open in a compose window too: both notices, as wide as each other
+		s.plat.setComposeOpen(d.ID, true)
+		s.post(func() { s.app.mail.setDrafts() })
+		s.see("来自程序的草稿")
+		shot(s.harness, "MainProgramDraftEditing")
 	})
 	t.Run("MainOlder", func(t *testing.T) { // the row while older mail loads (no artboard: compared by eye)
 		s := shotMail(t, noAuto)

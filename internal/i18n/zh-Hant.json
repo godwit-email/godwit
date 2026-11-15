@@ -70,6 +70,7 @@
   "compose_cc_input": "加入副本",
   "compose_cc_bcc": "副本 · 密件副本",
   "compose_conflict": "草稿在別處被修改",
+  "compose_conflict_desc": "你編輯時，這封草稿在別處（另一個視窗或程式）被改過。「保留我的版本」會覆蓋那次修改；「使用最新版本」會換成改過的內容。",
   "compose_conflict_keep": "保留我的版本",
   "compose_conflict_latest": "使用最新版本",
   "compose_format": "格式",

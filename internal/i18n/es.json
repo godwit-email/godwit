@@ -70,6 +70,7 @@
   "compose_cc_input": "Añadir destinatarios en Cc",
   "compose_cc_bcc": "Cc · Cco",
   "compose_conflict": "Este borrador se modificó en otro lugar",
+  "compose_conflict_desc": "Este borrador se cambió en otro lugar mientras lo editabas (en otra ventana o un programa). «Mantener mi versión» sobrescribe ese cambio; «Usar la versión más reciente» muestra el borrador cambiado.",
   "compose_conflict_keep": "Conservar mi versión",
   "compose_conflict_latest": "Usar la versión más reciente",
   "compose_format": "Formato",

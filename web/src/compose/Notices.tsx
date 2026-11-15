@@ -1,5 +1,12 @@
 import { RiAlertLine } from "@remixicon/react";
-import { toneButton } from "@/components/tone";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import type { SendWarning } from "@/mygo";
@@ -16,7 +23,7 @@ const box = "gap-1 border-0 px-3.5 py-3 text-sm";
 const warn = `${box} bg-(--warning-bg) text-(--warning-text) **:data-[slot=alert-description]:text-(--warning-text)`;
 const danger = `${box} bg-destructive/10`;
 
-/** Plugin warnings (Send then reads 仍然发送), a blocking refusal and the save conflict. */
+/** Plugin warnings (Send then reads 仍然发送), a blocking refusal, and the save conflict as a dialog. */
 export function Notices({
   warnings,
   blocked,
@@ -58,43 +65,31 @@ export function Notices({
           ))}
         </Alert>
       )}
-      {conflict && (
-        // a choice to make, not a failure: the warning's tone, as a plugin's check
-        <Alert className={warn}>
-          <AlertTitle>{t("compose.conflict")}</AlertTitle>
-          <div className="mt-2 flex gap-1.5">
+      {/* a choice to make before anything else saves: a dialog that waits for it */}
+      <Dialog open={conflict}>
+        <DialogContent alert>
+          <DialogHeader>
+            <DialogTitle>{t("compose.conflict")}</DialogTitle>
+            <DialogDescription>{t("compose.conflict.desc")}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
             {latestFailed ? (
-              <Button
-                className={toneButton.warning}
-                size="sm"
-                disabled={frozen}
-                onClick={() => !frozen && onRetry()}
-              >
+              <Button disabled={frozen} onClick={() => !frozen && onRetry()}>
                 {t("common.retry")}
               </Button>
             ) : (
               <>
-                <Button
-                  className={toneButton.warning}
-                  size="sm"
-                  disabled={frozen}
-                  onClick={() => !frozen && onKeepMine()}
-                >
+                <Button variant="outline" disabled={frozen} onClick={() => !frozen && onKeepMine()}>
                   {t("compose.conflict.keep")}
                 </Button>
-                <Button
-                  className={toneButton.warning}
-                  size="sm"
-                  disabled={frozen}
-                  onClick={() => !frozen && onUseLatest()}
-                >
+                <Button disabled={frozen} onClick={() => !frozen && onUseLatest()}>
                   {t("compose.conflict.latest")}
                 </Button>
               </>
             )}
-          </div>
-        </Alert>
-      )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

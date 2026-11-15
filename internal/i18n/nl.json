@@ -70,6 +70,7 @@
   "compose_cc_input": "Cc-ontvangers toevoegen",
   "compose_cc_bcc": "Cc · Bcc",
   "compose_conflict": "Dit concept is ergens anders gewijzigd",
+  "compose_conflict_desc": "Dit concept is elders gewijzigd terwijl je het bewerkte (in een ander venster of door een programma). Mijn versie behouden overschrijft die wijziging; Nieuwste versie gebruiken toont het gewijzigde concept.",
   "compose_conflict_keep": "Mijn versie behouden",
   "compose_conflict_latest": "Nieuwste versie gebruiken",
   "compose_format": "Opmaak",

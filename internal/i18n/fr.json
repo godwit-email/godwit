@@ -70,6 +70,7 @@
   "compose_cc_input": "Ajouter des destinataires en Cc",
   "compose_cc_bcc": "Cc · Cci",
   "compose_conflict": "Ce brouillon a été modifié ailleurs",
+  "compose_conflict_desc": "Ce brouillon a été modifié ailleurs pendant que vous le modifiiez (dans une autre fenêtre ou par un programme). « Garder ma version » écrase cette modification ; « Utiliser la dernière version » affiche le brouillon modifié.",
   "compose_conflict_keep": "Garder ma version",
   "compose_conflict_latest": "Utiliser la dernière version",
   "compose_format": "Mise en forme",

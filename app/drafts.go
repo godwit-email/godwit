@@ -124,15 +124,22 @@ func draftChip(c *ui.Context, text string) {
 // and the ask to check it before 批准并发送; cut says the body is too long to
 // show whole, so it is checked and sent from the compose window instead.
 func programNotice(c *ui.Context, cut bool) {
-	t, th := theme.Of(c), c.Theme()
-	// outset by its padding: its text lines up with the subject and fields under it
-	kit.Block(c, ui.Column(c), kit.ToneInfo).AlignSelf(ui.Stretch).Margin(0, -th.Space(3.5)).Gap(th.Space(0.5)).Padding(th.Space(2.5), th.Space(3.5)).Children(func() {
+	t := theme.Of(c)
+	draftNotice(c, kit.ToneInfo).Children(func() {
 		kit.Text(c, i18n.T("mail.draft.from_program"), t.Text.Sm).FontWeight(500)
 		kit.Text(c, i18n.T("mail.draft.from_program_help"), t.Text.Xs)
 		if cut {
 			kit.Text(c, i18n.T("mail.draft.too_long"), t.Text.Xs).FontWeight(600)
 		}
 	})
+}
+
+// draftNotice is a notice over a draft in the pane, of tone: every one as
+// wide, outset by its padding so its text lines up with the subject and
+// fields under it. Give it its Children.
+func draftNotice(c *ui.Context, tone kit.Tone) ui.Element {
+	th := c.Theme()
+	return kit.Block(c, ui.Column(c), tone).AlignSelf(ui.Stretch).Margin(0, -th.Space(3.5)).Gap(th.Space(0.5)).Padding(th.Space(2.5), th.Space(3.5))
 }
 
 // recipients are the display names of addresses, joined.
@@ -190,7 +197,7 @@ func (p *mailPage) draftPane(c *ui.Context) {
 			ui.Column(c).FillWidth().Padding(th.Space(5), th.Space(7)).Children(func() {
 				ui.Column(c).FillWidth().MaxWidth(p.a.readerMaxWidth()).AlignSelf(ui.Center).Gap(th.Space(4)).Children(func() { // the reader's column
 					if editing {
-						kit.Block(c, kit.Text(c, i18n.T("mail.draft.notice"), t.Text.Xs).Padding(th.Space(2), th.Space(3)), kit.ToneTint)
+						draftNotice(c, kit.ToneTint).Children(func() { kit.Text(c, i18n.T("mail.draft.notice"), t.Text.Xs) })
 					}
 					if d.FromProgram {
 						programNotice(c, cut)

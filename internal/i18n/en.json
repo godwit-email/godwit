@@ -108,6 +108,7 @@
   "compose_cc_input": "Add Cc recipients",
   "compose_cc_bcc": "Cc · Bcc",
   "compose_conflict": "This draft was changed elsewhere",
+  "compose_conflict_desc": "This draft was changed elsewhere while you were editing it (in another window or by a program). Keep my version overwrites that change; Use the latest version shows the draft as changed.",
   "compose_conflict_keep": "Keep my version",
   "compose_conflict_latest": "Use the latest version",
   "compose_format": "Formatting",

@@ -70,6 +70,7 @@
   "compose_cc_input": "참조 추가",
   "compose_cc_bcc": "참조 · 숨은 참조",
   "compose_conflict": "이 초안이 다른 곳에서 수정되었습니다",
+  "compose_conflict_desc": "편집하는 동안 이 초안이 다른 곳(다른 창이나 프로그램)에서 변경되었습니다. \"내 버전 유지\"는 그 변경을 덮어쓰고, \"최신 버전 사용\"은 변경된 초안을 보여 줍니다.",
   "compose_conflict_keep": "내 버전 유지",
   "compose_conflict_latest": "최신 버전 사용",
   "compose_format": "서식",

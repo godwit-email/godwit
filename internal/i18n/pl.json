@@ -70,6 +70,7 @@
   "compose_cc_input": "Dodaj odbiorców DW",
   "compose_cc_bcc": "DW · UDW",
   "compose_conflict": "Ta wersja robocza została zmieniona w innym miejscu",
+  "compose_conflict_desc": "Ten szkic został zmieniony gdzie indziej podczas edycji (w innym oknie lub przez program). „Zachowaj moją wersję” nadpisze tę zmianę, „Użyj najnowszej wersji” pokaże zmieniony szkic.",
   "compose_conflict_keep": "Zachowaj moją wersję",
   "compose_conflict_latest": "Użyj najnowszej wersji",
   "compose_format": "Formatowanie",

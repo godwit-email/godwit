@@ -70,6 +70,7 @@
   "compose_cc_input": "Aggiungi destinatari in Cc",
   "compose_cc_bcc": "Cc · Ccn",
   "compose_conflict": "Questa bozza è stata modificata altrove",
+  "compose_conflict_desc": "Questa bozza è stata modificata altrove mentre la stavi modificando (in un'altra finestra o da un programma). «Mantieni la mia versione» sovrascrive quella modifica; «Usa la versione più recente» mostra la bozza modificata.",
   "compose_conflict_keep": "Mantieni la mia versione",
   "compose_conflict_latest": "Usa l’ultima versione",
   "compose_format": "Formattazione",

@@ -70,6 +70,7 @@
   "compose_cc_input": "Cc-Empfänger hinzufügen",
   "compose_cc_bcc": "Cc · Bcc",
   "compose_conflict": "Dieser Entwurf wurde an anderer Stelle geändert",
+  "compose_conflict_desc": "Dieser Entwurf wurde woanders geändert, während du ihn bearbeitet hast (in einem anderen Fenster oder von einem Programm). „Meine Version behalten“ überschreibt diese Änderung, „Neueste Version verwenden“ zeigt den geänderten Entwurf.",
   "compose_conflict_keep": "Meine Version behalten",
   "compose_conflict_latest": "Neueste Version verwenden",
   "compose_format": "Formatierung",
