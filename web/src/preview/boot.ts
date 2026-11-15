@@ -38,6 +38,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         updatedAt: Date.now(),
         body: body(),
         subject: fx.compose(mode, true).subject,
+        fromProgram: revision > 1 || state === "program", // Wit's edit marks the draft
       });
       const history = () =>
         state === "streaming"

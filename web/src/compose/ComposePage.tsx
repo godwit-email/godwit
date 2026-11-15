@@ -439,6 +439,7 @@ function Compose({
       if (s.status === "conflict" || s.dirty || l.revision <= s.revision) return;
       if (edits.current !== runEdits.current) return;
       adopt(l.revision, l.body, l.subject);
+      setFromProgram(l.fromProgram);
       setApplied(true);
     } catch (e) {
       if (n === reloads.current) setReloadErr(witError(message(e), t));
@@ -636,6 +637,7 @@ function Compose({
       const r = await sv.run(op);
       if (r && !r.conflict) {
         adopt(r.revision, r.body, r.subject);
+        setFromProgram(r.fromProgram);
         setSignature(sigOf(r));
         setAttachments(r.attachments);
         setSavedAt(fmt(new Date(r.updatedAt)));

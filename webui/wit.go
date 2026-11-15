@@ -565,6 +565,9 @@ type BodyChange struct {
 	Subject string `json:"subject"`
 	// Body is the editable HTML as stored.
 	Body string `json:"body"`
+	// FromProgram is core.Draft.FromProgram as stored: a Wit edit marks the
+	// draft, and the page shows the notice from then on (ADR 0043).
+	FromProgram bool `json:"fromProgram"`
 }
 
 // RunStart is a run started: its conversation (made for a new one) and the
@@ -731,7 +734,7 @@ func bodyChange(ctx context.Context, svc Service, s *session, err error) (BodyCh
 	if err != nil {
 		return BodyChange{}, keyed(err)
 	}
-	return BodyChange{Change: ch, Subject: d.Subject, Body: s.adopt(d)}, nil
+	return BodyChange{Change: ch, Subject: d.Subject, Body: s.adopt(d), FromProgram: d.FromProgram}, nil
 }
 
 // Undo takes back the latest edit Wit applied to the calling window's

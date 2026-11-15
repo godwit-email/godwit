@@ -223,6 +223,7 @@ const change = (body: string, revision: number): BodyChange => ({
   attachments: [],
   signatureHtml: "",
   updatedAt: 0,
+  fromProgram: true, // Wit's edit marks the draft (ADR 0043)
 });
 const ev = (e: Partial<WitEvent>): WitEvent => ({
   conversation: 1,
@@ -243,7 +244,12 @@ const emit = (e: Partial<WitEvent>) =>
   act(() => {
     for (const f of [...h.wit]) f(ev(e));
   });
-const latest = (body: string, revision: number) => ({ ...state, body, revision });
+const latest = (body: string, revision: number) => ({
+  ...state,
+  body,
+  revision,
+  fromProgram: true,
+});
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -347,11 +353,13 @@ test("accept all → decide(id, true)", async () => {
   vi.mocked(api.latest).mockResolvedValue(latest("<p>Hi Ann and more</p>", 9));
   await setup(withPending);
   await screen.findByRole("region", { name: "正文修订" });
+  expect(screen.queryByText("来自程序的草稿")).not.toBeInTheDocument(); // the user's own draft
   // the banner's and the panel card's
   expect(screen.getAllByRole("button", { name: "全部接受" })).toHaveLength(2);
   fireEvent.click(screen.getAllByRole("button", { name: "全部接受" })[1]);
   await waitFor(() => expect(api.decide).toHaveBeenCalledWith(4, true));
   expect(await body()).toHaveValue("<p>Hi Ann and more</p>");
+  expect(screen.getByText("来自程序的草稿")).toBeInTheDocument(); // Wit wrote in it now (ADR 0043)
   expect(api.finish).not.toHaveBeenCalled();
   // the run the decision resumed streams in the panel, on its answer
   emit({ kind: "text", text: "已改好。" });
