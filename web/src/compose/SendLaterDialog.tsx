@@ -72,12 +72,16 @@ export function readout(loc: string, at: Date, now = new Date()): string {
   return `${rel.charAt(0).toLocaleUpperCase(loc)}${rel.slice(1)} · ${when}`;
 }
 
-/** The locale's names for the morning and the afternoon (上午, 下午; AM, PM). */
+/**
+ * The locale's names for the morning and the afternoon (上午, 下午; AM, PM), read at 9:00 and 15:00:
+ * WebKit's ICU names the periods of a Chinese day finer, so midnight and noon would read 凌晨
+ * and 中午, while 9:00 and 15:00 are 上午 and 下午 there as everywhere.
+ */
 function dayPeriods(loc: string): [string, string] {
   const f = new Intl.DateTimeFormat(loc, { hour: "numeric", hour12: true });
   const name = (h: number) =>
     f.formatToParts(new Date(2000, 0, 1, h)).find((p) => p.type === "dayPeriod")?.value;
-  return [name(0) ?? "AM", name(12) ?? "PM"];
+  return [name(9) ?? "AM", name(15) ?? "PM"];
 }
 
 /**
