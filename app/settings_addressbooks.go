@@ -245,13 +245,13 @@ func (v *addressBooksView) page(c *ui.Context, ab core.AddressBook) {
 	ui.Row(c).Gap(th.Space(4)).Children(func() {
 		presetMark(c, ab.Preset, theme.MarkXl)
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
-			kit.Text(c, ab.Name, t.Text.Display).FontWeight(600).SingleLine()
+			kit.Text(c, ab.Name, t.Text.X3l).FontWeight(600).SingleLine()
 			ui.Text(c, abKind(ab)).TextColor(t.Muted)
 		})
 	})
 	settingsSection(c, i18n.T("settings.account.basic"), "", func() {
 		settingRow(c, i18n.T("settings.account.alias"), "", func() {
-			if kit.Input(c, &v.rename, kit.InputOpts{}).Width(theme.SettingsInputWidth).Radius(t.Radius.Lg).Label(i18n.T("settings.account.alias")).Changed() {
+			if kit.Input(c, &v.rename, kit.InputOpts{}).Width(theme.SettingsInputWidth).Label(i18n.T("settings.account.alias")).Changed() {
 				if name, id := strings.TrimSpace(v.rename), ab.ID; name != "" {
 					a.writes.Chain("addressbooks", func(ctx context.Context) error { return a.svc.RenameAddressBook(ctx, id, name) }, func(err error) {
 						if err != nil {
@@ -273,7 +273,7 @@ func (v *addressBooksView) page(c *ui.Context, ab core.AddressBook) {
 			settingRow(c, i18n.T("settings.account.login.method"), abAuthText(ab), func() { v.authAction(c, ab) })
 		},
 		func() {
-			settingRow(c, "CardDAV", "", func() { kit.Text(c, ab.URL, t.Text.Sm).Font(theme.Mono).TextColor(t.Muted).Shrink(1) })
+			settingRow(c, "CardDAV", "", func() { kit.Text(c, ab.URL, t.Text.Xs).Font(theme.Mono).TextColor(t.Muted).Shrink(1) })
 		})
 	settingsSection(c, i18n.T("settings.account.remove"), "", func() {
 		settingRow(c, i18n.T("settings.addressbooks.remove.row"), strings.TrimRight(i18n.T("settings.addressbooks.remove.desc"), "。."), func() {
@@ -568,7 +568,7 @@ func (v *addressBooksView) addDialogView(c *ui.Context) {
 			if v.signIn.waiting() {
 				ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 					kit.Spinner(c)
-					kit.Text(c, i18n.T("onboarding.oauth.opened"), t.Text.Sm).TextColor(t.Muted).Grow(1).Shrink(1)
+					kit.Text(c, i18n.T("onboarding.oauth.opened"), t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
 					if v.signIn.url != "" {
 						u := v.signIn.url
 						kit.Button(c, i18n.T("onboarding.oauth.reopen"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeSm}).
@@ -578,8 +578,8 @@ func (v *addressBooksView) addDialogView(c *ui.Context) {
 			}
 		} else {
 			if hint := presetHint(v.preset); hint != "" {
-				ui.Column(c).Gap(th.Space(1)).Padding(th.Space(3)).Radius(t.Radius.Lg).Background(t.Sidebar).Children(func() {
-					kit.Text(c, hint, t.Text.Sm).TextColor(t.Muted)
+				kit.Block(c, ui.Column(c), kit.ToneCard).Gap(th.Space(1)).Padding(th.Space(3)).Children(func() {
+					kit.Text(c, hint, t.Text.Xs).TextColor(t.Muted)
 					if curPreset.HelpURL != "" {
 						u := curPreset.HelpURL
 						kit.Button(c, i18n.T("settings.addressbooks.help.link"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeSm}).
@@ -631,7 +631,7 @@ func (v *addressBooksView) addDialogView(c *ui.Context) {
 						kit.Input(c, &v.serverPort, kit.InputOpts{Placeholder: i18n.T("settings.addressbooks.port.auto")})
 					}).Width(theme.PortWidth)
 				})
-				kit.Text(c, i18n.T("settings.addressbooks.ssl"), t.Text.Sm).TextColor(t.Muted)
+				kit.Text(c, i18n.T("settings.addressbooks.ssl"), t.Text.Xs).TextColor(t.Muted)
 			}
 			ui.Field(c, i18n.T("settings.addressbooks.name.optional"), func() {
 				kit.Input(c, &v.name, kit.InputOpts{Placeholder: presetPlaceholderName(v.preset)})

@@ -2,6 +2,7 @@ package kit
 
 import (
 	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
@@ -26,14 +27,14 @@ func Gallery(c *ui.Context, g *GalleryState) {
 	row := func(children func()) { ui.Row(c).Wrap().AlignItems(ui.Center).Gap(th.Space(2)).Children(children) }
 	section := func(name string, body func()) {
 		ui.Column(c).Gap(th.Space(2)).AlignItems(ui.Start).Children(func() {
-			Text(c, name, t.Text.Lg).FontWeight(600).Label("section:" + name)
+			Text(c, name, t.Text.Base).FontWeight(600).Label("section:" + name)
 			body()
 		})
 	}
 	ui.Scroll(c).Grow(1).Children(func() {
 		ui.Column(c).Gap(th.Space(6)).Padding(th.Space(6)).Children(func() {
 			section("Button", func() {
-				for _, s := range []ButtonSize{SizeSm, SizeDefault, SizeLg} {
+				for _, s := range []Size{SizeXs, SizeSm, SizeDefault, SizeLg} {
 					row(func() {
 						for _, v := range galleryVariants {
 							Button(c, v.name, ButtonOpts{Variant: v.v, Size: s})
@@ -49,7 +50,7 @@ func Gallery(c *ui.Context, g *GalleryState) {
 			section("IconButton", func() {
 				for _, v := range []Variant{Ghost, Outline} {
 					row(func() {
-						for i, s := range []ButtonSize{SizeXs, SizeSm, SizeDefault, SizeLg} {
+						for i, s := range []Size{SizeMini, SizeXs, SizeSm, SizeDefault, SizeLg} {
 							IconButton(c, "star", "Star "+galleryVariants[v].name+string(rune('1'+i)), ButtonOpts{Variant: v, Size: s})
 						}
 					})
@@ -133,13 +134,52 @@ func Gallery(c *ui.Context, g *GalleryState) {
 				Collapsible(c, &g.Collapsible, func() { ui.Text(c, "Show details") }, func() { ui.Text(c, "Collapsible sample text") })
 			})
 			section("Card", func() {
-				Card(c, func() {
+				Card(c, ui.Column(c).Gap(th.Space(3)).Padding(th.Space(4)).Width(theme.SheetWidth), ToneOutline).Children(func() {
 					CardHeader(c, "Card title", "Card description")
 					ui.Text(c, "Card body")
 					CardFooter(c, func() { Button(c, "Card action", ButtonOpts{}) })
-				}).Width(theme.SheetWidth)
+				})
+				row(func() {
+					for _, k := range []struct {
+						name string
+						tone Tone
+					}{{"Card", ToneCard}, {"Tint", ToneTint}, {"Outline", ToneOutline}} {
+						Block(c, ui.Column(c).Padding(th.Space(3)).Width(th.Space(30)), k.tone).Children(func() { ui.Text(c, "Block · "+k.name) })
+					}
+					Card(c, ui.Column(c).Padding(th.Space(3)), ToneCard).Children(func() {
+						Block(c, ui.Column(c).Padding(th.Space(3)).Width(th.Space(30)), ToneRaised).Children(func() { ui.Text(c, "Block · Raised") })
+					})
+				})
 			})
-			section("Badge", func() { Badge(c, "Badge") })
+			section("Tile", func() {
+				row(func() {
+					for _, s := range []float32{6, 7, 8, 10} {
+						Tile(c, th.Space(s), th.Space(s), ToneTint).Children(func() { ui.Icon(c, icons.Get("star")).Size(theme.IconSm, theme.IconSm) })
+					}
+					ui.Column(c).Width(th.Space(40)).Children(func() { Progress(c, 3, 8, "Progress") })
+				})
+			})
+			section("Choice", func() {
+				row(func() {
+					ToggleChip(c, "On", true, ChoiceOpts{})
+					ToggleChip(c, "Off", false, ChoiceOpts{})
+					ToggleChip(c, "Offered", false, ChoiceOpts{Dashed: true})
+				})
+			})
+			section("Badge", func() {
+				row(func() {
+					Badge(c, "Neutral")
+					BadgeWith(c, "Muted", BadgeOpts{Muted: true})
+					BadgeWith(c, "Outline", BadgeOpts{Tone: BadgeOutline})
+					BadgeWith(c, "Default", BadgeOpts{Icon: "check"})
+					BadgeWith(c, "Success", BadgeOpts{Tone: BadgeSuccess})
+					BadgeWith(c, "Warning", BadgeOpts{Tone: BadgeWarning})
+					BadgeWith(c, "Danger", BadgeOpts{Tone: BadgeDanger})
+					BadgeWith(c, "mono", BadgeOpts{Mono: true})
+					BadgeButton(c, "Acts", BadgeOpts{Icon: "plus"})
+					BadgeButton(c, "Acts", BadgeOpts{Tone: BadgeOutline, Muted: true, Icon: "plus"})
+				})
+			})
 			section("Alert", func() {
 				ui.Column(c).Gap(th.Space(2)).MaxWidth(theme.ContentMaxWidth).Children(func() {
 					Alert(c, Warning, "Warning alert", nil)

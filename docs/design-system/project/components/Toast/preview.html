@@ -1,17 +1,20 @@
-<!-- @dsCard group="Feedback" height=260 width=520 subtitle="Plain, success, warning, error" -->
+<!-- @dsCard group="Feedback" height=300 width=520 subtitle="Plain, with an action, success, warning, error" -->
 <!doctype html>
 <html><head><meta charset="utf-8"><style>
 body{margin:0;padding:24px;background:var(--window);font-family:Geist,"PingFang SC",system-ui,sans-serif;font-size:14px;color:var(--foreground)}
 .list{display:flex;flex-direction:column;align-items:center;gap:8px}
-.t{display:flex;align-items:center;gap:10px;max-width:420px;padding:12px 16px;border-radius:var(--radius-2xl);border:1px solid var(--border);background:var(--background);box-shadow:var(--shadow-lg);font-weight:500}
+.t{display:flex;align-items:center;gap:4px;box-sizing:border-box;min-height:36px;max-width:420px;padding:4px 4px 4px 12px;border-radius:var(--radius-lg);border:1px solid var(--border);background:var(--raised,var(--background));box-shadow:var(--shadow-lg);font-size:13px}
+.m{padding:4px 8px 4px 0}
 .ok{background:var(--success-bg);border-color:var(--success-border);color:var(--success-text)}
 .warn{background:var(--warning-bg);border-color:var(--warning-border);color:var(--warning-text)}
 .err{background:var(--danger-bg);border-color:var(--danger-border);color:var(--danger-text)}
-svg{width:16px;height:16px;flex:none}
-.a{height:28px;padding:0 10px;border-radius:var(--radius-md);border:1px solid currentColor;background:transparent;color:inherit;font:inherit;font-weight:500}
+svg{width:16px;height:16px;flex:none;margin-right:4px}
+.a{height:28px;padding:0 8px;border-radius:var(--radius-md);border:0;background:var(--hover);color:inherit;font:inherit;font-weight:500}
+.ok .a{background:var(--success-border)}.warn .a{background:var(--warning-border)}.err .a{background:var(--danger-border)}
 </style></head><body><div class="list" role="list">
-<div class="t" role="status">链接已复制</div>
-<div class="t ok" role="status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg>邮件已发送</div>
-<div class="t warn" role="status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4m0 3v.01"/></svg>缺少必填项：收件人</div>
-<div class="t err" role="status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6m0-6-6 6"/></svg>2 封未能处理<button class="a">报告问题</button></div>
+<div class="t" role="status"><span class="m">链接已复制</span></div>
+<div class="t" role="status"><span class="m">已归档</span><button class="a">撤销</button></div>
+<div class="t ok" role="status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg><span class="m">邮件已发送</span></div>
+<div class="t warn" role="status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4m0 3v.01"/></svg><span class="m">缺少必填项：收件人</span></div>
+<div class="t err" role="status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6m0-6-6 6"/></svg><span class="m">2 封未能处理</span><button class="a">报告问题</button></div>
 </div></body></html>

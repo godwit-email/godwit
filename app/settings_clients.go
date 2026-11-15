@@ -100,8 +100,8 @@ func (p *settingsPage) clientsRow(c *ui.Context, copied func(string)) {
 	settingBlock(c, func() {
 		ui.Row(c).FillWidth().Gap(th.Space(6)).AlignItems(ui.Start).Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-				kit.Text(c, i18n.T("settings.local_api.connect"), t.Text.Body).FontWeight(500)
-				kit.Text(c, i18n.T("settings.local_api.connect.help"), t.Text.Sm).TextColor(t.Muted)
+				kit.Text(c, i18n.T("settings.local_api.connect"), t.Text.Sm).FontWeight(500)
+				kit.Text(c, i18n.T("settings.local_api.connect.help"), t.Text.Xs).TextColor(t.Muted)
 			})
 			if settingButton(c, i18n.T("settings.local_api.copy"), kit.Outline, false).Clicked() {
 				copied(a.mcpConfig())
@@ -114,23 +114,20 @@ func (p *settingsPage) clientsRow(c *ui.Context, copied func(string)) {
 		ui.Row(c).Wrap().Gap(th.Space(2)).Children(func() {
 			for _, id := range ids {
 				st := p.clients[id]
-				b := kit.Pressable(c.Key(id), kit.PressableOpts{Bordered: true, OnClick: func() { p.toggleClient(id) }}).
-					Height(th.Space(8)).PaddingX(th.Space(3)).Gap(th.Space(1.5)).AlignItems(ui.Center).Label(clientNames[id]) // a settingButton's size
 				on := st == mcpclients.On
-				if on {
-					b.Border(theme.Stroke, t.Foreground)
-				}
+				b := kit.Choice(c, kit.Pressable(c.Key(id), kit.PressableOpts{Bare: true, OnClick: func() { p.toggleClient(id) }}).
+					Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(1.5)).AlignItems(ui.Center).Label(clientNames[id]), on, kit.ChoiceOpts{}) // a control's size
 				b.Children(func() {
 					// connected: the app's own colors; else its mark and name in gray
 					if on && (id == mcpclients.Codex || id == mcpclients.Grok) { // marks with no colors
 						ui.Icon(c, icons.BrandIcon(id+"-mono")).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
-						kit.Text(c, clientNames[id], t.Text.Base)
+						kit.Text(c, clientNames[id], t.Text.Sm)
 					} else if on {
 						ui.Image(c, icons.BrandIcon(id)).Size(theme.Icon, theme.Icon)
-						kit.Text(c, clientNames[id], t.Text.Base)
+						kit.Text(c, clientNames[id], t.Text.Sm)
 					} else {
 						ui.Icon(c, icons.BrandIcon(id+"-mono")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
-						kit.Text(c, clientNames[id], t.Text.Base).TextColor(t.Muted)
+						kit.Text(c, clientNames[id], t.Text.Sm).TextColor(t.Muted)
 					}
 					switch st {
 					case mcpclients.On:

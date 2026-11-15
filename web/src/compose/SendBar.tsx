@@ -97,11 +97,7 @@ export function SendBar({
           </form>
         </PopoverContent>
       </Popover>
-      <Button
-        className="border-0 px-4 font-semibold text-md"
-        disabled={sending || frozen}
-        onClick={onSend}
-      >
+      <Button disabled={sending || frozen} onClick={onSend}>
         {t("compose.send")}
       </Button>
     </div>

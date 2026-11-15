@@ -62,7 +62,7 @@ func (a *App) rowChips(c *ui.Context, ls []core.AppliedLabel) {
 			a.labelChip(c, l, nil, nil)
 		}
 		if n := len(ls) - maxChips; n > 0 {
-			kit.Text(c, i18n.Tf("label.more", n), t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, i18n.Tf("label.more", n), t.Text.Xs).TextColor(t.Muted)
 		}
 	})
 }
@@ -149,7 +149,7 @@ func (p *mailPage) labelNav(c *ui.Context) ui.Element {
 				ui.Icon(c, icons.Get("label-"+l.Icon)).Size(theme.Icon, theme.Icon).TextColor(t.Label(l.Color).Text)
 				ui.Text(c, l.Name).SingleLine().Grow(1).Shrink(1)
 				if l.Unread > 0 {
-					kit.Text(c, strconv.Itoa(l.Unread), t.Text.Sm).TextColor(t.Muted)
+					kit.Text(c, strconv.Itoa(l.Unread), t.Text.Xs).TextColor(t.Muted)
 				}
 			})
 			item.ContextMenu(func(m *ui.Menu) {

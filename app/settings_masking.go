@@ -293,7 +293,7 @@ func (p *settingsPage) maskPreview(c *ui.Context) {
 		settingBlock(c, func() {
 			kit.TextArea(c, &d.preview, kit.InputOpts{}).Height(th.Space(20)).Label(i18n.T("settings.masking.preview"))
 			if d.preview != "" {
-				kit.Text(c, d.shown, t.Text.Sm).Font(theme.Mono).Selectable()
+				kit.Text(c, d.shown, t.Text.Xs).Font(theme.Mono).Selectable()
 			}
 		})
 	})

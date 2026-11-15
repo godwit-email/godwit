@@ -70,7 +70,7 @@ export function Citations({
                 <span className="min-w-0 flex-1 truncate">{c.from}</span>
                 <span className="shrink-0">{citeDate(c.date)}</span>
               </span>
-              <span className="truncate text-sm">{c.subject || t("mail.no_subject")}</span>
+              <span className="truncate text-xs">{c.subject || t("mail.no_subject")}</span>
               {suspect && (
                 <span className="text-(--warning-text) text-xs">{t("ask.citation.suspect")}</span>
               )}

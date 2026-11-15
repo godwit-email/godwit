@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -62,7 +63,7 @@ func magpieEntry(key, model string, models ...string) map[string]any {
 		list = append(list, map[string]any{"id": models[0], "name": "listed twice"})
 	}
 	return map[string]any{"magpie": map[string]any{"by": "magpie", "baseURL": "http://127.0.0.1:3425/v1", "apiKey": key,
-		"kind": "openai", "models": list, "model": model}}
+		"kind": "openai", "generateModels": list, "defaultModel": model}}
 }
 
 func managedService(t *testing.T, s *Service, name string) (ModelService, bool) {
@@ -177,8 +178,8 @@ func TestExternalModelServiceRefused(t *testing.T) {
 	remote := magpieEntry("k", "", "m")
 	remote["magpie"].(map[string]any)["baseURL"] = "https://gateway.example.com/v1"
 	files := map[string]any{
-		"oldstyle": map[string]any{"baseURL": "http://127.0.0.1:3425/v1", "apiKey": "k", "kind": "openai", "models": []string{"m"}}, // not objects: unreadable
-		"magpie":   remote["magpie"],                                                                                                // not on this computer
+		"oldstyle": map[string]any{"baseURL": "http://127.0.0.1:3425/v1", "apiKey": "k", "kind": "openai", "generateModels": []string{"m"}}, // not objects: unreadable
+		"magpie":   remote["magpie"],                                                                                                        // not on this computer
 		"taken":    magpieEntry("k", "", "m")["magpie"],
 		"Bad Name": magpieEntry("k", "", "m")["magpie"],
 		"nomodel":  magpieEntry("k", "zzz", "m")["magpie"],
@@ -565,4 +566,55 @@ func TestExternalMCPNameWithSpacesSkipped(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 	assert.Equal(t, "tool", list[0].Name)
+}
+
+func TestExternalJudgeModels(t *testing.T) {
+	s, dir := externalSvc(t)
+	ctx := t.Context()
+	write := func(decision ...map[string]any) {
+		e := magpieEntry("k", "", "m")
+		e["magpie"].(map[string]any)["judgeModels"] = decision
+		writeExternal(t, dir, externalModels, e)
+		s.syncExternal(ctx)
+	}
+	judge := func() (string, string) {
+		m, ok := managedService(t, s, "magpie")
+		require.True(t, ok)
+		return m.JudgeFormat, m.JudgeModel
+	}
+
+	write(map[string]any{"id": "typesafe/jev-latest", "name": "jev-latest", "provider": "typesafe", "endpoints": []string{"/v1/systemone", "/v1/decisions"}})
+	f, m := judge()
+	assert.Equal(t, string(ai.FormatSystemOne), f, "System One where the model answers it")
+	assert.Equal(t, "typesafe/jev-latest", m)
+
+	write(map[string]any{"id": "openai/gpt-6-luna", "endpoints": []string{"/v1/decisions"}})
+	f, m = judge()
+	assert.Equal(t, string(ai.FormatDecisions), f)
+	assert.Equal(t, "openai/gpt-6-luna", m)
+
+	write() // none: no judging
+	f, m = judge()
+	assert.Empty(t, f)
+	assert.Empty(t, m)
+}
+
+func TestExternalMCPNamedOnceTheGatewayIs(t *testing.T) {
+	s, dir := externalSvc(t)
+	ctx := t.Context()
+	// mcp.json is read before models.json names the gateway, as when both are written at once
+	writeExternal(t, dir, externalMCP, map[string]any{"mcpServers": map[string]any{"tool": map[string]any{"command": "magpie-tool"}}})
+	s.syncExternal(ctx)
+	list, err := s.ListMCPServers(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.NoError(t, s.GrantMCPServer(ctx, list[0].ID))
+
+	writeExternal(t, dir, externalModels, magpieEntry("k", "", "m"))
+	s.syncExternal(ctx)
+	list, err = s.ListMCPServers(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, "magpie", list[0].ManagedBy)
+	assert.True(t, list[0].Granted, "a new label keeps the grant")
 }

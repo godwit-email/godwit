@@ -83,7 +83,7 @@ func cacheFiles(dataDir string) int {
 }
 
 var allTools = []string{"create_draft", "get_draft", "get_message", "get_thread", "list_accounts", "list_drafts",
-	"list_folders", "list_threads", "search", "search_contacts", "send_draft", "show_draft", "show_mail", "update_draft"}
+	"list_folders", "list_threads", "list_view_threads", "list_views", "search", "search_contacts", "send_draft", "show_draft", "show_mail", "update_draft"}
 
 func TestMCPListTools(t *testing.T) {
 	e := coretest.New(t, coretest.WithoutAutoSync())
@@ -102,7 +102,7 @@ func TestMCPListTools(t *testing.T) {
 		assert.Contains(t, string(b), `"additionalProperties":false`, tool.Name)
 	}
 	assert.Equal(t, map[string]bool{"list_accounts": true, "list_folders": true, "list_threads": true, "get_thread": true,
-		"get_message": true, "search": true, "search_contacts": true, "list_drafts": true, "get_draft": true, "show_draft": true, "show_mail": true,
+		"get_message": true, "list_views": true, "list_view_threads": true, "search": true, "search_contacts": true, "list_drafts": true, "get_draft": true, "show_draft": true, "show_mail": true,
 		"create_draft": false, "update_draft": false, "send_draft": false}, readOnly)
 	assert.Contains(t, cs.InitializeResult().Instructions, "untrusted_email")
 	assert.NotContains(t, cs.InitializeResult().Instructions, "cannot send")
@@ -240,6 +240,60 @@ func TestMCPNoStructuredContent(t *testing.T) {
 		text, isErr := call(t, cs, c.tool, c.args)
 		assert.True(t, isErr, "%s %v: %s", c.tool, c.args, text)
 	}
+}
+
+// list_views and list_view_threads read the views over the mcp role: the
+// seeded To handle by name or ID, each conversation with its group and why it
+// is there, paged by group, and nothing marked read.
+func TestMCPListViewThreads(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc := e.AddAccount(t, "alice@example.com")
+	for _, subject := range []string{"Plans", "Budget"} {
+		e.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", "alice@example.com", subject, "Can you check?"))
+	}
+	views, err := e.Svc.SavedViews(t.Context())
+	require.NoError(t, err)
+	require.Len(t, views, 1)
+	v := views[0]
+	cs, _ := bridge(t, e)
+
+	list := ok(t, cs, "list_views", nil)
+	assert.Contains(t, list, fmt.Sprintf("view %d · %q · 2 with unread mail\n", v.ID, v.Name))
+	assert.Contains(t, list, fmt.Sprintf("  group reply · %q\n", v.Doc.Groups[0].Name))
+
+	byName := ok(t, cs, "list_view_threads", map[string]any{"view": strings.ToUpper(v.Name)})
+	assert.Equal(t, byName, ok(t, cs, "list_view_threads", map[string]any{"view": fmt.Sprint(v.ID)}))
+	assert.Contains(t, byName, fmt.Sprintf("group reply · %q · 2 threads\n", v.Doc.Groups[0].Name))
+	assert.Regexp(t, `thread \d+ · 1 messages, 1 unread · last \S+ · unreplied\n`, byName)
+	assert.Contains(t, byName, `<untrusted_email id="thread-`)
+	assert.Contains(t, byName, "Budget")
+	assert.Contains(t, byName, "Plans")
+
+	first := ok(t, cs, "list_view_threads", map[string]any{"view": v.Name, "limit": 1})
+	cursor := regexp.MustCompile(`next_cursor: (\S+) \(pass with group reply\)`).FindStringSubmatch(first)
+	require.Len(t, cursor, 2, first)
+	next := ok(t, cs, "list_view_threads", map[string]any{"view": v.Name, "group": "reply", "cursor": cursor[1], "limit": 1})
+	assert.NotContains(t, next, "next_cursor")
+	assert.Equal(t, strings.Contains(first, "Plans"), strings.Contains(next, "Budget"), "the second page has the other one")
+
+	text, isErr := call(t, cs, "list_view_threads", map[string]any{"view": "no such"})
+	assert.True(t, isErr)
+	assert.Equal(t, "no such view; list_views lists them", text)
+	text, isErr = call(t, cs, "list_view_threads", map[string]any{"view": v.Name, "cursor": cursor[1]})
+	assert.True(t, isErr)
+	assert.Equal(t, "give group with cursor", text)
+
+	views, err = e.Svc.SavedViews(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, 2, views[0].Unread, "reading a view marks nothing read")
+
+	// A view named like a later view's ID does not shadow it.
+	shadow := fmt.Sprint(v.ID + 2)
+	for _, name := range []string{shadow, "Later"} {
+		_, err := e.Svc.SaveView(t.Context(), core.SavedView{Name: name, Icon: v.Icon, Doc: core.SavedViewDoc{Match: core.MatchAll}})
+		require.NoError(t, err)
+	}
+	assert.True(t, strings.HasPrefix(ok(t, cs, "list_view_threads", map[string]any{"view": shadow}), fmt.Sprintf("view %s · \"Later\"\n", shadow)))
 }
 
 // Only the show tools carry a view (ADR 0022): each ui:// resource is the

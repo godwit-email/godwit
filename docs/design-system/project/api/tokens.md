@@ -73,6 +73,7 @@ color: var(--muted);
 
 | token | light | dark | usage |
 | --- | --- | --- | --- |
+| `subdued` | #404040 | #d4d4d4 | Text a step under foreground, for what has been seen: a read mail's lines in a list. |
 | `muted` | #737373 | #a1a1a1 | Secondary text, icons at rest, timestamps, counts. |
 | `window` | #ededed | #1e1e1e | Top bar and icon rail behind the panel (transparent over the window material on macOS and Windows 11). |
 | `sidebar` | #fafafa | #171717 | Page sidebars (mail folders, settings, Wit conversations); light fills of cards inside panels and kbd. |
@@ -80,7 +81,6 @@ color: var(--muted);
 | `primary` | #171717 | #e5e5e5 | Default buttons, a switch that is on, checked boxes. |
 | `primary-text` | #ffffff | #171717 | Text and icons on primary. |
 | `hover` | #f5f5f5 | #262626 | A hovered row, ghost button or secondary button; badges; tab list track. |
-| `sidebar-selected` | #f5f5f5 | #262626 | The selected row of a sidebar, at regular weight; its icon is muted until hovered. |
 | `rail-selected` | #0a0a0a0a | #ffffff1a | The selected icon of the rail: a tint of the foreground over the window material (4%; dark: white 10%). |
 | `hover-tint` | #0a0a0a0a | #ffffff14 | A hovered rail icon or ghost button: a tint of the foreground over the window material (4%; dark: white 8%); over white it equals hover. |
 | `unread` | #2b7fff | #2b7fff | The dot beside unread mail in the list. |
@@ -108,7 +108,7 @@ Use the named styles; no literal px.
 ### Use
 
 ```css
-font: var(--text-xs);            /* with tokens.css */
+font: var(--text-sm);            /* with tokens.css */
 font-family: var(--font-sans);   /* the family alone */
 ```
 
@@ -116,15 +116,11 @@ font-family: var(--font-sans);   /* the family alone */
 
 | style | CSS | size / line | weight | family | usage |
 | --- | --- | --- | --- | --- | --- |
-| `xs` | `.xs`, `--text-xs` | 11px / 1.4 | 400 | `sans` |  |
-| `sm` | `.sm`, `--text-sm` | 12px / 1.45 | 400 | `sans` |  |
-| `base` | `.base`, `--text-base` | 13px / 1.5 | 400 | `sans` |  |
-| `body` | `.body`, `--text-body` | 14px / 1.6 | 400 | `sans` |  |
-| `lg` | `.lg`, `--text-lg` | 15px / 1.5 | 500 | `sans` |  |
-| `title` | `.title`, `--text-title` | 16px / 1.4 | 600 | `sans` |  |
-| `xl` | `.xl`, `--text-xl` | 18px / 1.35 | 600 | `sans` |  |
-| `2xl` | `.\32 xl`, `--text-\32 xl` | 20px / 1.3 | 600 | `sans` |  |
-| `display` | `.display`, `--text-display` | 29px / 1.25 | 600 | `sans` |  |
+| `xs` | `.xs`, `--text-xs` | 12px / 1.45 | 400 | `sans` |  |
+| `sm` | `.sm`, `--text-sm` | 14px / 1.45 | 400 | `sans` |  |
+| `base` | `.base`, `--text-base` | 16px / 1.45 | 600 | `sans` |  |
+| `xl` | `.xl`, `--text-xl` | 20px / 1.45 | 600 | `sans` |  |
+| `3xl` | `.\33 xl`, `--text-\33 xl` | 30px / 1.45 | 600 | `sans` |  |
 | `mono` | `.mono`, `--text-mono` | 12px / 1.5 | 500 | `mono` |  |
 
 ### Families

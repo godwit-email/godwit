@@ -48,13 +48,39 @@ const (
 var externalKinds = []string{ai.KindOpenAI, ai.KindResponses, ai.KindAnthropic}
 
 type externalService struct {
-	By      string          `json:"by"`
-	BaseURL string          `json:"baseURL"`
-	APIKey  string          `json:"apiKey"`
-	Kind    string          `json:"kind"`
-	Models  []externalModel `json:"models"`
-	Model   string          `json:"model"`
-	bad     error           // the entry did not parse: skipped, and what it had is kept
+	By      string `json:"by"`
+	BaseURL string `json:"baseURL"`
+	APIKey  string `json:"apiKey"`
+	Kind    string `json:"kind"`
+	// GenerateModels are the gateway's generate models and DefaultModel the
+	// one it chooses as the default model (read, never saved: gatewayDefault).
+	GenerateModels []externalModel `json:"generateModels"`
+	DefaultModel   string          `json:"defaultModel"`
+	// JudgeModels are the gateway's judge models (magpie's decisionModels,
+	// from 0.1.4170); the service judges with the first one it can.
+	JudgeModels []externalJudgeModel `json:"judgeModels"`
+	bad         error                // the entry did not parse: skipped, and what it had is kept
+}
+
+// externalJudgeModel is a judge model as the gateway describes it:
+// Endpoints are the gateway paths it answers, "/v1/systemone" or "/v1/decisions".
+type externalJudgeModel struct {
+	ID        string   `json:"id"`
+	Endpoints []string `json:"endpoints"`
+}
+
+// judge is the judge format and model of the gateway's first judge model it
+// can use: System One where it answers it (it lists its models), else
+// Decisions; none when no model answers either.
+func (e externalService) judge() (format, model string) {
+	for _, f := range []ai.JudgeFormat{ai.FormatSystemOne, ai.FormatDecisions} {
+		for _, d := range e.JudgeModels {
+			if d.ID != "" && len(d.ID) <= 200 && !strings.ContainsFunc(d.ID, unicode.IsControl) && slices.Contains(d.Endpoints, "/v1"+f.Path()) {
+				return string(f), d.ID
+			}
+		}
+	}
+	return "", ""
 }
 
 // parseExternalServices reads models.json entry by entry, so one entry it
@@ -75,7 +101,7 @@ func parseExternalServices(data []byte) (map[string]externalService, error) {
 	return out, nil
 }
 
-// externalModel is a model as the gateway describes it (magpie's connect
+// externalModel is a generate model as the gateway describes it (magpie's connect
 // input); Godwit reads what it uses and leaves the rest (efforts, pricing…).
 type externalModel struct {
 	ID      string `json:"id"`
@@ -83,9 +109,9 @@ type externalModel struct {
 	Context int    `json:"context"` // tokens
 }
 
-func (e externalService) ids() []string {
-	ids := make([]string, len(e.Models))
-	for i, m := range e.Models {
+func (e externalService) generateIDs() []string {
+	ids := make([]string, len(e.GenerateModels))
+	for i, m := range e.GenerateModels {
 		ids[i] = m.ID
 	}
 	return ids
@@ -159,6 +185,7 @@ func (s *Service) syncExternal(ctx context.Context) {
 					if err := s.writeList(ctx, externalByKey, []string{b}); err != nil {
 						slog.Warn("external gateway name not saved", "err", err)
 					}
+					delete(s.extSeen, externalMCP) // its servers may have come in before the name: named again below
 				}
 				break
 			}
@@ -312,27 +339,27 @@ func checkExternalService(name string, e *externalService) error {
 		return fmt.Errorf("unknown kind %q", e.Kind)
 	case e.APIKey == "":
 		return errors.New("no API key")
-	case len(e.Models) == 0 || len(e.Models) > maxExternalModels:
+	case len(e.GenerateModels) == 0 || len(e.GenerateModels) > maxExternalModels:
 		return fmt.Errorf("between 1 and %d models", maxExternalModels)
-	case slices.ContainsFunc(e.Models, func(m externalModel) bool {
+	case slices.ContainsFunc(e.GenerateModels, func(m externalModel) bool {
 		return m.ID == "" || len(m.ID) > 200 || strings.ContainsFunc(m.ID, unicode.IsControl)
 	}):
 		return errors.New("a model id is empty, too long or has control characters")
 	}
 	seen := map[string]bool{}
-	e.Models = slices.DeleteFunc(e.Models, func(m externalModel) bool { // a model listed twice counts once
+	e.GenerateModels = slices.DeleteFunc(e.GenerateModels, func(m externalModel) bool { // a model listed twice counts once
 		dup := seen[m.ID]
 		seen[m.ID] = true
 		return dup
 	})
-	if e.Model != "" && !seen[e.Model] {
-		return fmt.Errorf("model %q is not among its models", e.Model)
+	if e.DefaultModel != "" && !seen[e.DefaultModel] {
+		return fmt.Errorf("default model %q is not among its generate models", e.DefaultModel)
 	}
-	for i := range e.Models { // only what is said of a model is lost, never the service
-		if m := &e.Models[i]; len(m.Name) > 200 || strings.ContainsFunc(m.Name, unicode.IsControl) {
+	for i := range e.GenerateModels { // only what is said of a model is lost, never the service
+		if m := &e.GenerateModels[i]; len(m.Name) > 200 || strings.ContainsFunc(m.Name, unicode.IsControl) {
 			m.Name = ""
 		}
-		if m := &e.Models[i]; m.Context < 1000 || m.Context > 100_000_000 {
+		if m := &e.GenerateModels[i]; m.Context < 1000 || m.Context > 100_000_000 {
 			m.Context = 0
 		}
 	}
@@ -342,7 +369,7 @@ func checkExternalService(name string, e *externalService) error {
 // ownModels is what e says of its models, nil when nothing.
 func (e externalService) ownModels() map[string]OwnModel {
 	var out map[string]OwnModel
-	for _, em := range e.Models {
+	for _, em := range e.GenerateModels {
 		m := OwnModel{Name: em.Name, Context: em.Context}
 		if m.Name == em.ID {
 			m.Name = "" // no name of its own
@@ -449,9 +476,10 @@ func (s *Service) syncExternalModels(ctx context.Context, services map[string]ex
 				continue
 			}
 		}
+		judgeFormat, judgeModel := e.judge()
 		in := ModelServiceInput{Name: name, Kind: e.Kind, BaseURL: e.BaseURL, APIKey: e.APIKey, KeyAction: KeyReplace,
-			Models: e.ids(), Provider: ProviderOther, managedBy: e.By, ownModels: e.ownModels(),
-			managedHash: entryHash([]any{e.By, e.BaseURL, e.Kind, e.Models, sha256.Sum256([]byte(e.APIKey))})}
+			Models: e.generateIDs(), Provider: ProviderOther, JudgeFormat: judgeFormat, JudgeModel: judgeModel, managedBy: e.By, ownModels: e.ownModels(),
+			managedHash: entryHash([]any{e.By, e.BaseURL, e.Kind, e.GenerateModels, judgeFormat, judgeModel, sha256.Sum256([]byte(e.APIKey))})}
 		switch {
 		case !exists:
 			m, err := s.AddModelService(ctx, in)
@@ -474,7 +502,7 @@ func (s *Service) syncExternalModels(ctx context.Context, services map[string]ex
 			}
 			changed = true
 		}
-		if err := s.setFileModel(ctx, row, e.Model); err != nil {
+		if err := s.setFileModel(ctx, row, e.DefaultModel); err != nil {
 			return err
 		}
 	}
@@ -588,6 +616,11 @@ func (s *Service) syncExternalMCP(ctx context.Context, servers map[string]extern
 			if _, err := s.UpdateMCPServer(ctx, old.ID, in); err != nil { // its grant goes: what it runs changed
 				failed = errors.Join(failed, fmt.Errorf("update %s: %w", name, err))
 			}
+		case old.ManagedBy != by: // the same server, its gateway named since: a label, the grant kept
+			if _, err := s.db.DurableExecute(ctx, "UPDATE mcp_servers SET managed_by = ? WHERE id = ?", by, old.ID); err != nil {
+				return err
+			}
+			s.bus.Publish(events.Event{Type: events.MCPChanged})
 		}
 	}
 	return failed

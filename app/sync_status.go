@@ -175,7 +175,7 @@ func (a *App) syncStatus(c *ui.Context) {
 		}
 		text = a.syncedAgo()
 	}
-	chip := kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).FontSize(t.Text.Sm).TextColor(color).
+	chip := kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).FontSize(t.Text.Xs).TextColor(color).
 		Gap(th.Space(1.5)).Expanded(a.syncOpen).Label(text)
 	chip.OnClick(func() { a.syncOpen = !a.syncOpen })
 	chip.Children(func() {
@@ -191,7 +191,7 @@ func (a *App) syncStatus(c *ui.Context) {
 // syncMenu lists each account: its state, why, and what to do about it.
 func (a *App) syncMenu(c *ui.Context, hs []syncHealth) {
 	t, th := theme.Of(c), c.Theme()
-	small := t.Text.Sm
+	small := t.Text.Xs
 	xs := t.Text.Xs
 	indent := float32(theme.MarkSm) + th.Space(2) // under the account name, past its icon
 	act := func(f func()) func() { return func() { a.syncOpen = false; f() } }
@@ -214,7 +214,7 @@ func (a *App) syncMenu(c *ui.Context, hs []syncHealth) {
 // syncAccounts is syncMenu's scrolling list: each account under a separator.
 func (a *App) syncAccounts(c *ui.Context, hs []syncHealth, indent float32, act func(func()) func()) {
 	t, th := theme.Of(c), c.Theme()
-	small, xs := t.Text.Sm, t.Text.Xs
+	small, xs := t.Text.Xs, t.Text.Xs
 	for _, h := range hs {
 		kit.Separator(c, false)
 		ui.Column(c.Key(h.acc.ID)).Gap(th.Space(1)).Children(func() {

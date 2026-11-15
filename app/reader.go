@@ -661,13 +661,13 @@ func (r *reader) items() []mailItem {
 }
 
 // act applies a list action to what is shown; the ones that take it out of
-// the view close it, except Delete in Trash, which first asks.
+// the view move on to the next row (advance), except Delete in Trash, which
+// first asks.
 func (r *reader) act(op string) {
-	r.p.batch(op, r.items())
+	items := r.items()
+	r.p.batch(op, items)
 	if removes(op) && !r.p.purgeAsk {
-		rt := &r.p.a.route
-		rt.ThreadID, rt.MessageID = 0, 0
-		r.sync(false)
+		r.p.advance(items)
 	}
 }
 
@@ -1169,7 +1169,7 @@ func (r *reader) draw(c *ui.Context, next *session) {
 					r.column(c).Gap(th.Space(2)).Children(func() {
 						// Plugins' tags follow the subject, so a glance at it is enough.
 						ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(th.Space(1.5)).Children(func() {
-							tx := kit.Text(c, subject, t.Text.X2l).FontWeight(600).LineHeight(theme.LineSubject).Shrink(1).Selectable() // copied as often as read
+							tx := kit.Text(c, subject, t.Text.Xl).FontWeight(600).Shrink(1).Selectable() // copied as often as read
 							if !r.hasTags() {
 								// shortcut: MyGo measures large semibold text too narrow in a row, so it wraps early; with no tag to follow it, take the row. Drop it once MyGo measures it right.
 								tx.Grow(1)
@@ -1408,7 +1408,7 @@ func (r *reader) historyToggle(c *ui.Context, n, history int) {
 		FillWidth().MaxWidth(r.p.a.readerMaxWidth()).AlignSelf(ui.Center).Gap(th.Space(2.5)).Padding(th.Space(1.5), 0).Justify(ui.Center)
 	b.Children(func() {
 		ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted).Rotate(rot)
-		kit.Text(c, label, t.Text.Sm).FontWeight(500).TextColor(t.Foreground)
+		kit.Text(c, label, t.Text.Xs).FontWeight(500).TextColor(t.Foreground)
 	})
 }
 
@@ -1430,7 +1430,7 @@ func (r *reader) folded(c *ui.Context, m core.MessageSummary) {
 			r.securityBadge(c, m.ID, m.Security)
 			if g := r.gist(m.ID); g != "" { // a step darker than the text it stands for, and marked the AI's
 				ui.Row(c).Grow(1).Shrink(1).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, g).TextColor(t.Foreground.Alpha(0.7)).SingleLine().Shrink(1)
+					ui.Text(c, g).TextColor(t.Subdued).SingleLine().Shrink(1)
 					mark := ui.Box(c).Shrink(0).Label(i18n.T("reader.gist")).Children(func() {
 						ui.Icon(c, icons.Get("sparkles")).Size(theme.IconXs, theme.IconXs).TextColor(t.Idle)
 					})
@@ -1439,7 +1439,7 @@ func (r *reader) folded(c *ui.Context, m core.MessageSummary) {
 			} else {
 				ui.Text(c, m.Snippet).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1)
 			}
-			kit.Text(c, listTime(r.p.a.clock.Now(), m.Date), t.Text.Sm).TextColor(t.Muted).Shrink(0)
+			kit.Text(c, listTime(r.p.a.clock.Now(), m.Date), t.Text.Xs).TextColor(t.Muted).Shrink(0)
 			// in a box as wide as an open message's fold button: the chevrons line up
 			ui.Box(c).Size(th.Space(7), th.Space(7)).Center().Shrink(0).Children(func() {
 				ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
@@ -1600,7 +1600,7 @@ func (r *reader) recipientsLine(c *ui.Context, m core.MessageSummary, b *msgBody
 		fg = t.Foreground
 	}
 	e.Children(func() {
-		kit.Text(c, text, t.Text.Sm).TextColor(fg).Shrink(1)
+		kit.Text(c, text, t.Text.Xs).TextColor(fg).Shrink(1)
 		chev := ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted).Shrink(0)
 		if open {
 			chev.Rotate(180)
@@ -1641,7 +1641,7 @@ func (r *reader) details(c *ui.Context, anchor ui.Element, m core.MessageSummary
 					return
 				}
 				ui.Row(c.Key(key)).Gap(th.Space(3)).AlignItems(ui.Start).Children(func() {
-					kit.Text(c, label, t.Text.Sm).TextColor(t.Muted).Width(theme.DetailsLabel).Shrink(0).Unselectable()
+					kit.Text(c, label, t.Text.Xs).TextColor(t.Muted).Width(theme.DetailsLabel).Shrink(0).Unselectable()
 					ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
 						for i, v := range values {
 							r.detailsValue(c.Key(i), v, fallbackName, cut)
@@ -1674,8 +1674,8 @@ func (r *reader) detailsValue(c *ui.Context, raw, fallbackName string, cut map[s
 	if addr != "" && addr != name {
 		spans = append(spans, ui.Span{Text: " <" + addr + ">", Color: t.Muted})
 	}
-	e := ui.RichText(c, spans...).FontSize(t.Text.Sm).LineHeight(t.Text.Line(t.Text.Sm)).SingleLine()
-	text := ui.ShapeRichText(spans, ui.Font{Size: t.Text.Sm}, 0)
+	e := ui.RichText(c, spans...).FontSize(t.Text.Xs).SingleLine()
+	text := ui.ShapeRichText(spans, ui.Font{Size: t.Text.Xs}, 0)
 	if w, _ := text.Size(); w > theme.DetailsWidth-theme.DetailsLabel-th.Space(3) {
 		var b strings.Builder
 		for _, sp := range spans {
@@ -1757,7 +1757,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 						who.Children(func() {
 							ui.Text(c, name).FontWeight(500).SingleLine().Transition(nameMotion(m.ID))
 							if addr != "" && addr != name { // Name <address>, the address quieter
-								kit.Text(c, "<"+addr+">", t.Text.Base).TextColor(t.Muted).SingleLine().Shrink(1)
+								kit.Text(c, "<"+addr+">", t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(1)
 							}
 							ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted)
 						})
@@ -1778,7 +1778,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 				})
 				ui.Spacer(c)
 				// on the name's line: its middle, a smaller text's and the chevron's
-				kit.Text(c, senderDate(r.p.a.clock.Now(), m.Date), t.Text.Sm).TextColor(t.Muted).Shrink(0).AlignSelf(ui.Start).Margin(th.Space(2), 0, 0, 0)
+				kit.Text(c, senderDate(r.p.a.clock.Now(), m.Date), t.Text.Xs).TextColor(t.Muted).Shrink(0).AlignSelf(ui.Start).Margin(th.Space(2), 0, 0, 0)
 				if len(r.msgs) > 1 { // only a thread of more than one message folds
 					fold := kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.toggle(m.ID) }}).
 						Size(th.Space(7), th.Space(7)).Radius(t.Radius.Md).Center().Shrink(0).Label(i18n.T("reader.fold")).
@@ -1813,8 +1813,8 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 			if b.imgFailed > 0 && !bodyBlocked {
 				ui.Row(c).Wrap().Gap(th.Space(3)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Lg).
 					Background(t.WarningBg).Border(theme.Hairline, t.WarningBorder).Children(func() {
-					kit.Text(c, i18n.Tf("reader.images_failed", b.imgFailed), t.Text.Base).LineHeight(theme.LineCJK).TextColor(t.WarningText)
-					kit.TextLink(c, i18n.T("common.retry"), t.WarningText, t.Text.Base).OnClick(func() {
+					kit.Text(c, i18n.Tf("reader.images_failed", b.imgFailed), t.Text.Xs).TextColor(t.WarningText)
+					kit.TextLink(c, i18n.T("common.retry"), t.WarningText, t.Text.Xs).OnClick(func() {
 						b.imgFailed = 0
 						r.p.a.plat.AllowImages(m.ID)
 					})
@@ -1834,7 +1834,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 		r.column(c).Gap(th.Space(3.5)).Children(func() {
 			if b.cut {
 				ui.Row(c).Wrap().Gap(th.Space(3)).Children(func() {
-					kit.Text(c, i18n.T("reader.truncated"), t.Text.Sm).TextColor(t.Muted)
+					kit.Text(c, i18n.T("reader.truncated"), t.Text.Xs).TextColor(t.Muted)
 					kit.Button(c, i18n.T("reader.open_in_browser"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).
 						OnClick(func() { r.viewInBrowser(m.ID) })
 				})
@@ -1854,10 +1854,10 @@ func (r *reader) trackersNote(c *ui.Context, b *msgBody) {
 		return
 	}
 	t, th := theme.Of(c), c.Theme()
-	kit.Text(c, "·", t.Text.Sm).TextColor(t.Muted)
+	kit.Text(c, "·", t.Text.Xs).TextColor(t.Muted)
 	note := ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).TextColor(t.Muted).Children(func() {
 		ui.Icon(c, icons.Get("shield")).Size(theme.IconXs, theme.IconXs)
-		kit.Text(c, i18n.Tf("reader.trackers_blocked", b.msg.TrackersBlocked), t.Text.Sm)
+		kit.Text(c, i18n.Tf("reader.trackers_blocked", b.msg.TrackersBlocked), t.Text.Xs)
 	})
 	kit.Tooltip(c, note, i18n.T("reader.trackers_tip"))
 }
@@ -1876,15 +1876,15 @@ func (r *reader) imagesNote(c *ui.Context, m core.MessageSummary, b *msgBody, ad
 	if !bodyBlocked { // only the avatar waits
 		n, tip = 1, i18n.T("reader.avatar_blocked")
 	}
-	kit.Text(c, "·", t.Text.Sm).TextColor(t.Muted)
-	kit.Tooltip(c, kit.Text(c, i18n.Tf("reader.images_not_loaded", n), t.Text.Sm).TextColor(t.Muted), tip)
+	kit.Text(c, "·", t.Text.Xs).TextColor(t.Muted)
+	kit.Tooltip(c, kit.Text(c, i18n.Tf("reader.images_not_loaded", n), t.Text.Xs).TextColor(t.Muted), tip)
 	if bodyBlocked && b.allow {
 		kit.Spinner(c)
 		return
 	}
-	kit.TextLink(c, i18n.T("reader.load"), t.Foreground, t.Text.Sm).OnClick(func() { r.allowImages(m.ID) })
+	kit.TextLink(c, i18n.T("reader.load"), t.Foreground, t.Text.Xs).OnClick(func() { r.allowImages(m.ID) })
 	if addr != "" && !b.read.loading && !b.msg.InJunk && r.p.a.settings.RemoteImages != "ask" { // core never trusts junk, and "ask" ignores trust
-		kit.TextLink(c, i18n.T("reader.trust"), t.Foreground, t.Text.Sm).OnClick(func() { r.trustSender(b.msg.From, addr) })
+		kit.TextLink(c, i18n.T("reader.trust"), t.Foreground, t.Text.Xs).OnClick(func() { r.trustSender(b.msg.From, addr) })
 	}
 }
 
@@ -1939,7 +1939,7 @@ func (r *reader) attachments(c *ui.Context, b *msgBody) {
 				if selCount > 0 {
 					summary = i18n.Tf("reader.attachments.selected", selCount, len(files)) + " · " + byteSize(selSize)
 				}
-				kit.Text(c, summary, t.Text.Sm).TextColor(t.Muted)
+				kit.Text(c, summary, t.Text.Xs).TextColor(t.Muted)
 				ui.Spacer(c)
 				if selCount > 0 {
 					kit.Button(c, i18n.T("reader.attachments.save_selected"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Icon: "download"}).
@@ -1955,12 +1955,8 @@ func (r *reader) attachments(c *ui.Context, b *msgBody) {
 				c := c.Key(att.ID)
 				name := core.FileName(att.Filename, "attachment")
 				checked := multi && b.attSel[att.ID]
-				border, bg := t.Border, ui.Transparent
-				if checked {
-					border, bg = t.Primary, t.Hover.Mix(t.Background, 0.5)
-				}
-				ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1.5)).Padding(th.Space(2), th.Space(2.5)).
-					Border(theme.Hairline, border).Background(bg).Radius(t.Radius.Lg).AlignItems(ui.Center).Children(func() {
+				kit.Choice(c, ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1.5)).Padding(th.Space(2), th.Space(2.5)).
+					Radius(t.Radius.Lg).AlignItems(ui.Center), checked, kit.ChoiceOpts{}).Children(func() {
 					if multi {
 						if kit.Checkbox(c.Key("sel"), &checked, "").Shrink(0).Label(i18n.Tf("reader.attachments.select_item", name)).Changed() {
 							if checked {
@@ -1977,13 +1973,13 @@ func (r *reader) attachments(c *ui.Context, b *msgBody) {
 						if img := r.p.a.typeIcon(iconExt(att.Filename)); img != nil {
 							ui.Image(c, img).Size(th.Space(8.5), th.Space(8.5)).Fit(ui.Contain).Shrink(0)
 						} else {
-							ui.Box(c).Size(th.Space(7), th.Space(8.5)).Radius(t.Radius.Sm).Background(t.Hover).Center().Shrink(0).Children(func() {
+							kit.Tile(c, th.Space(7), th.Space(8.5), kit.ToneTint).Children(func() {
 								kit.Text(c, fileKind(att), t.Text.Xs).TextColor(t.Muted)
 							})
 						}
 						ui.Column(c).Shrink(1).Children(func() {
 							ui.Text(c, name).SingleLine() // the name it opens and saves under
-							kit.Text(c, byteSize(att.Size), t.Text.Sm).TextColor(t.Muted)
+							kit.Text(c, byteSize(att.Size), t.Text.Xs).TextColor(t.Muted)
 						})
 					})
 					kit.IconButton(c, "download", i18n.T("reader.save_as"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
@@ -2330,7 +2326,7 @@ func unsubscribeDialog(c *ui.Context, open *bool, u core.Unsubscribe, send func(
 	kit.Dialog(c, open, i18n.T("reader.unsubscribe.title"), opts, func() {
 		ui.Text(c, u.Host).FontWeight(600)
 		if u.List != "" {
-			kit.Text(c, i18n.Tf("reader.unsubscribe.list", u.List), t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, i18n.Tf("reader.unsubscribe.list", u.List), t.Text.Xs).TextColor(t.Muted)
 		}
 	}, func() {
 		if kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).Clicked() {
@@ -2510,9 +2506,9 @@ func (r *reader) securityBadge(c *ui.Context, msgID int64, sec gomail.SecurityRe
 	kit.HoverCard(c, mark, theme.SecurityCardWidth, func() {
 		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, icons.Fill(iconName)).Size(theme.Icon, theme.Icon).TextColor(color)
-			kit.Text(c, label, t.Text.Base).FontWeight(600).TextColor(color)
+			kit.Text(c, label, t.Text.Sm).FontWeight(600).TextColor(color)
 		})
-		kit.Text(c, r.secExplanation(sec), t.Text.Sm).LineHeight(theme.LineCJK).TextColor(t.Foreground)
+		kit.Text(c, r.secExplanation(sec), t.Text.Xs).TextColor(t.Foreground)
 		kit.Separator(c, false)
 		kit.Text(c, i18n.T("reader.security.click_to_edit"), t.Text.Xs).TextColor(t.Muted)
 	})

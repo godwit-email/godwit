@@ -114,6 +114,41 @@ func TestViewArchiveAndUndo(t *testing.T) {
 	}
 }
 
+// TestViewArchiveAdvances: archiving the open conversation in a view moves
+// the reader and the list's choice to the next one, and the choice outlasts
+// the archive's completion.
+func TestViewArchiveAdvances(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	base := h.clock.Now()
+	h.put(accs[0], "INBOX", coretest.Msg("anna@acme.example", "alice@example.com", "first", "x", at(base, 2)))
+	h.put(accs[0], "INBOX", coretest.Msg("ben@acme.example", "alice@example.com", "second", "x", at(base, 1)))
+	h.syncNow(accs[0])
+	if _, err := h.env.Svc.SaveView(context.Background(), core.SavedView{Name: "Acme", Icon: "team", Doc: core.SavedViewDoc{Match: core.MatchAll,
+		Conditions: []core.RuleCondition{{Field: core.FieldFrom, Op: core.OpContains, Value: "acme"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	h.savedViewNamed("Acme")
+	h.click("Acme")
+	h.waitMail("both", func() bool { return len(h.items()) == 2 })
+	var second int64
+	for _, it := range h.items() {
+		if it.Subject == "second" {
+			second = it.ID
+		}
+	}
+	h.click("first")
+	h.click("first") // the list has the focus again
+	h.tt.Key(0, ui.KeyE)
+	if r := h.app.route; r.ThreadID != second {
+		t.Fatalf("the reader shows %+v, want thread %d", r, second)
+	}
+	h.waitMail("first archived", func() bool { return h.folderOf(accs[0], "archive").Total == 1 })
+	h.tt.Frame()
+	if sel := h.app.mail.ls().sel; sel.Len() != 1 || !sel.Has((mailItem{ID: second, Thread: true}).key()) {
+		t.Fatalf("the list's choice holds %d, want thread %d alone", sel.Len(), second)
+	}
+}
+
 // TestViewToHandleFirstRun: 待处理 is there from the first run, and a reply takes
 // a mail out of it as soon as it is queued.
 func TestViewToHandleFirstRun(t *testing.T) {

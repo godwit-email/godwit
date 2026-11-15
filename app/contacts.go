@@ -283,7 +283,7 @@ func (p *contactsPage) Sidebar(c *ui.Context) {
 				kit.SidebarIcon(c, item, cat.icon, on)
 				ui.Text(c, i18n.T("contacts.cat."+cat.key)).SingleLine().Grow(1).Shrink(1)
 				if n > 0 {
-					kit.Text(c, strconv.Itoa(n), t.Text.Sm).TextColor(t.Muted)
+					kit.Text(c, strconv.Itoa(n), t.Text.Xs).TextColor(t.Muted)
 				}
 			})
 		}
@@ -317,7 +317,7 @@ func (p *contactsPage) listView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	rows := p.shown()
 	ui.Row(c).AlignItems(ui.Center).Padding(th.Space(3), th.Space(3), th.Space(2), th.Space(4)).Gap(th.Space(2)).Children(func() {
-		kit.Text(c, i18n.T("contacts.cat."+contactCats[p.cat].key)+" · "+strconv.Itoa(len(rows)), t.Text.Base).FontWeight(500).TextColor(t.Muted)
+		kit.Text(c, i18n.T("contacts.cat."+contactCats[p.cat].key)+" · "+strconv.Itoa(len(rows)), t.Text.Xs).FontWeight(500).TextColor(t.Muted)
 		ui.Spacer(c)
 		refreshLabel := i18n.T("contacts.refresh")
 		if p.syncing {
@@ -330,7 +330,7 @@ func (p *contactsPage) listView(c *ui.Context) {
 				OnClick(p.syncAddressBooks)
 		}
 	})
-	box := kit.InputGroup(c, kit.InputOpts{}).Gap(th.Space(2)).Margin(0, th.Space(3), th.Space(2), th.Space(3)).Padding(0, th.Space(1), 0, th.Space(2.5)).Radius(t.Radius.Lg)
+	box := kit.InputGroup(c, kit.InputOpts{}).Gap(th.Space(2)).Margin(0, th.Space(3), th.Space(2), th.Space(3)).Padding(0, th.Space(1), 0, th.Space(2.5))
 	box.Children(func() {
 		ui.Icon(c, icons.Get("search")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
 		kit.Input(c, &p.query, kit.InputOpts{Placeholder: i18n.T("contacts.filter"), Bare: true}).FocusRing(false).Grow(1).Label(i18n.T("contacts.filter"))
@@ -341,11 +341,11 @@ func (p *contactsPage) listView(c *ui.Context) {
 	l := kit.List(c, p.list, len(rows), func(i int) { p.row(c, rows[i]) }).Grow(1).Padding(0, th.Space(2)).Gap(theme.Stroke)
 	l.Children(func() {
 		if len(rows) == 0 && !p.read.loading {
-			msg := i18n.T("contacts.empty")
+			icon, msg := "contacts", i18n.T("contacts.empty")
 			if strings.TrimSpace(p.query) != "" {
-				msg = i18n.T("contacts.no_match")
+				icon, msg = "search", i18n.T("contacts.no_match")
 			}
-			ui.Text(c, msg).TextColor(t.Muted).Padding(th.Space(3))
+			listEmpty(c, kit.EmptyOpts{Icon: icon, Title: msg})
 		}
 	})
 	if l.Changed() && p.cur >= 0 && p.cur < len(rows) {
@@ -358,8 +358,8 @@ func (p *contactsPage) listView(c *ui.Context) {
 // dot.
 func (p *contactsPage) row(c *ui.Context, ct core.Contact) ui.Element {
 	t := theme.Of(c)
-	th, small := c.Theme(), t.Text.Sm
-	weight := 400
+	th, small := c.Theme(), t.Text.Xs
+	weight := 500 // the lead line, as a mail list row's: 600 with unread mail
 	if ct.Unread > 0 {
 		weight = 600
 	}
@@ -399,7 +399,10 @@ func (p *contactsPage) detailView(c *ui.Context) {
 	ct, ok := p.current()
 	if !ok {
 		if !p.read.loading {
-			ui.Column(c).Grow(1).Center().Children(func() { ui.Text(c, i18n.T("contacts.empty")).TextColor(t.Muted) })
+			// nothing chosen: the bird, as the reader
+			ui.Column(c).Grow(1).Center().Children(func() {
+				ui.Icon(c, icons.Bird).Size(theme.Watermark, theme.Watermark).TextColor(t.Border)
+			})
 		}
 		return
 	}
@@ -432,9 +435,9 @@ func (p *contactsPage) detailView(c *ui.Context) {
 			ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(4)).Children(func() {
 				p.bigAvatar(c, ct, name)
 				ui.Column(c).MaxWidth(theme.ReaderMaxWidth).AlignItems(ui.Center).Gap(th.Space(0.5)).Children(func() {
-					kit.Text(c, name, t.Text.X2l).FontWeight(600).TextAlign(ui.Center)
+					kit.Text(c, name, t.Text.Xl).FontWeight(600).TextAlign(ui.Center)
 					if ct.Subtitle != "" {
-						kit.Text(c, ct.Subtitle, t.Text.Base).TextColor(t.Muted).TextAlign(ui.Center)
+						kit.Text(c, ct.Subtitle, t.Text.Xs).TextColor(t.Muted).TextAlign(ui.Center)
 					}
 					p.addressLine(c, addrs)
 					if ct.ListMessage != 0 || blocked {
@@ -493,14 +496,14 @@ func (p *contactsPage) detailView(c *ui.Context) {
 							kit.Separator(c, true)
 						}
 						ui.Column(c).Grow(1).Basis(0).MinWidth(0).AlignItems(ui.Center).Gap(th.Space(0.5)).Padding(0, th.Space(3)).Children(func() {
-							kit.Text(c, st[0], t.Text.Sm).TextColor(t.Muted).SingleLine()
+							kit.Text(c, st[0], t.Text.Xs).TextColor(t.Muted).SingleLine()
 							kit.Text(c, st[1], t.Text.Xl).FontWeight(600).SingleLine()
 						})
 					}
 				})
 				kit.Separator(c, false)
 			})
-			kit.Text(c, i18n.Tf("contacts.mail", ct.Messages), t.Text.Base).FontWeight(500).TextColor(t.Muted).Padding(0, th.Space(3))
+			kit.Text(c, i18n.Tf("contacts.mail", ct.Messages), t.Text.Xs).FontWeight(500).TextColor(t.Muted).Padding(0, th.Space(3))
 		})
 	}).Grow(1)
 	if _, last := p.mailList.Visible(); ready && last >= len(mail)-5 {
@@ -519,7 +522,7 @@ func (p *contactsPage) addressLine(c *ui.Context, addrs []core.ContactAddress) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
 		first := addrs[0].Address
-		kit.Button(c, first, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).FontWeight(400).TextColor(t.Muted).
+		kit.Button(c, first, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).TextColor(t.Muted).
 			Label(i18n.Tf("contacts.address_menu", first)).Menu(func(m *ui.Menu) { p.addressMenu(c, m, first, slices.Contains(a.blocked, first)) })
 		if len(addrs) < 2 {
 			return
@@ -591,19 +594,19 @@ func (p *contactsPage) mailRow(c *ui.Context, m core.MessageSummary) {
 		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(0.5)).Children(func() {
 			ui.Text(c, cmp.Or(m.Subject, i18n.T("mail.no_subject"))).FontWeight(weight).SingleLine()
 			if m.Snippet != "" {
-				kit.Text(c, m.Snippet, t.Text.Base).TextColor(t.Muted).SingleLine()
+				kit.Text(c, m.Snippet, t.Text.Xs).TextColor(t.Muted).SingleLine()
 			}
 		})
 		switch {
 		case slices.Contains(m.Flags, `\Flagged`):
-			kit.Text(c, i18n.T("mail.unified.starred"), t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, i18n.T("mail.unified.starred"), t.Text.Xs).TextColor(t.Muted)
 		case slices.Contains(m.Flags, `\Answered`):
-			kit.Text(c, i18n.T("contacts.replied"), t.Text.Sm).TextColor(t.Muted)
+			kit.Text(c, i18n.T("contacts.replied"), t.Text.Xs).TextColor(t.Muted)
 		}
 		if f, ok := findFolder(a.mail.folders, m.FolderID); ok {
 			kit.Badge(c, folderName(f))
 		}
-		kit.Text(c, listTime(a.clock.Now(), m.Date), t.Text.Sm).TextColor(t.Muted).Shrink(0)
+		kit.Text(c, listTime(a.clock.Now(), m.Date), t.Text.Xs).TextColor(t.Muted).Shrink(0)
 	})
 }
 

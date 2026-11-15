@@ -119,7 +119,7 @@ function Failed({ error, retry, locale }: { error: string; retry: () => void; lo
     if (px > 0) api.height(px).catch(ignore);
   }, []);
   return (
-    <main ref={ref} className="flex items-center gap-2 p-3 text-sm text-muted-foreground">
+    <main ref={ref} className="flex items-center gap-2 p-3 text-xs text-muted-foreground">
       <span>{t("error.unknown", error)}</span>
       <Button variant="ghost" size="icon-sm" aria-label={t("common.retry")} onClick={retry}>
         <RiRefreshLine />
@@ -230,7 +230,7 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
         <div
           role="tooltip"
           data-quote-tip=""
-          className="pointer-events-none fixed z-10 inline-flex -translate-y-1/2 items-center rounded-md bg-primary px-2 py-[3px] text-[11px] leading-[15px] font-medium whitespace-nowrap text-primary-foreground shadow-[0_1px_4px_rgb(0_0_0/0.18)]"
+          className="pointer-events-none fixed z-10 inline-flex -translate-y-1/2 items-center rounded-md bg-primary px-2 py-[3px] text-xs leading-[15px] font-medium whitespace-nowrap text-primary-foreground shadow-[0_1px_4px_rgb(0_0_0/0.18)]"
           style={{ left: tip.x, top: tip.y }}
         >
           <span

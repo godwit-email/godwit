@@ -180,11 +180,12 @@ type Settings struct {
 	// BodyFontSize of 14, the old default, became 0 (follow FontSize); 4 once
 	// Chinese language tags name the script (zh-CN → zh-Hans, zh-TW → zh-Hant);
 	// 5 once the LightBackground switch became BackgroundSync; 6 once the
-	// KeepInBackground switch became BackgroundReceive.
+	// KeepInBackground switch became BackgroundReceive; 7 once the default
+	// Density "compact" was renamed "standard".
 	SettingsVersion int
 }
 
-const settingsVersion = 6
+const settingsVersion = 7
 
 // chineseScriptTag is the script tag a region-tagged Chinese setting became
 // in settings version 4.
@@ -268,7 +269,7 @@ const (
 )
 
 func defaultSettings() Settings {
-	return Settings{Theme: "system", Density: "compact", FontSize: 14, SettingsVersion: settingsVersion, ReplyLanguage: "match", RemoteImages: "auto",
+	return Settings{Theme: "system", Density: "standard", FontSize: 14, SettingsVersion: settingsVersion, ReplyLanguage: "match", RemoteImages: "auto",
 		BackgroundReceive: BackgroundReceiveUntilQuit, ShowTrayIcon: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, BackgroundSync: BackgroundSyncInbox,
 		ThreadCollapse: true, ThreadCollapseThreshold: DefaultThreadCollapse, AutoLabel: true, LabelDisplay: LabelDisplayBoth, JudgeThreshold: 0.8,
 		MCPSend: MCPSendConfirm, Masking: true, MaskCategories: defaultMaskCategories(),
@@ -291,7 +292,7 @@ func (st Settings) validate(kept []mask.Rule) error {
 	switch {
 	case !in(st.Theme, "system", "light", "dark"):
 		return fmt.Errorf("invalid theme %q", st.Theme)
-	case !in(st.Density, "compact", "comfortable"):
+	case !in(st.Density, "standard", "comfortable"):
 		return fmt.Errorf("invalid density %q", st.Density)
 	case !in(st.RemoteImages, "", "auto", "trusted", "ask"):
 		return fmt.Errorf("invalid remote images mode %q", st.RemoteImages)
@@ -431,6 +432,9 @@ func (s *Service) storedSettings(ctx context.Context) (Settings, error) {
 	}
 	if stored.SettingsVersion < 6 && stored.KeepInBackground != nil && !*stored.KeepInBackground {
 		st.BackgroundReceive = BackgroundReceiveStopOnClose
+	}
+	if stored.SettingsVersion < 7 && st.Density == "compact" {
+		st.Density = "standard"
 	}
 	st.JudgeThreshold = max(MinJudgeThreshold, min(MaxJudgeThreshold, st.JudgeThreshold)) // older builds allowed 0..1
 	st.ThreadCollapseThreshold = max(MinThreadCollapse, min(MaxThreadCollapse, st.ThreadCollapseThreshold))

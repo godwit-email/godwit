@@ -1474,7 +1474,7 @@ describe("Panel", () => {
     expect(screen.getByText("待确认").parentElement).toBe(
       screen.getByText("update_draft").parentElement,
     );
-    expect(screen.getByText("update_draft")).toHaveClass("font-mono", "text-sm");
+    expect(screen.getByText("update_draft")).toHaveClass("font-mono", "text-xs");
     expect(screen.getByText("修改 2 处")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "全部接受" })).toBeInTheDocument();
     unmount();
@@ -1715,7 +1715,7 @@ describe("Panel", () => {
     expect(screen.getAllByRole("button", { name: "全部拒绝" })).toHaveLength(1);
     for (const n of ["允许", "拒绝"])
       for (const b of screen.getAllByRole("button", { name: n })) {
-        expect(b).toHaveClass("h-8", "text-md"); // default size, not sm
+        expect(b).toHaveClass("h-8", "text-sm"); // default size, not sm
       }
     // one header line: what Wit wants and the tool
     expect(screen.getByText("Wit 想要：创建草稿").parentElement).toBe(

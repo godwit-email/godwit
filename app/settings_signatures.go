@@ -85,7 +85,7 @@ func (p *settingsPage) signaturesView(c *ui.Context) {
 	var add []func()
 	if len(sigs) > 0 {
 		add = append(add, func() {
-			kit.Button(c, i18n.T("settings.signatures.new"), kit.ButtonOpts{Icon: "plus"}).PaddingX(th.Space(3)).OnClick(p.newSignature)
+			kit.Button(c, i18n.T("settings.signatures.new"), kit.ButtonOpts{Icon: "plus"}).OnClick(p.newSignature)
 		})
 	}
 	pageHeading(c, i18n.T("settings.signatures"), i18n.T("settings.signatures.sub"), add...)
@@ -102,16 +102,16 @@ func (p *settingsPage) signaturesView(c *ui.Context) {
 				Label(sig.Name).Radius(0).FillWidth().Gap(th.Space(4)).Padding(th.Space(3), th.Space(4)).AlignItems(ui.Center).Children(func() {
 				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(2)).Children(func() {
 					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-						kit.Text(c, sig.Name, t.Text.Body).FontWeight(500).SingleLine().Shrink(1)
-						kit.Text(c, usedBy(len(a.signatureUsers(sig.ID))), t.Text.Sm).TextColor(t.Muted).SingleLine()
+						kit.Text(c, sig.Name, t.Text.Sm).FontWeight(500).SingleLine().Shrink(1)
+						kit.Text(c, usedBy(len(a.signatureUsers(sig.ID))), t.Text.Xs).TextColor(t.Muted).SingleLine()
 					})
 					lines := core.SignaturePreview(sig.HTML, 2)
-					ui.Column(c).FillWidth().Padding(th.Space(2), th.Space(2.5)).Radius(t.Radius.Lg).Background(t.Background).Children(func() {
+					kit.Block(c, ui.Column(c), kit.ToneRaised).FillWidth().Padding(th.Space(2), th.Space(2.5)).Children(func() {
 						if len(lines) == 0 {
-							kit.Text(c, i18n.T("settings.signatures.blank"), t.Text.Sm).TextColor(t.Idle)
+							kit.Text(c, i18n.T("settings.signatures.blank"), t.Text.Xs).TextColor(t.Idle)
 						}
 						for i, l := range lines {
-							line := kit.Text(c, l, t.Text.Sm).SingleLine()
+							line := kit.Text(c, l, t.Text.Xs).SingleLine()
 							if i == 0 {
 								line.FontWeight(600)
 							} else {
@@ -126,7 +126,7 @@ func (p *settingsPage) signaturesView(c *ui.Context) {
 	}
 	ui.Column(c).Gap(theme.SectionGap).Children(func() {
 		settingsCard(c, rows...)
-		kit.Text(c, i18n.T("settings.signatures.foot"), t.Text.Sm).TextColor(t.Muted).PaddingX(c.Theme().Space(4))
+		kit.Text(c, i18n.T("settings.signatures.foot"), t.Text.Xs).TextColor(t.Muted).PaddingX(c.Theme().Space(4))
 	})
 	p.syncSettings()
 	defer p.syncSettings() // what the switch changed while building
@@ -162,14 +162,14 @@ func (p *settingsPage) signatureView(c *ui.Context, sig core.Signature) {
 
 	ui.Column(c).Gap(theme.HeadingGap).Children(func() {
 		settingsBack(c, i18n.T("settings.signatures"), func() { a.navigate(Route{Page: PageSettings, Settings: "signatures"}) })
-		kit.Text(c, sig.Name, t.Text.Display).FontWeight(600)
-		kit.Text(c, usedBy(len(users)), t.Text.Body).TextColor(t.Muted)
+		kit.Text(c, sig.Name, t.Text.X3l).FontWeight(600)
+		kit.Text(c, usedBy(len(users)), t.Text.Sm).TextColor(t.Muted)
 	})
 
 	bad := !validSignatureName(f.name)
 	settingsSection(c, i18n.T("settings.account.basic"), "", func() {
 		settingRow(c, i18n.T("settings.signature.name"), i18n.T("settings.signature.name.help"), func() {
-			if kit.Input(c, &f.name, kit.InputOpts{Invalid: bad}).Width(theme.SettingsInputWidth).Radius(t.Radius.Lg).Label(i18n.T("settings.signature.name")).Changed() {
+			if kit.Input(c, &f.name, kit.InputOpts{Invalid: bad}).Width(theme.SettingsInputWidth).Label(i18n.T("settings.signature.name")).Changed() {
 				p.editSignatureName()
 			}
 		})
@@ -216,8 +216,8 @@ func (p *settingsPage) signatureView(c *ui.Context, sig core.Signature) {
 			ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
 				a.accountMark(c, acc)
 				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-					kit.Text(c, acc.Email, t.Text.Body).FontWeight(500).SingleLine()
-					kit.Text(c, note, t.Text.Sm).TextColor(t.Muted)
+					kit.Text(c, acc.Email, t.Text.Sm).FontWeight(500).SingleLine()
+					kit.Text(c, note, t.Text.Xs).TextColor(t.Muted)
 				})
 				was := on
 				if kit.Switch(c, &on).Label(i18n.Tf("settings.signature.default.label", acc.Email)).Changed() && on != was {
@@ -408,12 +408,12 @@ func (p *settingsPage) accountSignatureView(c *ui.Context, acc core.Account) {
 	if cur != nil {
 		rows = append(rows, func() {
 			settingBlock(c, func() {
-				kit.Text(c, i18n.T("settings.account.signature.preview"), t.Text.Sm).TextColor(t.Muted)
-				ui.Column(c).FillWidth().Padding(th.Space(2.5), th.Space(3)).Radius(t.Radius.Lg).Background(t.Background).Children(func() {
+				kit.Text(c, i18n.T("settings.account.signature.preview"), t.Text.Xs).TextColor(t.Muted)
+				kit.Block(c, ui.Column(c), kit.ToneRaised).FillWidth().Padding(th.Space(2.5), th.Space(3)).Children(func() {
 					if doc, ok := p.signaturePreview(*cur); ok {
 						richtext.Render(c, doc, richtext.RenderOptions{OnLink: a.openLink})
 					} else {
-						kit.Text(c, " ", t.Text.Body)
+						kit.Text(c, " ", t.Text.Sm)
 					}
 				})
 			})
@@ -425,7 +425,7 @@ func (p *settingsPage) accountSignatureView(c *ui.Context, acc core.Account) {
 		// The sentence names where signatures are edited, and that name opens it.
 		where := i18n.T("settings.account.signature.where")
 		before, after, _ := strings.Cut(i18n.Tf("settings.account.signature.foot", where), where)
-		ui.RichText(c).FontSize(t.Text.Sm).TextColor(t.Muted).PaddingX(c.Theme().Space(4)).Children(func() {
+		ui.RichText(c).FontSize(t.Text.Xs).TextColor(t.Muted).PaddingX(c.Theme().Space(4)).Children(func() {
 			ui.Text(c, before)
 			if ui.Link(c, where, "").TextColor(t.Foreground).Underline().Clicked() {
 				a.navigate(Route{Page: PageSettings, Settings: "signatures"})
@@ -487,15 +487,12 @@ func (p *settingsPage) codeView(c *ui.Context) {
 	ui.Column(c).FillWidth().Height(theme.SignatureEditorHeight).Children(func() {
 		ui.Row(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(1), th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 			if sc.refused != "" {
-				kit.Text(c, i18n.T(sc.refused), t.Text.Sm).TextColor(t.Danger).SingleLine().Shrink(1).Padding(0, 0, 0, th.Space(2))
+				kit.Text(c, i18n.T(sc.refused), t.Text.Xs).TextColor(t.Danger).SingleLine().Shrink(1).Padding(0, 0, 0, th.Space(2))
 			}
 			ui.Box(c).Grow(1)
-			// The page's toggle, pressed: 28 high, 8 padding, a 16 icon and text-xs (Signature.tsx's Bar).
-			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: p.closeCode}).Label(i18n.T("settings.account.signature.html.label")).
-				Height(th.Space(7)).PaddingX(th.Space(2)).Gap(th.Space(1.5)).AlignItems(ui.Center).Radius(t.Radius.Md).Background(t.HoverTint).Children(func() {
-				ui.Icon(c, icons.Get("code")).Size(theme.Icon, theme.Icon)
-				kit.Text(c, i18n.T("settings.account.signature.html"), t.Text.Xs).FontWeight(500)
-			})
+			// The page's toggle, pressed (Signature.tsx's Bar).
+			kit.Button(c, i18n.T("settings.account.signature.html"), kit.ButtonOpts{Variant: kit.Secondary, Size: kit.SizeSm, Icon: "code"}).
+				Label(i18n.T("settings.account.signature.html.label")).OnClick(p.closeCode)
 		})
 		kit.Separator(c, false).Shrink(0) // the toolbar's edge, across the card as the page's
 		if sc.loading {

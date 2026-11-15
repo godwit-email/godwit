@@ -6,7 +6,7 @@ A modal panel for a form or a confirmation: a header, a body that scrolls, a foo
 
 | Size | Width | Tallest | For |
 | --- | --- | --- | --- |
-| `sm` | `dialog-sm` 440 | 760 | confirmations (alerts) |
+| `xs` | `dialog-sm` 440 | 760 | confirmations (alerts) |
 | `md` (default) | `dialog-md` 560 | 760 | forms: add account |
 | `lg` | `dialog-lg` 640 | 788 | larger forms: edit a model service |
 
@@ -14,9 +14,9 @@ A dialog's centre sits at 40% of the window's height, at least 32 from the top. 
 
 ## Frame
 
-- Panel: `raised` (white; neutral-900 in the dark), hairline `border`, `radius-2xl`, `shadow-2xl`, clipped. Under window vibrancy it is frosted: `raised` at 80% over a 16 px blur.
-- Backdrop: `scrim` (black 20%) for a dialog, `alert-scrim` (gray 60%) for a confirmation; never blurred. It fades in with the panel, which rises 4 px over 200 ms.
-- Header: 16 padding (13 at the bottom when a body follows, so the first field's focus ring fits). Title in `title` (16 / 600), one line of description in `body` `muted` 4 below. A dialog has a ghost 28 px × (关闭) in the corner, 8 from the edges; a confirmation has none.
+- Panel: `raised` (white; neutral-900 in the dark), hairline `border`, `radius-xl`, `shadow-2xl`, clipped. Under window vibrancy it is frosted: `raised` at 80% over a 16 px blur.
+- Backdrop: `scrim` (black 20%) for a dialog, `alert-scrim` (gray 60%) for a confirmation; never blurred. It fades in with the panel, which rises 4 px over 200 ms; closed, both fade out over 120 ms.
+- Header: 16 padding (13 at the bottom when a body follows, so the first field's focus ring fits). Title in `base` (16 / 600), one line of description in `sm` `muted` 4 below. A dialog has a ghost 28 px × (关闭) in the corner, 8 from the edges; a confirmation has none.
 - Body: 3 / 16 / 16 padding, 16 between fields; it alone scrolls.
 - Footer: a row on the right, 8 apart, 12 / 16 padding, `sidebar` fill under a `border` hairline. 取消 (outline) comes before the action (primary). A destructive action is the Destructive ghost (`danger` text); a footer that asks to confirm a delete turns `danger-bg` with a `danger-border` line.
 
@@ -30,5 +30,5 @@ A confirmation's title is a question naming the object in 「」 (删除「工�
 
 ## Popovers and hover cards
 
-- Popover (a filter chip's menu, the sync status list): 12 padding, 8 gap, `radius-lg`, liquid glass (`glass-bg` over a 20 blur, `glass-border` hairline), `shadow-md`, 4 from its anchor, in over 120 ms.
-- Hover card (a cited mail): `background`, hairline `border`, `radius-lg`, 12 padding, `shadow-md`, 320 wide.
+- Popover (a filter chip's menu, the sync status list): 10 padding, 10 gap, `radius-lg`, liquid glass (`glass-bg` over a 20 blur, `glass-border` hairline), `shadow-md`, 4 from its anchor, in over 120 ms.
+- Hover card (a cited mail): `background`, hairline `border`, `radius-lg`, 10 padding, `shadow-md`, 320 wide.

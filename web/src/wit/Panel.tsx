@@ -385,7 +385,7 @@ function BatchApprovalCard({
         </span>
       </div>
 
-      <div className="flex flex-col gap-2 px-3.5 py-3 text-sm">
+      <div className="flex flex-col gap-2 px-3.5 py-3 text-xs">
         {items.length > 0 && (
           <div className="flex items-center justify-between border-b pb-2 text-xs text-muted-foreground">
             <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -437,7 +437,7 @@ function BatchApprovalCard({
                           onCite(it.msg_id);
                         }}
                         title={t("wit.mail.open")}
-                        className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline shrink-0 cursor-pointer font-medium"
+                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline shrink-0 cursor-pointer font-medium"
                       >
                         <RiMailLine className="size-3" />
                         <span>{t("wit.mail.open")}</span>
@@ -456,19 +456,10 @@ function BatchApprovalCard({
 
       <div className="flex flex-wrap items-center gap-2 border-muted border-t-[0.5px] px-3.5 py-2.5">
         <span className="ml-auto flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            className="px-3 font-normal text-md"
-            disabled={busy}
-            onClick={() => decide(false)}
-          >
+          <Button variant="outline" disabled={busy} onClick={() => decide(false)}>
             {t("wit.approval.reject")}
           </Button>
-          <Button
-            className="px-3.5 text-md"
-            disabled={busy || selected.size === 0}
-            onClick={handleApprove}
-          >
+          <Button disabled={busy || selected.size === 0} onClick={handleApprove}>
             {actionLabel} ({selected.size})
           </Button>
         </span>
@@ -592,7 +583,7 @@ function ToolCard({
     <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)">
       <div className="flex flex-wrap items-center gap-2 border-b-[0.5px] bg-sidebar px-3.5 py-2.5 leading-5">
         <span className="font-semibold">{t("wit.approval.wants", label)}</span>
-        <span className="font-mono text-muted-foreground text-sm">{a.tool}</span>
+        <span className="font-mono text-muted-foreground text-xs">{a.tool}</span>
         <span className="ml-auto flex gap-1.5">
           {a.tool.startsWith("plugin_") && (
             <Badge variant="secondary">{t("wit.approval.plugin")}</Badge>
@@ -605,7 +596,7 @@ function ToolCard({
           </Badge>
         </span>
       </div>
-      <div className="flex flex-col gap-1.5 px-3.5 py-3 text-md">
+      <div className="flex flex-col gap-1.5 px-3.5 py-3 text-sm">
         {a.summary && a.summary !== label && <p className="text-muted-foreground">{a.summary}</p>}
         {editing ? (
           <div className="flex flex-col gap-2.5">
@@ -618,7 +609,7 @@ function ToolCard({
                 value={editSubject}
                 onChange={(e) => setEditSubject(e.target.value)}
                 disabled={busy}
-                className="w-full rounded border border-input bg-background px-2.5 py-1 text-sm font-medium"
+                className="w-full rounded border border-input bg-background px-2.5 py-1 text-xs font-medium"
               />
             </label>
             <label className="flex flex-col gap-1">
@@ -628,7 +619,7 @@ function ToolCard({
                 value={editBody}
                 onChange={(e) => setEditBody(e.target.value)}
                 disabled={busy}
-                className="w-full rounded border border-input bg-background px-2.5 py-1.5 text-sm font-sans"
+                className="w-full rounded border border-input bg-background px-2.5 py-1.5 text-xs font-sans"
               />
             </label>
           </div>
@@ -660,7 +651,7 @@ function ToolCard({
               {a.destinations.map((d) => (
                 <span
                   key={d}
-                  className="flex h-5.5 items-center gap-1 rounded-full border-[0.5px] px-2 text-sm"
+                  className="flex h-5 items-center gap-1 rounded-sm border-[0.5px] px-1.5 text-xs"
                 >
                   <RiGlobalLine className="size-3 text-muted-foreground" />
                   {d}
@@ -675,7 +666,7 @@ function ToolCard({
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground"
+            className="text-muted-foreground hover:text-foreground"
             disabled={busy}
             onClick={() => setEditing(!editing)}
           >
@@ -684,31 +675,21 @@ function ToolCard({
           </Button>
         )}
         {a.tool === "create_draft" && !editing && (
-          <span className="flex items-center gap-1.5 text-muted-foreground text-sm">
+          <span className="flex items-center gap-1.5 text-muted-foreground text-xs">
             <RiShieldLine className="size-3.5" />
             {t("wit.approval.send_note")}
           </span>
         )}
         <span className="ml-auto flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            className="px-3 font-normal text-md"
-            disabled={busy}
-            onClick={() => decide(false)}
-          >
+          <Button variant="outline" disabled={busy} onClick={() => decide(false)}>
             {t("wit.approval.reject")}
           </Button>
           {session && !editing && (
-            <Button
-              variant="outline"
-              className="px-3 font-normal text-md"
-              disabled={busy}
-              onClick={session}
-            >
+            <Button variant="outline" disabled={busy} onClick={session}>
               {t("wit.approval.allow_session")}
             </Button>
           )}
-          <Button className="px-3.5 text-md" disabled={busy} onClick={handleAllow}>
+          <Button disabled={busy} onClick={handleAllow}>
             {t("wit.approval.allow")}
           </Button>
         </span>
@@ -829,12 +810,12 @@ function QuestionCard({
       </div>
       {server && (
         // the server's words: plain text, never markup
-        <div className="flex flex-col gap-1 border-b-[0.5px] px-3.5 py-2.5 text-md">
+        <div className="flex flex-col gap-1 border-b-[0.5px] px-3.5 py-2.5 text-sm">
           {message && <p className="whitespace-pre-wrap">{message}</p>}
-          <p className="text-muted-foreground text-sm">{t("wit.question.mcp_notice", server)}</p>
+          <p className="text-muted-foreground text-xs">{t("wit.question.mcp_notice", server)}</p>
         </div>
       )}
-      <Questionnaire onSubmit={submit} className="px-3.5 py-3 text-md">
+      <Questionnaire onSubmit={submit} className="px-3.5 py-3 text-sm">
         {questions.length > 1 && (
           <QuestionnaireProgress
             render={(props, s) => {
@@ -858,7 +839,7 @@ function QuestionCard({
               {q.header && <Badge variant="secondary">{q.header}</Badge>}
               {q.question}
               {q.multiSelect && (
-                <span className="font-normal text-muted-foreground text-sm">
+                <span className="font-normal text-muted-foreground text-xs">
                   {t("wit.question.multi")}
                 </span>
               )}
@@ -912,10 +893,10 @@ function Settled({ a, onDraft, t }: { a: Approval; onDraft?(id: number): Promise
     const done = a.state === "done";
     return (
       questions.length > 0 && (
-        <dl className="flex flex-col gap-1.5 rounded-xl border-[0.5px] bg-background px-3 py-2.5 text-md">
+        <dl className="flex flex-col gap-1.5 rounded-xl border-[0.5px] bg-background px-3 py-2.5 text-sm">
           {questions.map((q, i) => (
             <div key={q.question}>
-              <dt className="text-muted-foreground text-sm">{q.question}</dt>
+              <dt className="text-muted-foreground text-xs">{q.question}</dt>
               <dd>
                 {done && answers?.[i]?.length ? (
                   answers[i]
@@ -947,7 +928,7 @@ function Settled({ a, onDraft, t }: { a: Approval; onDraft?(id: number): Promise
   }
   return (
     <>
-      <span className="flex items-center gap-2 text-muted-foreground text-sm">
+      <span className="flex items-center gap-2 text-muted-foreground text-xs">
         <Icon className={cn("size-3.5 shrink-0", tone)} />
         <span>{rule || t(key, label)}</span>
         {label !== a.tool && <span className="font-mono text-muted-foreground/70">{a.tool}</span>}
@@ -962,13 +943,12 @@ function Settled({ a, onDraft, t }: { a: Approval; onDraft?(id: number): Promise
             </span>
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="truncate font-medium">{subject || t("mail.no_subject")}</span>
-              <span className="text-muted-foreground text-sm">{t("wit.draft.saved")}</span>
+              <span className="text-muted-foreground text-xs">{t("wit.draft.saved")}</span>
             </span>
             {onDraft && (
               <Button
                 variant="ghost"
                 size="sm"
-                className="font-normal"
                 onClick={() =>
                   onDraft(a.id).catch(
                     (e) => (e as Error | undefined)?.message === "wit.draft.gone" && setGone(true),
@@ -1034,7 +1014,7 @@ function Thought({ text, streaming, t }: { text: string; streaming: boolean; t: 
           </TraceTitle>
         </TraceLine>
       </TraceCollapsibleTrigger>
-      <TraceCollapsibleContent className="whitespace-pre-wrap text-sm">
+      <TraceCollapsibleContent className="whitespace-pre-wrap text-xs">
         {text}
       </TraceCollapsibleContent>
     </TraceCollapsible>
@@ -1139,7 +1119,7 @@ function ToolLine({
         {found.map((c) =>
           sender(
             c,
-            "cursor-pointer rounded-full border-[0.5px] px-2 text-muted-foreground text-xs leading-5 hover:text-foreground data-popup-open:bg-muted data-popup-open:text-foreground",
+            "cursor-pointer rounded-sm border-[0.5px] px-1.5 text-muted-foreground text-xs leading-5 hover:text-foreground data-popup-open:bg-muted data-popup-open:text-foreground",
           ),
         )}
       </TraceCollapsibleContent>
@@ -1416,7 +1396,7 @@ function Answer({
             <div className="overflow-hidden rounded-xl border-[0.5px] border-primary">
               <div className="flex items-center gap-2 bg-muted px-3 py-2 leading-5">
                 <span className="font-semibold">{t("wit.compose.review")}</span>
-                <span className="flex-1 font-mono text-foreground/80 text-sm">{a.tool}</span>
+                <span className="flex-1 font-mono text-foreground/80 text-xs">{a.tool}</span>
                 {review?.onAdjust && (
                   <Button
                     size="icon-xs"
@@ -1430,7 +1410,7 @@ function Answer({
                   </Button>
                 )}
               </div>
-              <div className="px-3 py-2 text-md">{review?.summary}</div>
+              <div className="px-3 py-2 text-sm">{review?.summary}</div>
               {review?.adjusting}
               <div className="flex gap-1.5 border-muted border-t-[0.5px] px-3 py-2">
                 {review?.actions}
@@ -1477,10 +1457,10 @@ function Answer({
           <Alert
             key={c.id}
             role="status"
-            className="gap-x-2.5 gap-y-0 rounded-lg border-0 bg-(--warning-bg) px-3 py-2.5 text-(--warning-text) text-base"
+            className="gap-x-2.5 gap-y-0 rounded-lg border-0 bg-(--warning-bg) px-3 py-2.5 text-(--warning-text) text-sm"
           >
             <RiAlertLine />
-            <AlertDescription className="text-base text-current leading-relaxed">
+            <AlertDescription className="text-sm text-current leading-relaxed">
               {/* the quote is mail text: a plain string, never markup */}
               {c.quote ? t("wit.suspect_quote", `[${c.n}]`, c.quote) : t("wit.suspect", `[${c.n}]`)}
             </AlertDescription>
@@ -1504,7 +1484,7 @@ function Answer({
       {status && (
         <div
           role="status"
-          className="flex items-center gap-2 rounded-lg bg-sidebar px-3 py-2 text-base"
+          className="flex items-center gap-2 rounded-lg bg-sidebar px-3 py-2 text-sm"
         >
           <RiSparkling2Line className="size-4 shrink-0" />
           {status}
@@ -1550,7 +1530,7 @@ function Answer({
               <Button
                 variant="ghost"
                 size="xs"
-                className="font-normal text-muted-foreground"
+                className="text-muted-foreground"
                 aria-expanded={sources}
                 onClick={() => setSources((o) => !o)}
               >
@@ -2151,14 +2131,14 @@ export function Panel({
       <>
         {head && (
           <div className="flex items-center gap-2 px-0.5">
-            <span className="text-muted-foreground text-sm">
+            <span className="text-muted-foreground text-xs">
               {t("wit.approval.count", pending)}
             </span>
             <span className="ml-auto flex gap-1.5">
               <Button
                 variant="ghost"
                 size="sm"
-                className="font-normal text-muted-foreground"
+                className="text-muted-foreground"
                 disabled={busy}
                 onClick={() => decideAs(shown[0], false, true)}
               >
@@ -2167,7 +2147,6 @@ export function Panel({
               <Button
                 variant="outline"
                 size="sm"
-                className="font-normal"
                 disabled={busy}
                 onClick={() => decideAs(shown[0], true, true)}
               >
@@ -2406,9 +2385,9 @@ export function Panel({
         <MessageScrollerViewport>
           <MessageScrollerContent
             // pb-6 clears the input's fade (h-6) and no more: the last line ends just above it.
-            // Step lines (trace's text-sm) take the text's size: only their grey sets them apart.
+            // Step lines (trace's text-xs) take the text's size: only their grey sets them apart.
             className={cn(
-              "[&_[data-slot=trace-line]]:text-md",
+              "[&_[data-slot=trace-line]]:text-sm",
               page ? "mx-auto w-full max-w-202 gap-5 p-6" : "gap-2.5 p-4 pb-6",
             )}
           >
@@ -2443,7 +2422,7 @@ export function Panel({
                           page ? "max-w-[calc(80%+--spacing(6))]" : "max-w-[calc(85%+--spacing(6))]"
                         }
                       >
-                        <BubbleContent className="whitespace-pre-wrap border-0 text-md">
+                        <BubbleContent className="whitespace-pre-wrap border-0 text-sm">
                           {textOf(m)}
                         </BubbleContent>
                       </Bubble>
@@ -2493,14 +2472,14 @@ export function Panel({
             ))}
             {page && chat.messages.length === 0 && !running && !locked && (
               <div className="flex flex-col items-center gap-3 pt-[16vh] text-center">
-                <span className="flex size-12 items-center justify-center rounded-2xl border border-glass-border bg-glass-bg shadow-xs ring-1 ring-glass-ring">
+                <span className="flex size-12 items-center justify-center rounded-2xl border border-glass-border bg-glass-bg shadow-xs">
                   <RiSparkling2Line className="size-6" />
                 </span>
                 <h1 className="font-semibold text-xl">{t("wit.empty.title")}</h1>
-                <p className="max-w-110 text-muted-foreground text-sm leading-relaxed">
+                <p className="max-w-110 text-muted-foreground text-xs leading-relaxed">
                   {t("wit.empty.note")}
                 </p>
-                <p className="mt-3 text-muted-foreground text-sm">{t("wit.suggest")}</p>
+                <p className="mt-3 text-muted-foreground text-xs">{t("wit.suggest")}</p>
                 <div className="flex max-w-150 flex-wrap justify-center gap-2">
                   {[1, 2, 3, 4].map((n) => {
                     const q = t(`wit.suggest.${n}`);
@@ -2508,7 +2487,7 @@ export function Panel({
                       <Button
                         key={n}
                         variant="ghost"
-                        className="h-auto rounded-full border border-glass-border bg-glass-bg px-3.5 py-1.5 font-normal text-md text-foreground shadow-xs ring-1 ring-glass-ring transition-all outline-none hover:bg-glass-hover focus-visible:ring-2 focus-visible:ring-ring dark:shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.08)]"
+                        className="h-auto rounded-lg border border-glass-border bg-glass-bg px-3.5 py-1.5 text-sm text-foreground shadow-xs transition-all outline-none hover:bg-glass-hover focus-visible:ring-2 focus-visible:ring-ring dark:shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.08)]"
                         onClick={() => ask(q)}
                       >
                         {q}
@@ -2533,7 +2512,7 @@ export function Panel({
             {modelNotice && (
               <div
                 role="status"
-                className="flex items-center gap-2 rounded-lg bg-sidebar px-3 py-2 text-base text-foreground"
+                className="flex items-center gap-2 rounded-lg bg-sidebar px-3 py-2 text-sm text-foreground"
               >
                 <RiSparkling2Line className="size-4 shrink-0 text-foreground" />
                 <span>{modelNotice}</span>
@@ -2568,13 +2547,13 @@ export function Panel({
   const input = (
     <InputGroup className="relative gap-2 rounded-2xl border-[0.5px] border-glass-border bg-glass-bg px-3 py-2.5 shadow-[0_4px_20px_rgba(0,0,0,0.035)] outline-none transition-[border-color,box-shadow] focus-within:shadow-[0_4px_20px_rgba(0,0,0,0.075)] has-[[data-slot=input-group-control]:focus-visible]:border-glass-border has-[[data-slot=input-group-control]:focus-visible]:ring-0 dark:shadow-[0_4px_20px_rgba(0,0,0,0.3),inset_0_1px_0_0_rgba(255,255,255,0.08)] dark:focus-within:shadow-[0_4px_20px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.08)]">
       {editing && (
-        <div className="-mx-3 -mt-2.5 mb-0.5 flex items-center gap-2 rounded-t-2xl bg-muted px-3 py-1.5 text-muted-foreground text-sm">
+        <div className="-mx-3 -mt-2.5 mb-0.5 flex items-center gap-2 rounded-t-2xl bg-muted px-3 py-1.5 text-muted-foreground text-xs">
           <RiEditLine className="size-3.5 shrink-0" />
           <span className="min-w-0 flex-1">{t("wit.editing")}</span>
           <InputGroupButton
             variant="ghost"
             size="xs"
-            className="font-normal text-foreground"
+            className="text-foreground"
             aria-label={t("wit.edit.cancel")}
             onClick={cancelEdit}
           >
@@ -2636,7 +2615,7 @@ export function Panel({
         }}
         rows={2}
         // two lines at the least, as the design's rows="2"
-        className={cn("min-h-9.5 p-0 text-md leading-5 md:text-md", page ? "max-h-44" : "max-h-40")}
+        className={cn("min-h-9.5 p-0 text-sm leading-5 md:text-sm", page ? "max-h-44" : "max-h-40")}
       />
       <InputGroupAddon align="block-end" className="gap-2 p-0">
         {onSearch && (
@@ -2652,7 +2631,7 @@ export function Panel({
               <DropdownMenuItem disabled={full} onClick={() => setPicking({ at: -1, query: "" })}>
                 <RiMailLine className="text-muted-foreground" />
                 <span className="flex-1">{t("wit.quote")}</span>
-                <span className="text-muted-foreground/70 text-sm">@</span>
+                <span className="text-muted-foreground/70 text-xs">@</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -2674,7 +2653,7 @@ export function Panel({
             >
               <UsageRing value={usage.history} />
             </PopoverTrigger>
-            <PopoverContent side="top" className="flex w-72 flex-col gap-3 text-sm">
+            <PopoverContent side="top" className="flex w-72 flex-col gap-3 text-xs">
               <ContextUsage usage={usage} t={t} />
               {transport.compacts && (
                 <div className="flex items-center justify-between gap-3 border-t-[0.5px] pt-3">
@@ -2684,7 +2663,7 @@ export function Panel({
                   <Button
                     variant="secondary"
                     size="sm"
-                    className="shrink-0 font-normal"
+                    className="shrink-0"
                     disabled={compacting || running || !usage.compactable}
                     onClick={compact}
                   >
@@ -2726,10 +2705,7 @@ export function Panel({
                 <InputGroupButton
                   variant="ghost"
                   size="sm"
-                  className={cn(
-                    !meter && "ml-auto",
-                    "h-8 min-w-0 gap-1.5 px-2 font-normal text-sm",
-                  )}
+                  className={cn(!meter && "ml-auto", "h-8 min-w-0 gap-1.5 px-2 text-xs")}
                   title={t("wit.model.pick")}
                 >
                   <span className="truncate">{chosen}</span>
@@ -2766,10 +2742,7 @@ export function Panel({
                       <DropdownMenuRadioItem closeOnClick key={c.ref} value={c.ref}>
                         {c.name}
                         {c.default && (
-                          <Badge
-                            variant="outline"
-                            className="h-4.5 px-1.5 font-normal text-muted-foreground"
-                          >
+                          <Badge variant="outline" className="text-muted-foreground">
                             {t("wit.model.default_tag")}
                           </Badge>
                         )}
@@ -2820,10 +2793,7 @@ export function Panel({
             <InputGroupButton
               variant="ghost"
               size="sm"
-              className={cn(
-                !meter && "ml-auto",
-                "h-8 gap-1 px-2 font-normal text-muted-foreground text-sm",
-              )}
+              className={cn(!meter && "ml-auto", "h-8 gap-1 px-2 text-muted-foreground text-xs")}
               title={t("wit.model")}
               onClick={onModels}
             >
@@ -2888,7 +2858,7 @@ export function Panel({
     <Button
       variant="ghost"
       size="sm"
-      className="h-7 gap-1.5 rounded-full border border-glass-border bg-glass-bg px-2.5 font-normal text-xs text-foreground shadow-xs ring-1 ring-glass-ring hover:bg-glass-hover disabled:opacity-100 dark:shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.08)] dark:hover:bg-glass-hover dark:aria-expanded:bg-glass-hover"
+      className="h-7 gap-1.5 rounded-md border border-glass-border bg-glass-bg px-2.5 text-xs text-foreground shadow-xs hover:bg-glass-hover disabled:opacity-100 dark:shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.08)] dark:hover:bg-glass-hover dark:aria-expanded:bg-glass-hover"
     >
       <Icon className="size-3.5 text-muted-foreground" />
       {label}
@@ -2903,11 +2873,7 @@ export function Panel({
       {info && !only && info.chips.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 px-4 py-3">
           {info.chips.map((c) => (
-            <Badge
-              key={c}
-              variant="secondary"
-              className="h-auto max-w-full truncate rounded-sm font-normal text-sm"
-            >
+            <Badge key={c} variant="secondary" className="h-auto max-w-full truncate">
               {c}
             </Badge>
           ))}
@@ -2922,9 +2888,7 @@ export function Panel({
             data-tray
             className={cn(
               "flex items-center gap-1.5",
-              only
-                ? "rounded-2xl border border-glass-border bg-glass-bg p-1 ring-1 ring-glass-ring"
-                : "mb-2",
+              only ? "rounded-2xl border border-glass-border bg-glass-bg p-1" : "mb-2",
             )}
           >
             {!only && (
@@ -2977,7 +2941,7 @@ export function Panel({
           </div>
         )}
         {only ? (
-          <p className="px-2 pt-2 text-muted-foreground text-sm">
+          <p className="px-2 pt-2 text-muted-foreground text-xs">
             {t("wit.compose.translate_only")}
             {onModels && (
               <>
@@ -2985,7 +2949,7 @@ export function Panel({
                 <Button
                   variant="link"
                   size="sm"
-                  className="h-auto p-0 align-baseline text-sm"
+                  className="h-auto p-0 align-baseline text-xs"
                   onClick={onModels}
                 >
                   {t("wit.compose.translate_only.models")}

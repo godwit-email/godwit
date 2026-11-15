@@ -36,19 +36,19 @@ type outboxAction struct {
 // scheduled mail waiting for its time.
 func (p *mailPage) outboxView(c *ui.Context, title string, items []outboxEntry, note string) {
 	t := theme.Of(c)
-	th, small := c.Theme(), t.Text.Sm
+	th, small := c.Theme(), t.Text.Xs
 	now := p.a.clock.Now()
 	ui.Text(c, title).FontWeight(500).TextColor(t.Muted).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4))
 	if note != "" {
 		kit.Text(c, note, small).TextColor(t.Muted).Padding(0, th.Space(4), th.Space(3), th.Space(4))
 	}
 	ui.Scroll(c).Grow(1).Children(func() {
+		if len(items) == 0 {
+			listEmpty(c, kit.EmptyOpts{Icon: "outbox", Title: i18n.T("mail.empty")})
+		}
 		ui.Column(c).Padding(0, th.Space(4)).Gap(th.Space(3)).Children(func() {
-			if len(items) == 0 {
-				ui.Text(c, i18n.T("mail.empty")).TextColor(t.Muted)
-			}
 			for _, it := range items {
-				ui.Column(c.Key(it.ID)).Gap(th.Space(1)).Padding(th.Space(2.5)).Radius(t.Radius.Lg).Border(theme.Hairline, t.Border).Children(func() {
+				kit.Block(c, ui.Column(c.Key(it.ID)), kit.ToneOutline).Gap(th.Space(1)).Padding(th.Space(2.5)).Children(func() {
 					ui.Text(c, subjectOf(it.OutboxItem)).FontWeight(500).SingleLine()
 					kit.Text(c, it.Account, small).TextColor(t.Muted).SingleLine()
 					kit.Text(c, outboxStatus(it.OutboxItem, now), small).TextColor(t.Muted)

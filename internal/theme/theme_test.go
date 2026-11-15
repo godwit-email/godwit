@@ -20,8 +20,7 @@ func TestThemeTokens(t *testing.T) {
 		"Background": {l.Background, p.White}, "Foreground": {l.Foreground, p.Neutral950},
 		"Muted": {l.Muted, p.Neutral500}, "Border": {l.Border, p.Neutral200},
 		"Primary": {l.Primary, p.Neutral900}, "PrimaryText": {l.PrimaryText, p.White},
-		"SidebarSelected": {l.SidebarSelected, p.Neutral100},
-		"Hover":           {l.Hover, p.Neutral100}, "Success": {l.Success, p.Green600},
+		"Hover": {l.Hover, p.Neutral100}, "Success": {l.Success, p.Green600},
 		"SuccessBg": {l.SuccessBg, p.Green50}, "SuccessBorder": {l.SuccessBorder, p.Green200}, "SuccessText": {l.SuccessText, p.Green700},
 		"DangerBorder": {l.DangerBorder, p.Red200}, "DangerText": {l.DangerText, p.Red700},
 		"WarningBg": {l.WarningBg, p.Amber50}, "WarningBorder": {l.WarningBorder, p.Amber300},
@@ -129,11 +128,11 @@ func TestRadiusAndTextScale(t *testing.T) {
 	if r := tok.Radius; [8]float32{r.Xs, r.Sm, r.Md, r.Lg, r.Xl, r.X2l, r.X3l, r.X4l} != [8]float32{2, 4, 6, 8, 12, 16, 24, 32} {
 		t.Errorf("Radius = %+v", r)
 	}
-	if x := tok.Text; [7]float32{x.Xs, x.Sm, x.Base, x.Body, x.Lg, x.Xl, x.X2l} != [7]float32{12, 13, 14, 15, 16, 19, 21} {
+	if x := tok.Text; [5]float32{x.Xs, x.Sm, x.Base, x.Xl, x.X3l} != [5]float32{13, 15, 17, 21, 31} {
 		t.Errorf("Text = %+v", x)
 	}
-	if Light().Text.Body != 14 {
-		t.Errorf("Light().Text.Body = %v, want 14", Light().Text.Body)
+	if Light().Text.Sm != 14 {
+		t.Errorf("Light().Text.Sm = %v, want 14", Light().Text.Sm)
 	}
 	var th *ui.Theme
 	ui.NewTester(func(c *ui.Context) { Apply(c, tok); th = c.Theme() }, 200, 100).Frame()
@@ -170,10 +169,18 @@ func TestShadowsAsTailwind(t *testing.T) {
 	}
 }
 
+// TestTextNeverUnderMin: at the smallest font-size setting the scale's
+// smallest step stays at MinText.
+func TestTextNeverUnderMin(t *testing.T) {
+	if sm := FromSettings(core.Settings{FontSize: 13}, false).Text.Xs; sm != MinText {
+		t.Errorf("Sm at 13 = %v, want %v", sm, float32(MinText))
+	}
+}
+
 func TestTextScaleMatchesTokens(t *testing.T) {
 	tok := Light()
 	x := tok.Text
-	if got := [9]float32{x.Xs, x.Sm, x.Base, x.Body, x.Lg, x.Title, x.Xl, x.X2l, x.Display}; got != [9]float32{11, 12, 13, 14, 15, 16, 18, 20, 29} {
+	if got := [5]float32{x.Xs, x.Sm, x.Base, x.Xl, x.X3l}; got != [5]float32{12, 14, 16, 20, 30} {
 		t.Errorf("Text at 14 = %+v", x)
 	}
 	if got := mygoTheme(tok).FontSize; got != 14 {
@@ -206,17 +213,28 @@ func TestDarkStatus(t *testing.T) {
 	}
 }
 
-// TestLine: each text step has its line height at any font size, and a
-// size between steps has Body's.
-func TestLine(t *testing.T) {
-	for _, font := range []int{13, 14, 16} {
-		s := FromSettings(core.Settings{FontSize: font}, false).Text
-		for size, want := range map[float32]float32{s.Xs: LineXs, s.Sm: LineSm, s.Base: LineBase, s.Body: LineBody, s.Lg: LineLg,
-			s.Title: LineTitle, s.Xl: LineXl, s.X2l: LineX2l, s.Display: LineDisplay, s.Body + 0.5: LineBody} {
-			if got := s.Line(size); got != want {
-				t.Errorf("font %d: Line(%v) = %v, want %v", font, size, got, want)
-			}
+// TestLineUI: Apply gives every text the interface's line, a text in an
+// overlay too. A CJK line is at least as high: on Linux the fallback CJK
+// font's own line (22 at 14 px) is taller than LineUI's 20.3.
+func TestLineUI(t *testing.T) {
+	open := true
+	tt := ui.NewTester(func(c *ui.Context) {
+		Apply(c, Light())
+		ui.Column(c).Children(func() {
+			ui.Text(c, "Latin only")
+			ui.Text(c, "中文一行")
+		})
+		ui.DialogBase(c, &open, func(backdrop, panel ui.Element) { ui.Text(c, "In a dialog") })
+	}, 400, 300)
+	tt.Frame()
+	want := float32(14 * LineUI)
+	for _, s := range []string{"Latin only", "In a dialog"} {
+		if r, ok := tt.Find(s); !ok || r.H < want-0.1 || r.H > want+0.1 {
+			t.Errorf("%q is %v high, want %v", s, r.H, want)
 		}
+	}
+	if r, ok := tt.Find("中文一行"); !ok || r.H < want-0.1 {
+		t.Errorf("%q is %v high, want at least %v", "中文一行", r.H, want)
 	}
 }
 

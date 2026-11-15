@@ -13,7 +13,6 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
-	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/sysproxy"
 	"github.com/godwit-email/godwit/internal/theme"
@@ -214,7 +213,7 @@ func (p *settingsPage) generalView(c *ui.Context) {
 		sel(i18n.T("settings.density"), "", func() ui.Element {
 			l := i18n.T("settings.density")
 			return settingSelect(c, l, &st.Density, []kit.Option[string]{
-				{Value: "compact", Label: i18n.T("settings.density.compact")},
+				{Value: "standard", Label: i18n.T("settings.density.standard")},
 				{Value: "comfortable", Label: i18n.T("settings.density.comfortable")},
 			})
 		}),
@@ -314,7 +313,7 @@ func (p *settingsPage) generalView(c *ui.Context) {
 					if ui.Slider(c, &n, core.MinThreadCollapse, core.MaxThreadCollapse).Step(1).Grow(1).Shrink(1).Label(i18n.T("settings.thread_collapse_threshold")).Changed() {
 						st.ThreadCollapseThreshold = int(math.Round(n))
 					}
-					kit.Text(c, strconv.Itoa(st.ThreadCollapseThreshold), t.Text.Sm).Width(th.Space(10)).TextAlign(ui.End).TextColor(t.Muted)
+					kit.Text(c, strconv.Itoa(st.ThreadCollapseThreshold), t.Text.Xs).Width(th.Space(10)).TextAlign(ui.End).TextColor(t.Muted)
 				})
 			})
 		})
@@ -347,7 +346,7 @@ type proxyDraft struct {
 }
 
 func (p *settingsPage) proxySection(c *ui.Context) {
-	st, d, t := &p.st, &p.proxy, theme.Of(c)
+	st, d := &p.st, &p.proxy
 	if key := proxyKey(st); key != d.from {
 		d.from, d.mode, d.addr = key, cmp.Or(st.ProxyMode, core.ProxySystem), st.ProxyURL
 		d.bypass = strings.Join(st.ProxyBypass, ", ")
@@ -362,7 +361,7 @@ func (p *settingsPage) proxySection(c *ui.Context) {
 	input := func(label, msg string, v *string, opts kit.InputOpts) func() {
 		return func() {
 			settingRow(c, label, msg, func() {
-				kit.Input(c, v, opts).Width(theme.SettingsInputWidth).Radius(t.Radius.Lg).Label(label)
+				kit.Input(c, v, opts).Width(theme.SettingsInputWidth).Label(label)
 			})
 		}
 	}
@@ -387,7 +386,7 @@ func (p *settingsPage) proxySection(c *ui.Context) {
 				}
 				settingRow(c, i18n.T("settings.proxy.password"), "", func() {
 					ui.Row(c).Gap(c.Theme().Space(3)).AlignItems(ui.Center).Children(func() {
-						kit.Input(c, &d.pass, kit.InputOpts{Password: true, Placeholder: ph}).Width(theme.SettingsInputWidth).Radius(t.Radius.Lg).Label(i18n.T("settings.proxy.password"))
+						kit.Input(c, &d.pass, kit.InputOpts{Password: true, Placeholder: ph}).Width(theme.SettingsInputWidth).Label(i18n.T("settings.proxy.password"))
 						if st.ProxyPasswordSet && d.pass == "" { // a saved one shows only as the placeholder, so erasing can't reach it
 							settingButton(c, i18n.T("settings.proxy.password.clear"), kit.Outline, false).OnClick(func() { st.ProxyPasswordSet = false })
 						}
@@ -527,14 +526,8 @@ func (p *settingsPage) noTranslate(c *ui.Context) {
 	if label == "" {
 		label = i18n.T("settings.no_translate.none")
 	}
-	t := theme.Of(c)
-	anchor := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.noTrans = !p.noTrans }}).Label(i18n.T("settings.no_translate")).
-		Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(2)).Radius(t.Radius.Lg).Border(theme.Stroke, t.Input).Background(t.Background).
-		MinWidth(theme.SettingsSelectMin).MaxWidth(theme.SettingsSelectMax)
-	anchor.Children(func() {
-		ui.Text(c, label).Grow(1)
-		ui.Icon(c, icons.Get("chevron-down")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
-	})
+	anchor := kit.SelectButton(c, label, kit.SelectOpts{Flat: true, MinWidth: theme.SettingsSelectMin, MaxWidth: theme.SettingsSelectMax}).
+		Label(i18n.T("settings.no_translate")).OnClick(func() { p.noTrans = !p.noTrans })
 	kit.Popover(c, anchor, &p.noTrans, func() {
 		ui.Column(c).Gap(th.Space(2)).Children(func() {
 			for _, l := range languages {
