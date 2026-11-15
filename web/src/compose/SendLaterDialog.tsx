@@ -136,7 +136,7 @@ export function SendLaterDialog({
               disabled={{ before: day0(new Date()) }}
               locale={dayLocale(loc)}
               aria-label={t("compose.send_later.date")}
-              className="rounded-lg border p-2"
+              className="bg-transparent p-0"
             />
             <Clock
               mins={mins}
