@@ -106,7 +106,7 @@ export function SendLaterDialog({
   const at = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, mins);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="md">
+      <DialogContent size="md" close={t("common.close")}>
         <form
           className="contents"
           onKeyDown={(e) => {
@@ -137,7 +137,7 @@ export function SendLaterDialog({
               {past ? t("compose.send_later.past") : readout(loc, at)}
             </p>
           </DialogHeader>
-          <div className="flex flex-wrap items-center justify-evenly gap-8">
+          <div className="flex flex-wrap items-center justify-between gap-8">
             <Calendar
               mode="single"
               required
@@ -151,7 +151,7 @@ export function SendLaterDialog({
               locale={dayLocale(loc)}
               components={{ DayButton }}
               aria-label={t("compose.send_later.date")}
-              className="bg-transparent p-0"
+              className="bg-transparent p-0 [--cell-size:--spacing(9)]"
             />
             <Clock
               mins={mins}

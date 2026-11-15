@@ -95,6 +95,14 @@ test("send later…: a dialog for any time, that says only a running Godwit send
   expect(onSend).not.toHaveBeenCalled();
 });
 
+test("send later…: the close button in the corner closes it, scheduling nothing", async () => {
+  const { onSendLater } = setup(false, false, "稍后发送");
+  await options();
+  await userEvent.click(await screen.findByRole("button", { name: "关闭" }));
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  expect(onSendLater).not.toHaveBeenCalled();
+});
+
 describe("at 15:30 on Sunday 15 November 2026", () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"] });
