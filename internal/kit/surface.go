@@ -67,6 +67,7 @@ const (
 	ToneWarning             // the status tints, each its -bg in a hairline of its -border under its -text: a note that warns,
 	ToneDanger              // one that says what failed,
 	ToneSuccess             // and one that says what went well
+	ToneInfo                // blue, a note to read before acting (a draft a program wrote): the blue label's fill halfway to the background in a hairline of its edge under its text
 )
 
 // Block makes e a region inside a page or a card and returns it: tone's
@@ -104,6 +105,9 @@ func toned(e ui.Element, t theme.Tokens, tone Tone, edged bool) ui.Element {
 		e.Background(t.DangerBg).Border(theme.Hairline, t.DangerBorder).TextColor(t.DangerText)
 	case ToneSuccess:
 		e.Background(t.SuccessBg).Border(theme.Hairline, t.SuccessBorder).TextColor(t.SuccessText)
+	case ToneInfo:
+		blue := t.Label("blue")
+		e.Background(blue.Fill.Mix(t.Background, 0.5)).Border(theme.Hairline, blue.Edge).TextColor(blue.Text)
 	}
 	return e
 }

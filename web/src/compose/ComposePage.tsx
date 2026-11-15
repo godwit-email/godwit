@@ -873,9 +873,10 @@ function Compose({
           <section className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)">
             <div className="flex min-h-0 flex-1 flex-col overflow-auto">
               {fromProgram && (
-                <Alert className="mx-4 mt-3 w-auto gap-1 border-0 bg-muted px-3.5 py-3 text-sm">
+                // blue, as the native notice (kit.ToneInfo)
+                <Alert className="mx-4 mt-3 w-auto gap-0.5 border-[0.5px] border-blue-200 bg-blue-100/50 px-3.5 py-2.5 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300">
                   <AlertTitle>{t("mail.draft.from_program")}</AlertTitle>
-                  <AlertDescription className="text-sm">
+                  <AlertDescription className="text-xs text-blue-700 dark:text-blue-300">
                     {t("mail.draft.from_program_help")}
                   </AlertDescription>
                 </Alert>

@@ -125,8 +125,8 @@ func draftChip(c *ui.Context, text string) {
 // show whole, so it is checked and sent from the compose window instead.
 func programNotice(c *ui.Context, cut bool) {
 	t, th := theme.Of(c), c.Theme()
-	kit.Block(c, ui.Column(c), kit.ToneTint).FillWidth().Gap(th.Space(1.5)).Padding(th.Space(2), th.Space(3)).Children(func() {
-		draftChip(c, i18n.T("mail.draft.from_program"))
+	kit.Block(c, ui.Column(c), kit.ToneInfo).FillWidth().Gap(th.Space(0.5)).Padding(th.Space(2.5), th.Space(3.5)).Children(func() {
+		kit.Text(c, i18n.T("mail.draft.from_program"), t.Text.Sm).FontWeight(500)
 		kit.Text(c, i18n.T("mail.draft.from_program_help"), t.Text.Xs)
 		if cut {
 			kit.Text(c, i18n.T("mail.draft.too_long"), t.Text.Xs).FontWeight(600)
