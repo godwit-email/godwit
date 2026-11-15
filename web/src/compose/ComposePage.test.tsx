@@ -703,13 +703,13 @@ test("the bottom bar holds the format toolbar, 稍后发送 and 发送 only: no 
   expect(within(bar).getByRole("button", { name: "发送" })).toBeInTheDocument();
   expect(within(bar).queryByRole("button", { name: "丢弃草稿" })).toBeNull();
   expect(bar).not.toHaveTextContent("只能写草稿");
-  // a narrow window wraps it, the toolbar first and 稍后发送, 发送 kept at the end (ml-auto)
+  // a narrow window wraps it, the toolbar first and 发送 with 稍后发送 kept at the end (ml-auto)
   expect(bar).toHaveClass("flex-wrap");
   const send = within(bar).getByRole("button", { name: "发送" });
   const end = bar.lastElementChild as HTMLElement;
   expect(end).toHaveClass("ml-auto");
-  expect(end.lastElementChild).toBe(send);
-  expect(within(end).getByRole("button", { name: "稍后发送…" })).toBeInTheDocument();
+  expect(end.firstElementChild).toBe(send);
+  expect(end.lastElementChild).toBe(within(end).getByRole("button", { name: "稍后发送…" }));
 });
 
 test("send during composition: a composition that never ends sends nothing", async () => {

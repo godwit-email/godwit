@@ -1,4 +1,4 @@
-import { RiTimeLine } from "@remixicon/react";
+import { RiArrowDownSLine } from "@remixicon/react";
 import { useEffect, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +19,7 @@ function tomorrowMorning(now: Date): Date {
 
 /**
  * The send button, at the bottom bar's end (ml-auto keeps it right when the bar wraps),
- * after Send later: a date and time, and the note that only a running Godwit sends.
+ * split with Send later: a date and time, and the note that only a running Godwit sends.
  */
 export function SendBar({
   sending,
@@ -47,12 +47,15 @@ export function SendBar({
     }
   }, [open]);
   return (
-    <div className="ml-auto flex items-center gap-1">
+    <div className="ml-auto flex items-center">
+      <Button className="rounded-r-none" disabled={sending || frozen} onClick={onSend}>
+        {t("compose.send")}
+      </Button>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger
           render={
             <Button
-              variant="ghost"
+              className="w-6 rounded-l-none border-l-primary-foreground/20"
               size="icon"
               disabled={sending || frozen}
               aria-label={t("compose.send_later")}
@@ -60,7 +63,7 @@ export function SendBar({
             />
           }
         >
-          <RiTimeLine />
+          <RiArrowDownSLine />
         </PopoverTrigger>
         <PopoverContent side="top" align="end" className="w-80">
           <form
@@ -97,9 +100,6 @@ export function SendBar({
           </form>
         </PopoverContent>
       </Popover>
-      <Button disabled={sending || frozen} onClick={onSend}>
-        {t("compose.send")}
-      </Button>
     </div>
   );
 }
