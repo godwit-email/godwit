@@ -110,6 +110,22 @@ func (s *Service) SendRevision(ctx context.Context, draftID, revision int64) err
 }
 
 // ErrNotProgramDraft: ApproveDraft was asked for a draft no program wrote.
+// approvalView is a program's draft as 批准并发送 would send it: its masking
+// placeholders and link references restored, so the user approves the real
+// recipients and text (ADR 0042). Godwit's own interface only: a program never
+// gets back what masking hid from it. A draft that cannot be restored stays as
+// stored; sending it is refused anyway.
+func (s *Service) approvalView(ctx context.Context, d Draft) Draft {
+	if !d.FromProgram || uiSessionFromContext(ctx) == nil {
+		return d
+	}
+	x := d
+	if s.expandDraft(ctx, &x) != nil {
+		return d
+	}
+	return x
+}
+
 var ErrNotProgramDraft = errors.New("no program wrote this draft")
 
 // ApproveDraft is the user's 批准并发送 on a draft a program wrote

@@ -381,7 +381,7 @@ func (s *Service) ListDrafts(ctx context.Context, accountID int64) ([]Draft, err
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, d)
+		out = append(out, s.approvalView(ctx, d))
 	}
 	return out, nil
 }

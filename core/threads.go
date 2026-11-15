@@ -224,7 +224,7 @@ func (s *Service) GetThread(ctx context.Context, id int64) (Thread, error) {
 		if err != nil {
 			return Thread{}, err
 		}
-		t.Drafts = append(t.Drafts, d)
+		t.Drafts = append(t.Drafts, s.approvalView(ctx, d))
 	}
 	return t, nil
 }
