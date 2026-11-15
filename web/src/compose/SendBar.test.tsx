@@ -127,9 +127,13 @@ describe("at 15:30 on Sunday 15 November 2026", () => {
     fireEvent.keyDown(clock, { key: "ArrowRight" });
     fireEvent.keyDown(clock, { key: "ArrowUp" });
     expect(screen.getByText("今天 · 11月15日周日 17:05")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "上午" }));
-    expect(screen.getByText("今天 · 11月15日周日 5:05")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "下午" }));
+    // The time field types it, the face follows.
+    const field = screen.getByLabelText("时间", { selector: "input" });
+    expect(field).toHaveValue("17:05");
+    fireEvent.change(field, { target: { value: "05:20" } });
+    expect(screen.getByText("今天 · 11月15日周日 5:20")).toBeInTheDocument();
+    expect(clock).toHaveAttribute("aria-valuetext", "5:20");
+    fireEvent.change(field, { target: { value: "17:05" } });
     await userEvent.click(screen.getByRole("button", { name: /11月16日/ }));
     expect(screen.getByText("明天 · 11月16日周一 17:05")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /11月14日/ })).toBeDisabled();

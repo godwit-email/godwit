@@ -29,7 +29,7 @@ import {
 } from "@/components/dialog";
 import { Button } from "@/components/ui/button";
 import { Calendar, CalendarDayButton } from "@/components/ui/calendar";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Input } from "@/components/ui/input";
 import { currentLocale, type T } from "@/shared/i18n";
 
 const day0 = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -70,18 +70,6 @@ export function readout(loc: string, at: Date, now = new Date()): string {
   if (days !== 0 && days !== 1) return when;
   const rel = new Intl.RelativeTimeFormat(loc, { numeric: "auto" }).format(days, "day");
   return `${rel.charAt(0).toLocaleUpperCase(loc)}${rel.slice(1)} · ${when}`;
-}
-
-/**
- * The locale's names for the morning and the afternoon (上午, 下午; AM, PM), read at 9:00 and 15:00:
- * WebKit's ICU names the periods of a Chinese day finer, so midnight and noon would read 凌晨
- * and 中午, while 9:00 and 15:00 are 上午 and 下午 there as everywhere.
- */
-function dayPeriods(loc: string): [string, string] {
-  const f = new Intl.DateTimeFormat(loc, { hour: "numeric", hour12: true });
-  const name = (h: number) =>
-    f.formatToParts(new Date(2000, 0, 1, h)).find((p) => p.type === "dayPeriod")?.value;
-  return [name(9) ?? "AM", name(15) ?? "PM"];
 }
 
 /**
@@ -162,7 +150,6 @@ export function SendLaterDialog({
             />
             <Clock
               mins={mins}
-              periods={dayPeriods(loc)}
               label={t("compose.send_later.time")}
               onChange={(v) => {
                 setMins(v);
@@ -207,19 +194,17 @@ export const facePoint = (turn: number, r: number) => [
 ];
 
 /**
- * A clock face whose hands both drag, over the minutes of a day. Time runs on through 12: the
- * minute hand past 12 carries the hour, the hour hand past 12 turns morning to afternoon. The
- * minute hand snaps to 5 minutes; ←→ step 5 minutes, ↑↓ an hour.
+ * The time of day: a field to type it in, over a clock face whose hands both drag. Time runs on
+ * through 12: the minute hand past 12 carries the hour, the hour hand past 12 turns morning to
+ * afternoon. The minute hand snaps to 5 minutes; on the face ←→ step 5 minutes, ↑↓ an hour.
  */
 export function Clock({
   mins,
-  periods,
   label,
   onChange,
 }: {
   /** Minutes since midnight. */
   mins: number;
-  periods: [string, string];
   label: string;
   onChange(mins: number): void;
 }) {
@@ -230,6 +215,15 @@ export function Clock({
   const [mx, my] = facePoint(m / 60, FACE.minute.length);
   const [hx, hy] = facePoint(((h % 12) + m / 60) / 12, FACE.hour.length);
   const [grab, setGrab] = useState<"h" | "m" | null>(null);
+  // The field's text: the clock's time, unless a time is half typed in it.
+  const hm = `${p2(h)}:${p2(m)}`;
+  const [typed, setTyped] = useState(hm);
+  const [shown, setShown] = useState(hm);
+  if (shown !== hm) {
+    // The time changed (the face, the keys, a typed time): the field shows it.
+    setShown(hm);
+    setTyped(hm);
+  }
   // The pointer in viewBox units, and its turn round the centre.
   const at = (e: React.PointerEvent<HTMLDivElement>) => {
     const b = e.currentTarget.getBoundingClientRect();
@@ -256,25 +250,24 @@ export function Clock({
     />
   );
   return (
-    // A row level with the calendar's month, the face centred beside the days.
+    // The field level with the calendar's month, the face centred beside the days.
     <div className="flex flex-col items-center gap-4 self-stretch">
-      <div className="flex h-(--cell-size) items-center gap-3">
-        <span className="font-medium text-base tabular-nums">
-          {h % 12 === 0 ? 12 : h % 12}:{p2(m)}
-        </span>
-        <ToggleGroup
-          variant="outline"
-          size="sm"
-          spacing={0}
-          value={[pm ? "pm" : "am"]}
-          onValueChange={(v) => v[0] && put((h % 12) * 60 + (v[0] === "pm" ? 720 : 0) + m)}
-        >
-          {periods.map((name, i) => (
-            <ToggleGroupItem key={name} value={i ? "pm" : "am"}>
-              {name}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+      {/* The time to type: the system's time field (segments, digits, ↑↓, the day period as the
+          system words it), in step with the face. */}
+      <div className="flex h-(--cell-size) items-center">
+        <Input
+          type="time"
+          aria-label={label}
+          value={typed}
+          onChange={(e) => {
+            // Mid-typing the field is "" (a segment half done): keep what is typed, so React does
+            // not put the old time back under the cursor; a whole time sets the clock.
+            setTyped(e.target.value);
+            const [hh, mm] = e.target.value.split(":").map(Number);
+            if (Number.isInteger(hh) && Number.isInteger(mm)) put(hh * 60 + mm);
+          }}
+          className="w-auto tabular-nums"
+        />
       </div>
       <div
         role="slider"
