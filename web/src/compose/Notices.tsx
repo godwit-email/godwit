@@ -11,7 +11,7 @@ function From({ w, t }: { w: SendWarning; t: T }) {
 
 // The design's notice: a filled box, no outline; a warning in the theme's warning colours.
 const box = "gap-1 border-0 px-3.5 py-3 text-sm";
-const warn = `${box} bg-(--warning-bg) text-(--warning-text) *:data-[slot=alert-description]:text-(--warning-text)`;
+const warn = `${box} bg-(--warning-bg) text-(--warning-text) **:data-[slot=alert-description]:text-(--warning-text)`;
 const danger = `${box} bg-destructive/10`;
 
 /** Plugin warnings (sendable anyway), a blocking refusal and the save conflict. */
@@ -46,18 +46,28 @@ export function Notices({
           <From w={blocked} t={t} />
         </Alert>
       )}
-      {warnings.map((w) => (
-        <Alert key={`${w.plugin}:${w.message}`} className={warn}>
-          <AlertTitle>{t("compose.warn", w.message)}</AlertTitle>
-          <From w={w} t={t} />
+      {warnings.length > 0 && (
+        // every warning in one notice, 仍然发送 inside it, as the conflict's buttons are in its
+        <Alert className={warn}>
+          {warnings.map((w) => (
+            <div key={`${w.plugin}:${w.message}`} className="flex flex-col gap-1">
+              <AlertTitle>{t("compose.warn", w.message)}</AlertTitle>
+              <From w={w} t={t} />
+            </div>
+          ))}
+          {!blocked && (
+            <div className="mt-2 flex gap-1.5">
+              <Button
+                variant="warning"
+                size="sm"
+                disabled={frozen}
+                onClick={() => !frozen && onSendAnyway()}
+              >
+                {t("compose.send_anyway")}
+              </Button>
+            </div>
+          )}
         </Alert>
-      ))}
-      {warnings.length > 0 && !blocked && (
-        <div>
-          <Button variant="warning" disabled={frozen} onClick={() => !frozen && onSendAnyway()}>
-            {t("compose.send_anyway")}
-          </Button>
-        </div>
       )}
       {conflict && (
         <Alert variant="destructive" className={danger}>
