@@ -1044,6 +1044,8 @@
   "reader_reply": "Reply",
   "reader_reply_all": "Reply all",
   "reader_reply_wit": "Ask Wit to reply to {arg1}…",
+  "reader_program_reply": "A program drafted a reply: {arg1}",
+  "reader_program_reply_open": "View",
   "@reader_reply_wit": {
     "placeholders": {
       "arg1": {

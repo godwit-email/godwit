@@ -557,6 +557,8 @@
   "reader_reply": "返信",
   "reader_reply_all": "全員に返信",
   "reader_reply_wit": "{arg1} への返信を Wit に頼む…",
+  "reader_program_reply": "プログラムが返信を下書きしました：{arg1}",
+  "reader_program_reply_open": "表示",
   "reader_save": "メールを保存",
   "reader_save_as": "名前を付けて保存…",
   "reader_attachments_select_all": "すべて選択",

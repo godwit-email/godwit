@@ -2,8 +2,6 @@ package app
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,11 +10,9 @@ import (
 	"github.com/godwit-email/godwit/internal/richtext"
 )
 
-// programReplyHarness opens a thread with Bob's question, under which the
-// user's own reply draft waits (no label, no button), and returns the
-// question's account and ID.
-func programReplyHarness(t *testing.T) (*harness, core.Account, int64) {
-	t.Helper()
+// A reply a program drafted for the open thread is named in the reply bar,
+// and 查看 opens it in the compose window; the user's own reply is not named.
+func TestThreadProgramReplyOpens(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	acc := accs[0]
 	h.env.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", acc.Email, "Question", "can you come on Friday?"))
@@ -31,86 +27,83 @@ func programReplyHarness(t *testing.T) (*harness, core.Account, int64) {
 	h.click("Question")
 	h.see("can you come on Friday?")
 	h.waitMail("the thread read again", func() bool { return true })
-	if h.tt.HasText("批准并发送") || h.tt.HasText("来自程序的草稿") {
-		t.Fatal("the user's own draft is offered for approval")
+	if h.tt.HasText("查看") {
+		t.Fatal("the user's own draft is named as a program's")
 	}
-	return h, acc, page.Items[0].ID
-}
 
-// programReply is a reply godwit mcp writes to message src.
-func programReply(t *testing.T, h *harness, acc core.Account, src int64, text string) core.Draft {
-	t.Helper()
 	mcp := core.WithExternalSource(context.Background(), core.AuditMCP)
-	d, err := h.env.Svc.NewDraft(mcp, acc.ID, "reply", src)
+	d, err := h.env.Svc.NewDraft(mcp, acc.ID, "reply", page.Items[0].ID)
 	if err == nil {
-		d.HTML, d.Cc, d.Bcc = "<p>"+text+"</p>", []string{"carol@example.com"}, []string{"hidden@example.net"}
+		d.HTML = "<p>Yes, Friday works.</p>"
 		d, err = h.env.Svc.SaveDraft(mcp, d)
 	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	return d
+	h.waitMail("the program's reply", func() bool { return h.tt.HasText("程序写好了一封回复：Yes, Friday works.") })
+	h.click("查看")
+	h.until("its compose window", func() bool { return h.opens(d.ID) == 1 })
 }
 
-func TestThreadProgramDraftApproveSends(t *testing.T) {
-	h, acc, src := programReplyHarness(t)
-	d := programReply(t, h, acc, src, "Yes, Friday works.")
-	h.waitMail("the program's draft", func() bool { return h.tt.HasText("Yes, Friday works.") })
-	h.see("来自程序的草稿")
-	h.see("carol@example.com") // every address it goes to shows before the approval
+// programDraftsHarness opens the drafts folder on one draft godwit mcp wrote,
+// to bob with Cc and Bcc, its body html.
+func programDraftsHarness(t *testing.T, html string) (*harness, core.Draft) {
+	t.Helper()
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	if err := h.env.IMAP(accs[0].ID).User.Create("Drafts", nil); err != nil {
+		t.Fatal(err)
+	}
+	h.syncNow(accs[0])
+	mcp := core.WithExternalSource(context.Background(), core.AuditMCP)
+	d, err := h.env.Svc.NewDraft(mcp, accs[0].ID, "new", 0)
+	if err == nil {
+		d.Subject, d.To, d.Cc, d.Bcc, d.HTML = "Friday", []string{"bob@example.com"}, []string{"carol@example.com"}, []string{"hidden@example.net"}, html
+		d, err = h.env.Svc.SaveDraft(mcp, d)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.waitMail("the drafts folder", func() bool { return h.tt.HasText("草稿") })
+	h.click("草稿")
+	h.see("Friday")
+	h.click("Friday")
+	return h, d
+}
+
+// The drafts pane shows a program's draft with its label and every address,
+// and 批准并发送 queues it.
+func TestDraftPaneProgramDraftApproves(t *testing.T) {
+	h, d := programDraftsHarness(t, "<p>Yes, Friday works.</p>")
+	h.see("这封草稿由程序（AI 工具、脚本、插件或 Wit）写入或修改过。发送前请核对收件人和内容。")
+	h.see("carol@example.com")
 	h.see("hidden@example.net")
 	h.click("批准并发送")
 	h.draftQueued(d.ID)
 }
 
-// A program's attachment change while the thread is open shows at once: the
-// card is the revision an approval sends.
-func TestThreadProgramDraftAttachmentShows(t *testing.T) {
-	h, acc, src := programReplyHarness(t)
-	d := programReply(t, h, acc, src, "Yes, Friday works.")
-	h.waitMail("the program's draft", func() bool { return h.tt.HasText("Yes, Friday works.") })
-	path := filepath.Join(t.TempDir(), "agenda.txt")
-	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := h.env.Svc.AddAttachmentAt(core.WithExternalSource(context.Background(), core.AuditMCP), d.ID, d.Revision, path); err != nil {
-		t.Fatal(err)
-	}
-	h.waitMail("the attachment on the card", func() bool { return h.tt.HasText("agenda.txt") })
-	h.click("批准并发送")
-	h.draftQueued(d.ID)
-}
-
-// A program's change after the draft was shown voids the click: nothing is
-// queued until the user approves the new text.
-func TestThreadProgramDraftChangedRefused(t *testing.T) {
-	h, acc, src := programReplyHarness(t)
-	d := programReply(t, h, acc, src, "Yes, Friday works.")
-	h.waitMail("the program's draft", func() bool { return h.tt.HasText("Yes, Friday works.") })
+// A program's change after the pane showed the draft voids the click.
+func TestDraftPaneProgramDraftChangedRefused(t *testing.T) {
+	h, d := programDraftsHarness(t, "<p>Yes, Friday works.</p>")
+	h.see("Yes, Friday works.")
 	d.HTML = "<p>Swapped behind the user's back.</p>"
 	if _, err := h.env.Svc.SaveDraft(core.WithExternalSource(context.Background(), core.AuditMCP), d); err != nil {
 		t.Fatal(err)
 	}
-	h.click("批准并发送") // still the text shown: the refresh has not run
-	h.see("草稿在别处被修改。")
-	if items, err := h.env.Svc.ListOutbox(context.Background(), acc.ID); err != nil || len(items) != 0 {
+	h.click("批准并发送") // still the text shown: the reload has not run
+	h.see("Swapped behind the user's back.")
+	if items, err := h.env.Svc.ListOutbox(context.Background(), d.AccountID); err != nil || len(items) != 0 {
 		t.Fatalf("queued %+v, %v", items, err)
 	}
-	h.waitMail("the new text", func() bool { return h.tt.HasText("Swapped behind the user's back.") })
-	h.click("批准并发送")
-	h.draftQueued(d.ID)
 }
 
-// A draft too long to show whole cannot be approved from the card: the click
+// A draft too long to show whole is not approved from the pane: the click
 // would send text the user never saw.
-func TestThreadProgramDraftTooLongNotApproved(t *testing.T) {
-	h, acc, src := programReplyHarness(t)
-	programReply(t, h, acc, src, "Yes, Friday works."+strings.Repeat("</p><p>more", richtext.DefaultLimits.MaxBlocks))
-	h.waitMail("the program's draft", func() bool { return h.tt.HasText("Yes, Friday works.") })
+func TestDraftPaneProgramDraftTooLong(t *testing.T) {
+	h, d := programDraftsHarness(t, "<p>Yes, Friday works."+strings.Repeat("</p><p>more", richtext.DefaultLimits.MaxBlocks)+"</p>")
 	h.see("这封草稿太长，这里显示不全。请点「继续编辑」核对全文，再从那里发送。")
-	h.click("批准并发送")
+	h.click("这封草稿太长，这里显示不全。请点「继续编辑」核对全文，再从那里发送。") // the send button's tip
 	h.waitMail("the click to settle", func() bool { return true })
-	if items, err := h.env.Svc.ListOutbox(context.Background(), acc.ID); err != nil || len(items) != 0 {
+	if items, err := h.env.Svc.ListOutbox(context.Background(), d.AccountID); err != nil || len(items) != 0 {
 		t.Fatalf("queued %+v, %v", items, err)
 	}
 }

@@ -97,6 +97,7 @@ const state = {
   updatedAt: new Date(2026, 9, 10, 9, 5).getTime(),
   theme,
   locale: "zh-Hans",
+  fromProgram: false,
   wit: { enabled: false, translateOnly: false, skills: [], languages: [], chips: [], model: "" },
 };
 const noWarnings = { sent: false, conflict: false, warnings: [], digest: "", blocked: null };
@@ -127,6 +128,24 @@ test("loads the draft", async () => {
   await userEvent.click(screen.getByRole("button", { name: "显示引用的原邮件（助手只读）" }));
   expect(screen.getByText("> 原文")).toBeInTheDocument();
   expect(currentWindow.setTitle).toHaveBeenLastCalledWith("你好");
+});
+
+test("a program's draft asks for a check before sending (ADR 0043)", async () => {
+  vi.mocked(api.load).mockResolvedValue({ ...state, fromProgram: true });
+  render(<ComposePage />);
+  await body();
+  expect(screen.getByText("来自程序的草稿")).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "这封草稿由程序（AI 工具、脚本、插件或 Wit）写入或修改过。发送前请核对收件人和内容。",
+    ),
+  ).toBeInTheDocument();
+});
+
+test("the user's own draft has no program notice", async () => {
+  render(<ComposePage />);
+  await body();
+  expect(screen.queryByText("来自程序的草稿")).not.toBeInTheDocument();
 });
 
 test("the editor is a card on the window's material, under a borderless title bar", async () => {

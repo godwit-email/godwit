@@ -250,7 +250,7 @@ func (p *ComposePage) Load(ctx context.Context) (ComposeState, error) {
 	out := ComposeState{SignatureHTML: sig, Wit: wit, DraftID: d.ID, From: d.AccountID, To: nz(d.To), Cc: nz(d.Cc), Bcc: nz(d.Bcc),
 		ReplyTo: d.ReplyTo, Subject: d.Subject, Body: editable, Quote: mail.HTMLToText(s.quote),
 		Attachments: attachments(d), Revision: d.Revision,
-		UpdatedAt: d.UpdatedAt.UnixMilli(), Theme: ThemeOf(st), Locale: i18n.Language()}
+		UpdatedAt: d.UpdatedAt.UnixMilli(), Theme: ThemeOf(st), Locale: i18n.Language(), FromProgram: d.FromProgram}
 	for _, a := range accs {
 		if a.Kind != core.KindLocalArchive && !a.ReceiveOnly { // no sender
 			out.Accounts = append(out.Accounts, Account{ID: a.ID, Email: a.Email})

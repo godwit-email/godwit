@@ -562,6 +562,8 @@
   "reader_reply": "Odpowiedz",
   "reader_reply_all": "Odpowiedz wszystkim",
   "reader_reply_wit": "Poproś Wita o odpowiedź dla {arg1}…",
+  "reader_program_reply": "Program przygotował odpowiedź: {arg1}",
+  "reader_program_reply_open": "Pokaż",
   "reader_save": "Zapisz e-mail",
   "reader_save_as": "Zapisz jako…",
   "reader_attachments_select_all": "Zaznacz wszystko",

@@ -302,9 +302,6 @@ func (p *mailPage) doSend(id, rev int64, call func(context.Context) error) {
 			return
 		default:
 			a.toastErr(err) // blocked, stale and the rest read from humanize
-			if errors.Is(err, core.ErrStaleDraft) && a.route.ThreadID != 0 {
-				p.reader.sync(true) // a thread's program draft (programDrafts) shows its new revision
-			}
 		}
 		p.reload()
 	})

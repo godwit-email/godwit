@@ -557,6 +557,8 @@
   "reader_reply": "Beantwoorden",
   "reader_reply_all": "Allen beantwoorden",
   "reader_reply_wit": "Vraag Wit om {arg1} te antwoorden…",
+  "reader_program_reply": "Een programma heeft een antwoord opgesteld: {arg1}",
+  "reader_program_reply_open": "Bekijken",
   "reader_save": "E-mail opslaan",
   "reader_save_as": "Opslaan als…",
   "reader_attachments_select_all": "Alles selecteren",

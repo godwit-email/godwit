@@ -557,6 +557,8 @@
   "reader_reply": "Yanıtla",
   "reader_reply_all": "Tümünü yanıtla",
   "reader_reply_wit": "Wit''ten {arg1} için yanıt iste…",
+  "reader_program_reply": "Bir program yanıt taslağı yazdı: {arg1}",
+  "reader_program_reply_open": "Görüntüle",
   "reader_save": "E-postayı kaydet",
   "reader_save_as": "Farklı kaydet…",
   "reader_attachments_select_all": "Tümünü seç",

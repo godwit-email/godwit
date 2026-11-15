@@ -557,6 +557,8 @@
   "reader_reply": "Ответить",
   "reader_reply_all": "Ответить всем",
   "reader_reply_wit": "Попросить Wit ответить: {arg1}…",
+  "reader_program_reply": "Программа подготовила ответ: {arg1}",
+  "reader_program_reply_open": "Открыть",
   "reader_save": "Сохранить письмо",
   "reader_save_as": "Сохранить как…",
   "reader_attachments_select_all": "Выбрать все",

@@ -562,6 +562,8 @@
   "reader_reply": "Antworten",
   "reader_reply_all": "Allen antworten",
   "reader_reply_wit": "Wit um eine Antwort an {arg1} bitten…",
+  "reader_program_reply": "Ein Programm hat eine Antwort entworfen: {arg1}",
+  "reader_program_reply_open": "Ansehen",
   "reader_save": "E-Mail speichern",
   "reader_save_as": "Speichern unter…",
   "reader_attachments_select_all": "Alle auswählen",

@@ -4,7 +4,7 @@ import { currentWindow } from "mygo-runtime";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
 import { toast } from "sonner";
-import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Toaster } from "@/components/ui/sonner";
@@ -297,6 +297,7 @@ function Compose({
   const [initial, setInitial] = useState({ body: state.body, n: 0 }); // n remounts the editor
   const [fieldsKey, setFieldsKey] = useState(0); // remounts the fields
   const [from, setFrom] = useState(state.from);
+  const [fromProgram, setFromProgram] = useState(state.fromProgram); // ADR 0043: check before sending
   const [signature, setSignature] = useState(sigOf(state));
   const [quote, setQuote] = useState(state.quote);
   const [showQuote, setShowQuote] = useState(false);
@@ -754,6 +755,7 @@ function Compose({
       if (saver.current !== sv) return;
       setLatestFailed(false);
       setFrom(l.from);
+      setFromProgram(l.fromProgram);
       setSignature(sigOf(l));
       setQuote(l.quote);
       setAttachments(l.attachments);
@@ -868,6 +870,14 @@ function Compose({
         <ResizablePanel id="editor" minSize={320}>
           <section className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)">
             <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+              {fromProgram && (
+                <Alert className="mx-4 mt-3 w-auto gap-1 border-0 bg-muted px-3.5 py-3 text-sm">
+                  <AlertTitle>{t("mail.draft.from_program")}</AlertTitle>
+                  <AlertDescription className="text-sm">
+                    {t("mail.draft.from_program_help")}
+                  </AlertDescription>
+                </Alert>
+              )}
               <Fields
                 key={fieldsKey}
                 ref={fieldsRef}

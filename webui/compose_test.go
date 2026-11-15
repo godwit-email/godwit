@@ -493,6 +493,26 @@ func TestComposeSendSendsLatest(t *testing.T) {
 	assert.Contains(t, string(raw), "latestbody")
 }
 
+// A program's change while the window is open is not sent unseen: the send
+// reports the conflict and queues nothing (ADR 0043).
+func TestComposeSendRefusesAProgramsChange(t *testing.T) {
+	f := newFixture(t, coretest.WithoutAutoSync())
+	d := f.draft(t, "new", 0)
+	f.c.Attach(1, d.ID)
+	res, err := f.page.Save(f.ctx(1), ComposeEdit{To: []string{"bob@example.com"}, Subject: "s", Body: "<p>shown</p>", Revision: d.Revision})
+	require.NoError(t, err)
+	d, err = f.e.Svc.GetDraft(t.Context(), d.ID)
+	require.NoError(t, err)
+	d.HTML = "<p>swapped</p>"
+	_, err = f.e.Svc.SaveDraft(core.WithExternalSource(t.Context(), core.AuditMCP), d)
+	require.NoError(t, err)
+	sr, err := f.page.Send(f.ctx(1), res.Revision, "", 0)
+	require.NoError(t, err)
+	assert.True(t, sr.Conflict)
+	assert.False(t, sr.Sent)
+	assert.False(t, f.queued(t, d.ID))
+}
+
 func TestComposeSendWarnings(t *testing.T) {
 	f := newFixture(t)
 	f.e.InstallPlugin(t, "send-warn")
@@ -550,6 +570,15 @@ func TestComposeLatest(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "<p>elsewhere</p>", st.Body)
 	assert.Equal(t, d.Revision, st.Revision)
+	assert.False(t, st.FromProgram)
+
+	// A program's change since: the page asks for a check (ADR 0043).
+	d.HTML = "<p>a program's</p>"
+	_, err = f.e.Svc.SaveDraft(core.WithExternalSource(t.Context(), core.AuditMCP), d)
+	require.NoError(t, err)
+	st, err = f.page.Latest(f.ctx(1))
+	require.NoError(t, err)
+	assert.True(t, st.FromProgram)
 }
 
 func TestComposeReleaseDeletesEmpty(t *testing.T) {

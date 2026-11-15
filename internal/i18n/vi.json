@@ -557,6 +557,8 @@
   "reader_reply": "Trả lời",
   "reader_reply_all": "Trả lời tất cả",
   "reader_reply_wit": "Nhờ Wit trả lời {arg1}…",
+  "reader_program_reply": "Một chương trình đã soạn thư trả lời: {arg1}",
+  "reader_program_reply_open": "Xem",
   "reader_save": "Lưu email",
   "reader_save_as": "Lưu thành…",
   "reader_attachments_select_all": "Chọn tất cả",

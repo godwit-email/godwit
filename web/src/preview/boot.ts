@@ -22,10 +22,11 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
       "cmdk",
       "signature",
       "translate",
+      "program",
     ],
     entry: () => import("@/compose/main"),
     setup() {
-      const withBody = ["inline", "rewrite", "cmdk"].includes(state);
+      const withBody = ["inline", "rewrite", "cmdk", "program"].includes(state);
       let revision = 1;
       let followed = false;
       const body = () => (revision > 1 || withBody ? fx.compose(mode, true).body : "");
@@ -55,6 +56,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
           ...(state === "translate" && {
             wit: { ...fx.compose(mode, withBody).wit, translateOnly: true },
           }),
+          ...(state === "program" && { fromProgram: true }), // a draft godwit mcp wrote (ADR 0043)
           ...(state === "signature" && {
             signatureHtml: `<p>Alex Chen<br>Partnerships · Example Co.</p><img src="${fx.logo}">`, // no "-- ": SignatureDelimiter is off by default
           }),

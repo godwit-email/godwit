@@ -557,6 +557,8 @@
   "reader_reply": "Responder",
   "reader_reply_all": "Responder a todos",
   "reader_reply_wit": "Peça ao Wit para responder a {arg1}…",
+  "reader_program_reply": "Um programa escreveu uma resposta: {arg1}",
+  "reader_program_reply_open": "Ver",
   "reader_save": "Salvar e-mail",
   "reader_save_as": "Salvar como…",
   "reader_attachments_select_all": "Selecionar tudo",

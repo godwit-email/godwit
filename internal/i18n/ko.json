@@ -557,6 +557,8 @@
   "reader_reply": "답장",
   "reader_reply_all": "전체 답장",
   "reader_reply_wit": "{arg1}에게 보낼 답장을 Wit에게 부탁하기…",
+  "reader_program_reply": "프로그램이 답장을 작성했습니다: {arg1}",
+  "reader_program_reply_open": "보기",
   "reader_save": "이메일 저장",
   "reader_save_as": "다른 이름으로 저장…",
   "reader_attachments_select_all": "전체 선택",

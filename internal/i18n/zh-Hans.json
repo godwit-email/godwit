@@ -557,6 +557,8 @@
   "reader_reply": "回复",
   "reader_reply_all": "全部回复",
   "reader_reply_wit": "让 Wit 帮你回复 {arg1}…",
+  "reader_program_reply": "程序写好了一封回复：{arg1}",
+  "reader_program_reply_open": "查看",
   "reader_save": "保存邮件",
   "reader_save_as": "另存为…",
   "reader_attachments_select_all": "全选",

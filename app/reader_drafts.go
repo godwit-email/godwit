@@ -1,41 +1,46 @@
 package app
 
 import (
+	"strings"
+
 	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/richtext"
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
-// programDrafts shows, under the thread's messages, the drafts a program
-// wrote in answer to it (core.Thread.Drafts, ADR 0043), each as last saved
-// with 批准并发送 for exactly that revision and 继续编辑.
-func (r *reader) programDrafts(c *ui.Context) {
-	t, th := theme.Of(c), c.Theme()
-	p := r.p
-	for i, d := range r.thread.Drafts {
-		cut := i >= len(r.draftDocs) || r.draftDocs[i].cut // what shows is not all an approval sends
-		kit.Block(c, r.column(c), kit.ToneOutline).Key(threadDraft{d.ID}).Gap(th.Space(3)).Padding(th.Space(4)).Children(func() {
-			programNotice(c, cut)
-			p.draftFields(c, d)
-			if i < len(r.draftDocs) {
-				ui.Column(c).Padding(th.Space(3), 0, 0, 0).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
-					richtext.Render(c, r.draftDocs[i].doc, richtext.RenderOptions{OnLink: p.a.openLink})
-				})
-			}
-			draftAttachments(c, d.Attachments)
-			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				if kit.Button(c, i18n.T("mail.draft.approve"), kit.ButtonOpts{Icon: "send", Disabled: cut || p.sending.busy}).Clicked() {
-					p.sendDraft(d)
-				}
-				if kit.Button(c, i18n.T("mail.draft.edit"), kit.ButtonOpts{Variant: kit.Outline, Icon: "square-pen"}).Clicked() {
-					p.a.OpenDraft(d.ID)
-				}
-			})
-		})
-	}
+// programReply is a reply a program drafted for the open thread (ADR 0043):
+// the reply bar names it, and 查看 opens it in the compose window, where the
+// user checks it all and sends it as any draft.
+type programReply struct {
+	id      int64
+	preview string // its first words
 }
 
-// threadDraft keys a program's draft under the thread's messages.
-type threadDraft struct{ id int64 }
+// newProgramReply is the newest of a thread's program drafts (core.Thread.Drafts).
+func newProgramReply(ds []core.Draft) programReply {
+	if len(ds) == 0 {
+		return programReply{}
+	}
+	d := ds[len(ds)-1]
+	return programReply{d.ID, strings.Join(strings.Fields(richtext.FromComposeHTML(d.HTML).PlainText()), " ")}
+}
+
+// programReplyRow heads the reply bar while a program's reply waits.
+func (r *reader) programReplyRow(c *ui.Context) {
+	pr := r.programReply
+	if pr.id == 0 {
+		return
+	}
+	t, th := theme.Of(c), c.Theme()
+	kit.Block(c, ui.Row(c), kit.ToneTint).AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(1), th.Space(1), th.Space(1), th.Space(3)).Children(func() {
+		ui.Icon(c, icons.Get("square-pen")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
+		kit.Text(c, i18n.Tf("reader.program_reply", pr.preview), t.Text.Sm).SingleLine().Grow(1).Shrink(1)
+		if kit.Button(c, i18n.T("reader.program_reply_open"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Clicked() {
+			r.p.a.OpenDraft(pr.id)
+		}
+	})
+}

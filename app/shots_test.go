@@ -340,7 +340,7 @@ func TestShots(t *testing.T) {
 		s.see("正在撰写窗口里编辑")
 		shot(s.harness, "MainDrafts")
 	})
-	t.Run("MainProgramDraft", func(t *testing.T) { // a reply godwit mcp wrote, under its thread (ADR 0043; no artboard)
+	t.Run("MainProgramDraft", func(t *testing.T) { // a reply godwit mcp wrote, named in its thread's reply bar (ADR 0043; no artboard)
 		s := shotMail(t, noAuto)
 		ctx := context.Background()
 		page, err := s.env.Svc.Search(ctx, s.you.ID, "Q4 partnership proposal", 1)
@@ -357,8 +357,7 @@ func TestShots(t *testing.T) {
 			t.Fatal(err)
 		}
 		s.click("Q4 partnership proposal")
-		s.see("来自程序的草稿")
-		s.tt.Scroll(900, 400, 0, 2000)
+		s.see("程序写好了一封回复：Hi Lena,")
 		shot(s.harness, "MainProgramDraft")
 		s.shotDrafts()
 		s.post(func() { s.app.mail.draftSel = d.ID })
