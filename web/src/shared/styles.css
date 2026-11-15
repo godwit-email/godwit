@@ -220,42 +220,6 @@ kbd {
   --app-region: no-drag;
 }
 
-/* Dialogs as the native kit.Dialog draws them (internal/kit/overlay.go), on shadcn's generated
-   alert dialog: DialogSm's 440 wide (data-size="md": DialogMd's 560, for a form), the centre at
-   40% of the window yet 32 below its top (DialogLift, DialogMinTop), a hairline border and
-   ShadowX2l, the title semibold and always left-aligned, the footer bar 12 by 16 on the
-   sidebar's colour, over the Scrim (black at 20%, no blur). Unlayered, so it wins over the
-   component's utilities. */
-[data-slot="alert-dialog-overlay"] {
-  background: rgb(0 0 0 / 0.2);
-  backdrop-filter: none;
-}
-[data-slot="alert-dialog-content"] {
-  max-width: min(440px, calc(100% - 32px));
-  top: 40%;
-  translate: -50% max(-50%, calc(32px - 40vh));
-  border: 0.5px solid var(--border);
-  box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25);
-}
-[data-slot="alert-dialog-content"][data-size="md"] {
-  max-width: min(560px, calc(100% - 32px));
-}
-[data-slot="alert-dialog-header"] {
-  place-items: start;
-  gap: 4px;
-  text-align: left;
-}
-[data-slot="alert-dialog-title"] {
-  font-weight: 600;
-}
-[data-slot="alert-dialog-footer"] {
-  flex-direction: row;
-  justify-content: flex-end;
-  padding: 12px 16px;
-  border-top-width: 0.5px;
-  background: var(--sidebar);
-}
-
 @layer components {
   /* Frosted liquid glass for popups, menus and dropdowns. */
   .glass-popover,

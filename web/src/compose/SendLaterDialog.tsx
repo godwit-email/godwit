@@ -19,14 +19,14 @@ import {
   zhTW,
 } from "react-day-picker/locale";
 import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+  Dialog,
+  DialogCancel,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/dialog";
 import { Button } from "@/components/ui/button";
 import { Calendar, CalendarDayButton } from "@/components/ui/calendar";
 import { currentLocale, type T } from "@/shared/i18n";
@@ -105,9 +105,8 @@ export function SendLaterDialog({
   const [past, setPast] = useState(false);
   const at = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, mins);
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      {/* data-size="md" (after the component's own) is styles.css's DialogMd width, for a form. */}
-      <AlertDialogContent data-size="md">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="md">
         <form
           className="contents"
           onKeyDown={(e) => {
@@ -129,15 +128,15 @@ export function SendLaterDialog({
             onSchedule(at.getTime());
           }}
         >
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("compose.send_later.title")}</AlertDialogTitle>
+          <DialogHeader>
+            <DialogTitle>{t("compose.send_later.title")}</DialogTitle>
             <p
               aria-live="polite"
               className={`text-sm tabular-nums ${past ? "text-destructive" : "text-muted-foreground"}`}
             >
               {past ? t("compose.send_later.past") : readout(loc, at)}
             </p>
-          </AlertDialogHeader>
+          </DialogHeader>
           <div className="flex flex-wrap items-center justify-evenly gap-8">
             <Calendar
               mode="single"
@@ -164,19 +163,19 @@ export function SendLaterDialog({
               }}
             />
           </div>
-          <AlertDialogDescription className="flex items-center gap-1.5 text-xs">
+          <DialogDescription className="flex items-center gap-1.5 text-xs">
             <RiInformationLine className="size-3.5 shrink-0" />
             {t("compose.send_later.note")}
-          </AlertDialogDescription>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+          </DialogDescription>
+          <DialogFooter>
+            <DialogCancel>{t("common.cancel")}</DialogCancel>
             <Button type="submit" disabled={off}>
               {t("compose.send_later.schedule")}
             </Button>
-          </AlertDialogFooter>
+          </DialogFooter>
         </form>
-      </AlertDialogContent>
-    </AlertDialog>
+      </DialogContent>
+    </Dialog>
   );
 }
 
