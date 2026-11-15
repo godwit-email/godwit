@@ -204,6 +204,7 @@
   "mail_draft_from_program": "来自程序的草稿",
   "mail_draft_from_program_help": "这封草稿由程序（AI 工具、脚本、插件或 Wit）写入或修改过。发送前请核对收件人和内容。",
   "mail_draft_approve": "批准并发送",
+  "mail_draft_too_long": "这封草稿太长，这里显示不全。请点「继续编辑」核对全文，再从那里发送。",
   "mail_empty": "没有邮件",
   "mail_failed": "{arg1, number, ::group-off} 封未能处理",
   "mail_filter_all": "全部",

@@ -204,6 +204,7 @@
   "mail_draft_from_program": "Programın yazdığı taslak",
   "mail_draft_from_program_help": "Bu taslağı bir program (bir yapay zekâ aracı, bir betik, bir eklenti veya Wit) yazdı ya da değiştirdi. Göndermeden önce alıcıları ve metni kontrol edin.",
   "mail_draft_approve": "Onayla ve gönder",
+  "mail_draft_too_long": "Bu taslak burada tamamı gösterilemeyecek kadar uzun. Tamamını kontrol etmek için \"Düzenlemeye devam et\"i açın ve oradan gönderin.",
   "mail_empty": "E-posta yok",
   "mail_failed": "{arg1, number, ::group-off} ileti işlenemedi",
   "mail_filter_all": "Tümü",

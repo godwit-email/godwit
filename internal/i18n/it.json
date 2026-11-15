@@ -204,6 +204,7 @@
   "mail_draft_from_program": "Bozza da un programma",
   "mail_draft_from_program_help": "Un programma (uno strumento di IA, uno script, un plugin o Wit) ha scritto o modificato questa bozza. Controlla i destinatari e il testo prima di inviarla.",
   "mail_draft_approve": "Approva e invia",
+  "mail_draft_too_long": "Questa bozza è troppo lunga per essere mostrata per intero qui. Apri «Continua a modificare» per controllarla tutta e inviala da lì.",
   "mail_empty": "Nessun messaggio",
   "mail_failed": "Impossibile elaborare {arg1, number, ::group-off} messaggi",
   "mail_filter_all": "Tutti",

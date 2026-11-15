@@ -204,6 +204,7 @@
   "mail_draft_from_program": "Thư nháp từ một chương trình",
   "mail_draft_from_program_help": "Một chương trình (công cụ AI, tập lệnh, plugin hoặc Wit) đã viết hoặc sửa thư nháp này. Hãy kiểm tra người nhận và nội dung trước khi gửi.",
   "mail_draft_approve": "Duyệt và gửi",
+  "mail_draft_too_long": "Bản nháp này quá dài để hiển thị đầy đủ ở đây. Hãy mở \"Tiếp tục chỉnh sửa\" để xem toàn bộ và gửi từ đó.",
   "mail_empty": "Không có thư",
   "mail_failed": "Không thể xử lý {arg1, number, ::group-off} thư",
   "mail_filter_all": "Tất cả",

@@ -204,6 +204,7 @@
   "mail_draft_from_program": "Concept van een programma",
   "mail_draft_from_program_help": "Een programma (een AI-tool, een script, een plug-in of Wit) heeft dit concept geschreven of gewijzigd. Controleer de ontvangers en de tekst voordat je het verstuurt.",
   "mail_draft_approve": "Goedkeuren en versturen",
+  "mail_draft_too_long": "Dit concept is te lang om hier volledig te tonen. Open Verder bewerken om alles te controleren en verstuur het daar.",
   "mail_empty": "Geen e-mail",
   "mail_failed": "{arg1, number, ::group-off} berichten konden niet worden verwerkt",
   "mail_filter_all": "Alle",

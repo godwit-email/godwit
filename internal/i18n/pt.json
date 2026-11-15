@@ -204,6 +204,7 @@
   "mail_draft_from_program": "Rascunho de um programa",
   "mail_draft_from_program_help": "Um programa (uma ferramenta de IA, um script, um plugin ou o Wit) escreveu ou alterou este rascunho. Confira os destinatários e o texto antes de enviá-lo.",
   "mail_draft_approve": "Aprovar e enviar",
+  "mail_draft_too_long": "Este rascunho é longo demais para ser mostrado inteiro aqui. Abra \"Continuar editando\" para revisá-lo todo e envie-o de lá.",
   "mail_empty": "Nenhum e-mail",
   "mail_failed": "{arg1, number, ::group-off} mensagens não puderam ser processadas",
   "mail_filter_all": "Todos",

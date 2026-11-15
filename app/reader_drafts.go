@@ -15,17 +15,18 @@ func (r *reader) programDrafts(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	p := r.p
 	for i, d := range r.thread.Drafts {
+		cut := i >= len(r.draftDocs) || r.draftDocs[i].cut // what shows is not all an approval sends
 		kit.Block(c, r.column(c), kit.ToneOutline).Key(threadDraft{d.ID}).Gap(th.Space(3)).Padding(th.Space(4)).Children(func() {
-			programNotice(c)
+			programNotice(c, cut)
 			p.draftFields(c, d)
 			if i < len(r.draftDocs) {
 				ui.Column(c).Padding(th.Space(3), 0, 0, 0).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
-					richtext.Render(c, r.draftDocs[i], richtext.RenderOptions{OnLink: p.a.openLink})
+					richtext.Render(c, r.draftDocs[i].doc, richtext.RenderOptions{OnLink: p.a.openLink})
 				})
 			}
 			draftAttachments(c, d.Attachments)
 			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				if kit.Button(c, i18n.T("mail.draft.approve"), kit.ButtonOpts{Icon: "send", Disabled: p.sending.busy}).Clicked() {
+				if kit.Button(c, i18n.T("mail.draft.approve"), kit.ButtonOpts{Icon: "send", Disabled: cut || p.sending.busy}).Clicked() {
 					p.sendDraft(d)
 				}
 				if kit.Button(c, i18n.T("mail.draft.edit"), kit.ButtonOpts{Variant: kit.Outline, Icon: "square-pen"}).Clicked() {

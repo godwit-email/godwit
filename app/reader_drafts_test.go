@@ -4,10 +4,12 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/internal/richtext"
 )
 
 // programReplyHarness opens a thread with Bob's question, under which the
@@ -97,4 +99,18 @@ func TestThreadProgramDraftChangedRefused(t *testing.T) {
 	h.waitMail("the new text", func() bool { return h.tt.HasText("Swapped behind the user's back.") })
 	h.click("批准并发送")
 	h.draftQueued(d.ID)
+}
+
+// A draft too long to show whole cannot be approved from the card: the click
+// would send text the user never saw.
+func TestThreadProgramDraftTooLongNotApproved(t *testing.T) {
+	h, acc, src := programReplyHarness(t)
+	programReply(t, h, acc, src, "Yes, Friday works."+strings.Repeat("</p><p>more", richtext.DefaultLimits.MaxBlocks))
+	h.waitMail("the program's draft", func() bool { return h.tt.HasText("Yes, Friday works.") })
+	h.see("这封草稿太长，这里显示不全。请点「继续编辑」核对全文，再从那里发送。")
+	h.click("批准并发送")
+	h.waitMail("the click to settle", func() bool { return true })
+	if items, err := h.env.Svc.ListOutbox(context.Background(), acc.ID); err != nil || len(items) != 0 {
+		t.Fatalf("queued %+v, %v", items, err)
+	}
 }

@@ -204,6 +204,7 @@
   "mail_draft_from_program": "Borrador de un programa",
   "mail_draft_from_program_help": "Un programa (una herramienta de IA, un script, un plugin o Wit) escribió o modificó este borrador. Revisa los destinatarios y el texto antes de enviarlo.",
   "mail_draft_approve": "Aprobar y enviar",
+  "mail_draft_too_long": "Este borrador es demasiado largo para mostrarlo completo aquí. Abre «Seguir editando» para revisarlo entero y envíalo desde ahí.",
   "mail_empty": "No hay correos",
   "mail_failed": "No se pudieron procesar {arg1, number, ::group-off} mensajes",
   "mail_filter_all": "Todos",

@@ -98,7 +98,7 @@ type session struct {
 	// what label changes apply to.
 	threadIDs    []int64
 	thread       core.Thread         // as last read: its copies read with what shows
-	draftDocs    []richtext.Doc      // thread.Drafts' bodies, parsed once per read
+	draftDocs    []draftInfo         // thread.Drafts' bodies, parsed once per read
 	labels       []core.AppliedLabel // the thread's
 	open         map[int64]bool      // messages shown in full
 	focus        int64               // the message last expanded, or whose page took ⌘S/⌘P: what save and print act on while it is open
@@ -322,7 +322,8 @@ func (r *reader) load(k [2]int64) {
 		}
 		r.threadIDs, r.labels, r.thread, r.draftDocs = nil, labels[k[0]], th, nil
 		for _, d := range th.Drafts {
-			r.draftDocs = append(r.draftDocs, richtext.FromComposeHTML(d.HTML))
+			doc, cut := richtext.FromComposeHTMLCut(d.HTML)
+			r.draftDocs = append(r.draftDocs, draftInfo{doc: doc, cut: cut})
 		}
 		for _, m := range th.Messages {
 			r.threadIDs = append(r.threadIDs, m.ID)

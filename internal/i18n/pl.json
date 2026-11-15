@@ -209,6 +209,7 @@
   "mail_draft_from_program": "Wersja robocza od programu",
   "mail_draft_from_program_help": "Program (narzędzie AI, skrypt, wtyczka lub Wit) napisał lub zmienił tę wersję roboczą. Przed wysłaniem sprawdź odbiorców i treść.",
   "mail_draft_approve": "Zatwierdź i wyślij",
+  "mail_draft_too_long": "Ten szkic jest za długi, by pokazać go tu w całości. Otwórz „Kontynuuj edycję”, sprawdź całą treść i wyślij go stamtąd.",
   "mail_empty": "Brak wiadomości",
   "mail_failed": "Nie udało się przetworzyć {arg1, number, ::group-off} wiadomości",
   "mail_filter_all": "Wszystkie",

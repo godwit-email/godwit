@@ -204,6 +204,7 @@
   "mail_draft_from_program": "プログラムが書いた下書き",
   "mail_draft_from_program_help": "この下書きはプログラム（AI ツール、スクリプト、プラグイン、Wit）が作成または変更しました。送信する前に宛先と本文を確認してください。",
   "mail_draft_approve": "承認して送信",
+  "mail_draft_too_long": "この下書きは長すぎて、ここでは全文を表示できません。「編集を続ける」で全文を確認し、そこから送信してください。",
   "mail_empty": "メールはありません",
   "mail_failed": "{arg1, number, ::group-off} 通のメールを処理できませんでした",
   "mail_filter_all": "すべて",

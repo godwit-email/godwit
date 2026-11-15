@@ -204,6 +204,7 @@
   "mail_draft_from_program": "프로그램이 작성한 초안",
   "mail_draft_from_program_help": "프로그램(AI 도구, 스크립트, 플러그인 또는 Wit)이 이 초안을 작성하거나 수정했습니다. 보내기 전에 받는 사람과 내용을 확인하세요.",
   "mail_draft_approve": "승인하고 보내기",
+  "mail_draft_too_long": "이 초안은 너무 길어 여기에서 전부 표시할 수 없습니다. \"계속 편집\"에서 전체를 확인한 뒤 보내세요.",
   "mail_empty": "메일 없음",
   "mail_failed": "{arg1, number, ::group-off}통의 메일을 처리하지 못했습니다",
   "mail_filter_all": "전체",

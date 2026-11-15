@@ -209,6 +209,7 @@
   "mail_draft_from_program": "Entwurf von einem Programm",
   "mail_draft_from_program_help": "Ein Programm (ein KI-Tool, ein Skript, ein Plugin oder Wit) hat diesen Entwurf geschrieben oder geändert. Prüfe Empfänger und Text, bevor du ihn sendest.",
   "mail_draft_approve": "Freigeben und senden",
+  "mail_draft_too_long": "Dieser Entwurf ist zu lang, um ihn hier vollständig anzuzeigen. Öffne „Weiterbearbeiten“, prüfe den ganzen Text und sende ihn dort.",
   "mail_empty": "Keine E-Mails",
   "mail_failed": "{arg1, number, ::group-off} Nachrichten konnten nicht verarbeitet werden",
   "mail_filter_all": "Alle",

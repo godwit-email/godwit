@@ -204,6 +204,7 @@
   "mail_draft_from_program": "Brouillon d’un programme",
   "mail_draft_from_program_help": "Un programme (un outil d’IA, un script, un plugin ou Wit) a écrit ou modifié ce brouillon. Vérifiez les destinataires et le texte avant de l’envoyer.",
   "mail_draft_approve": "Approuver et envoyer",
+  "mail_draft_too_long": "Ce brouillon est trop long pour être affiché en entier ici. Ouvrez « Continuer l’édition » pour le relire en entier et l’envoyer depuis là.",
   "mail_empty": "Aucun message",
   "mail_failed": "{arg1, number, ::group-off} messages n’ont pas pu être traités",
   "mail_filter_all": "Tous",

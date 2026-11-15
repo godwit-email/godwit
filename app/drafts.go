@@ -56,6 +56,7 @@ type draftInfo struct {
 	preview string
 	doc     richtext.Doc
 	editing bool // a compose window has it
+	cut     bool // doc is not all of the draft: too long to show, so not to approve here
 }
 
 // setDrafts parses the loaded drafts, asks the platform which are being
@@ -64,8 +65,8 @@ func (p *mailPage) setDrafts() {
 	p.draftView = make(map[int64]draftInfo, len(p.drafts))
 	found := false
 	for _, d := range p.drafts {
-		doc := richtext.FromComposeHTML(d.HTML)
-		p.draftView[d.ID] = draftInfo{strings.Join(strings.Fields(doc.PlainText()), " "), doc, p.a.plat.ComposeOpen(d.ID)}
+		doc, cut := richtext.FromComposeHTMLCut(d.HTML)
+		p.draftView[d.ID] = draftInfo{strings.Join(strings.Fields(doc.PlainText()), " "), doc, p.a.plat.ComposeOpen(d.ID), cut}
 		found = found || d.ID == p.draftSel
 	}
 	if !found {
@@ -120,12 +121,16 @@ func draftChip(c *ui.Context, text string) {
 }
 
 // programNotice is what heads a draft a program wrote (ADR 0042): its label
-// and the ask to check it before 批准并发送.
-func programNotice(c *ui.Context) {
+// and the ask to check it before 批准并发送; cut says the body is too long to
+// show whole, so it is checked and sent from the compose window instead.
+func programNotice(c *ui.Context, cut bool) {
 	t, th := theme.Of(c), c.Theme()
 	kit.Block(c, ui.Column(c), kit.ToneTint).FillWidth().Gap(th.Space(1.5)).Padding(th.Space(2), th.Space(3)).Children(func() {
 		draftChip(c, i18n.T("mail.draft.from_program"))
 		kit.Text(c, i18n.T("mail.draft.from_program_help"), t.Text.Xs)
+		if cut {
+			kit.Text(c, i18n.T("mail.draft.too_long"), t.Text.Xs).FontWeight(600)
+		}
 	})
 }
 
@@ -155,8 +160,12 @@ func (p *mailPage) draftPane(c *ui.Context) {
 	info := p.draftView[d.ID]
 	editing := info.editing
 	sendTip := i18n.T("compose.send")
+	cut := d.FromProgram && info.cut // an approval would send text the pane does not show
 	if d.FromProgram {
 		sendTip = i18n.T("mail.draft.approve")
+	}
+	if cut {
+		sendTip = i18n.T("mail.draft.too_long")
 	}
 	if editing {
 		sendTip = i18n.T("mail.draft.send_disabled")
@@ -167,7 +176,7 @@ func (p *mailPage) draftPane(c *ui.Context) {
 		ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2), th.Space(4)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
 			kit.ButtonGroup(c,
 				kit.GroupItem{Icon: "square-pen", Tip: i18n.T("mail.draft.edit"), OnClick: func() { p.a.OpenDraft(d.ID) }},
-				kit.GroupItem{Icon: "send", Tip: sendTip, Disabled: editing || p.sending.busy, OnClick: func() { p.sendDraft(d) }},
+				kit.GroupItem{Icon: "send", Tip: sendTip, Disabled: editing || cut || p.sending.busy, OnClick: func() { p.sendDraft(d) }},
 				kit.GroupItem{Icon: "trash-2", Tip: i18n.T("mail.draft.delete"), OnClick: func() { p.deleteDraft(d.ID) }})
 			ui.Spacer(c)
 			status := i18n.Tf("mail.draft.saved", saved)
@@ -183,7 +192,7 @@ func (p *mailPage) draftPane(c *ui.Context) {
 						kit.Block(c, kit.Text(c, i18n.T("mail.draft.notice"), t.Text.Xs).Padding(th.Space(2), th.Space(3)), kit.ToneTint)
 					}
 					if d.FromProgram {
-						programNotice(c)
+						programNotice(c, cut)
 					}
 					kit.Text(c, cmp.Or(d.Subject, i18n.T("mail.no_subject")), t.Text.Xl).FontWeight(600)
 					p.draftFields(c, d)
