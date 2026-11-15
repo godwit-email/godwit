@@ -36,11 +36,10 @@ func (r *reader) programReplyRow(c *ui.Context) {
 		return
 	}
 	t, th := theme.Of(c), c.Theme()
-	kit.Block(c, ui.Row(c), kit.ToneInfo).AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(1), th.Space(1), th.Space(1), th.Space(3)).Children(func() {
+	kit.Block(c, ui.Row(c), kit.ToneInfo).AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2), th.Space(3)).Children(func() {
 		ui.Icon(c, icons.Get("square-pen")).Size(theme.IconSm, theme.IconSm)
 		kit.Text(c, i18n.Tf("reader.program_reply", pr.preview), t.Text.Sm).SingleLine().Grow(1).Shrink(1)
-		if kit.Button(c, i18n.T("reader.program_reply_open"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Clicked() {
-			r.p.a.OpenDraft(pr.id)
-		}
+		kit.TextLink(c, i18n.T("reader.program_reply_open"), t.Label("blue").Text, t.Text.Sm).Shrink(0).
+			OnClick(func() { r.p.a.OpenDraft(pr.id) })
 	})
 }
