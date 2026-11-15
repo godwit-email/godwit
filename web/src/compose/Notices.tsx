@@ -59,12 +59,13 @@ export function Notices({
         </Alert>
       )}
       {conflict && (
-        <Alert variant="destructive" className={danger}>
+        // a choice to make, not a failure: the warning's tone, as a plugin's check
+        <Alert className={warn}>
           <AlertTitle>{t("compose.conflict")}</AlertTitle>
           <div className="mt-2 flex gap-1.5">
             {latestFailed ? (
               <Button
-                className={toneButton.danger}
+                className={toneButton.warning}
                 size="sm"
                 disabled={frozen}
                 onClick={() => !frozen && onRetry()}
@@ -74,7 +75,7 @@ export function Notices({
             ) : (
               <>
                 <Button
-                  className={toneButton.danger}
+                  className={toneButton.warning}
                   size="sm"
                   disabled={frozen}
                   onClick={() => !frozen && onKeepMine()}
@@ -82,7 +83,7 @@ export function Notices({
                   {t("compose.conflict.keep")}
                 </Button>
                 <Button
-                  className={toneButton.danger}
+                  className={toneButton.warning}
                   size="sm"
                   disabled={frozen}
                   onClick={() => !frozen && onUseLatest()}
