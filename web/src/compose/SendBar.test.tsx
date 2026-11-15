@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { makeT } from "@/shared/i18n";
 import { presets, SendBar } from "./SendBar";
+import { FACE, facePoint } from "./SendLaterDialog";
 
 const t = makeT("zh-Hans");
 
@@ -145,31 +146,35 @@ describe("at 15:30 on Sunday 15 November 2026", () => {
     expect(screen.getByText("11月23日周一 16:00")).toBeInTheDocument();
   });
 
+  /** A pointer at turn (0 at 12, clockwise) and r from the centre, the face laid out 100 px wide, as its viewBox. */
+  const point = (clock: HTMLElement) => {
+    vi.spyOn(clock, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 100, 100));
+    return (turn: number, r: number) => {
+      const [clientX, clientY] = facePoint(turn, r);
+      return { clientX, clientY, pointerId: 1 };
+    };
+  };
+
   test("the minute hand drags round, and past 12 it carries the hour", async () => {
     const { clock } = await open();
-    // The face is 240 px: its centre at 120, the minute hand's tip at 12 near the top.
-    const at = (x: number, y: number) => ({ clientX: x, clientY: y, pointerId: 1 });
-    fireEvent.pointerDown(clock, at(120, 40));
-    fireEvent.pointerMove(clock, at(230, 120));
+    const at = point(clock);
+    const tip = FACE.minute.length;
+    fireEvent.pointerDown(clock, at(0, tip));
+    fireEvent.pointerMove(clock, at(1 / 4, tip));
     expect(clock).toHaveAttribute("aria-valuetext", "16:15");
-    for (const [x, y] of [
-      [120, 230],
-      [10, 120],
-      [120, 10],
-    ])
-      fireEvent.pointerMove(clock, at(x, y));
-    fireEvent.pointerUp(clock, at(120, 10));
+    for (const turn of [1 / 2, 3 / 4, 1]) fireEvent.pointerMove(clock, at(turn, tip));
+    fireEvent.pointerUp(clock, at(1, tip));
     expect(clock).toHaveAttribute("aria-valuetext", "17:00");
   });
 
   test("the hour hand drags back through 12 into the morning", async () => {
     const { clock } = await open();
-    const at = (x: number, y: number) => ({ clientX: x, clientY: y, pointerId: 1 });
-    // At 16:00 the hour hand points to 4, its tip 55 px out.
-    fireEvent.pointerDown(clock, at(120 + 47, 120 + 27));
-    fireEvent.pointerMove(clock, at(120, 10));
-    fireEvent.pointerMove(clock, at(40, 74));
-    fireEvent.pointerUp(clock, at(40, 74));
+    const at = point(clock);
+    const tip = FACE.hour.length; // at 16:00 it points to 4
+    fireEvent.pointerDown(clock, at(4 / 12, tip));
+    fireEvent.pointerMove(clock, at(0, tip));
+    fireEvent.pointerMove(clock, at(10 / 12, tip));
+    fireEvent.pointerUp(clock, at(10 / 12, tip));
     expect(clock).toHaveAttribute("aria-valuetext", "10:00");
   });
 

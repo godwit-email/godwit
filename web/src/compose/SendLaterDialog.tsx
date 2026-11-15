@@ -29,6 +29,7 @@ import {
 } from "@/components/dialog";
 import { Button } from "@/components/ui/button";
 import { Calendar, CalendarDayButton } from "@/components/ui/calendar";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { currentLocale, type T } from "@/shared/i18n";
 
 const day0 = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -137,7 +138,9 @@ export function SendLaterDialog({
               {past ? t("compose.send_later.past") : readout(loc, at)}
             </p>
           </DialogHeader>
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(252px,1fr))] items-start gap-4">
+          {/* A day is a large button (kit.SizeLg, Space(9)); the calendar is seven of them wide, the
+              clock's face six tall, as the weeks are. Too narrow for both, the face goes under. */}
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(calc(var(--cell-size)*7),1fr))] items-start gap-4 [--cell-size:--spacing(9)]">
             <Calendar
               mode="single"
               required
@@ -151,7 +154,7 @@ export function SendLaterDialog({
               locale={dayLocale(loc)}
               components={{ DayButton }}
               aria-label={t("compose.send_later.date")}
-              className="bg-transparent p-0 [--cell-size:--spacing(9)]"
+              className="bg-transparent p-0 [--cell-size:inherit]"
             />
             <Clock
               mins={mins}
@@ -180,6 +183,26 @@ export function SendLaterDialog({
 }
 
 /**
+ * The face's drawing in its viewBox, 100 across with the centre at 50: where the ticks run, the
+ * numerals' circle, the hands' lengths and widths (thicker while dragged) and the hub. These are
+ * the proportions of a clock, not of the layout; the face's size comes from the dialog.
+ */
+export const FACE = {
+  c: 50,
+  tick: { out: 47, major: 41, minor: 44 },
+  numerals: 34,
+  minute: { length: 40, width: 1.6, dragged: 2.2 },
+  hour: { length: 25, width: 2.6, dragged: 3.2 },
+  hub: 2.4,
+};
+
+/** The point of the face at turn (0 at 12, clockwise) and r from the centre, in viewBox units. */
+export const facePoint = (turn: number, r: number) => [
+  FACE.c + r * Math.sin(turn * 2 * Math.PI),
+  FACE.c - r * Math.cos(turn * 2 * Math.PI),
+];
+
+/**
  * A clock face whose hands both drag, over the minutes of a day. Time runs on through 12: the
  * minute hand past 12 carries the hour, the hour hand past 12 turns morning to afternoon. The
  * minute hand snaps to 5 minutes; ←→ step 5 minutes, ↑↓ an hour.
@@ -196,24 +219,19 @@ export function Clock({
   label: string;
   onChange(mins: number): void;
 }) {
-  const size = 240;
-  const c = size / 2;
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   const pm = h >= 12;
   const put = (v: number) => onChange(((v % 1440) + 1440) % 1440);
-  const pos = (turn: number, r: number) => [
-    c + r * Math.sin(turn * 2 * Math.PI),
-    c - r * Math.cos(turn * 2 * Math.PI),
-  ];
-  const [mx, my] = pos(m / 60, c * 0.72);
-  const [hx, hy] = pos(((h % 12) + m / 60) / 12, c * 0.46);
+  const [mx, my] = facePoint(m / 60, FACE.minute.length);
+  const [hx, hy] = facePoint(((h % 12) + m / 60) / 12, FACE.hour.length);
   const [grab, setGrab] = useState<"h" | "m" | null>(null);
-  const turnAt = (e: React.PointerEvent<HTMLDivElement>) => {
+  // The pointer in viewBox units, and its turn round the centre.
+  const at = (e: React.PointerEvent<HTMLDivElement>) => {
     const b = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - b.left;
-    const y = e.clientY - b.top;
-    const a = Math.atan2(x - c, c - y);
+    const x = ((e.clientX - b.left) / b.width) * 100;
+    const y = ((e.clientY - b.top) / b.height) * 100;
+    const a = Math.atan2(x - FACE.c, FACE.c - y);
     return { x, y, turn: (a < 0 ? a + 2 * Math.PI : a) / (2 * Math.PI) };
   };
   const move = (hand: "h" | "m", turn: number) => {
@@ -222,26 +240,37 @@ export function Clock({
     if (hand === "m") put(mins + wrap((Math.round(turn * 12) % 12) * 5 - m, 60));
     else put(mins + wrap(Math.round(turn * 12 - m / 60) - (h % 12), 12) * 60);
   };
+  const hand = (x: number, y: number, w: number) => (
+    <line
+      x1={FACE.c}
+      y1={FACE.c}
+      x2={x}
+      y2={y}
+      className="stroke-foreground"
+      strokeWidth={w}
+      strokeLinecap="round"
+    />
+  );
   return (
-    // A row level with the calendar's month (--cell-size high), the face centred beside the days.
+    // A row level with the calendar's month, the face centred beside the days.
     <div className="flex flex-col items-center gap-4 self-stretch">
-      <div className="flex h-(--cell-size) items-center gap-3 [--cell-size:--spacing(9)]">
+      <div className="flex h-(--cell-size) items-center gap-3">
         <span className="font-medium text-base tabular-nums">
           {h % 12 === 0 ? 12 : h % 12}:{p2(m)}
         </span>
-        <div className="flex rounded-md border p-0.5 text-xs">
+        <ToggleGroup
+          variant="outline"
+          size="sm"
+          spacing={0}
+          value={[pm ? "pm" : "am"]}
+          onValueChange={(v) => v[0] && put((h % 12) * 60 + (v[0] === "pm" ? 720 : 0) + m)}
+        >
           {periods.map((name, i) => (
-            <button
-              key={name}
-              type="button"
-              aria-pressed={pm === (i === 1)}
-              onClick={() => put((h % 12) * 60 + i * 720 + m)}
-              className={`rounded px-2 py-0.5 ${pm === (i === 1) ? "bg-muted font-medium" : "text-muted-foreground hover:text-foreground"}`}
-            >
+            <ToggleGroupItem key={name} value={i ? "pm" : "am"}>
               {name}
-            </button>
+            </ToggleGroupItem>
           ))}
-        </div>
+        </ToggleGroup>
       </div>
       <div
         role="slider"
@@ -251,7 +280,7 @@ export function Clock({
         aria-valuemax={1439}
         aria-valuenow={mins}
         aria-valuetext={`${h}:${p2(m)}`}
-        className={`my-auto touch-none select-none rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${grab ? "cursor-grabbing" : "cursor-grab"}`}
+        className={`relative my-auto aspect-square w-[calc(var(--cell-size)*6)] touch-none select-none rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${grab ? "cursor-grabbing" : "cursor-grab"}`}
         onKeyDown={(e) => {
           const d = { ArrowRight: 5, ArrowLeft: -5, ArrowUp: 60, ArrowDown: -60 }[e.key];
           if (d) {
@@ -260,28 +289,32 @@ export function Clock({
           }
         }}
         onPointerDown={(e) => {
-          const { x, y, turn } = turnAt(e);
+          const { x, y, turn } = at(e);
           // The hand whose tip is nearer; a press elsewhere on the face moves the minutes.
-          const hand = Math.hypot(x - hx, y - hy) < Math.hypot(x - mx, y - my) ? "h" : "m";
-          setGrab(hand);
+          const near = Math.hypot(x - hx, y - hy) < Math.hypot(x - mx, y - my) ? "h" : "m";
+          setGrab(near);
           e.currentTarget.setPointerCapture?.(e.pointerId);
-          move(hand, turn);
+          move(near, turn);
         }}
-        onPointerMove={(e) => grab && move(grab, turnAt(e).turn)}
+        onPointerMove={(e) => grab && move(grab, at(e).turn)}
         onPointerUp={() => setGrab(null)}
         onPointerCancel={() => setGrab(null)}
       >
-        <svg width={size} height={size} aria-hidden="true" className="block">
+        <svg viewBox="0 0 100 100" aria-hidden="true" className="block size-full">
+          {/* The rim and the ticks in CSS pixels whatever the face's size: a hairline (kit's
+              Hairline) and, every five minutes, a control's border (theme.Stroke). */}
           <circle
-            cx={c}
-            cy={c}
-            r={c - 1}
+            cx={FACE.c}
+            cy={FACE.c}
+            r={FACE.c}
             className={pm ? "fill-muted" : "fill-background stroke-border"}
+            strokeWidth={0.5}
+            vectorEffect="non-scaling-stroke"
           />
           {[...Array(60).keys()].map((i) => {
-            const big = i % 5 === 0;
-            const [x1, y1] = pos(i / 60, c - 6);
-            const [x2, y2] = pos(i / 60, c - (big ? 13 : 9));
+            const major = i % 5 === 0;
+            const [x1, y1] = facePoint(i / 60, FACE.tick.out);
+            const [x2, y2] = facePoint(i / 60, major ? FACE.tick.major : FACE.tick.minor);
             return (
               <line
                 key={i}
@@ -289,52 +322,30 @@ export function Clock({
                 y1={y1}
                 x2={x2}
                 y2={y2}
-                className={big ? "stroke-foreground" : "stroke-muted-foreground/40"}
-                strokeWidth={big ? 1.5 : 1}
+                className={major ? "stroke-foreground" : "stroke-muted-foreground"}
+                strokeWidth={major ? 1 : 0.5}
+                vectorEffect="non-scaling-stroke"
               />
             );
           })}
-          {[12, 3, 6, 9].map((n) => {
-            const [x, y] = pos(n / 12, c - 26);
-            return (
-              <text
-                key={n}
-                x={x}
-                y={y}
-                dy="0.35em"
-                textAnchor="middle"
-                className="fill-muted-foreground text-xs tabular-nums"
-              >
-                {n}
-              </text>
-            );
-          })}
-          <line
-            x1={c}
-            y1={c}
-            x2={hx}
-            y2={hy}
-            className="stroke-foreground"
-            strokeWidth={grab === "h" ? 6 : 5}
-            strokeLinecap="round"
-          />
-          <line
-            x1={c}
-            y1={c}
-            x2={mx}
-            y2={my}
-            className="stroke-foreground"
-            strokeWidth={grab === "m" ? 4 : 3}
-            strokeLinecap="round"
-          />
-          <circle
-            cx={c}
-            cy={c}
-            r={4}
-            className="fill-background stroke-foreground"
-            strokeWidth={2}
-          />
+          {hand(hx, hy, grab === "h" ? FACE.hour.dragged : FACE.hour.width)}
+          {hand(mx, my, grab === "m" ? FACE.minute.dragged : FACE.minute.width)}
+          <circle cx={FACE.c} cy={FACE.c} r={FACE.hub} className="fill-foreground" />
         </svg>
+        {/* The numerals in the interface's text, placed in percent of the face (its viewBox). */}
+        {[12, 3, 6, 9].map((n) => {
+          const [x, y] = facePoint(n / 12, FACE.numerals);
+          return (
+            <span
+              key={n}
+              aria-hidden="true"
+              style={{ left: `${x}%`, top: `${y}%` }}
+              className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 text-muted-foreground text-xs tabular-nums"
+            >
+              {n}
+            </span>
+          );
+        })}
       </div>
     </div>
   );
