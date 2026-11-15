@@ -89,6 +89,8 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "ComposePage.Closed": nothing,
         "ComposePage.Stop": nothing,
         "ComposePage.OpenLink": nothing,
+        // no native menu in a browser: picks the last item (Send later…), to show what follows
+        "ComposePage.PopupMenu": async (items: string[]) => items.length - 1,
         "ComposePage.OpenModels": nothing,
         "ComposePage.Models": async () => fx.witModels,
         "ComposePage.SearchContacts": async (q: string) =>

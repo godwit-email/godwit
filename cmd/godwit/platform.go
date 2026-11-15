@@ -709,6 +709,35 @@ func pickFiles(_ context.Context, winID int) ([]string, error) {
 	return mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: w, Multiple: true})
 }
 
+// popupMenu shows items ("" for a separator) as a native menu at x, y of
+// window winID's page and returns the index chosen, -1 for none or for a
+// window that is gone.
+func popupMenu(winID int, items []string, x, y int) int {
+	w := mygo.WindowByID(winID)
+	if w == nil || w.IsDestroyed() {
+		return -1
+	}
+	chosen := make(chan int, 1)
+	menu := make([]*mygo.MenuItem, len(items))
+	for i, label := range items {
+		if label == "" {
+			menu[i] = mygo.Separator()
+			continue
+		}
+		menu[i] = &mygo.MenuItem{Label: label, Click: func(*mygo.MenuItem, *mygo.Window) { chosen <- i }}
+	}
+	mygo.NewMenu(menu).PopupAt(w, x, y) // returns once the menu is closed
+	select {
+	case i := <-chosen:
+		return i
+	// shortcut: AppKit clicks the item before the popup returns; a platform
+	// that delivers it later than this gets "none". Needs a chosen item from
+	// mygo's Menu.PopupAt to drop the wait.
+	case <-time.After(200 * time.Millisecond):
+		return -1
+	}
+}
+
 // pickImage asks for one signature image in a dialog on the calling page's
 // window; "" for none.
 func pickImage(ctx context.Context) (string, error) {

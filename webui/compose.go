@@ -172,6 +172,9 @@ type PageDeps struct {
 	// PickFiles asks for files to attach, in a dialog on window winID; none
 	// picked is no error.
 	PickFiles func(ctx context.Context, winID int) ([]string, error)
+	// PopupMenu shows items ("" for a separator) as a native menu at x, y
+	// of window winID's page and returns the index chosen, -1 for none.
+	PopupMenu func(winID int, items []string, x, y int) int
 	// Emit sends a Wit event to a window or page (WitStream.Emit or
 	// EmitPage in production).
 	Emit func(t Target, ev WitEvent)
@@ -448,6 +451,17 @@ func (p *ComposePage) Send(ctx context.Context, revision int64, digest string, a
 		p.c.finish(win)
 	}
 	return res, err
+}
+
+// PopupMenu shows items ("" for a separator) as a native menu at x, y, CSS
+// pixels from the top-left of the calling window's page, and returns the
+// index chosen, -1 for none: the menus of the page's own controls.
+func (p *ComposePage) PopupMenu(ctx context.Context, items []string, x, y int) (int, error) {
+	win, ok := p.d.WinOf(ctx)
+	if !ok || p.d.PopupMenu == nil {
+		return -1, ErrNoDraft
+	}
+	return p.d.PopupMenu(win, items, x, y), nil
 }
 
 // Closed is the page's final flush for the close attempt gen, the payload

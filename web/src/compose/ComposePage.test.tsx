@@ -17,6 +17,7 @@ vi.mock("@/mygo", () => ({
     addAttachments: vi.fn(),
     removeAttachment: vi.fn(),
     send: vi.fn(),
+    popupMenu: vi.fn(),
     setModel: vi.fn(),
   },
   events: {
@@ -530,8 +531,10 @@ test("send later: warnings keep the time for send anyway", async () => {
   vi.mocked(api.send).mockResolvedValueOnce({ ...noWarnings, warnings: [w], digest: "d" });
   render(<ComposePage />);
   await body();
+  vi.mocked(api.popupMenu).mockImplementationOnce(async (items) =>
+    items.findIndex((l) => l.startsWith("明天")),
+  );
   await userEvent.click(screen.getByRole("button", { name: "发送选项" }));
-  await userEvent.click(await screen.findByRole("menuitem", { name: /^明天/ }));
   const at = vi.mocked(api.send).mock.calls[0][2];
   expect(at).toBeGreaterThan(Date.now());
   expect(api.send).toHaveBeenCalledWith(7, "", at);

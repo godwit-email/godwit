@@ -167,6 +167,7 @@ func gui(ctx context.Context, dataDir, open string) int {
 			return 0, false
 		},
 		PickFiles:   pickFiles,
+		PopupMenu:   popupMenu,
 		Emit:        emit,
 		OpenURL:     mygo.Shell.OpenExternal,
 		OpenCompose: openCompose,

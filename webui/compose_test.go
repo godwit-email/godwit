@@ -257,7 +257,7 @@ func TestComposeBoundSurface(t *testing.T) {
 	}
 	sort.Strings(names)
 	assert.Equal(t, []string{"AddAttachments", "Answer", "Ask", "CheckCited", "Closed", "Decide", "DecideAll", "DecideWithArgs", "Finish", "Follow", "Latest", "Load",
-		"Models", "OpenCited", "OpenLink", "OpenModels", "RemoveAttachment", "Review", "Rewrite", "Save", "SearchContacts", "SearchMail", "Send", "SetAccount",
+		"Models", "OpenCited", "OpenLink", "OpenModels", "PopupMenu", "RemoveAttachment", "Review", "Rewrite", "Save", "SearchContacts", "SearchMail", "Send", "SetAccount",
 		"SetModel", "Skill", "Stop", "Undo", "WitInfo"}, names)
 }
 
@@ -658,4 +658,30 @@ func TestComposeReleaseDuringDialog(t *testing.T) {
 	}
 	assert.True(t, f.gone(t, empty.ID))
 	assert.Empty(t, f.stored(t, kept.ID).Attachments)
+}
+
+// PopupMenu shows the page's items on the calling window and passes the
+// choice back; a page with no window to show it on gets none.
+func TestComposePopupMenu(t *testing.T) {
+	type shown struct {
+		win, x, y int
+		items     []string
+	}
+	var got shown
+	p := NewComposePage(NewCompose(), PageDeps{
+		WinOf: func(context.Context) (int, bool) { return 3, true },
+		PopupMenu: func(win int, items []string, x, y int) int {
+			got = shown{win, x, y, items}
+			return 2
+		},
+	})
+	i, err := p.PopupMenu(t.Context(), []string{"now", "", "later…"}, 10, 20)
+	require.NoError(t, err)
+	assert.Equal(t, 2, i)
+	assert.Equal(t, shown{3, 10, 20, []string{"now", "", "later…"}}, got)
+
+	p = NewComposePage(NewCompose(), PageDeps{WinOf: func(context.Context) (int, bool) { return 0, false }})
+	i, err = p.PopupMenu(t.Context(), []string{"now"}, 0, 0)
+	assert.ErrorIs(t, err, ErrNoDraft)
+	assert.Equal(t, -1, i)
 }

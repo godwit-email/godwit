@@ -10,13 +10,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { currentLocale, type T } from "@/shared/i18n";
 
@@ -38,14 +31,15 @@ export function presets(now: Date): { key: string; at: Date }[] {
 
 /**
  * The send button, at the bottom bar's end (ml-auto keeps it right when the bar wraps), split
- * with a menu: send now, the presets, and Send later…, a dialog for any date and time that says
- * only a running Godwit sends.
+ * with a native menu: send now, the presets, and Send later…, a dialog for any date and time
+ * that says only a running Godwit sends.
  */
 export function SendBar({
   sending,
   frozen,
   onSend,
   onSendLater,
+  menu,
   t,
 }: {
   sending: boolean;
@@ -54,14 +48,14 @@ export function SendBar({
   onSend(): void;
   /** Sends at at, unix milliseconds. */
   onSendLater(at: number): void;
+  /** Shows items ("" a separator) as a native menu at x, y of the page: the index chosen, -1 none. */
+  menu(items: string[], x: number, y: number): Promise<number>;
   t: T;
 }) {
   const [dialog, setDialog] = useState(false);
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [past, setPast] = useState(false);
-  const [now, setNow] = useState(() => new Date());
-  const hm = new Intl.DateTimeFormat(currentLocale(), { hour: "numeric", minute: "2-digit" });
   const openDialog = () => {
     const next = new Date();
     next.setHours(next.getHours() + 1, 0, 0, 0); // the next whole hour
@@ -71,38 +65,36 @@ export function SendBar({
     setPast(false);
     setDialog(true);
   };
+  const options = async (e: React.MouseEvent<HTMLElement>) => {
+    const hm = new Intl.DateTimeFormat(currentLocale(), { hour: "numeric", minute: "2-digit" });
+    const ps = presets(new Date());
+    const items = [t("compose.send_now"), "", ...ps.map((p) => t(p.key, hm.format(p.at))), ""];
+    const r = e.currentTarget.getBoundingClientRect();
+    const i = await menu(
+      [...items, t("compose.send_later")],
+      Math.round(r.left),
+      Math.round(r.bottom),
+    );
+    if (i === 0) onSend();
+    else if (i === items.length) openDialog();
+    else if (i >= 2 && i < 2 + ps.length) onSendLater(ps[i - 2].at.getTime());
+  };
   const off = sending || frozen;
   return (
     <div className="ml-auto flex items-center">
       <Button className="rounded-r-none" disabled={off} onClick={onSend}>
         {t("compose.send")}
       </Button>
-      <DropdownMenu onOpenChange={(o) => o && setNow(new Date())}>
-        <DropdownMenuTrigger
-          render={
-            <Button
-              className="w-6 rounded-l-none border-l-primary-foreground/20"
-              size="icon"
-              disabled={off}
-              aria-label={t("compose.send_options")}
-              title={t("compose.send_options")}
-            />
-          }
-        >
-          <RiArrowDownSLine />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent side="top" align="end" className="w-auto">
-          <DropdownMenuItem onClick={onSend}>{t("compose.send_now")}</DropdownMenuItem>
-          <DropdownMenuSeparator />
-          {presets(now).map((p) => (
-            <DropdownMenuItem key={p.key} onClick={() => onSendLater(p.at.getTime())}>
-              {t(p.key, hm.format(p.at))}
-            </DropdownMenuItem>
-          ))}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={openDialog}>{t("compose.send_later")}</DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <Button
+        className="w-6 rounded-l-none border-l-primary-foreground/20"
+        size="icon"
+        disabled={off}
+        aria-label={t("compose.send_options")}
+        title={t("compose.send_options")}
+        onClick={options}
+      >
+        <RiArrowDownSLine />
+      </Button>
       <AlertDialog open={dialog} onOpenChange={setDialog}>
         <AlertDialogContent>
           <form

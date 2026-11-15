@@ -1012,6 +1012,7 @@ function Compose({
                 frozen={locked}
                 onSend={() => send()}
                 onSendLater={(at) => send("", at)}
+                menu={api.popupMenu}
                 t={t}
               />
             </div>

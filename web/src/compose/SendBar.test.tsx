@@ -5,14 +5,27 @@ import { presets, SendBar } from "./SendBar";
 
 const t = makeT("zh-Hans");
 
-function setup(frozen = false, sending = false) {
+/** pick is the item chosen from the native menu, by its label. */
+function setup(frozen = false, sending = false, pick = "") {
   const onSend = vi.fn();
   const onSendLater = vi.fn();
-  render(
-    <SendBar sending={sending} frozen={frozen} onSend={onSend} onSendLater={onSendLater} t={t} />,
+  const menu = vi.fn(async (items: string[], _x: number, _y: number) =>
+    items.findIndex((l) => pick && l.startsWith(pick)),
   );
-  return { onSend, onSendLater };
+  render(
+    <SendBar
+      sending={sending}
+      frozen={frozen}
+      onSend={onSend}
+      onSendLater={onSendLater}
+      menu={menu}
+      t={t}
+    />,
+  );
+  return { onSend, onSendLater, menu };
 }
+
+const options = () => userEvent.click(screen.getByRole("button", { name: "发送选项" }));
 
 test("send and its options, and nothing else: no discard, no note", async () => {
   const { onSend } = setup();
@@ -30,22 +43,45 @@ test("presets: tonight at 21:00 only before then, tomorrow at 8:00", () => {
   expect(at(presets(day(23, 30)))).toEqual([day(8, 0, 16).getTime()]);
 });
 
-test("the menu: send now, tomorrow, and the dialog", async () => {
-  const { onSend, onSendLater } = setup();
-  await userEvent.click(screen.getByRole("button", { name: "发送选项" }));
-  await userEvent.click(await screen.findByRole("menuitem", { name: "立即发送" }));
+test("the native menu: send now, the presets, send later…", async () => {
+  const { menu } = setup();
+  await options();
+  const [items, x, y] = menu.mock.calls[0];
+  expect(items[0]).toBe("立即发送");
+  expect(items[1]).toBe("");
+  expect(items.at(-2)).toBe("");
+  expect(items.at(-1)).toBe("稍后发送…");
+  expect(items).toContainEqual(expect.stringMatching(/^明天 .*发送$/));
+  expect([typeof x, typeof y]).toEqual(["number", "number"]);
+});
+
+test("the native menu: send now sends", async () => {
+  const { onSend, onSendLater } = setup(false, false, "立即发送");
+  await options();
   expect(onSend).toHaveBeenCalledTimes(1);
-  await userEvent.click(screen.getByRole("button", { name: "发送选项" }));
-  await userEvent.click(await screen.findByRole("menuitem", { name: /^明天 .*发送$/ }));
+  expect(onSendLater).not.toHaveBeenCalled();
+});
+
+test("the native menu: tomorrow sends at 8:00", async () => {
+  const { onSend, onSendLater } = setup(false, false, "明天");
+  await options();
   const now = new Date();
   const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 8, 0);
   expect(onSendLater).toHaveBeenCalledWith(tomorrow.getTime());
+  expect(onSend).not.toHaveBeenCalled();
+});
+
+test("the native menu: closed with nothing chosen does nothing", async () => {
+  const { onSend, onSendLater } = setup();
+  await options();
+  expect(onSend).not.toHaveBeenCalled();
+  expect(onSendLater).not.toHaveBeenCalled();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
 });
 
 test("send later…: a dialog for any time, that says only a running Godwit sends", async () => {
-  const { onSend, onSendLater } = setup();
-  await userEvent.click(screen.getByRole("button", { name: "发送选项" }));
-  await userEvent.click(await screen.findByRole("menuitem", { name: "稍后发送…" }));
+  const { onSend, onSendLater } = setup(false, false, "稍后发送");
+  await options();
   expect(await screen.findByRole("alertdialog", { name: "稍后发送" })).toBeInTheDocument();
   expect(screen.getByText(/只在 Godwit 运行时发出/)).toBeInTheDocument();
   const next = new Date();
@@ -56,10 +92,9 @@ test("send later…: a dialog for any time, that says only a running Godwit send
 });
 
 test("send later…: a past time is refused", async () => {
-  const { onSendLater } = setup();
-  await userEvent.click(screen.getByRole("button", { name: "发送选项" }));
-  await userEvent.click(await screen.findByRole("menuitem", { name: "稍后发送…" }));
-  fireEvent.change(screen.getByLabelText("日期"), { target: { value: "2000-01-01" } });
+  const { onSendLater } = setup(false, false, "稍后发送");
+  await options();
+  fireEvent.change(await screen.findByLabelText("日期"), { target: { value: "2000-01-01" } });
   await userEvent.click(screen.getByRole("button", { name: "排定发送" }));
   expect(onSendLater).not.toHaveBeenCalled();
   expect(screen.getByText("请选择一个将来的时间。")).toBeInTheDocument();
