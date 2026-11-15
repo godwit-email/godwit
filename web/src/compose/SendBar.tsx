@@ -99,6 +99,15 @@ export function SendBar({
         <AlertDialogContent>
           <form
             className="contents"
+            onKeyDown={(e) => {
+              // Keys stay in the dialog (it is portaled, React bubbles them to the compose page):
+              // ⌘↩ schedules here instead of the page's send now.
+              e.stopPropagation();
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                e.currentTarget.requestSubmit();
+              }
+            }}
             onSubmit={(e) => {
               e.preventDefault();
               const at = new Date(`${date}T${time}`).getTime(); // local time

@@ -542,6 +542,19 @@ test("send later: warnings keep the time for send anyway", async () => {
   expect(api.send).toHaveBeenLastCalledWith(7, "d", at);
 });
 
+test("send later…: ⌘↩ in the dialog schedules, it does not send now", async () => {
+  vi.mocked(api.popupMenu).mockImplementationOnce(async (items) => items.length - 1);
+  render(<ComposePage />);
+  await body();
+  await userEvent.click(screen.getByRole("button", { name: "发送选项" }));
+  await userEvent.click(await screen.findByLabelText("日期"));
+  await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
+  expect(api.send).toHaveBeenCalledTimes(1);
+  const at = vi.mocked(api.send).mock.calls[0][2];
+  expect(at).toBeGreaterThan(Date.now());
+  expect(api.send).toHaveBeenCalledWith(7, "", at);
+});
+
 test("an edit clears the warnings", async () => {
   const w = { plugin: "p", message: "没有附件" };
   vi.mocked(api.send).mockResolvedValueOnce({ ...noWarnings, warnings: [w], digest: "d" });
