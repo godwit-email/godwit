@@ -137,7 +137,7 @@ export function SendLaterDialog({
               {past ? t("compose.send_later.past") : readout(loc, at)}
             </p>
           </DialogHeader>
-          <div className="flex flex-wrap items-center justify-between gap-8">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(252px,1fr))] items-start gap-4">
             <Calendar
               mode="single"
               required
@@ -196,7 +196,7 @@ export function Clock({
   label: string;
   onChange(mins: number): void;
 }) {
-  const size = 184;
+  const size = 240;
   const c = size / 2;
   const h = Math.floor(mins / 60);
   const m = mins % 60;
@@ -206,8 +206,8 @@ export function Clock({
     c + r * Math.sin(turn * 2 * Math.PI),
     c - r * Math.cos(turn * 2 * Math.PI),
   ];
-  const [mx, my] = pos(m / 60, 66);
-  const [hx, hy] = pos(((h % 12) + m / 60) / 12, 42);
+  const [mx, my] = pos(m / 60, c * 0.72);
+  const [hx, hy] = pos(((h % 12) + m / 60) / 12, c * 0.46);
   const [grab, setGrab] = useState<"h" | "m" | null>(null);
   const turnAt = (e: React.PointerEvent<HTMLDivElement>) => {
     const b = e.currentTarget.getBoundingClientRect();
@@ -223,19 +223,20 @@ export function Clock({
     else put(mins + wrap(Math.round(turn * 12 - m / 60) - (h % 12), 12) * 60);
   };
   return (
-    <div className="flex flex-col items-center gap-3">
-      <div className="flex items-center gap-2">
-        <span className="font-medium text-3xl tabular-nums">
+    // A row level with the calendar's month (--cell-size high), the face centred beside the days.
+    <div className="flex flex-col items-center gap-4 self-stretch">
+      <div className="flex h-(--cell-size) items-center gap-3 [--cell-size:--spacing(9)]">
+        <span className="font-medium text-base tabular-nums">
           {h % 12 === 0 ? 12 : h % 12}:{p2(m)}
         </span>
-        <div className="flex flex-col rounded-md border p-0.5 text-xs">
+        <div className="flex rounded-md border p-0.5 text-xs">
           {periods.map((name, i) => (
             <button
               key={name}
               type="button"
               aria-pressed={pm === (i === 1)}
               onClick={() => put((h % 12) * 60 + i * 720 + m)}
-              className={`rounded px-1.5 py-0.5 ${pm === (i === 1) ? "bg-muted font-medium" : "text-muted-foreground hover:text-foreground"}`}
+              className={`rounded px-2 py-0.5 ${pm === (i === 1) ? "bg-muted font-medium" : "text-muted-foreground hover:text-foreground"}`}
             >
               {name}
             </button>
@@ -250,7 +251,7 @@ export function Clock({
         aria-valuemax={1439}
         aria-valuenow={mins}
         aria-valuetext={`${h}:${p2(m)}`}
-        className={`touch-none select-none rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${grab ? "cursor-grabbing" : "cursor-grab"}`}
+        className={`my-auto touch-none select-none rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${grab ? "cursor-grabbing" : "cursor-grab"}`}
         onKeyDown={(e) => {
           const d = { ArrowRight: 5, ArrowLeft: -5, ArrowUp: 60, ArrowDown: -60 }[e.key];
           if (d) {

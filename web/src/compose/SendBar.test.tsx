@@ -147,29 +147,29 @@ describe("at 15:30 on Sunday 15 November 2026", () => {
 
   test("the minute hand drags round, and past 12 it carries the hour", async () => {
     const { clock } = await open();
-    // The face is 184 px: its centre at 92, the minute hand's tip at 12 near the top.
+    // The face is 240 px: its centre at 120, the minute hand's tip at 12 near the top.
     const at = (x: number, y: number) => ({ clientX: x, clientY: y, pointerId: 1 });
-    fireEvent.pointerDown(clock, at(92, 30));
-    fireEvent.pointerMove(clock, at(180, 92));
+    fireEvent.pointerDown(clock, at(120, 40));
+    fireEvent.pointerMove(clock, at(230, 120));
     expect(clock).toHaveAttribute("aria-valuetext", "16:15");
     for (const [x, y] of [
-      [92, 180],
-      [4, 92],
-      [92, 4],
+      [120, 230],
+      [10, 120],
+      [120, 10],
     ])
       fireEvent.pointerMove(clock, at(x, y));
-    fireEvent.pointerUp(clock, at(92, 4));
+    fireEvent.pointerUp(clock, at(120, 10));
     expect(clock).toHaveAttribute("aria-valuetext", "17:00");
   });
 
   test("the hour hand drags back through 12 into the morning", async () => {
     const { clock } = await open();
     const at = (x: number, y: number) => ({ clientX: x, clientY: y, pointerId: 1 });
-    // At 16:00 the hour hand points to 4, its tip 42 px out.
-    fireEvent.pointerDown(clock, at(92 + 36, 92 + 21));
-    fireEvent.pointerMove(clock, at(92, 4));
-    fireEvent.pointerMove(clock, at(30, 56));
-    fireEvent.pointerUp(clock, at(30, 56));
+    // At 16:00 the hour hand points to 4, its tip 55 px out.
+    fireEvent.pointerDown(clock, at(120 + 47, 120 + 27));
+    fireEvent.pointerMove(clock, at(120, 10));
+    fireEvent.pointerMove(clock, at(40, 74));
+    fireEvent.pointerUp(clock, at(40, 74));
     expect(clock).toHaveAttribute("aria-valuetext", "10:00");
   });
 
