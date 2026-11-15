@@ -4,6 +4,7 @@ import { currentWindow } from "mygo-runtime";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
 import { toast } from "sonner";
+import { toneButton } from "@/components/tone";
 import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
@@ -906,7 +907,7 @@ function Compose({
                   >
                     <AlertDescription>{reloadErr}</AlertDescription>
                     <AlertAction>
-                      <Button variant="danger" size="sm" onClick={() => void reload()}>
+                      <Button className={toneButton.danger} size="sm" onClick={() => void reload()}>
                         {t("common.retry")}
                       </Button>
                     </AlertAction>
@@ -1024,6 +1025,7 @@ function Compose({
                 frozen={locked}
                 anyway={warned}
                 onSend={() => (warned ? send(warnings.digest, warnings.at) : send())}
+                onSendNow={() => send()}
                 onSendLater={(at) => send("", at)}
                 menu={api.popupMenu}
                 t={t}

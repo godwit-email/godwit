@@ -1,4 +1,5 @@
 import { RiAlertLine } from "@remixicon/react";
+import { toneButton } from "@/components/tone";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import type { SendWarning } from "@/mygo";
@@ -63,7 +64,7 @@ export function Notices({
           <div className="mt-2 flex gap-1.5">
             {latestFailed ? (
               <Button
-                variant="danger"
+                className={toneButton.danger}
                 size="sm"
                 disabled={frozen}
                 onClick={() => !frozen && onRetry()}
@@ -73,7 +74,7 @@ export function Notices({
             ) : (
               <>
                 <Button
-                  variant="danger"
+                  className={toneButton.danger}
                   size="sm"
                   disabled={frozen}
                   onClick={() => !frozen && onKeepMine()}
@@ -81,7 +82,7 @@ export function Notices({
                   {t("compose.conflict.keep")}
                 </Button>
                 <Button
-                  variant="danger"
+                  className={toneButton.danger}
                   size="sm"
                   disabled={frozen}
                   onClick={() => !frozen && onUseLatest()}
