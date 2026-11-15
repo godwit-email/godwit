@@ -42,9 +42,10 @@ type ButtonOpts struct {
 	Icon     string
 	Trailing string // an icon after the label, as a menu's chevron
 	// Tone is the colored Block the button sits on (ToneWarning, ToneDanger,
-	// ToneSuccess, ToneInfo): it is drawn in that tone's colors, an outline of
-	// its border under its text, so it reads as part of the block. Variant is
-	// then ignored; a neutral tone changes nothing.
+	// ToneSuccess, ToneInfo): it is drawn in that tone, a fill a step deeper
+	// than the block's (halfway to its border) under its text, the border's
+	// own color on hover, so it reads as part of the block. Variant is then
+	// ignored; a neutral tone changes nothing.
 	Tone Tone
 }
 
@@ -93,13 +94,13 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 		b.PaddingX(padX) // the same with an icon: the web pages' buttons do not mark theirs, and stay even
 	}
 	hover := b.Hovered() && !o.Disabled
-	if bg, border, text, ok := toneColors(t, o.Tone); ok {
-		b.Border(theme.Stroke, border).TextColor(text)
+	if bg, border, text, ok := toneColors(t, o.Tone); ok { // a step deeper than its block, no outline
+		b.Background(bg.Mix(border, 0.5)).TextColor(text)
 		switch {
 		case hover && b.Pressed():
-			b.Background(border)
+			b.Background(border.Mix(text, 0.1))
 		case hover:
-			b.Background(bg.Mix(border, 0.5))
+			b.Background(border)
 		}
 		if o.Disabled {
 			b.TextColor(text.Alpha(0.5))
