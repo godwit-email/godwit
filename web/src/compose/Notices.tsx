@@ -1,3 +1,4 @@
+import { RiAlertLine } from "@remixicon/react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import type { SendWarning } from "@/mygo";
@@ -14,14 +15,13 @@ const box = "gap-1 border-0 px-3.5 py-3 text-sm";
 const warn = `${box} bg-(--warning-bg) text-(--warning-text) **:data-[slot=alert-description]:text-(--warning-text)`;
 const danger = `${box} bg-destructive/10`;
 
-/** Plugin warnings (sendable anyway), a blocking refusal and the save conflict. */
+/** Plugin warnings (Send then reads 仍然发送), a blocking refusal and the save conflict. */
 export function Notices({
   warnings,
   blocked,
   conflict,
   latestFailed,
   frozen,
-  onSendAnyway,
   onKeepMine,
   onUseLatest,
   onRetry,
@@ -32,7 +32,6 @@ export function Notices({
   conflict: boolean;
   latestFailed: boolean;
   frozen: boolean;
-  onSendAnyway(): void;
   onKeepMine(): void;
   onUseLatest(): void;
   onRetry(): void;
@@ -47,26 +46,15 @@ export function Notices({
         </Alert>
       )}
       {warnings.length > 0 && (
-        // every warning in one notice, 仍然发送 inside it, as the conflict's buttons are in its
+        // what the plugins found, one notice; Send itself reads 仍然发送 (SendBar's anyway)
         <Alert className={warn}>
+          <RiAlertLine />
           {warnings.map((w) => (
-            <div key={`${w.plugin}:${w.message}`} className="flex flex-col gap-1">
+            <div key={`${w.plugin}:${w.message}`} className="flex flex-col gap-0.5">
               <AlertTitle>{t("compose.warn", w.message)}</AlertTitle>
               <From w={w} t={t} />
             </div>
           ))}
-          {!blocked && (
-            <div className="mt-2 flex gap-1.5">
-              <Button
-                variant="warning"
-                size="sm"
-                disabled={frozen}
-                onClick={() => !frozen && onSendAnyway()}
-              >
-                {t("compose.send_anyway")}
-              </Button>
-            </div>
-          )}
         </Alert>
       )}
       {conflict && (

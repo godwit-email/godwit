@@ -22,6 +22,7 @@ export function presets(now: Date): { key: string; at: Date }[] {
 export function SendBar({
   sending,
   frozen,
+  anyway = false,
   onSend,
   onSendLater,
   menu,
@@ -30,6 +31,8 @@ export function SendBar({
   sending: boolean;
   /** True while any operation runs: the buttons are inert. */
   frozen: boolean;
+  /** Plugins warned about this send: the button reads 仍然发送, and onSend goes ahead despite them. */
+  anyway?: boolean;
   onSend(): void;
   /** Sends at at, unix milliseconds. */
   onSendLater(at: number): void;
@@ -63,7 +66,7 @@ export function SendBar({
   return (
     <ButtonGroup className="ml-auto">
       <Button disabled={off} onClick={onSend}>
-        {t("compose.send")}
+        {t(anyway ? "compose.send_anyway" : "compose.send")}
       </Button>
       <Button
         className="w-6"

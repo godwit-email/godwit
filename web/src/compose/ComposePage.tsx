@@ -578,6 +578,8 @@ function Compose({
     setBlocked(null);
   };
   const failure = (e: unknown) => toast.error(errorText(e, t));
+  // Plugins warned and none blocked: Send reads 仍然发送 and goes ahead despite the warnings.
+  const warned = warnings.list.length > 0 && !blocked;
 
   /** Sends now, or at at (unix ms) for Send later; digest goes ahead despite its warnings. */
   const send = async (digest = "", at = 0) => {
@@ -1005,7 +1007,6 @@ function Compose({
                   conflict={sv?.status === "conflict"}
                   latestFailed={latestFailed}
                   frozen={locked}
-                  onSendAnyway={() => send(warnings.digest, warnings.at)}
                   onKeepMine={() => resolve(true)}
                   onUseLatest={() => resolve(false)}
                   onRetry={() => retry.current()}
@@ -1021,7 +1022,8 @@ function Compose({
               <SendBar
                 sending={sending}
                 frozen={locked}
-                onSend={() => send()}
+                anyway={warned}
+                onSend={() => (warned ? send(warnings.digest, warnings.at) : send())}
                 onSendLater={(at) => send("", at)}
                 menu={api.popupMenu}
                 t={t}
