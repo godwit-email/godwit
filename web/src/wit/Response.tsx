@@ -10,15 +10,15 @@ import {
 } from "streamdown";
 import "streamdown/styles.css";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+  Dialog,
+  DialogAction,
+  DialogCancel,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/dialog";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { T } from "@/shared/i18n";
@@ -353,14 +353,14 @@ export function Response({
       >
         {mailTags(text, streaming)}
       </Streamdown>
-      <AlertDialog open={!!link} onOpenChange={(o) => !o && setLink(undefined)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("link.title")}</AlertDialogTitle>
-            <AlertDialogDescription>{link && <Address url={link} />}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="border-t-[0.5px]">
-            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+      <Dialog open={!!link} onOpenChange={(o) => !o && setLink(undefined)}>
+        <DialogContent alert>
+          <DialogHeader>
+            <DialogTitle>{t("link.title")}</DialogTitle>
+            <DialogDescription>{link && <Address url={link} />}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogCancel>{t("common.cancel")}</DialogCancel>
             <Button
               variant="outline"
               onClick={() => {
@@ -371,7 +371,7 @@ export function Response({
             >
               {t("link.copy")}
             </Button>
-            <AlertDialogAction
+            <DialogAction
               autoFocus
               onClick={() => {
                 if (link) onLink(link);
@@ -379,10 +379,10 @@ export function Response({
               }}
             >
               {t("link.open")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </DialogAction>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

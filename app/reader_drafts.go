@@ -9,7 +9,7 @@ import (
 )
 
 // programDrafts shows, under the thread's messages, the drafts a program
-// wrote in answer to it (core.Thread.Drafts, ADR 0042), each as last saved
+// wrote in answer to it (core.Thread.Drafts, ADR 0043), each as last saved
 // with 批准并发送 for exactly that revision and 继续编辑.
 func (r *reader) programDrafts(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()

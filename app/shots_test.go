@@ -255,6 +255,26 @@ func TestShots(t *testing.T) {
 	})
 	noAuto := func(st *core.Settings) { st.QuickReplies, st.Summary = false, false }
 
+	t.Run("Scheduled", func(t *testing.T) {
+		s := shotMail(t, noAuto)
+		ctx := context.Background()
+		d, err := s.env.Svc.NewDraft(ctx, s.you.ID, "new", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d.To, d.Subject, d.HTML = []string{"lena@partner.example"}, "Re: Q4 partnership proposal", "<p>November works.</p>"
+		if d, err = s.env.Svc.SaveDraft(ctx, d); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.env.Svc.SendLater(ctx, d.ID, d.Revision, day(10, 12, 8, 0), ""); err != nil {
+			t.Fatal(err)
+		}
+		s.waitMail("listed under 定时邮件", func() bool { return len(s.app.mail.scheduled) == 1 })
+		s.click("定时邮件")
+		s.see("Re: Q4 partnership proposal")
+		shot(s.harness, "Scheduled")
+	})
+
 	t.Run("Main", func(t *testing.T) {
 		s := shotMail(t, noQuick)
 		openLena(s)
@@ -320,7 +340,7 @@ func TestShots(t *testing.T) {
 		s.see("正在撰写窗口里编辑")
 		shot(s.harness, "MainDrafts")
 	})
-	t.Run("MainProgramDraft", func(t *testing.T) { // a reply godwit mcp wrote, under its thread (ADR 0042; no artboard)
+	t.Run("MainProgramDraft", func(t *testing.T) { // a reply godwit mcp wrote, under its thread (ADR 0043; no artboard)
 		s := shotMail(t, noAuto)
 		ctx := context.Background()
 		page, err := s.env.Svc.Search(ctx, s.you.ID, "Q4 partnership proposal", 1)

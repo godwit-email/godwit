@@ -110,9 +110,13 @@ func mygoHeadlessDesktop() *headlessDesktop {
 			// Godwit opened again (Dock, Finder) while only this backend runs:
 			// the system may hand the reopen to it, the same bundle.
 			offActivate := mygo.App.OnActivate(func(visible bool) {
-				if svc != nil && !visible {
-					showUI(svc, dataDir, app.OpenWindow)
-				}
+				backendReopened(visible, func() {
+					mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
+				}, func() {
+					if svc != nil {
+						showUI(svc, dataDir, app.OpenWindow)
+					}
+				})
 			})
 			defer offActivate()
 			defer context.AfterFunc(ctx, mygo.App.Quit)()
@@ -128,6 +132,20 @@ func mygoHeadlessDesktop() *headlessDesktop {
 			err := mygo.App.Run()
 			return started, err
 		},
+	}
+}
+
+// backendReopened handles Godwit opened again while only the backend runs.
+// macOS brings the running process to the front for the open, and on
+// current versions makes it a regular app with its own Dock tile and menu
+// bar, the accessory policy set at start notwithstanding: the backend leaves
+// the Dock again (accessory) before it hands the open to an interface, which
+// would otherwise show a second Godwit in the Dock (#793). show starts or
+// shows the interface, when no window of the backend shows.
+func backendReopened(visible bool, accessory, show func()) {
+	accessory()
+	if !visible {
+		show()
 	}
 }
 

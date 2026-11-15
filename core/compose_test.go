@@ -830,7 +830,7 @@ func TestSendRestoresAPlaceholder(t *testing.T) {
 }
 
 // A program's draft is shown to the user as 批准并发送 would send it, its
-// placeholders restored (ADR 0042); the program still gets the placeholders.
+// placeholders restored (ADR 0043); the program still gets the placeholders.
 func TestProgramDraftShownRestored(t *testing.T) {
 	const card = "4111 1111 1111 1111"
 	e := newSendEnv(t, false)

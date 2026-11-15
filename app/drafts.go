@@ -120,7 +120,7 @@ func draftChip(c *ui.Context, text string) {
 	kit.BadgeWith(c, text, kit.BadgeOpts{Tone: kit.BadgeOutline}).AlignSelf(ui.Start)
 }
 
-// programNotice is what heads a draft a program wrote (ADR 0042): its label
+// programNotice is what heads a draft a program wrote (ADR 0043): its label
 // and the ask to check it before 批准并发送; cut says the body is too long to
 // show whole, so it is checked and sent from the compose window instead.
 func programNotice(c *ui.Context, cut bool) {
