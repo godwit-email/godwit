@@ -21,8 +21,18 @@ export {
   AlertDialog as Dialog,
   AlertDialogAction as DialogAction,
   AlertDialogCancel as DialogCancel,
-  AlertDialogDescription as DialogDescription,
 };
+
+/**
+ * The muted line under the title, filling the panel's width as the native's: the generated one
+ * balances its lines below md, which in a narrow window breaks a sentence (CJK most) halfway across.
+ */
+export function DialogDescription({
+  className,
+  ...props
+}: ComponentProps<typeof AlertDialogDescription>) {
+  return <AlertDialogDescription className={cn("text-pretty", className)} {...props} />;
+}
 
 /** kit.DialogSize: sm a confirmation, md a form, lg a larger form; never wider than the window less 32. */
 const widths = {
