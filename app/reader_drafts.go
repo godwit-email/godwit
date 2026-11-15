@@ -36,19 +36,10 @@ func (r *reader) programReplyRow(c *ui.Context) {
 		return
 	}
 	t, th := theme.Of(c), c.Theme()
-	blue := t.Label("blue")
-	// the whole row opens it: 查看 › at its end, a deeper blue under the pointer
-	row := kit.Block(c, kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { r.p.a.OpenDraft(pr.id) }}), kit.ToneInfo).
-		Label(i18n.T("reader.program_reply_open")).AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2), th.Space(3))
-	if row.Hovered() {
-		row.Background(blue.Fill)
-	}
-	row.Children(func() {
+	kit.Block(c, ui.Row(c), kit.ToneInfo).AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(1), th.Space(1), th.Space(1), th.Space(3)).Children(func() {
 		ui.Icon(c, icons.Get("square-pen")).Size(theme.IconSm, theme.IconSm)
 		kit.Text(c, i18n.Tf("reader.program_reply", pr.preview), t.Text.Sm).SingleLine().Grow(1).Shrink(1)
-		ui.Row(c).Shrink(0).AlignItems(ui.Center).Gap(th.Space(0.5)).Children(func() {
-			kit.Text(c, i18n.T("reader.program_reply_open"), t.Text.Sm).FontWeight(500)
-			ui.Icon(c, icons.Get("chevron-right")).Size(theme.IconSm, theme.IconSm)
-		})
+		kit.Button(c, i18n.T("reader.program_reply_open"), kit.ButtonOpts{Size: kit.SizeSm, Tone: kit.ToneInfo}).Shrink(0).
+			OnClick(func() { r.p.a.OpenDraft(pr.id) })
 	})
 }
