@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.1](https://github.com/godwit-email/godwit/compare/v1.39.0...v1.39.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* **report:** keep the whole masked imap trace in error reports ([#806](https://github.com/godwit-email/godwit/issues/806)) ([04eaf10](https://github.com/godwit-email/godwit/commit/04eaf106144f1a82fd873da4e076f833933634eb))
+
 ## [1.39.0](https://github.com/godwit-email/godwit/compare/v1.38.0...v1.39.0) (2026-11-15)
 
 
