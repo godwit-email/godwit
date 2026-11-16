@@ -521,7 +521,7 @@ func (s *Service) applyUpdate(ctx context.Context, a Approval) ([]sqlite.Stateme
 		newSubject = *in.Subject
 		undoSubject = &d.Subject
 	}
-	return []sqlite.Statement{{SQL: "UPDATE drafts SET subject = ?, body_html = ?, updated_at = ?, revision = revision + 1 WHERE id = ?",
+	return []sqlite.Statement{{SQL: "UPDATE drafts SET subject = ?, body_html = ?, updated_at = ?, revision = revision + 1, from_program = 1 WHERE id = ?",
 			Args: []any{newSubject, mail.JoinDraft(in.HTML, q, sig), time.Now().Unix(), d.ID}}},
 		map[string]any{"updated": true}, draftUndo{Editable: in.Old, Revision: in.Revision + 1, OldSubject: undoSubject}, nil
 }

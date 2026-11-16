@@ -786,11 +786,11 @@ func (r *reader) runState(c *ui.Context, run *aiRun, retry func()) {
 		kit.Alert(c, kit.Danger, humanize(run.err), func() {
 			if isChatGPTUsage(run.err) {
 				a := r.p.a
-				kit.Button(c, i18n.T("settings.models.manage_usage"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-					OnClick(func() { a.do(func(context.Context) error { return a.plat.OpenURL(chatGPTUsageURL) }, a.toastErr) })
+				kit.AlertAction(c, kit.Danger, i18n.T("settings.models.manage_usage"),
+					func() { a.do(func(context.Context) error { return a.plat.OpenURL(chatGPTUsageURL) }, a.toastErr) })
 			}
 			if retry != nil {
-				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(retry)
+				kit.AlertAction(c, kit.Danger, i18n.T("common.retry"), retry)
 			}
 		})
 	}
@@ -802,10 +802,10 @@ func (r *reader) fetchErr(c *ui.Context, err error, loading bool, retry func()) 
 		kit.Alert(c, kit.Danger, msg, func() {
 			if isChatGPTUsage(err) {
 				a := r.p.a
-				kit.Button(c, i18n.T("settings.models.manage_usage"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-					OnClick(func() { a.do(func(context.Context) error { return a.plat.OpenURL(chatGPTUsageURL) }, a.toastErr) })
+				kit.AlertAction(c, kit.Danger, i18n.T("settings.models.manage_usage"),
+					func() { a.do(func(context.Context) error { return a.plat.OpenURL(chatGPTUsageURL) }, a.toastErr) })
 			}
-			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(retry)
+			kit.AlertAction(c, kit.Danger, i18n.T("common.retry"), retry)
 		})
 	}
 }
@@ -961,6 +961,7 @@ func (r *reader) replyBar(c *ui.Context) ui.Element {
 	return ui.Column(c).Padding(th.Space(2.5), th.Space(7), th.Space(3)).Material(kit.Bar(t.Background)).
 		BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
 		r.column(c).Gap(th.Space(2)).Children(func() {
+			r.programReplyRow(c)
 			if st := r.ai[target.ID]; st != nil && r.taskReady("") && r.p.a.settings.QuickReplies {
 				r.fetchErr(c, st.quick.err, st.quick.loading, func() { r.loadQuick(target.ID, true) })
 				if len(st.quick.v) > 0 {

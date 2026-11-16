@@ -67,6 +67,7 @@ const (
 	ToneWarning             // the status tints, each its -bg in a hairline of its -border under its -text: a note that warns,
 	ToneDanger              // one that says what failed,
 	ToneSuccess             // and one that says what went well
+	ToneInfo                // blue, a note to read before acting (a draft a program wrote): the blue label's fill halfway to the background in a hairline of its edge under its text
 )
 
 // Block makes e a region inside a page or a card and returns it: tone's
@@ -98,14 +99,30 @@ func toned(e ui.Element, t theme.Tokens, tone Tone, edged bool) ui.Element {
 		e.Background(t.Background).Border(theme.Hairline, t.Border)
 	case ToneRaised:
 		e.Background(t.Background)
-	case ToneWarning:
-		e.Background(t.WarningBg).Border(theme.Hairline, t.WarningBorder).TextColor(t.WarningText)
-	case ToneDanger:
-		e.Background(t.DangerBg).Border(theme.Hairline, t.DangerBorder).TextColor(t.DangerText)
-	case ToneSuccess:
-		e.Background(t.SuccessBg).Border(theme.Hairline, t.SuccessBorder).TextColor(t.SuccessText)
+	default:
+		if bg, border, text, ok := toneColors(t, tone); ok {
+			e.Background(bg).Border(theme.Hairline, border).TextColor(text)
+		}
 	}
 	return e
+}
+
+// toneColors are a colored tone's fill, outline and text: what a Block of it
+// draws, and what a Button on it (ButtonOpts.Tone) follows. ok is false for
+// the neutral tones.
+func toneColors(t theme.Tokens, tone Tone) (bg, border, text ui.Color, ok bool) {
+	switch tone {
+	case ToneWarning:
+		return t.WarningBg, t.WarningBorder, t.WarningText, true
+	case ToneDanger:
+		return t.DangerBg, t.DangerBorder, t.DangerText, true
+	case ToneSuccess:
+		return t.SuccessBg, t.SuccessBorder, t.SuccessText, true
+	case ToneInfo:
+		blue := t.Label("blue")
+		return blue.Fill.Mix(t.Background, 0.5), blue.Edge, blue.Text, true
+	}
+	return // neutral: no colors of its own
 }
 
 // PressableOpts say how a Pressable looks and what clicking it does.

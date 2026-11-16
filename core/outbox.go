@@ -52,7 +52,10 @@ type OutboxItem struct {
 	// SendAfter is when it is sent at the earliest (the end of the undo
 	// window), NextAttempt when it is retried; zero means now.
 	SendAfter, NextAttempt time.Time
-	Attempts               int
+	// SendAt is the time SendLater scheduled it for (ADR 0042); zero for a
+	// send of now.
+	SendAt   time.Time
+	Attempts int
 	// Failure is why a failed item failed, for the host to explain in the
 	// user's language; nil otherwise, and for a failure without one (its raw
 	// copy could not be read; LastError says why).
@@ -93,7 +96,7 @@ const (
 
 // ListOutbox returns the account's unfinished outbox items, oldest first.
 func (s *Service) ListOutbox(ctx context.Context, accountID int64) ([]OutboxItem, error) {
-	rows, err := s.db.Query(ctx, `SELECT id, subject, state, last_error, created_at, draft_id, send_after, next_attempt_at, attempts, failure
+	rows, err := s.db.Query(ctx, `SELECT id, subject, state, last_error, created_at, draft_id, send_after, next_attempt_at, attempts, failure, send_at
 		FROM outbox WHERE account_id = ? AND state != 'done' ORDER BY id`, accountID)
 	if err != nil {
 		return nil, err
@@ -102,7 +105,7 @@ func (s *Service) ListOutbox(ctx context.Context, accountID int64) ([]OutboxItem
 	for _, r := range rows.Values {
 		it := OutboxItem{ID: store.Int(r[0]), Subject: store.Str(r[1]), State: store.Str(r[2]),
 			LastError: store.Str(r[3]), CreatedAt: time.Unix(store.Int(r[4]), 0), DraftID: store.Int(r[5]),
-			SendAfter: unixMilli(r[6]), NextAttempt: unixMilli(r[7]), Attempts: int(store.Int(r[8]))}
+			SendAfter: unixMilli(r[6]), NextAttempt: unixMilli(r[7]), Attempts: int(store.Int(r[8])), SendAt: unixMilli(r[10])}
 		if f := store.Str(r[9]); f != "" {
 			it.Failure = new(OutboxFailure)
 			if err := json.Unmarshal([]byte(f), it.Failure); err != nil {

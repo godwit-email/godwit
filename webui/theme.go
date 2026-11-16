@@ -38,7 +38,11 @@ func ThemeOf(st core.Settings) Theme {
 // (--ins-* and --del-*), the warning colours (--warning-*) and the floating
 // input's shadow (--shadow-float: ShadowFloat in the light appearance, the
 // FloatInset inner edge in the dark), the window material's colour (--window)
-// and a card's shadow (--shadow-xs: ShadowXs, black in both). --radius is Radius.Lg; styles.css
+// and a card's shadow (--shadow-xs: ShadowXs, black in both), and kit.Dialog's
+// look for web/src/components/dialog.tsx: the panel (--raised), the scrims
+// (--scrim, --alert-scrim), ShadowX2l (--shadow-dialog), the widths
+// (--dialog-sm/md/lg) and the place (--dialog-centre: the panel's centre,
+// --dialog-min-top: its least distance from the top). --radius is Radius.Lg; styles.css
 // derives sm…4xl from it by fixed offsets, landing on the native 4/6/8/12/16/24/32.
 func ThemeVars(t theme.Tokens) map[string]string {
 	return map[string]string{
@@ -64,6 +68,12 @@ func ThemeVars(t theme.Tokens) map[string]string {
 		"--glass-bg":        css(t.GlassBg),
 		"--glass-border":    css(t.GlassBorder),
 		"--glass-hover":     css(t.GlassHover),
+		"--raised":          css(t.Raised),
+		"--scrim":           css(t.Scrim), "--alert-scrim": css(t.AlertScrim),
+		"--shadow-dialog": shadow(theme.ShadowX2l),
+		"--dialog-sm":     px(theme.DialogSmWidth), "--dialog-md": px(theme.SheetWidth), "--dialog-lg": px(theme.DialogWideWidth),
+		"--dialog-centre":  fmt.Sprintf("%gvh", 100*(0.5-theme.DialogLift/2)),
+		"--dialog-min-top": px(theme.DialogMinTop),
 	}
 }
 
@@ -93,6 +103,9 @@ func shadow(e theme.Elevation) string {
 	}
 	return strings.Join(ls, ", ")
 }
+
+// px writes n as CSS pixels.
+func px(n float32) string { return fmt.Sprintf("%gpx", n) }
 
 // css writes c as CSS Color 4 `rgb(r g b / a)`.
 func css(c ui.Color) string {

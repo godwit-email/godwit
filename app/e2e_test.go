@@ -54,7 +54,7 @@ func TestE2EOnboardToReply(t *testing.T) {
 	if err != nil || saved.Conflict {
 		t.Fatalf("save %+v, %v", saved, err)
 	}
-	if res, err := page.Send(ctx, saved.Revision, ""); err != nil || !res.Sent {
+	if res, err := page.Send(ctx, saved.Revision, "", 0); err != nil || !res.Sent {
 		t.Fatalf("send %+v, %v", res, err)
 	}
 	out := h.sent(acc, 1)

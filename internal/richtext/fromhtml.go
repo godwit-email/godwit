@@ -24,9 +24,16 @@ func FromMailHTML(safe string, lim Limits) (Doc, bool) {
 // and data: images (a draft's signature images, for showing) stay; everything
 // else becomes paragraph text.
 func FromComposeHTML(safe string) Doc {
+	d, _ := FromComposeHTMLCut(safe)
+	return d
+}
+
+// FromComposeHTMLCut is FromComposeHTML that also reports whether
+// DefaultLimits cut something off: what shows is then not all of the draft.
+func FromComposeHTMLCut(safe string) (Doc, bool) {
 	c := &conv{lim: DefaultLimits, compose: true}
 	c.run(safe)
-	return Doc{Blocks: c.blocks}
+	return Doc{Blocks: c.blocks}, c.truncated
 }
 
 // ctx is what the enclosing elements say about the text inside them.

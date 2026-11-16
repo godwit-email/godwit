@@ -32,6 +32,11 @@ func TestThemeVars(t *testing.T) {
 		"--glass-bg":        css(l.GlassBg),
 		"--glass-border":    css(l.GlassBorder),
 		"--glass-hover":     css(l.GlassHover),
+		"--raised":          css(l.Raised),
+		"--scrim":           "rgb(0 0 0 / 0.200)", "--alert-scrim": css(l.AlertScrim),
+		"--shadow-dialog": "0 25px 50px -12px rgb(0 0 0 / 0.250)",
+		"--dialog-sm":     "440px", "--dialog-md": "560px", "--dialog-lg": "640px",
+		"--dialog-centre": "40vh", "--dialog-min-top": "32px",
 	}
 	for k, w := range want {
 		if v[k] != w {

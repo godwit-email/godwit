@@ -6,7 +6,7 @@ import { Notices } from "./Notices";
 const t = makeT("zh-Hans");
 
 function setup(p: Partial<Parameters<typeof Notices>[0]> = {}) {
-  const f = { onSendAnyway: vi.fn(), onKeepMine: vi.fn(), onUseLatest: vi.fn(), onRetry: vi.fn() };
+  const f = { onKeepMine: vi.fn(), onUseLatest: vi.fn(), onRetry: vi.fn() };
   render(
     <Notices
       warnings={[]}
@@ -22,12 +22,11 @@ function setup(p: Partial<Parameters<typeof Notices>[0]> = {}) {
   return f;
 }
 
-test("warnings and send anyway", async () => {
-  const f = setup({ warnings: [{ plugin: "lint", message: "no subject" }] });
+test("warnings say what and whose; the Send button acts on them", () => {
+  setup({ warnings: [{ plugin: "lint", message: "no subject" }] });
   expect(screen.getByText("发送前检查：no subject")).toBeTruthy();
   expect(screen.getByText("来自插件 lint（message.beforeSend）")).toBeTruthy();
-  await userEvent.click(screen.getByRole("button", { name: "仍然发送" }));
-  expect(f.onSendAnyway).toHaveBeenCalled();
+  expect(screen.queryByRole("button")).toBeNull();
 });
 
 test("blocked is a danger alert without send anyway", () => {
@@ -55,10 +54,9 @@ test("retry on latestFailed", async () => {
 
 test("frozen: every button is inert", async () => {
   const f = setup({ frozen: true, conflict: true, warnings: [{ plugin: "p", message: "m" }] });
-  for (const n of ["仍然发送", "保留我的版本", "使用最新版本"]) {
+  for (const n of ["保留我的版本", "使用最新版本"]) {
     await userEvent.click(screen.getByRole("button", { name: n }));
   }
-  expect(f.onSendAnyway).not.toHaveBeenCalled();
   expect(f.onKeepMine).not.toHaveBeenCalled();
   expect(f.onUseLatest).not.toHaveBeenCalled();
 });

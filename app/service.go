@@ -164,6 +164,7 @@ type Service interface {
 	SecurityProgress(ctx context.Context) (core.SecurityScanProgress, error)
 	SendAcknowledgedRevision(ctx context.Context, draftID, revision int64, digest string) error
 	SendRevision(ctx context.Context, draftID, revision int64) error
+	ApproveDraft(ctx context.Context, draftID, revision int64) error
 	SenderAvatar(ctx context.Context, messageID int64, allowRemote bool) (core.Avatar, error)
 	SetFlags(ctx context.Context, ids []int64, add, remove []string) error
 	SetLabel(ctx context.Context, messageIDs []int64, labelID int64, on bool) error

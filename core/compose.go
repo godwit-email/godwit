@@ -37,6 +37,10 @@ type Draft struct {
 	// included (refetch it after one). SaveDraft with a non-zero Revision
 	// fails with ErrStaleDraft unless it is still the stored one.
 	Revision int64
+	// FromProgram: a program (the Local API, godwit mcp, a plugin or Wit)
+	// created or changed it, so the interface labels it and offers
+	// ApproveDraft. Local only; the user's own edits keep it (ADR 0043).
+	FromProgram bool
 }
 
 // DraftAttachment is a file copied into the draft's directory.
@@ -282,8 +286,34 @@ func (s *Service) auditMCPDraft(ctx context.Context, action string, target int64
 	return nil
 }
 
+type programKey struct{}
+
+// withProgram marks ctx as a program's draft write that comes in through no
+// Local API role: a plugin's or a Wit rule's (ADR 0043).
+func withProgram(ctx context.Context) context.Context {
+	return context.WithValue(ctx, programKey{}, true)
+}
+
+// fromProgram is 1 when ctx writes a draft for a program: the Local API's
+// full or mcp role, or withProgram; 0 for the user's interface and the engine.
+func fromProgram(ctx context.Context) int {
+	if src, _ := ctx.Value(externalSourceKey{}).(string); (src != "" && uiSessionFromContext(ctx) == nil) || ctx.Value(programKey{}) != nil {
+		return 1
+	}
+	return 0
+}
+
+// programChanged tells the interface a program's draft write succeeded
+// (err nil), so an open thread shows the draft as it is now (GetThread).
+func (s *Service) programChanged(ctx context.Context, err error) {
+	if err == nil && fromProgram(ctx) == 1 {
+		s.bus.Publish(events.Event{Type: events.DraftsChanged})
+	}
+}
+
 // saveDraft is SaveDraft, unaudited.
-func (s *Service) saveDraft(ctx context.Context, d Draft) (Draft, error) {
+func (s *Service) saveDraft(ctx context.Context, d Draft) (out Draft, err error) {
+	defer func() { s.programChanged(ctx, err) }()
 	// Draft changes and Send never interleave.
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
@@ -301,9 +331,9 @@ func (s *Service) saveDraft(ctx context.Context, d Draft) (Draft, error) {
 			return Draft{}, cmp.Or(err, ErrLocalArchive)
 		}
 		r, err := s.db.Execute(ctx, `INSERT INTO drafts(account_id, mode, source_message_id, to_addrs, cc_addrs, bcc_addrs,
-			reply_to, subject, body_html, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			reply_to, subject, body_html, updated_at, from_program) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			d.AccountID, d.Mode, nullID(d.SourceMessageID), encodeList(d.To), encodeList(d.Cc), encodeList(d.Bcc),
-			d.ReplyTo, d.Subject, d.HTML, now)
+			d.ReplyTo, d.Subject, d.HTML, now, fromProgram(ctx))
 		if err != nil {
 			return Draft{}, err
 		}
@@ -313,8 +343,8 @@ func (s *Service) saveDraft(ctx context.Context, d Draft) (Draft, error) {
 		return Draft{}, err
 	}
 	q, args := `UPDATE drafts SET to_addrs = ?, cc_addrs = ?, bcc_addrs = ?, reply_to = ?, subject = ?,
-		body_html = ?, updated_at = ?, revision = revision + 1 WHERE id = ?`,
-		[]any{encodeList(d.To), encodeList(d.Cc), encodeList(d.Bcc), d.ReplyTo, d.Subject, d.HTML, now, d.ID}
+		body_html = ?, updated_at = ?, revision = revision + 1, from_program = MAX(from_program, ?) WHERE id = ?`,
+		[]any{encodeList(d.To), encodeList(d.Cc), encodeList(d.Bcc), d.ReplyTo, d.Subject, d.HTML, now, fromProgram(ctx), d.ID}
 	if d.Revision != 0 {
 		q, args = q+" AND revision = ?", append(args, d.Revision)
 	}
@@ -351,7 +381,7 @@ func (s *Service) ListDrafts(ctx context.Context, accountID int64) ([]Draft, err
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, d)
+		out = append(out, s.approvalView(ctx, d))
 	}
 	return out, nil
 }
@@ -379,7 +409,7 @@ func (s *Service) DraftForApproval(ctx context.Context, approvalID int64) (int64
 // read, covering rows stored before SaveDraft sanitized.
 func (s *Service) GetDraft(ctx context.Context, id int64) (Draft, error) {
 	rows, err := s.db.Query(ctx, `SELECT account_id, mode, source_message_id, to_addrs, cc_addrs, bcc_addrs, reply_to,
-		subject, body_html, updated_at, revision FROM drafts WHERE id = ?`, id)
+		subject, body_html, updated_at, revision, from_program FROM drafts WHERE id = ?`, id)
 	if err != nil {
 		return Draft{}, err
 	}
@@ -389,7 +419,8 @@ func (s *Service) GetDraft(ctx context.Context, id int64) (Draft, error) {
 	r := rows.Values[0]
 	d := Draft{ID: id, AccountID: store.Int(r[0]), Mode: store.Str(r[1]), SourceMessageID: store.Int(r[2]),
 		To: jsonList(store.Str(r[3])), Cc: jsonList(store.Str(r[4])), Bcc: jsonList(store.Str(r[5])),
-		ReplyTo: store.Str(r[6]), Subject: store.Str(r[7]), UpdatedAt: time.Unix(store.Int(r[9]), 0), Revision: store.Int(r[10])}
+		ReplyTo: store.Str(r[6]), Subject: store.Str(r[7]), UpdatedAt: time.Unix(store.Int(r[9]), 0), Revision: store.Int(r[10]),
+		FromProgram: store.Int(r[11]) != 0}
 	if d.HTML, err = s.sanitizeDraft(ctx, store.Str(r[8])); err != nil {
 		return Draft{}, err
 	}
@@ -447,7 +478,7 @@ func (s *Service) addAttachment(ctx context.Context, draftID, rev int64, filenam
 		return DraftAttachment{}, 0, err
 	}
 	rs, err := s.db.Transaction(ctx, []sqlite.Statement{{SQL: "INSERT INTO draft_attachments(draft_id, filename, content_type, size) VALUES (?, ?, ?, ?)",
-		Args: []any{draftID, filename, contentType, len(data)}}, bumpRevision(draftID)})
+		Args: []any{draftID, filename, contentType, len(data)}}, bumpRevision(ctx, draftID)})
 	if err != nil {
 		return DraftAttachment{}, 0, err
 	}
@@ -460,11 +491,12 @@ func (s *Service) addAttachment(ctx context.Context, draftID, rev int64, filenam
 	if err != nil {
 		os.Remove(path)
 		_, derr := s.db.Transaction(context.WithoutCancel(ctx), []sqlite.Statement{
-			{SQL: "DELETE FROM draft_attachments WHERE id = ?", Args: []any{id}}, bumpRevision(draftID)})
+			{SQL: "DELETE FROM draft_attachments WHERE id = ?", Args: []any{id}}, bumpRevision(ctx, draftID)})
 		now, _ := s.draftRevision(context.WithoutCancel(ctx), draftID)
 		return DraftAttachment{}, now, errors.Join(err, derr)
 	}
 	now, err := s.draftRevision(ctx, draftID)
+	s.programChanged(ctx, err)
 	return DraftAttachment{ID: id, Filename: filename, ContentType: contentType, Size: len(data)}, now, err
 }
 
@@ -499,8 +531,10 @@ func (s *Service) checkRevision(ctx context.Context, draftID, rev int64) error {
 
 // bumpRevision marks the draft changed: an attachment change makes the
 // proposals and saves bound to its old revision stale, as a body change does.
-func bumpRevision(draftID int64) sqlite.Statement {
-	return sqlite.Statement{SQL: "UPDATE drafts SET revision = revision + 1, updated_at = ? WHERE id = ?", Args: []any{time.Now().Unix(), draftID}}
+// A program's change marks it FromProgram.
+func bumpRevision(ctx context.Context, draftID int64) sqlite.Statement {
+	return sqlite.Statement{SQL: "UPDATE drafts SET revision = revision + 1, updated_at = ?, from_program = MAX(from_program, ?) WHERE id = ?",
+		Args: []any{time.Now().Unix(), fromProgram(ctx), draftID}}
 }
 
 // RemoveAttachment deletes the attachment from the draft and its file.
@@ -525,9 +559,10 @@ func (s *Service) removeAttachment(ctx context.Context, draftID, attachmentID, r
 		return 0, fmt.Errorf("attachment %d not found in draft %d", attachmentID, draftID)
 	}
 	if _, err := s.db.DurableTransaction(ctx, []sqlite.Statement{
-		{SQL: "DELETE FROM draft_attachments WHERE id = ?", Args: []any{attachmentID}}, bumpRevision(draftID)}); err != nil {
+		{SQL: "DELETE FROM draft_attachments WHERE id = ?", Args: []any{attachmentID}}, bumpRevision(ctx, draftID)}); err != nil {
 		return 0, err
 	}
+	s.programChanged(ctx, nil) // removed: the file left behind changes nothing shown
 	if err := os.Remove(store.Str(rows.Values[0][0])); err != nil && !os.IsNotExist(err) {
 		return 0, err
 	}
@@ -584,6 +619,41 @@ func (s *Service) Send(ctx context.Context, draftID int64) error {
 	}
 	defer end()
 	return s.send(ctx, draftID, -1, apiSend(ctx, "Send", draftID, s.secrets.Redact))
+}
+
+// SendLater is SendRevision, or SendAcknowledgedRevision for a digest, that
+// holds the message in the outbox until at (ADR 0042): until it is sent it is
+// listed with its OutboxItem.SendAt and CancelOutbox takes it back. Only a
+// running backend sends it, so one due while Godwit was closed goes when it
+// starts (OutboxExpiry still counts from at). The send checks run now, on
+// the draft that is sent. Only Godwit's interface can call it (rpcbind
+// uiOnly); the audit row, written with the item, says when it is due.
+func (s *Service) SendLater(ctx context.Context, draftID, revision int64, at time.Time, digest string) error {
+	if at.IsZero() {
+		return errors.New("send later: no time given")
+	}
+	e, ok := apiAudit(ctx, "SendLater", draftID)
+	if !ok {
+		e.Source = AuditUI // uiOnly: the caller is the interface's user, audited even in process
+	}
+	e.Reason = "scheduled for " + at.UTC().Format(time.RFC3339)
+	rs := &ruleSend{at: at, stmts: []sqlite.Statement{gateway.Audit(e, s.secrets.Redact)}}
+	if digest != "" {
+		return s.sendAcknowledged(ctx, draftID, max(revision, 0), digest, rs)
+	}
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	return s.send(ctx, draftID, max(revision, 0), rs)
+}
+
+func latest(a, b time.Time) time.Time {
+	if a.After(b) {
+		return a
+	}
+	return b
 }
 
 // apiSend is a send over the Local API: queued, the mail leaves unattended,
@@ -742,7 +812,13 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 		}
 		o.Attachments = append(o.Attachments, mail.Attachment{Filename: store.Str(a[0]), ContentType: store.Str(a[1]), Data: data})
 	}
-	raw, messageID, err := mail.Build(o, s.clk().Now())
+	now := s.clk().Now()
+	sendAfter, date, sendAt := now.Add(UndoSendWindow), now, any(nil)
+	if rs != nil && !rs.at.IsZero() {
+		// Dated when it is due, as it would be if sent then; never before the undo window ends.
+		sendAt, sendAfter, date = rs.at.UnixMilli(), latest(rs.at, sendAfter), latest(rs.at, now)
+	}
+	raw, messageID, err := mail.Build(o, date)
 	if err != nil {
 		return err
 	}
@@ -763,9 +839,9 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 			Args: []any{s.clk().Now().Unix(), d.SourceMessageID}}}, stmts...)
 	}
 	if _, err := s.db.DurableTransaction(ctx, append([]sqlite.Statement{{SQL: `INSERT INTO outbox(account_id, message_id_hdr, raw_path, rcpts, state, subject, created_at,
-		draft_id, send_after) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
-		Args: []any{d.AccountID, messageID, rawPath, encodeList(rcpts), d.Subject, s.clk().Now().Unix(), draftID,
-			s.clk().Now().Add(UndoSendWindow).UnixMilli()}}}, stmts...)); err != nil {
+		draft_id, send_after, send_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)`,
+		Args: []any{d.AccountID, messageID, rawPath, encodeList(rcpts), d.Subject, now.Unix(), draftID,
+			sendAfter.UnixMilli(), sendAt}}}, stmts...)); err != nil {
 		os.Remove(rawPath)
 		return err
 	}

@@ -255,6 +255,26 @@ func TestShots(t *testing.T) {
 	})
 	noAuto := func(st *core.Settings) { st.QuickReplies, st.Summary = false, false }
 
+	t.Run("Scheduled", func(t *testing.T) {
+		s := shotMail(t, noAuto)
+		ctx := context.Background()
+		d, err := s.env.Svc.NewDraft(ctx, s.you.ID, "new", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d.To, d.Subject, d.HTML = []string{"lena@partner.example"}, "Re: Q4 partnership proposal", "<p>November works.</p>"
+		if d, err = s.env.Svc.SaveDraft(ctx, d); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.env.Svc.SendLater(ctx, d.ID, d.Revision, day(10, 12, 8, 0), ""); err != nil {
+			t.Fatal(err)
+		}
+		s.waitMail("listed under 定时邮件", func() bool { return len(s.app.mail.scheduled) == 1 })
+		s.click("定时邮件")
+		s.see("Re: Q4 partnership proposal")
+		shot(s.harness, "Scheduled")
+	})
+
 	t.Run("Main", func(t *testing.T) {
 		s := shotMail(t, noQuick)
 		openLena(s)
@@ -319,6 +339,35 @@ func TestShots(t *testing.T) {
 		s.app.ComposeWindowsChanged()
 		s.see("正在撰写窗口里编辑")
 		shot(s.harness, "MainDrafts")
+	})
+	t.Run("MainProgramDraft", func(t *testing.T) { // a reply godwit mcp wrote, named in its thread's reply bar (ADR 0043; no artboard)
+		s := shotMail(t, noAuto)
+		ctx := context.Background()
+		page, err := s.env.Svc.Search(ctx, s.you.ID, "Q4 partnership proposal", 1)
+		if err != nil || len(page) == 0 {
+			t.Fatalf("search %v, %v", page, err)
+		}
+		mcp := core.WithExternalSource(ctx, core.AuditMCP)
+		d, err := s.env.Svc.NewDraft(mcp, s.you.ID, "reply", page[0].ID)
+		if err == nil {
+			d.HTML = "<p>Hi Lena,</p><p>Thanks for the proposal. November works for us, happy to move ahead.</p>"
+			d, err = s.env.Svc.SaveDraft(mcp, d)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.click("Q4 partnership proposal")
+		s.see("程序写好了一封回复：Hi Lena,")
+		shot(s.harness, "MainProgramDraft")
+		s.shotDrafts()
+		s.post(func() { s.app.mail.draftSel = d.ID })
+		s.see("这封草稿由程序")
+		shot(s.harness, "MainProgramDraftFolder")
+		// open in a compose window too: both notices, as wide as each other
+		s.plat.setComposeOpen(d.ID, true)
+		s.post(func() { s.app.mail.setDrafts() })
+		s.see("来自程序的草稿")
+		shot(s.harness, "MainProgramDraftEditing")
 	})
 	t.Run("MainOlder", func(t *testing.T) { // the row while older mail loads (no artboard: compared by eye)
 		s := shotMail(t, noAuto)

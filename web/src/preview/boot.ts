@@ -22,10 +22,15 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
       "cmdk",
       "signature",
       "translate",
+      "program",
+      "warned",
+      "conflict",
     ],
     entry: () => import("@/compose/main"),
     setup() {
-      const withBody = ["inline", "rewrite", "cmdk"].includes(state);
+      const withBody = ["inline", "rewrite", "cmdk", "program", "warned", "conflict"].includes(
+        state,
+      );
       let revision = 1;
       let followed = false;
       const body = () => (revision > 1 || withBody ? fx.compose(mode, true).body : "");
@@ -37,6 +42,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         updatedAt: Date.now(),
         body: body(),
         subject: fx.compose(mode, true).subject,
+        fromProgram: revision > 1 || state === "program", // Wit's edit marks the draft
       });
       const history = () =>
         state === "streaming"
@@ -55,6 +61,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
           ...(state === "translate" && {
             wit: { ...fx.compose(mode, withBody).wit, translateOnly: true },
           }),
+          ...(state === "program" && { fromProgram: true }), // a draft godwit mcp wrote (ADR 0043)
           ...(state === "signature" && {
             signatureHtml: `<p>Alex Chen<br>Partnerships · Example Co.</p><img src="${fx.logo}">`, // no "-- ": SignatureDelimiter is off by default
           }),
@@ -89,6 +96,8 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "ComposePage.Closed": nothing,
         "ComposePage.Stop": nothing,
         "ComposePage.OpenLink": nothing,
+        // no native menu in a browser: picks the last item (Send later…), to show what follows
+        "ComposePage.PopupMenu": async (items: string[]) => items.length - 1,
         "ComposePage.OpenModels": nothing,
         "ComposePage.Models": async () => fx.witModels,
         "ComposePage.SearchContacts": async (q: string) =>
@@ -104,11 +113,20 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "ComposePage.DecideAll": async () => changed(),
         "ComposePage.Finish": async () => changed(),
         "ComposePage.Undo": async () => changed(),
+        // warned: a plugin's warning answers 发送; conflict: the draft changed elsewhere
         "ComposePage.Send": async () => ({
           sent: false,
-          conflict: false,
-          warnings: [],
-          digest: "",
+          conflict: state === "conflict",
+          warnings:
+            state === "warned"
+              ? [
+                  {
+                    plugin: "Attachment check",
+                    message: "The text mentions an attachment, but none is attached",
+                  },
+                ]
+              : [],
+          digest: state === "warned" ? "d" : "",
           blocked: null,
         }),
       });

@@ -150,6 +150,17 @@ func Gallery(c *ui.Context, g *GalleryState) {
 						Block(c, ui.Column(c).Padding(th.Space(3)).Width(th.Space(30)), ToneRaised).Children(func() { ui.Text(c, "Block · Raised") })
 					})
 				})
+				row(func() { // the colored tones, each with a button that follows it (ButtonOpts.Tone)
+					for _, k := range []struct {
+						name string
+						tone Tone
+					}{{"Info", ToneInfo}, {"Warning", ToneWarning}, {"Danger", ToneDanger}, {"Success", ToneSuccess}} {
+						Block(c, ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), th.Space(2), th.Space(2), th.Space(3)), k.tone).Children(func() {
+							ui.Text(c, "Block · "+k.name)
+							Button(c, "Action", ButtonOpts{Size: SizeSm, Tone: k.tone})
+						})
+					}
+				})
 			})
 			section("Tile", func() {
 				row(func() {
@@ -182,9 +193,12 @@ func Gallery(c *ui.Context, g *GalleryState) {
 			})
 			section("Alert", func() {
 				ui.Column(c).Gap(th.Space(2)).MaxWidth(theme.ContentMaxWidth).Children(func() {
-					Alert(c, Warning, "Warning alert", nil)
-					Alert(c, Danger, "Danger alert", nil)
-					Alert(c, Info, "Info alert", func() { Button(c, "Alert action", ButtonOpts{Variant: Outline, Size: SizeSm}) })
+					for _, k := range []struct {
+						name string
+						kind AlertKind
+					}{{"Warning", Warning}, {"Danger", Danger}, {"Info", Info}} {
+						Alert(c, k.kind, k.name+" alert", func() { AlertAction(c, k.kind, "Alert action", nil) })
+					}
 				})
 			})
 			section("Avatar", func() {

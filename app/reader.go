@@ -97,6 +97,7 @@ type session struct {
 	// what label changes apply to.
 	threadIDs    []int64
 	thread       core.Thread         // as last read: its copies read with what shows
+	programReply programReply        // the newest reply a program drafted for it, for the reply bar
 	labels       []core.AppliedLabel // the thread's
 	open         map[int64]bool      // messages shown in full
 	focus        int64               // the message last expanded, or whose page took ⌘S/⌘P: what save and print act on while it is open
@@ -313,7 +314,7 @@ func (r *reader) load(k [2]int64) {
 			a.toastErr(err)
 			return
 		}
-		r.threadIDs, r.labels, r.thread = nil, labels[k[0]], th
+		r.threadIDs, r.labels, r.thread, r.programReply = nil, labels[k[0]], th, newProgramReply(th.Drafts)
 		for _, m := range th.Messages {
 			r.threadIDs = append(r.threadIDs, m.ID)
 		}
@@ -1794,8 +1795,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 			switch {
 			case b != nil && b.err != nil && !b.read.loading:
 				kit.Alert(c, kit.Danger, humanize(b.err), func() {
-					kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-						OnClick(func() { r.loadBody(m.ID) })
+					kit.AlertAction(c, kit.Danger, i18n.T("common.retry"), func() { r.loadBody(m.ID) })
 				})
 				return
 			case b == nil || !b.ready:
@@ -1806,15 +1806,12 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 			bodyBlocked := b.msg.RemoteImagesBlocked > 0 && !b.remote && !b.trusted
 			if b.allowErr != nil && (bodyBlocked || addr != "" && b.avatarBlocked && !b.avatarAllow) {
 				kit.Alert(c, kit.Danger, humanize(b.allowErr), func() {
-					kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-						OnClick(func() { r.allowImages(m.ID) })
+					kit.AlertAction(c, kit.Danger, i18n.T("common.retry"), func() { r.allowImages(m.ID) })
 				})
 			}
 			if b.imgFailed > 0 && !bodyBlocked {
-				ui.Row(c).Wrap().Gap(th.Space(3)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(3)).Radius(t.Radius.Lg).
-					Background(t.WarningBg).Border(theme.Hairline, t.WarningBorder).Children(func() {
-					kit.Text(c, i18n.Tf("reader.images_failed", b.imgFailed), t.Text.Xs).TextColor(t.WarningText)
-					kit.TextLink(c, i18n.T("common.retry"), t.WarningText, t.Text.Xs).OnClick(func() {
+				kit.Alert(c, kit.Warning, i18n.Tf("reader.images_failed", b.imgFailed), func() {
+					kit.AlertAction(c, kit.Warning, i18n.T("common.retry"), func() {
 						b.imgFailed = 0
 						r.p.a.plat.AllowImages(m.ID)
 					})

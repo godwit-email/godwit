@@ -104,6 +104,7 @@ type mailPage struct {
 
 	folders                  map[int64][]core.Folder // by account
 	outbox                   []outboxEntry           // every account's
+	scheduled                []outboxEntry           // every account's, sent later (isScheduled); not in outbox
 	drafts                   []core.Draft            // the drafts folder's account's, when it shows
 	draftList                *ui.ListState           // replaced, never zeroed: the last frame's tree still points at the old one
 	draftSel                 int64                   // the draft the pane shows; 0 for none
@@ -261,6 +262,7 @@ func (p *mailPage) reload() {
 		starredByAcc = map[int64]int{}
 		starredTotal int
 		outbox       []outboxEntry
+		scheduled    []outboxEntry
 		drafts       []core.Draft
 		items        []mailItem
 		cursor       string
@@ -282,7 +284,11 @@ func (p *mailPage) reload() {
 				return err
 			}
 			for _, it := range ob {
-				outbox = append(outbox, outboxEntry{it, cmp.Or(acc.Alias, acc.Email)})
+				if isScheduled(it) {
+					scheduled = append(scheduled, outboxEntry{it, cmp.Or(acc.Alias, acc.Email)})
+				} else {
+					outbox = append(outbox, outboxEntry{it, cmp.Or(acc.Alias, acc.Email)})
+				}
 			}
 		}
 		if starredByAcc, starredTotal, err = a.svc.StarredCounts(ctx); err != nil {
@@ -300,7 +306,7 @@ func (p *mailPage) reload() {
 		}
 		draftsAcc, isDrafts := draftsOf(folders, v)
 		switch {
-		case v.Unified == "outbox" || v == (core.View{}):
+		case v.Unified == "outbox" || v.Unified == "scheduled" || v == (core.View{}):
 		case viewList && cached:
 		case viewList && !slices.ContainsFunc(saved, func(b core.SavedView) bool { return b.ID == savedViewID }): // deleted: viewsLoaded leaves it
 		case viewList:
@@ -327,7 +333,7 @@ func (p *mailPage) reload() {
 		if threads != p.threads {
 			p.main.reset() // thread IDs and message IDs do not mix
 		}
-		p.folders, p.outbox, p.drafts, p.threads = folders, outbox, drafts, threads
+		p.folders, p.outbox, p.scheduled, p.drafts, p.threads = folders, outbox, scheduled, drafts, threads
 		p.starredUnread, p.starredUnreadTotal = starredByAcc, starredTotal
 		if viewList && cached {
 			items, viewGroups, cursor = p.items, p.viewGroups, ""
@@ -667,6 +673,8 @@ func (p *mailPage) Title() (string, string) {
 		return i18n.T("mail.unified.starred"), ""
 	case v.Unified == "outbox":
 		return i18n.T("mail.outbox"), ""
+	case v.Unified == "scheduled":
+		return i18n.T("mail.scheduled"), ""
 	default:
 		if _, ok := draftsOf(p.folders, v); ok && v.FolderID == 0 {
 			return i18n.T("mail.folder.drafts"), ""
@@ -720,7 +728,9 @@ func (p *mailPage) Content(c *ui.Context) {
 		kit.Panel(c, r).Grow(1).Children(func() {
 			switch {
 			case p.view.Unified == "outbox":
-				p.outboxView(c)
+				p.outboxView(c, i18n.T("mail.outbox"), p.outbox, "")
+			case p.view.Unified == "scheduled":
+				p.outboxView(c, i18n.T("mail.scheduled"), p.scheduled, i18n.T("scheduled.note"))
 			case isDrafts:
 				p.draftsView(c)
 			default:

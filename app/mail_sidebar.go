@@ -112,7 +112,7 @@ func sidebarFolders(acc int64, fs []core.Folder) []sideFolder {
 }
 
 // Sidebar: the page switch and search; Compose; the unified views; the label
-// and account groups, each foldable; the outbox while it holds mail.
+// and account groups, each foldable; the outbox and Scheduled while they hold mail.
 func (p *mailPage) Sidebar(c *ui.Context) {
 	a := p.a
 	th := c.Theme()
@@ -128,6 +128,9 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 		p.navItem(c, "star", i18n.T("mail.unified.starred"), core.View{Unified: "starred"}, 0)
 		if n := len(p.outbox); n > 0 {
 			p.navItem(c, "outbox", i18n.T("mail.outbox"), core.View{Unified: "outbox"}, n)
+		}
+		if n := len(p.scheduled); n > 0 {
+			p.navItem(c, "time", i18n.T("mail.scheduled"), core.View{Unified: "scheduled"}, n)
 		}
 		ui.Box(c).Height(th.Space(2))
 		order := core.SidebarOrder(a.settings)

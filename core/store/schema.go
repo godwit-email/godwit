@@ -854,6 +854,14 @@ var Migrations = [][]string{{
 	`ALTER TABLE mcp_servers ADD COLUMN managed_by TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE mcp_servers ADD COLUMN managed_hash TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE model_services ADD COLUMN model_info TEXT NOT NULL DEFAULT '{}'`,
+}, {
+	// Send later (ADR 0042): the time the user scheduled the item for, unix
+	// milliseconds; NULL for a send of now. send_after holds it too.
+	`ALTER TABLE outbox ADD COLUMN send_at INTEGER`,
+}, {
+	// A draft a program (the Local API, godwit mcp, a plugin or Wit) created or
+	// changed; local only, never an IMAP keyword (ADR 0043).
+	`ALTER TABLE drafts ADD COLUMN from_program INTEGER NOT NULL DEFAULT 0`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

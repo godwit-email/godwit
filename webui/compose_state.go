@@ -46,6 +46,9 @@ type ComposeState struct {
 	Locale string `json:"locale"`
 	// Wit is what the Wit panel offers, as WitInfo.
 	Wit WitInfo `json:"wit"`
+	// FromProgram is core.Draft.FromProgram: a program wrote or changed the
+	// draft, so the page asks the user to check it before sending (ADR 0043).
+	FromProgram bool `json:"fromProgram"`
 }
 
 // ComposeEdit is what the page saves: the fields it edits, and the revision

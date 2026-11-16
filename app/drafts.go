@@ -56,6 +56,7 @@ type draftInfo struct {
 	preview string
 	doc     richtext.Doc
 	editing bool // a compose window has it
+	cut     bool // doc is not all of the draft: too long to show, so not to approve here
 }
 
 // setDrafts parses the loaded drafts, asks the platform which are being
@@ -64,8 +65,8 @@ func (p *mailPage) setDrafts() {
 	p.draftView = make(map[int64]draftInfo, len(p.drafts))
 	found := false
 	for _, d := range p.drafts {
-		doc := richtext.FromComposeHTML(d.HTML)
-		p.draftView[d.ID] = draftInfo{strings.Join(strings.Fields(doc.PlainText()), " "), doc, p.a.plat.ComposeOpen(d.ID)}
+		doc, cut := richtext.FromComposeHTMLCut(d.HTML)
+		p.draftView[d.ID] = draftInfo{strings.Join(strings.Fields(doc.PlainText()), " "), doc, p.a.plat.ComposeOpen(d.ID), cut}
 		found = found || d.ID == p.draftSel
 	}
 	if !found {
@@ -101,10 +102,44 @@ func (p *mailPage) draftRow(c *ui.Context, d core.Draft) {
 		if text := p.draftView[d.ID].preview; text != "" {
 			kit.Text(c, text, t.Text.Xs).TextColor(t.Muted).SingleLine()
 		}
-		if p.draftView[d.ID].editing {
-			kit.BadgeWith(c, i18n.T("mail.draft.chip"), kit.BadgeOpts{Tone: kit.BadgeOutline}).AlignSelf(ui.Start).Margin(th.Space(0.5), 0, 0, 0)
+		if editing := p.draftView[d.ID].editing; editing || d.FromProgram {
+			ui.Row(c).Gap(th.Space(1)).Margin(th.Space(0.5), 0, 0, 0).Children(func() {
+				if editing {
+					draftChip(c, i18n.T("mail.draft.chip"))
+				}
+				if d.FromProgram {
+					draftChip(c, i18n.T("mail.draft.from_program"))
+				}
+			})
 		}
 	})
+}
+
+// draftChip is a small bordered label on a draft: 编辑中, 来自程序的草稿.
+func draftChip(c *ui.Context, text string) {
+	kit.BadgeWith(c, text, kit.BadgeOpts{Tone: kit.BadgeOutline}).AlignSelf(ui.Start)
+}
+
+// programNotice is what heads a draft a program wrote (ADR 0043): its label
+// and the ask to check it before 批准并发送; cut says the body is too long to
+// show whole, so it is checked and sent from the compose window instead.
+func programNotice(c *ui.Context, cut bool) {
+	t := theme.Of(c)
+	draftNotice(c, kit.ToneInfo).Children(func() {
+		kit.Text(c, i18n.T("mail.draft.from_program"), t.Text.Sm).FontWeight(500)
+		kit.Text(c, i18n.T("mail.draft.from_program_help"), t.Text.Xs)
+		if cut {
+			kit.Text(c, i18n.T("mail.draft.too_long"), t.Text.Xs).FontWeight(600)
+		}
+	})
+}
+
+// draftNotice is a notice over a draft in the pane, of tone: every one as
+// wide, outset by its padding so its text lines up with the subject and
+// fields under it. Give it its Children.
+func draftNotice(c *ui.Context, tone kit.Tone) ui.Element {
+	th := c.Theme()
+	return kit.Block(c, ui.Column(c), tone).AlignSelf(ui.Stretch).Margin(0, -th.Space(3.5)).Gap(th.Space(0.5)).Padding(th.Space(2.5), th.Space(3.5))
 }
 
 // recipients are the display names of addresses, joined.
@@ -133,6 +168,13 @@ func (p *mailPage) draftPane(c *ui.Context) {
 	info := p.draftView[d.ID]
 	editing := info.editing
 	sendTip := i18n.T("compose.send")
+	cut := d.FromProgram && info.cut // an approval would send text the pane does not show
+	if d.FromProgram {
+		sendTip = i18n.T("mail.draft.approve")
+	}
+	if cut {
+		sendTip = i18n.T("mail.draft.too_long")
+	}
 	if editing {
 		sendTip = i18n.T("mail.draft.send_disabled")
 	}
@@ -142,7 +184,7 @@ func (p *mailPage) draftPane(c *ui.Context) {
 		ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2), th.Space(4)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
 			kit.ButtonGroup(c,
 				kit.GroupItem{Icon: "square-pen", Tip: i18n.T("mail.draft.edit"), OnClick: func() { p.a.OpenDraft(d.ID) }},
-				kit.GroupItem{Icon: "send", Tip: sendTip, Disabled: editing || p.sending.busy, OnClick: func() { p.sendDraft(d) }},
+				kit.GroupItem{Icon: "send", Tip: sendTip, Disabled: editing || cut || p.sending.busy, OnClick: func() { p.sendDraft(d) }},
 				kit.GroupItem{Icon: "trash-2", Tip: i18n.T("mail.draft.delete"), OnClick: func() { p.deleteDraft(d.ID) }})
 			ui.Spacer(c)
 			status := i18n.Tf("mail.draft.saved", saved)
@@ -155,21 +197,13 @@ func (p *mailPage) draftPane(c *ui.Context) {
 			ui.Column(c).FillWidth().Padding(th.Space(5), th.Space(7)).Children(func() {
 				ui.Column(c).FillWidth().MaxWidth(p.a.readerMaxWidth()).AlignSelf(ui.Center).Gap(th.Space(4)).Children(func() { // the reader's column
 					if editing {
-						kit.Block(c, kit.Text(c, i18n.T("mail.draft.notice"), t.Text.Xs).Padding(th.Space(2), th.Space(3)), kit.ToneTint)
+						draftNotice(c, kit.ToneTint).Children(func() { kit.Text(c, i18n.T("mail.draft.notice"), t.Text.Xs) })
+					}
+					if d.FromProgram {
+						programNotice(c, cut)
 					}
 					kit.Text(c, cmp.Or(d.Subject, i18n.T("mail.no_subject")), t.Text.Xl).FontWeight(600)
-					ui.Column(c).Gap(th.Space(1)).Children(func() {
-						for _, f := range [][2]string{
-							{i18n.T("compose.to"), cmp.Or(strings.Join(d.To, ", "), i18n.T("mail.no_recipient"))},
-							{i18n.T("compose.subject"), cmp.Or(d.Subject, i18n.T("mail.no_subject"))},
-							{i18n.T("compose.from"), p.accountEmail(d.AccountID)},
-						} {
-							ui.Row(c).Gap(th.Space(3)).Children(func() {
-								ui.Text(c, f[0]).TextColor(t.Muted).MinWidth(th.Space(12)).Shrink(0)
-								ui.Text(c, f[1]).Grow(1).Shrink(1)
-							})
-						}
-					})
+					p.draftFields(c, d)
 					ui.Column(c).Padding(th.Space(4), 0, 0, 0).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
 						richtext.Render(c, info.doc, richtext.RenderOptions{OnLink: p.a.openLink})
 					})
@@ -177,6 +211,29 @@ func (p *mailPage) draftPane(c *ui.Context) {
 				})
 			})
 		})
+	})
+}
+
+// draftFields are the draft's headers: every address it goes to (Cc and Bcc
+// when it has them: approving sends to all of them), its subject and sender.
+func (p *mailPage) draftFields(c *ui.Context, d core.Draft) {
+	t, th := theme.Of(c), c.Theme()
+	fields := [][2]string{{i18n.T("compose.to"), cmp.Or(strings.Join(d.To, ", "), i18n.T("mail.no_recipient"))}}
+	if len(d.Cc) > 0 {
+		fields = append(fields, [2]string{i18n.T("compose.cc"), strings.Join(d.Cc, ", ")})
+	}
+	if len(d.Bcc) > 0 {
+		fields = append(fields, [2]string{i18n.T("compose.bcc"), strings.Join(d.Bcc, ", ")})
+	}
+	fields = append(fields, [2]string{i18n.T("compose.subject"), cmp.Or(d.Subject, i18n.T("mail.no_subject"))},
+		[2]string{i18n.T("compose.from"), p.accountEmail(d.AccountID)})
+	ui.Column(c).Gap(th.Space(1)).Children(func() {
+		for _, f := range fields {
+			ui.Row(c).Gap(th.Space(3)).Children(func() {
+				ui.Text(c, f[0]).TextColor(t.Muted).MinWidth(th.Space(12)).Shrink(0)
+				ui.Text(c, f[1]).Grow(1).Shrink(1)
+			})
+		}
 	})
 }
 
@@ -218,10 +275,16 @@ type draftSend struct {
 	warnings core.SendCheck
 }
 
-// sendDraft queues the draft as last saved. A compose window opened since
-// the pane was drawn owns the draft, so it is refused here, not at render.
+// sendDraft queues the draft as last saved, a program's through ApproveDraft
+// (批准并发送): either way only the revision shown. A compose window opened
+// since the pane was drawn owns the draft, so it is refused here, not at render.
 func (p *mailPage) sendDraft(d core.Draft) {
-	p.doSend(d.ID, d.Revision, func(ctx context.Context) error { return p.a.svc.SendRevision(ctx, d.ID, d.Revision) })
+	p.doSend(d.ID, d.Revision, func(ctx context.Context) error {
+		if d.FromProgram {
+			return p.a.svc.ApproveDraft(ctx, d.ID, d.Revision)
+		}
+		return p.a.svc.SendRevision(ctx, d.ID, d.Revision)
+	})
 }
 
 func (p *mailPage) doSend(id, rev int64, call func(context.Context) error) {

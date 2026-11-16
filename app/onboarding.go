@@ -1280,7 +1280,7 @@ func (o *onboarding) oauthView(c *ui.Context) {
 	kit.Card(c, ui.Column(c), kit.ToneOutline).Gap(th.Space(3)).Padding(th.Space(5)).BorderStyle(ui.BorderDashed).AlignItems(ui.Center).Children(func() {
 		if o.oauthErr != nil {
 			kit.Alert(c, kit.Danger, humanize(o.oauthErr), func() {
-				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).OnClick(o.startOAuth)
+				kit.AlertAction(c, kit.Danger, i18n.T("common.retry"), o.startOAuth)
 			})
 			return
 		}
@@ -1527,7 +1527,7 @@ func (o *onboarding) doneView(c *ui.Context) {
 		Description(i18n.T("onboarding.sync.help"))
 	if o.saveErr != nil {
 		kit.Alert(c, kit.Danger, humanize(o.saveErr), func() {
-			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).OnClick(func() { o.finish(o.again) })
+			kit.AlertAction(c, kit.Danger, i18n.T("common.retry"), func() { o.finish(o.again) })
 		})
 	}
 	ui.Column(c).Gap(th.Space(2)).Children(func() {

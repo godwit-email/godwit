@@ -828,3 +828,31 @@ func TestSendRestoresAPlaceholder(t *testing.T) {
 	assert.Equal(t, `["bob@example.com"]`, store.Str(e.rows(t, "SELECT rcpts FROM outbox")[0][0]))
 	assert.Equal(t, "Card "+card, store.Str(e.rows(t, "SELECT subject FROM outbox")[0][0]))
 }
+
+// A program's draft is shown to the user as 批准并发送 would send it, its
+// placeholders restored (ADR 0043); the program still gets the placeholders.
+func TestProgramDraftShownRestored(t *testing.T) {
+	const card = "4111 1111 1111 1111"
+	e := newSendEnv(t, false)
+	m, err := e.s.masker()
+	require.NoError(t, err)
+	p, err := m.Text(card)
+	require.NoError(t, err)
+	api := WithExternalSource(bg, AuditMCP)
+	d, err := e.s.NewDraft(api, e.acc.ID, "new", 0)
+	require.NoError(t, err)
+	d.To, d.Bcc, d.Subject = []string{"bob@example.com"}, []string{"Card " + p + " <hidden@example.net>"}, "Card "+p
+	_, err = e.s.SaveDraft(api, d)
+	require.NoError(t, err)
+
+	shown, err := e.s.ListDrafts(WithUISession(bg, e.s), e.acc.ID)
+	require.NoError(t, err)
+	require.Len(t, shown, 1)
+	assert.Equal(t, []string{"Card " + card + " <hidden@example.net>"}, shown[0].Bcc)
+	assert.Equal(t, "Card "+card, shown[0].Subject)
+
+	back, err := e.s.ListDrafts(api, e.acc.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Card "+p, back[0].Subject, "the program never gets the value back")
+	assert.Equal(t, []string{"Card " + p + " <hidden@example.net>"}, back[0].Bcc)
+}

@@ -176,15 +176,9 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 	ui.Column(c).Gap(theme.SectionGap).Children(func() {
 		sectionTitle(c, i18n.T("settings.models.usage"))
 		if u.alert != "" {
-			ui.Row(c).Wrap().AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Xl).
-				Border(theme.Hairline, t.DangerBorder).Background(t.DangerBg).Children(func() {
-				ui.Text(c, u.alert).TextColor(t.DangerText).Grow(1).Shrink(1).MinWidth(theme.SidebarMinWidth)
-				svc := *u.genSvc
-				fixText := t.OnSolid
-				if t.Dark {
-					fixText = t.DangerBg
-				}
-				settingButton(c, i18n.T("settings.models.use.fix"), kit.Default, false).Background(t.DangerText).TextColor(fixText).OnClick(func() { m.openEdit(svc) })
+			svc := *u.genSvc
+			kit.Alert(c, kit.Danger, u.alert, func() {
+				kit.AlertAction(c, kit.Danger, i18n.T("settings.models.use.fix"), func() { m.openEdit(svc) })
 			})
 		}
 		settingsCard(c,

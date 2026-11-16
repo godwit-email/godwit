@@ -53,6 +53,10 @@ func (cl *Client) ApplyEditedProposal(ctx context.Context, approvalID int64, edi
 	return callErr(cl, ctx, "ApplyEditedProposal", approvalID, edited)
 }
 
+func (cl *Client) ApproveDraft(ctx context.Context, draftID int64, revision int64) error {
+	return callErr(cl, ctx, "ApproveDraft", draftID, revision)
+}
+
 func (cl *Client) ArchiveMessages(ctx context.Context, ids []int64, folderID int64) (core.ArchiveUndo, error) {
 	return call[core.ArchiveUndo](cl, ctx, "ArchiveMessages", ids, folderID)
 }
@@ -751,6 +755,10 @@ func (cl *Client) SecurityProgress(ctx context.Context) (core.SecurityScanProgre
 
 func (cl *Client) SendAcknowledgedRevision(ctx context.Context, draftID int64, revision int64, digest string) error {
 	return callErr(cl, ctx, "SendAcknowledgedRevision", draftID, revision, digest)
+}
+
+func (cl *Client) SendLater(ctx context.Context, draftID int64, revision int64, at time.Time, digest string) error {
+	return callErr(cl, ctx, "SendLater", draftID, revision, at, digest)
 }
 
 func (cl *Client) SendRevision(ctx context.Context, draftID int64, revision int64) error {
