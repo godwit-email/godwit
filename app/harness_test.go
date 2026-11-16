@@ -81,6 +81,10 @@ func newHarnessDev(t *testing.T, dev bool, opts []coretest.Option, setup ...func
 		h.app.Close()
 		h.stop()
 		h.ui.Close()
+		// Let the Tester go: since MyGo 0.9.1 each one owns a text system
+		// (egoist/mygo#1730), and something still holds the harness after the
+		// test, which kept every Tester's atlases and buffers alive.
+		h.tt = nil
 	})
 	return h
 }
