@@ -1,6 +1,6 @@
 module github.com/godwit-email/godwit
 
-go 1.27.3
+go 1.27.4
 
 require (
 	git.sr.ht/~rockorager/go-jmap v0.5.3
