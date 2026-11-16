@@ -97,8 +97,9 @@ func maskReportLog(text string) string {
 		if trace, ok := strings.CutPrefix(line, core.TracePrefix); ok {
 			out.WriteString(trace)
 		} else if i := escapedTrace(line); i >= 0 {
+			// One line per trace line, so issueURL drops the oldest first.
 			out.WriteString(maskReport(line[:i]))
-			out.WriteString(line[i:])
+			out.WriteString(strings.ReplaceAll(line[i:], `\n`+core.TracePrefix, "\n"))
 		} else {
 			out.WriteString(maskReport(line))
 		}
@@ -110,7 +111,8 @@ func maskReportLog(text string) string {
 // The backend logs through slog's text handler, which writes the trace's
 // record as one line with its line breaks escaped (#801), so the trace is
 // what follows the record's first escaped line break: one that is not the
-// escaped backslash and n of an error text that %q quoted.
+// escaped backslash and n of an error text that %q quoted. Within the trace,
+// which is masked, an escaped line break before the prefix is always one.
 func escapedTrace(line string) int {
 	if !strings.Contains(line, `msg="imap: traffic before `) {
 		return -1

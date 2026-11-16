@@ -49,3 +49,30 @@ xxxxxxxx. xxxx 000.00.00.00 (xxxxxxx [000.00.00.00])`
 		}
 	}
 }
+
+// slog writes the whole trace as one line, and issueURL drops whole lines
+// to fit its link: the report must still keep the trace's newest responses
+// when several long FETCH lines do not all fit.
+func TestReportKeepsTheNewestOfALongEscapedTrace(t *testing.T) {
+	part := `("TEXT" "PLAIN" ("xxxxxxx" "UTF-8") NIL NIL "QUOTED-PRINTABLE" 2399 57 NIL NIL NIL)`
+	var lines []string
+	for n := range 7 {
+		lines = append(lines, fmt.Sprintf("* %d FETCH (UID %d BODYSTRUCTURE (%s \"ALTERNATIVE\") RFC822.SIZE 9985 BODY[HEADER.FIELDS (DATE FROM)] {1854}",
+			2530+n, 2570+n, strings.Repeat(part, 7)), "… 1854 bytes in 30 lines of text", ")")
+	}
+	masked := core.TracePrefix + strings.Join(lines, "\n"+core.TracePrefix)
+
+	var recent logRing
+	slog.New(slog.NewTextHandler(&recent, nil)).Info(fmt.Sprintf("imap: traffic before %q, masked:\n%s", "sync \"INBOX\"", masked))
+	u, err := url.Parse(issueURL("unexpected protocol error", recent.String()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := u.Query().Get("logs")
+	if !strings.Contains(got, "* 2536 FETCH (UID 2576 BODYSTRUCTURE") {
+		t.Fatalf("report dropped the newest FETCH response:\n%s", got)
+	}
+	if strings.Contains(got, "* 2530 FETCH") {
+		t.Fatalf("expected the oldest responses to go first:\n%s", got)
+	}
+}
