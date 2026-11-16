@@ -20,9 +20,11 @@ const traceMax = 16 << 10
 
 // traceLineMax caps one line of a masked trace; a longer one is cut in the
 // middle, keeping its last traceLineTail bytes: a FETCH line ends with the
-// size of the literal that follows ({N}), which the trace is read for.
+// size of the literal that follows ({N}), which the trace is read for. The
+// cap leaves a usual FETCH line with its BODYSTRUCTURE whole, since the byte
+// a parse fails on is often in the middle of one (#801).
 const (
-	traceLineMax  = 300
+	traceLineMax  = 1500
 	traceLineTail = 60
 )
 

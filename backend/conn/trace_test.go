@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMaskTrace(t *testing.T) {
@@ -27,7 +28,7 @@ func TestMaskTrace(t *testing.T) {
 }
 
 func TestMaskTraceCutsLongLines(t *testing.T) {
-	got := maskTrace([]byte("* 1 FETCH (" + strings.Repeat("A ", 400) + ")\r\n"))
+	got := maskTrace([]byte("* 1 FETCH (" + strings.Repeat("A ", 1000) + ")\r\n"))
 	assert.Contains(t, got, "bytes cut) …")
 	assert.Less(t, len(got), traceLineMax+40)
 }
@@ -35,12 +36,27 @@ func TestMaskTraceCutsLongLines(t *testing.T) {
 // A long FETCH line is cut in the middle: its end carries the size of the
 // literal that follows, which is what a trace is read for (#611).
 func TestMaskTraceKeepsALongLinesLiteralSize(t *testing.T) {
-	line := "* 14766 FETCH (UID 14777 RFC822.SIZE 7296 BODYSTRUCTURE (" + strings.Repeat("\"text\" ", 60) +
+	line := "* 14766 FETCH (UID 14777 RFC822.SIZE 7296 BODYSTRUCTURE (" + strings.Repeat("\"text\" ", 250) +
 		") BODY[HEADER.FIELDS (MESSAGE-ID DATE SUBJECT)] {1234}\r\n"
 	got := maskTrace([]byte(line))
 	assert.True(t, strings.HasPrefix(got, "* 14766 FETCH (UID 14777 RFC822.SIZE 7296 BODYSTRUCTURE ("), got)
 	assert.True(t, strings.HasSuffix(got, "BODY[HEADER.FIELDS (MESSAGE-ID DATE SUBJECT)] {1234}"), got)
 	assert.Contains(t, got, fmt.Sprintf("… (%d bytes cut) …", len(line)-2-traceLineMax))
+}
+
+// A usual multipart FETCH line, BODYSTRUCTURE and all, is kept whole: the
+// byte a body structure fails to parse on lies in its middle, and a cut there
+// hid it (#801). A bare CR in it stays in the trace.
+func TestMaskTraceKeepsAUsualFetchLineWhole(t *testing.T) {
+	part := `("TEXT" "PLAIN" ("charset" "UTF-8") NIL NIL "QUOTED-PRINTABLE" 2399 57 NIL NIL NIL)`
+	line := "* 2536 FETCH (UID 2576 FLAGS (\\Seen) BODYSTRUCTURE (" + strings.Repeat(part, 6) +
+		` "ALTERNATIVE" ("boundary" "----=_NextPart_5FAB") NIL NIL)` + " RFC822.SIZE 9985 \r" +
+		" BODY[HEADER.FIELDS (DATE FROM TO CC SUBJECT MESSAGE-ID REFERENCES IN-REPLY-TO)] {1854}\r\n"
+	require.Greater(t, len(line), 600)
+	got := maskTrace([]byte(line))
+	assert.NotContains(t, got, "bytes cut")
+	assert.Contains(t, got, "9985 \r BODY[HEADER.FIELDS")
+	assert.True(t, strings.HasSuffix(got, "{1854}"), got)
 }
 
 func TestTraceKeepsTheEnd(t *testing.T) {

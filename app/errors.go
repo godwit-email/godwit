@@ -96,11 +96,40 @@ func maskReportLog(text string) string {
 	for line := range strings.Lines(text) {
 		if trace, ok := strings.CutPrefix(line, core.TracePrefix); ok {
 			out.WriteString(trace)
+		} else if i := escapedTrace(line); i >= 0 {
+			out.WriteString(maskReport(line[:i]))
+			out.WriteString(line[i:])
 		} else {
 			out.WriteString(maskReport(line))
 		}
 	}
 	return out.String()
+}
+
+// escapedTrace is where the masked trace starts in line, -1 if it has none.
+// The backend logs through slog's text handler, which writes the trace's
+// record as one line with its line breaks escaped (#801), so the trace is
+// what follows the record's first escaped line break: one that is not the
+// escaped backslash and n of an error text that %q quoted.
+func escapedTrace(line string) int {
+	if !strings.Contains(line, `msg="imap: traffic before `) {
+		return -1
+	}
+	for from := 0; ; {
+		j := strings.Index(line[from:], `\n`+core.TracePrefix)
+		if j < 0 {
+			return -1
+		}
+		i := from + j
+		k := i
+		for k > 0 && line[k-1] == '\\' {
+			k--
+		}
+		if (i-k)%2 == 0 { // the backslash at i is not itself escaped
+			return i
+		}
+		from = i + 1
+	}
 }
 
 // issueURL is a GitHub new-issue link reporting an error with the log's
