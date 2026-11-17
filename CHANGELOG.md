@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.2](https://github.com/godwit-email/godwit/compare/v1.39.1...v1.39.2) (2026-11-17)
+
+
+### Bug Fixes
+
+* **conn:** offer RSA key exchange to mail servers without ECDHE ([#810](https://github.com/godwit-email/godwit/issues/810)) ([bf0ec01](https://github.com/godwit-email/godwit/commit/bf0ec0165649ffe38c2d6ed8abc8c48d623de51c))
+
 ## [1.39.1](https://github.com/godwit-email/godwit/compare/v1.39.0...v1.39.1) (2026-11-16)
 
 
