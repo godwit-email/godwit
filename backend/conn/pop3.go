@@ -77,7 +77,7 @@ func stls(ctx context.Context, nc net.Conn, e Endpoint) (net.Conn, error) {
 	if r.Buffered() > 0 { // anything sent before the handshake could be injected
 		return nil, errors.New("pop3: data after STLS")
 	}
-	tc := tls.Client(nc, &tls.Config{ServerName: e.Host, RootCAs: TLSRoots})
+	tc := tls.Client(nc, tlsConfig(e.Host))
 	if err := tc.HandshakeContext(ctx); err != nil {
 		return nil, err
 	}

@@ -51,6 +51,23 @@ var SystemProxy = sysproxy.For
 // stand in for it.
 var TLSRoots *x509.CertPool
 
+// mailCiphers is Go's default TLS 1.2 list plus the AES-GCM suites with RSA
+// key exchange, which Go stopped offering in 1.22. Some mail servers
+// (zmail300.cn's IMAP) have no ECDHE, only RSA and finite-field DHE, which Go
+// lacks. Go still prefers ECDHE wherever a server has it.
+var mailCiphers = func() []uint16 {
+	ids := []uint16{tls.TLS_RSA_WITH_AES_128_GCM_SHA256, tls.TLS_RSA_WITH_AES_256_GCM_SHA384}
+	for _, c := range tls.CipherSuites() {
+		ids = append(ids, c.ID)
+	}
+	return ids
+}()
+
+// tlsConfig is the TLS configuration for a mail server at host.
+func tlsConfig(host string) *tls.Config {
+	return &tls.Config{ServerName: host, RootCAs: TLSRoots, CipherSuites: mailCiphers}
+}
+
 // Endpoint describes one server and the credentials to use on it. A non-empty
 // AccessToken selects XOAUTH2 and Password is ignored.
 type Endpoint struct {
@@ -94,7 +111,7 @@ func (e Endpoint) open(ctx context.Context, implicitTLS bool) (net.Conn, context
 	stop := context.AfterFunc(ctx2, func() { raw.Close() })
 	var nc net.Conn = raw
 	if implicitTLS {
-		tc := tls.Client(raw, &tls.Config{ServerName: e.Host, RootCAs: TLSRoots})
+		tc := tls.Client(raw, tlsConfig(e.Host))
 		if err := tc.HandshakeContext(ctx2); err != nil {
 			err = ctxErr(ctx2, err) // before cancel(), which would make every failure look cancelled
 			stop()
@@ -218,7 +235,7 @@ func dialIMAP(ctx context.Context, e Endpoint, h *imapclient.UnilateralDataHandl
 	}
 	tr := &trace{}
 	opts := &imapclient.Options{
-		TLSConfig:   &tls.Config{ServerName: e.Host, RootCAs: TLSRoots},
+		TLSConfig:   tlsConfig(e.Host),
 		WordDecoder: &mime.WordDecoder{CharsetReader: charset.Reader}, // GBK/Big5 words in BODYSTRUCTURE
 		DebugWriter: tr,                                               // armed after login; see LogTrace
 
@@ -311,7 +328,7 @@ func dialSMTP(ctx context.Context, e Endpoint) (*smtp.Client, error) {
 	case TLS, None:
 		c = smtp.NewClient(nc)
 	case StartTLS:
-		c, err = smtp.NewClientStartTLS(nc, &tls.Config{ServerName: e.Host, RootCAs: TLSRoots})
+		c, err = smtp.NewClientStartTLS(nc, tlsConfig(e.Host))
 	default:
 		err = fmt.Errorf("conn: unknown security %q", e.Security)
 	}
