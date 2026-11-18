@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.4](https://github.com/godwit-email/godwit/compare/v1.39.3...v1.39.4) (2026-11-18)
+
+
+### Bug Fixes
+
+* **ui:** say 只收信 and keep text on the red fill white in the dark ([#819](https://github.com/godwit-email/godwit/issues/819)) ([5ce2a12](https://github.com/godwit-email/godwit/commit/5ce2a12d356d227f99da74c6f342858b4162e368))
+
 ## [1.39.3](https://github.com/godwit-email/godwit/compare/v1.39.2...v1.39.3) (2026-11-18)
 
 
