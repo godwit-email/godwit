@@ -2427,3 +2427,35 @@ func TestReplySkipsOwnForward(t *testing.T) {
 		t.Errorf("a message read alone: replyTarget = %v, %v", m.ID, ok)
 	}
 }
+
+// TestReaderAttachmentsStagedForDrag: opening a message copies its attachments
+// under their own names before any click, so dragging a chip can hand Finder
+// a real file at once. The copies go with Close.
+func TestReaderAttachmentsStagedForDrag(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	data := []byte("%PDF-1.4 staged body")
+	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Report", "see attached",
+		coretest.Attachment("year report.pdf", "application/pdf", data)))
+	h.openThread(m.ThreadID)
+	h.see("year report.pdf")
+	r := h.app.mail.reader
+	var path string
+	h.until("the attachment staged", func() bool {
+		for _, b := range r.bodies {
+			for _, p := range b.staged {
+				path = p
+			}
+		}
+		return path != ""
+	})
+	if got, err := os.ReadFile(path); err != nil || !bytes.Equal(got, data) {
+		t.Fatalf("staged %q: %q, %v", path, got, err)
+	}
+	if filepath.Base(path) != "year report.pdf" {
+		t.Fatalf("staged as %q, not under its own name", filepath.Base(path))
+	}
+	h.app.Close()
+	if _, err := os.Stat(filepath.Dir(path)); !os.IsNotExist(err) {
+		t.Errorf("the staged copy's directory outlived Close: %v", err)
+	}
+}
