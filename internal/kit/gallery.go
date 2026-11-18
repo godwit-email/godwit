@@ -19,7 +19,9 @@ type GalleryState struct {
 var galleryVariants = []struct {
 	name string
 	v    Variant
-}{{"Default", Default}, {"Secondary", Secondary}, {"Outline", Outline}, {"Ghost", Ghost}, {"Destructive", Destructive}, {"Link", Link}}
+	tone Tone
+}{{"Default", Default, 0}, {"Secondary", Secondary, 0}, {"Outline", Outline, 0}, {"Ghost", Ghost, 0},
+	{"Ghost danger", Ghost, ToneDanger}, {"Outline danger", Outline, ToneDanger}, {"Link", Link, 0}}
 
 // Gallery shows every kit component, section by section. Dev builds only.
 func Gallery(c *ui.Context, g *GalleryState) {
@@ -37,13 +39,13 @@ func Gallery(c *ui.Context, g *GalleryState) {
 				for _, s := range []Size{SizeXs, SizeSm, SizeDefault, SizeLg} {
 					row(func() {
 						for _, v := range galleryVariants {
-							Button(c, v.name, ButtonOpts{Variant: v.v, Size: s})
+							Button(c, v.name, ButtonOpts{Variant: v.v, Tone: v.tone, Size: s})
 						}
 					})
 				}
 				row(func() {
 					for _, v := range galleryVariants {
-						Button(c, v.name+" off", ButtonOpts{Variant: v.v, Disabled: true})
+						Button(c, v.name+" off", ButtonOpts{Variant: v.v, Tone: v.tone, Disabled: true})
 					}
 				})
 			})
@@ -117,7 +119,7 @@ func Gallery(c *ui.Context, g *GalleryState) {
 				}
 				Dialog(c, &g.Confirm, "Confirm title", DialogOpts{Size: DialogSm, Desc: "Confirm sample text", Close: "Close confirm"}, nil, func() {
 					Button(c, "Cancel", ButtonOpts{Variant: Outline}).OnClick(func() { g.Confirm = false })
-					Button(c, "Delete", ButtonOpts{Variant: Destructive}).OnClick(func() { g.Confirm = false })
+					Button(c, "Delete", ButtonOpts{Variant: Ghost, Tone: ToneDanger}).OnClick(func() { g.Confirm = false })
 				})
 			})
 			section("Popover", func() {
@@ -150,14 +152,14 @@ func Gallery(c *ui.Context, g *GalleryState) {
 						Block(c, ui.Column(c).Padding(th.Space(3)).Width(th.Space(30)), ToneRaised).Children(func() { ui.Text(c, "Block · Raised") })
 					})
 				})
-				row(func() { // the colored tones, each with a button that follows it (ButtonOpts.Tone)
+				row(func() { // the colored tones, each with an Outline button of its tone (ButtonOpts.Tone)
 					for _, k := range []struct {
 						name string
 						tone Tone
 					}{{"Info", ToneInfo}, {"Warning", ToneWarning}, {"Danger", ToneDanger}, {"Success", ToneSuccess}} {
 						Block(c, ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), th.Space(2), th.Space(2), th.Space(3)), k.tone).Children(func() {
 							ui.Text(c, "Block · "+k.name)
-							Button(c, "Action", ButtonOpts{Size: SizeSm, Tone: k.tone})
+							Button(c, "Action", ButtonOpts{Variant: Outline, Size: SizeSm, Tone: k.tone})
 						})
 					}
 				})

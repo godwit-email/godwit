@@ -119,8 +119,7 @@ func toneColors(t theme.Tokens, tone Tone) (bg, border, text ui.Color, ok bool) 
 	case ToneSuccess:
 		return t.SuccessBg, t.SuccessBorder, t.SuccessText, true
 	case ToneInfo:
-		blue := t.Label("blue")
-		return blue.Fill.Mix(t.Background, 0.5), blue.Edge, blue.Text, true
+		return t.InfoBg, t.InfoBorder, t.InfoText, true
 	}
 	return // neutral: no colors of its own
 }

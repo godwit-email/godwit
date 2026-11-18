@@ -529,7 +529,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	remove := func() {
 		settingsSection(c, i18n.T("settings.account.remove"), "",
 			row(i18n.T("settings.account.remove.row"), strings.TrimRight(removeHelp, "。."), func() {
-				settingButton(c, i18n.T("settings.account.remove.button"), kit.DestructiveOutline, false).Label(i18n.Tf("settings.account.remove.aria", accountAddr(acc))).OnClick(func() { p.openDialog("remove", acc) })
+				kit.Button(c, i18n.T("settings.account.remove.button"), kit.ButtonOpts{Variant: kit.Outline, Tone: kit.ToneDanger}).Label(i18n.Tf("settings.account.remove.aria", accountAddr(acc))).OnClick(func() { p.openDialog("remove", acc) })
 			}))
 	}
 	if isArchive(acc) { // no servers, sync, sending or mailbox roles: only its storage
@@ -1021,7 +1021,7 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 	var title, desc string
 	var body, confirm func()
 	size := kit.DialogSm
-	label, variant := i18n.T("common.save"), kit.Default
+	label, opts := i18n.T("common.save"), kit.ButtonOpts{}
 	incomplete := false // the confirm button waits for the fields
 	switch p.dialog {
 	case "password":
@@ -1095,7 +1095,7 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 		if isArchive(acc) {
 			desc = i18n.T("settings.account.archive.remove.help")
 		}
-		label, variant = i18n.T("common.delete"), kit.Destructive
+		label, opts = i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}
 		confirm = func() {
 			if f := p.forms[id]; f != nil {
 				f.cancelEdits()
@@ -1179,7 +1179,8 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 	}
 	kit.Dialog(c, &p.open, title, kit.DialogOpts{Size: size, Desc: desc, Close: i18n.T("common.close")}, content, func() {
 		kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(p.closeDialog)
-		kit.Button(c, label, kit.ButtonOpts{Variant: variant, Disabled: p.busy || incomplete}).OnClick(confirm)
+		opts.Disabled = p.busy || incomplete
+		kit.Button(c, label, opts).OnClick(confirm)
 	})
 }
 

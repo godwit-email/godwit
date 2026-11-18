@@ -225,7 +225,7 @@ func (v *rulesView) banners(c *ui.Context) {
 			})
 			if w.conv != 0 {
 				conv := w.conv
-				kit.TextLink(c, i18n.T("settings.rules.from_wit.back"), violet.Dot, t.Text.Xs).Shrink(0).
+				kit.Button(c, i18n.T("settings.rules.from_wit.back"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).Shrink(0).
 					OnClick(func() { v.a.navigate(Route{Page: PageWit, ConversationID: conv}) })
 			}
 		})

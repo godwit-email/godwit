@@ -126,7 +126,7 @@ func (p *palette) menuFrame(c *ui.Context) {
 	kit.Dialog(c, &p.m.delAsk, i18n.T("palette.delete.title"),
 		kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("palette.delete.desc"), Close: i18n.T("common.close")}, nil, func() {
 			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { p.m.delAsk = false })
-			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
+			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).OnClick(func() {
 				p.m.delAsk = false
 				p.a.deleteConversation(p.m.delID)
 				p.refreshAfterWrites()

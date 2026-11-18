@@ -234,7 +234,7 @@ func (p *settingsPage) signatureView(c *ui.Context, sig core.Signature) {
 
 	settingsSection(c, i18n.T("settings.signature.delete"), "", func() {
 		settingRow(c, i18n.T("settings.signature.delete.row"), deleteHint(users), func() {
-			settingButton(c, i18n.T("settings.signature.delete"), kit.DestructiveOutline, false).Label(i18n.Tf("settings.signature.delete.aria", sig.Name)).OnClick(func() { p.sigDelete = true })
+			kit.Button(c, i18n.T("settings.signature.delete"), kit.ButtonOpts{Variant: kit.Outline, Tone: kit.ToneDanger}).Label(i18n.Tf("settings.signature.delete.aria", sig.Name)).OnClick(func() { p.sigDelete = true })
 		})
 	})
 	p.deleteSignatureDialog(c, sig, users)
@@ -261,7 +261,7 @@ func (p *settingsPage) deleteSignatureDialog(c *ui.Context, sig core.Signature, 
 	kit.Dialog(c, &p.sigDelete, i18n.Tf("settings.signature.delete.confirm", sig.Name),
 		kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: deleteHint(users), Close: i18n.T("common.close")}, nil, func() {
 			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { p.sigDelete = false })
-			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
+			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).OnClick(func() {
 				p.sigDelete = false
 				if f := &p.sigForm; f.id == sig.ID && f.stop != nil {
 					f.stop()
@@ -673,7 +673,7 @@ func (p *settingsPage) linkDialog(c *ui.Context) {
 		})
 	}, func() {
 		if l.had {
-			kit.Button(c, i18n.T("settings.signature.link.remove"), kit.ButtonOpts{Variant: kit.DestructiveOutline}).OnClick(func() { done("", true) })
+			kit.Button(c, i18n.T("settings.signature.link.remove"), kit.ButtonOpts{Variant: kit.Outline, Tone: kit.ToneDanger}).OnClick(func() { done("", true) })
 			ui.Box(c).Grow(1)
 		}
 		kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { done("", false) })

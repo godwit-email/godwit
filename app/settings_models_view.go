@@ -221,7 +221,7 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 	if u.suggest {
 		ui.Row(c).Wrap().AlignItems(ui.Center).Children(func() {
 			kit.Text(c, i18n.T("settings.models.use.suggest"), t.Text.Xs).TextColor(t.Muted)
-			kit.TextLink(c, i18n.T("settings.models.add"), t.Foreground, t.Text.Xs).OnClick(m.add)
+			kit.Button(c, i18n.T("settings.models.add"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).OnClick(m.add)
 		})
 	}
 }
@@ -519,7 +519,7 @@ func (m *modelsView) capStatus(c *ui.Context, r capTest) {
 		kit.StatusDot(c, dot)
 		kit.Text(c, text, t.Text.Xs).LineHeight(theme.LineProse).TextColor(fg) // CJK beside Latin digits: the design's line is that tall
 		if r.usage {
-			kit.TextLink(c, i18n.T("settings.models.manage_usage"), fg, t.Text.Xs).OnClick(func() { m.openURL(chatGPTUsageURL) })
+			kit.Button(c, i18n.T("settings.models.manage_usage"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).OnClick(func() { m.openURL(chatGPTUsageURL) })
 		}
 	})
 }

@@ -277,7 +277,7 @@ func (v *addressBooksView) page(c *ui.Context, ab core.AddressBook) {
 		})
 	settingsSection(c, i18n.T("settings.account.remove"), "", func() {
 		settingRow(c, i18n.T("settings.addressbooks.remove.row"), strings.TrimRight(i18n.T("settings.addressbooks.remove.desc"), "。."), func() {
-			settingButton(c, i18n.T("settings.account.remove.button"), kit.DestructiveOutline, false).
+			kit.Button(c, i18n.T("settings.account.remove.button"), kit.ButtonOpts{Variant: kit.Outline, Tone: kit.ToneDanger}).
 				Label(i18n.Tf("settings.addressbooks.remove.aria", ab.Name)).OnClick(func() { v.openRemove(ab) })
 		})
 	})
@@ -524,7 +524,7 @@ func (v *addressBooksView) dialogView(c *ui.Context) {
 				}
 			}, func() {
 				kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(v.close)
-				kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive, Disabled: v.busy}).OnClick(func() {
+				kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger, Disabled: v.busy}).OnClick(func() {
 					v.busy, v.dlgErr = true, nil
 					a.writes.Chain("addressbooks", func(ctx context.Context) error {
 						return a.svc.RemoveAddressBook(ctx, id)

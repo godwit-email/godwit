@@ -643,7 +643,7 @@ func (a *App) closeDialog(c *ui.Context) {
 			a.closeAsk = false
 			a.QuitCancelled()
 		})
-		kit.Button(c, i18n.T("close.unsaved.quit"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
+		kit.Button(c, i18n.T("close.unsaved.quit"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).OnClick(func() {
 			a.closeAsk = false
 			a.closeAnyway()
 		})

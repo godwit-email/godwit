@@ -262,7 +262,7 @@ func (p *settingsPage) maskLogPage(c *ui.Context) {
 		dismiss := func() { f.clearing = false }
 		kit.Dialog(c, &f.clearing, i18n.T("settings.masking.log.clear.title"), kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("settings.masking.log.clear.body"), Close: i18n.T("common.close")}, nil, func() {
 			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(dismiss)
-			kit.Button(c, i18n.T("settings.masking.log.clear"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
+			kit.Button(c, i18n.T("settings.masking.log.clear"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).OnClick(func() {
 				dismiss()
 				a.do(func(ctx context.Context) error { return a.svc.ClearMaskingLog(ctx) }, func(err error) {
 					if err != nil {

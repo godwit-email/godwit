@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -78,7 +79,7 @@ func TestKitButtonClick(t *testing.T) {
 		if Button(c, "Save", ButtonOpts{Variant: Default, Icon: "check"}).Clicked() {
 			n++
 		}
-		if Button(c, "Delete", ButtonOpts{Variant: Destructive, Disabled: true}).Clicked() {
+		if Button(c, "Delete", ButtonOpts{Variant: Ghost, Tone: ToneDanger, Disabled: true}).Clicked() {
 			n += 100
 		}
 	}), 300, 200)
@@ -1342,55 +1343,65 @@ func TestToastCap(t *testing.T) {
 	}
 }
 
-func TestDestructiveOutline(t *testing.T) {
-	for _, dark := range []bool{false, true} {
-		var tk theme.Tokens
-		tt := ui.NewTester(themed(func(c *ui.Context) {
-			tk = theme.Of(c)
-			Button(c, "Delete", ButtonOpts{Variant: DestructiveOutline})
-		}), 200, 100)
-		tt.SetDark(dark)
-		tt.Frame()
-		tt.Advance(2 * theme.MotionFast)
-		r, _ := tt.Find("Delete")
-		same := func(p color.RGBA, c ui.Color) bool { return p.R == c.R && p.G == c.G && p.B == c.B }
-		if p := tt.Image().RGBAAt(int(r.X)+3, int(r.Y+r.H/2)); !same(p, tk.Background) {
-			t.Errorf("dark=%v rest bg %v, want %v", dark, p, tk.Background)
-		}
-		tt.Move(r.X+r.W/2, r.Y+r.H/2)
-		tt.Frame()
-		tt.Advance(2 * theme.MotionFast)
-		if p := tt.Image().RGBAAt(int(r.X)+3, int(r.Y+r.H/2)); !same(p, tk.DangerBg) {
-			t.Errorf("dark=%v hover bg %v, want %v", dark, p, tk.DangerBg)
-		}
+// TestButtonTones checks the toned looks against the design's variables
+// (Figma theme collection, light / dark): an Outline of a tone rests on
+// Background and fills with the tone's -bg on hover; a Ghost danger rests
+// bare and fills with danger-bg. AlertAction is an Outline of its kind.
+func TestButtonTones(t *testing.T) {
+	hex := func(s string) color.RGBA {
+		v, _ := strconv.ParseUint(s[1:], 16, 32)
+		return color.RGBA{uint8(v >> 16), uint8(v >> 8), uint8(v), 255}
 	}
-}
-
-func TestAlertAction(t *testing.T) {
-	for _, dark := range []bool{false, true} {
-		for _, kind := range []AlertKind{Warning, Danger, Info} {
+	near := func(p, want color.RGBA) bool {
+		d := func(a, b uint8) int { return max(int(a)-int(b), int(b)-int(a)) }
+		return d(p.R, want.R) <= 2 && d(p.G, want.G) <= 2 && d(p.B, want.B) <= 2
+	}
+	cases := []struct {
+		name        string
+		draw        func(c *ui.Context, onClick func())
+		rest, hover [2]string // light, dark; "" is the page behind (bare)
+	}{
+		{"info", func(c *ui.Context, f func()) { AlertAction(c, Info, "Go", f) }, [2]string{"#ffffff", "#0a0a0a"}, [2]string{"#edf5ff", "#101730"}},
+		{"warning", func(c *ui.Context, f func()) { AlertAction(c, Warning, "Go", f) }, [2]string{"#ffffff", "#0a0a0a"}, [2]string{"#fffbeb", "#461901"}},
+		{"danger", func(c *ui.Context, f func()) { AlertAction(c, Danger, "Go", f) }, [2]string{"#ffffff", "#0a0a0a"}, [2]string{"#fef2f2", "#460809"}},
+		{"success", func(c *ui.Context, f func()) {
+			Button(c, "Go", ButtonOpts{Variant: Outline, Tone: ToneSuccess}).OnClick(f)
+		}, [2]string{"#ffffff", "#0a0a0a"}, [2]string{"#f0fdf4", "#032e15"}},
+		{"ghost danger", func(c *ui.Context, f func()) {
+			Button(c, "Go", ButtonOpts{Variant: Ghost, Tone: ToneDanger}).OnClick(f)
+		}, [2]string{"", ""}, [2]string{"#fef2f2", "#460809"}},
+	}
+	for _, k := range cases {
+		for i, dark := range []bool{false, true} {
 			var tk theme.Tokens
 			n := 0
 			tt := ui.NewTester(themed(func(c *ui.Context) {
 				tk = theme.Of(c)
-				AlertAction(c, kind, "Fix", func() { n++ })
+				ui.Column(c).Grow(1).FillWidth().Background(tk.Background).Padding(20).Children(func() { k.draw(c, func() { n++ }) })
 			}), 200, 100)
 			tt.SetDark(dark)
 			tt.Frame()
 			tt.Advance(2 * theme.MotionFast)
-			r, ok := tt.Find("Fix")
+			r, ok := tt.Find("Go")
 			if !ok {
-				t.Fatal("no button")
+				t.Fatalf("%s: no button", k.name)
 			}
-			// a step deeper than its alert's fill: halfway from the tone's fill to its border
-			bg, border, _, _ := toneColors(tk, alertTone(kind))
-			want := bg.Mix(border, 0.5)
-			p := tt.Image().RGBAAt(int(r.X)+3, int(r.Y+r.H/2))
-			if p.R != want.R || p.G != want.G || p.B != want.B {
-				t.Errorf("dark=%v kind=%v fill %v, want %v", dark, kind, p, want)
+			at := func() color.RGBA { return tt.Image().RGBAAt(int(r.X)+3, int(r.Y+r.H/2)) }
+			rest := k.rest[i]
+			if rest == "" {
+				rest = []string{"#ffffff", "#0a0a0a"}[i] // bare on the page's Background
 			}
-			if err := tt.Click("Fix"); err != nil || n != 1 {
-				t.Errorf("click err=%v n=%d", err, n)
+			if p := at(); !near(p, hex(rest)) {
+				t.Errorf("%s dark=%v rest %v, want %s", k.name, dark, p, rest)
+			}
+			tt.Move(r.X+r.W/2, r.Y+r.H/2)
+			tt.Frame()
+			tt.Advance(2 * theme.MotionFast)
+			if p := at(); !near(p, hex(k.hover[i])) {
+				t.Errorf("%s dark=%v hover %v, want %s", k.name, dark, p, k.hover[i])
+			}
+			if err := tt.Click("Go"); err != nil || n != 1 {
+				t.Errorf("%s: click err=%v n=%d", k.name, err, n)
 			}
 		}
 	}

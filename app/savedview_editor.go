@@ -120,7 +120,7 @@ func (p *mailPage) viewLeaveDialog(c *ui.Context) {
 	p.viewLeaveOpen = p.viewLeave != nil
 	kit.Dialog(c, &p.viewLeaveOpen, i18n.T("close.unsaved.title"), kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("view.leave.desc"), Close: i18n.T("common.close")}, nil, func() {
 		kit.Button(c, i18n.T("view.leave.keep"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { p.viewLeave = nil })
-		kit.Button(c, i18n.T("view.leave.discard"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
+		kit.Button(c, i18n.T("view.leave.discard"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).OnClick(func() {
 			then := p.viewLeave
 			p.viewLeave = nil
 			p.closeViewEditor()
@@ -355,7 +355,7 @@ func (e *viewEditor) form(c *ui.Context) {
 	}
 	if e.box.ID != 0 {
 		ui.Row(c).FillWidth().Gap(th.Space(2)).Children(func() {
-			settingButton(c, i18n.T("common.delete"), kit.Destructive, false).OnClick(func() { b := e.box; e.p.viewDelete = &b })
+			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).OnClick(func() { b := e.box; e.p.viewDelete = &b })
 		})
 	}
 }

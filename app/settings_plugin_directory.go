@@ -248,7 +248,7 @@ func (e *extView) installDialog(c *ui.Context) {
 				kit.Alert(c, kit.Warning, strings.TrimSpace(i18n.Tf("settings.ext.registry.confirm.replace", en.Name)), nil)
 			}
 			if en.Homepage != "" {
-				kit.TextLink(c, i18n.T("settings.ext.dialog.home"), t.Muted, t.Text.Xs).AlignSelf(ui.Start).OnClick(func() {
+				kit.Button(c, i18n.T("settings.ext.dialog.home"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).AlignSelf(ui.Start).OnClick(func() {
 					home, plat := en.Homepage, e.a.plat
 					e.a.do(func(context.Context) error { return plat.OpenURL(home) }, e.a.toastErr)
 				})

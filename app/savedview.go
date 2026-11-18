@@ -321,7 +321,7 @@ func (p *mailPage) viewDeleteDialog(c *ui.Context) {
 	p.viewDeleteOpen = p.viewDelete != nil
 	kit.Dialog(c, &p.viewDeleteOpen, i18n.Tf("view.delete.title", b.Name), kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("view.delete.desc"), Close: i18n.T("common.close")}, nil, func() {
 		kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { p.viewDelete = nil })
-		kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
+		kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).OnClick(func() {
 			p.viewDelete = nil
 			if p.viewEdit != nil && p.viewEdit.box.ID == b.ID {
 				p.closeViewEditor()
@@ -640,9 +640,9 @@ func (r *reader) viewWhyLine(c *ui.Context) {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), 0, 0, 0).Children(func() {
 			kit.Text(c, text, t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
 			if w.Manual {
-				kit.TextLink(c, i18n.T("compose.undo"), t.Foreground, t.Text.Xs).Shrink(0).OnClick(func() { p.setViewExceptions(b.ID, []int64{r.key[0]}, "", nil) })
+				kit.Button(c, i18n.T("compose.undo"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).Shrink(0).OnClick(func() { p.setViewExceptions(b.ID, []int64{r.key[0]}, "", nil) })
 			} else {
-				kit.TextLink(c, i18n.T("view.remove"), t.Foreground, t.Text.Xs).Shrink(0).OnClick(func() { p.removeFromView(b, thread) })
+				kit.Button(c, i18n.T("view.remove"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).Shrink(0).OnClick(func() { p.removeFromView(b, thread) })
 			}
 		})
 	})

@@ -275,7 +275,7 @@ func (v *labelsView) dialog(c *ui.Context) {
 		})
 	}, func() {
 		if v.editID != 0 {
-			kit.Button(c, i18n.T("settings.labels.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() { v.confirm = true })
+			kit.Button(c, i18n.T("settings.labels.delete"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).OnClick(func() { v.confirm = true })
 			ui.Spacer(c)
 		}
 		kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { v.dlg = false })
@@ -288,7 +288,7 @@ func (v *labelsView) dialog(c *ui.Context) {
 	kit.Dialog(c, &v.confirm, i18n.Tf("settings.labels.delete.confirm", l.Name),
 		kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.Tf("settings.labels.delete.confirm.help", l.Count), Close: i18n.T("common.close")}, nil, func() {
 			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { v.confirm = false })
-			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
+			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).OnClick(func() {
 				id := v.editID
 				v.confirm, v.dlg = false, false
 				a.writes.Chain("labels", func(ctx context.Context) error { return a.svc.DeleteLabel(ctx, id) }, a.toastErr)

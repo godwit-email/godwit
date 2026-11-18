@@ -539,7 +539,7 @@ func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
 		ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, icons.Get("languages")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
 			kit.Text(c, modelLabel(i18n.Tf("reader.ai.translated", shortLang(tr.lang), tr.model)), t.Text.Xs).TextColor(t.Muted)
-			kit.TextLink(c, i18n.T("reader.ai.show_original"), t.Foreground, t.Text.Xs).OnClick(func() { r.toggleTranslate(m.ID) })
+			kit.Button(c, i18n.T("reader.ai.show_original"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).OnClick(func() { r.toggleTranslate(m.ID) })
 		})
 	}
 }

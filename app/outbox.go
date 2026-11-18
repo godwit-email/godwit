@@ -26,7 +26,7 @@ type outboxEntry struct {
 // outboxAction is a button of an outbox item.
 type outboxAction struct {
 	key string // under outbox.
-	v   kit.Variant
+	o   kit.ButtonOpts
 	do  func()
 }
 
@@ -64,7 +64,9 @@ func (p *mailPage) outboxView(c *ui.Context, title string, items []outboxEntry, 
 					if acts := p.outboxActions(it.OutboxItem, now); len(acts) > 0 {
 						ui.Row(c).Wrap().Gap(th.Space(1.5)).Margin(th.Space(1), 0, 0, 0).Children(func() {
 							for _, act := range acts {
-								kit.Button(c, i18n.T("outbox."+act.key), kit.ButtonOpts{Variant: act.v, Size: kit.SizeSm}).OnClick(act.do)
+								o := act.o
+								o.Size = kit.SizeSm
+								kit.Button(c, i18n.T("outbox."+act.key), o).OnClick(act.do)
 							}
 						})
 					}
@@ -80,8 +82,13 @@ func (p *mailPage) outboxView(c *ui.Context, title string, items []outboxEntry, 
 // that may have gone out confirmed, sent again or discarded.
 func (p *mailPage) outboxActions(it core.OutboxItem, now time.Time) []outboxAction {
 	var acts []outboxAction
-	add := func(key string, v kit.Variant, do func()) { acts = append(acts, outboxAction{key, v, do}) }
+	add := func(key string, v kit.Variant, do func()) {
+		acts = append(acts, outboxAction{key, kit.ButtonOpts{Variant: v}, do})
+	}
 	resolve := func(action string, then func()) func() { return func() { p.resolve(it.ID, action, then) } }
+	discard := func() {
+		acts = append(acts, outboxAction{"discard", kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}, resolve("discard", nil)})
+	}
 	switch it.State {
 	case "queued":
 		if it.NextAttempt.After(now) {
@@ -98,13 +105,13 @@ func (p *mailPage) outboxActions(it core.OutboxItem, now time.Time) []outboxActi
 			add("edit", kit.Outline, resolve("edit", func() { p.a.plat.OpenCompose(it.DraftID) }))
 		}
 		add("resend", kit.Outline, resolve("resend", nil))
-		add("discard", kit.Destructive, resolve("discard", nil))
+		discard()
 	case "send_uncertain", "archive_uncertain":
 		add("confirm_sent", kit.Outline, resolve("confirm_sent", nil))
 		if it.State == "send_uncertain" { // archive_uncertain was accepted: sending again delivers it twice
 			add("resend", kit.Outline, resolve("resend", nil))
 		}
-		add("discard", kit.Destructive, resolve("discard", nil))
+		discard()
 	}
 	return acts
 }

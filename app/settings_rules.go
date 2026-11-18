@@ -209,7 +209,7 @@ func (v *rulesView) view(c *ui.Context) {
 		// Emptying Trash and Junk is not a rule: it stays with the account's mailboxes.
 		if len(a.accounts) > 0 {
 			id := a.accounts[0].ID
-			kit.TextLink(c, i18n.T("settings.rules.empty_trash"), t.Muted, t.Text.Xs).PaddingX(th.Space(4)).AlignSelf(ui.Start).
+			kit.Button(c, i18n.T("settings.rules.empty_trash"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).PaddingX(th.Space(4)).AlignSelf(ui.Start).
 				OnClick(func() { a.navigate(Route{Page: PageSettings, Settings: accountRoute(id)}) })
 		}
 	})
@@ -504,7 +504,7 @@ func (v *rulesView) deleteDialog(c *ui.Context) {
 	kit.Dialog(c, &v.deleteOpen, i18n.Tf("settings.rules.delete.title", name),
 		kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("settings.rules.delete.desc"), Close: i18n.T("common.close")}, nil, func() {
 			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { v.deleting = nil })
-			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
+			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).OnClick(func() {
 				v.deleting = nil
 				if v.open == r.ID {
 					v.open, v.hits = 0, nil

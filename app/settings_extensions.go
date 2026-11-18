@@ -576,13 +576,13 @@ func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 		}
 		ui.Row(c).Gap(th.Space(2)).Children(func() {
 			if !p.NeedsGrant {
-				kit.Button(c, i18n.T("settings.ext.uninstall"), kit.ButtonOpts{Variant: kit.Destructive}).
+				kit.Button(c, i18n.T("settings.ext.uninstall"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).
 					OnClick(func() { e.plugin, e.confirm, e.open = name, "plugin", true })
 				return
 			}
 			allow, opts := i18n.T("settings.ext.allow"), kit.ButtonOpts{Disabled: f != nil && f.busy}
 			if p.Native && p.Trust != "listed" { // consent to the risk of an unreviewed file
-				allow, opts.Variant = i18n.T("settings.ext.native.allow"), kit.Destructive
+				allow, opts.Variant, opts.Tone = i18n.T("settings.ext.native.allow"), kit.Ghost, kit.ToneDanger
 			}
 			kit.Button(c, allow, opts).OnClick(func() { e.allow(name, f, p.Config) })
 			kit.Button(c, i18n.T("settings.ext.not_now"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() {
@@ -963,7 +963,7 @@ func (e *extView) serverView(c *ui.Context, s core.MCPServer) {
 		settingBlock(c, func() {
 			ui.Row(c).Gap(th.Space(2)).Children(func() {
 				kit.Button(c, i18n.T("settings.ext.mcp.edit"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { e.editServer(s) })
-				kit.Button(c, i18n.T("settings.ext.mcp.remove"), kit.ButtonOpts{Variant: kit.Destructive}).
+				kit.Button(c, i18n.T("settings.ext.mcp.remove"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).
 					OnClick(func() { e.confirm, e.open = "mcp", true })
 			})
 		})
@@ -1048,7 +1048,7 @@ func (e *extView) confirmView(c *ui.Context) {
 	dismiss := func() { e.confirm, e.open = "", false }
 	kit.Dialog(c, &e.open, title, kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: body, Close: i18n.T("common.close")}, nil, func() {
 		kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(dismiss)
-		kit.Button(c, label, kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() { dismiss(); run() })
+		kit.Button(c, label, kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).OnClick(func() { dismiss(); run() })
 	})
 }
 

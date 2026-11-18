@@ -136,10 +136,10 @@ func alertTone(kind AlertKind) Tone {
 	return ToneInfo
 }
 
-// AlertAction is a button for an Alert's actions, in the kind's tone
-// (ButtonOpts.Tone): a fill a step deeper than the alert's, under its text.
+// AlertAction is a button for an Alert's actions: a small Outline one in
+// the kind's tone (ButtonOpts.Tone).
 func AlertAction(c *ui.Context, kind AlertKind, label string, onClick func()) ui.Element {
-	b := Button(c, label, ButtonOpts{Size: SizeSm, Tone: alertTone(kind)}).Shrink(0)
+	b := Button(c, label, ButtonOpts{Variant: Outline, Size: SizeSm, Tone: alertTone(kind)}).Shrink(0)
 	if onClick != nil {
 		b.OnClick(onClick)
 	}

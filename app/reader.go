@@ -1879,9 +1879,9 @@ func (r *reader) imagesNote(c *ui.Context, m core.MessageSummary, b *msgBody, ad
 		kit.Spinner(c)
 		return
 	}
-	kit.TextLink(c, i18n.T("reader.load"), t.Foreground, t.Text.Xs).OnClick(func() { r.allowImages(m.ID) })
+	kit.Button(c, i18n.T("reader.load"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).OnClick(func() { r.allowImages(m.ID) })
 	if addr != "" && !b.read.loading && !b.msg.InJunk && r.p.a.settings.RemoteImages != "ask" { // core never trusts junk, and "ask" ignores trust
-		kit.TextLink(c, i18n.T("reader.trust"), t.Foreground, t.Text.Xs).OnClick(func() { r.trustSender(b.msg.From, addr) })
+		kit.Button(c, i18n.T("reader.trust"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).OnClick(func() { r.trustSender(b.msg.From, addr) })
 	}
 }
 
@@ -2306,7 +2306,7 @@ func (r *reader) attachmentConflictDialog(c *ui.Context) {
 		if kit.Button(c, i18n.T("reader.attachments.conflict_skip"), kit.ButtonOpts{Variant: kit.Outline}).Clicked() {
 			r.resolveAttachmentConflict(attConflictSkip)
 		}
-		if kit.Button(c, i18n.T("reader.attachments.conflict_replace"), kit.ButtonOpts{Variant: kit.DestructiveOutline}).Clicked() {
+		if kit.Button(c, i18n.T("reader.attachments.conflict_replace"), kit.ButtonOpts{Variant: kit.Outline, Tone: kit.ToneDanger}).Clicked() {
 			r.resolveAttachmentConflict(attConflictReplace)
 		}
 		if kit.Button(c, i18n.T("reader.attachments.conflict_keep_both"), kit.ButtonOpts{}).AutoFocus().Clicked() {

@@ -31,8 +31,12 @@ type Tokens struct {
 	HoverTint                                                       ui.Color
 	WarningBg, WarningBorder, WarningText, Danger, DangerBg         ui.Color
 	SuccessBg, SuccessBorder, SuccessText, DangerBorder, DangerText ui.Color
-	InsBg, InsText, DelBg, DelText                                  ui.Color
-	Attention, Unread, Input, Ring                                  ui.Color
+	// InfoBg, InfoBorder and InfoText are the blue of an informational
+	// notice: blue-100 halfway to Background behind, -200 around, -700 text
+	// (-950 halfway, -800, -300 in the dark).
+	InfoBg, InfoBorder, InfoText   ui.Color
+	InsBg, InsText, DelBg, DelText ui.Color
+	Attention, Unread, Input, Ring ui.Color
 	// Idle is the grey of a status dot with nothing to report (neutral-400).
 	Idle ui.Color
 	// Subdued is text a step under Foreground and over Muted, for what has
@@ -328,6 +332,8 @@ func status(t Tokens) Tokens {
 		t.Highlight, t.HighlightText = p.Yellow900.Color(), p.Yellow100.Color()
 	}
 	t.Labels = labels(t)
+	blue := t.Label("blue")
+	t.InfoBg, t.InfoBorder, t.InfoText = blue.Fill.Mix(t.Background, 0.5), blue.Edge, blue.Text
 	t.FontSize, t.BodyFontSize, t.Scale = 14, 14, 1
 	return sized(t)
 }
