@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.3](https://github.com/godwit-email/godwit/compare/v1.39.2...v1.39.3) (2026-11-18)
+
+
+### Bug Fixes
+
+* **compose:** only apply a rangeless autocorrect to the word it corrects ([#817](https://github.com/godwit-email/godwit/issues/817)) ([fc9a5e5](https://github.com/godwit-email/godwit/commit/fc9a5e54c3996b02b010bf746c41a285231125c0))
+
 ## [1.39.2](https://github.com/godwit-email/godwit/compare/v1.39.1...v1.39.2) (2026-11-17)
 
 
