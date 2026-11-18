@@ -53,6 +53,30 @@ const HeldBlockPlugin = createPlatePlugin({
 });
 
 /** The page's hold on a mounted editor: `setValue` replaces the body as one undoable step, unreported. */
+// Letters and digits only, lowercase, without accents or marks: "dall'Agenzia" and
+// "dall’Agenzia" fold to the same string.
+const fold = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/[^\p{L}\p{N}]/gu, "")
+    .toLowerCase();
+
+/** Whether `text` reads as a correction of `word` (a typo, an accent, an apostrophe, a capital). */
+function resembles(word: string, text: string): boolean {
+  const a = [...fold(word)];
+  const b = [...fold(text)];
+  // Levenshtein distance, one row at a time.
+  let row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j++) {
+      next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    row = next;
+  }
+  return row[b.length] <= Math.max(2, Math.floor(Math.max(a.length, b.length) / 3));
+}
+
 export type EditorHandle = { setValue(html: string): void };
 
 /**
@@ -148,7 +172,9 @@ export function Editor(props: {
           const word = editor.api.string({ anchor: before, focus: head });
           const trail = word.length - word.trimEnd().length;
           const end = trail ? (editor.api.before(head, { distance: trail }) ?? head) : head;
-          targetRange = { anchor: before, focus: end };
+          // Only a correction of that word may replace it: anything else would delete text
+          // the replacement was never meant for (#816). Dropping it loses nothing.
+          if (resembles(word.trimEnd(), text)) targetRange = { anchor: before, focus: end };
         }
       }
       if (targetRange) {

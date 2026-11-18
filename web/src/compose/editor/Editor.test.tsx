@@ -30,9 +30,16 @@ function setup(initial = "<p>hello world</p>", readOnly = false) {
       t={t}
     />
   );
-  const { rerender } = render(ui(readOnly));
+  const { rerender, unmount } = render(ui(readOnly));
   const box = screen.getByLabelText("body");
-  return { box, onChange, onComposing, ref, setReadOnly: (ro: boolean) => rerender(ui(ro)) };
+  return {
+    box,
+    onChange,
+    onComposing,
+    ref,
+    unmount,
+    setReadOnly: (ro: boolean) => rerender(ui(ro)),
+  };
 }
 
 // Selects the first `len` characters after `from` in the first text node, as a user drag would.
@@ -450,5 +457,30 @@ describe("Editor", () => {
     await select(box, 4, 0);
     replace(box, "word");
     await waitFor(() => expect(last(onChange)).toBe("<p>word </p>"));
+  });
+
+  // #816: a replacement meant for another word must not eat the word before the caret.
+  it("insertReplacementText without a range leaves an unrelated word alone", async () => {
+    const { box, onChange } = setup("<p>ciao dall'Agenzia di Matteo </p>");
+    await select(box, 28, 0);
+    replace(box, "dall\u2019Agenzia");
+    await new Promise((res) => setTimeout(res, 50));
+    expect(last(onChange) ?? "").not.toContain("di dall\u2019Agenzia");
+    expect(box.textContent).toBe("ciao dall'Agenzia di Matteo ");
+  });
+
+  it("insertReplacementText without a range still applies a correction of the last word", async () => {
+    for (const [initial, data, want] of [
+      ["<p>teh </p>", "the", "<p>the </p>"],
+      ["<p>ciao dall'Agenzia </p>", "dall\u2019Agenzia", "<p>ciao dall\u2019Agenzia </p>"],
+      ["<p>perche </p>", "perch\u00e9", "<p>perch\u00e9 </p>"],
+    ] as const) {
+      const { box, onChange, unmount } = setup(initial);
+      const len = box.textContent?.length ?? 0;
+      await select(box, len, 0);
+      replace(box, data);
+      await waitFor(() => expect(last(onChange)).toBe(want));
+      unmount();
+    }
   });
 });
