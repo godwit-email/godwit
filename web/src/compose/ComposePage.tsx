@@ -4,9 +4,8 @@ import { currentWindow } from "mygo-runtime";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
 import { toast } from "sonner";
-import { toneButton } from "@/components/tone";
+import { Button } from "@/components/button";
 import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Toaster } from "@/components/ui/sonner";
 import { Textarea } from "@/components/ui/textarea";
@@ -815,7 +814,6 @@ function Compose({
             variant="link"
             size="sm"
             aria-expanded={showQuote}
-            className="h-auto gap-1.25 px-0 font-normal text-xs text-muted-foreground hover:text-foreground hover:no-underline"
             onClick={() => setShowQuote(!showQuote)}
           >
             <RiPlayFill
@@ -907,7 +905,12 @@ function Compose({
                   >
                     <AlertDescription>{reloadErr}</AlertDescription>
                     <AlertAction>
-                      <Button className={toneButton.danger} size="sm" onClick={() => void reload()}>
+                      <Button
+                        variant="outline"
+                        tone="danger"
+                        size="sm"
+                        onClick={() => void reload()}
+                      >
                         {t("common.retry")}
                       </Button>
                     </AlertAction>
@@ -925,7 +928,7 @@ function Compose({
                 {applied && !witLocked && !locked && (
                   <div className="mx-4 mt-2 flex items-center gap-2 text-muted-foreground text-xs">
                     <span>{t("wit.compose.applied")}</span>
-                    <Button variant="link" size="sm" className="h-auto px-0" onClick={undo}>
+                    <Button variant="link" size="sm" onClick={undo}>
                       {t("wit.compose.undo")}
                     </Button>
                   </div>

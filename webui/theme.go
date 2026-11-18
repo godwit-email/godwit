@@ -35,7 +35,10 @@ func ThemeOf(st core.Settings) Theme {
 }
 
 // ThemeVars maps tokens to shadcn's CSS variables, plus Wit's review marks
-// (--ins-* and --del-*), the warning colours (--warning-*) and the floating
+// (--ins-* and --del-*), the notice colours (--warning-*, --info-*, --success-*,
+// and --danger-bg and --danger-border), the button's greys (--hover-tint, the
+// tint a ghost or secondary button takes on hover, and --idle, a disabled
+// label) and the floating
 // input's shadow (--shadow-float: ShadowFloat in the light appearance, the
 // FloatInset inner edge in the dark), the window material's colour (--window)
 // and a card's shadow (--shadow-xs: ShadowXs, black in both), and kit.Dialog's
@@ -62,6 +65,10 @@ func ThemeVars(t theme.Tokens) map[string]string {
 		"--sidebar":       css(t.Sidebar),
 		"--settings-card": css(t.Card), // a settings section's fill, under a page shown in one
 		"--warning-bg":    css(t.WarningBg), "--warning-border": css(t.WarningBorder), "--warning-text": css(t.WarningText),
+		"--info-bg": css(t.InfoBg), "--info-border": css(t.InfoBorder), "--info-text": css(t.InfoText),
+		"--success-bg": css(t.SuccessBg), "--success-border": css(t.SuccessBorder), "--success-text": css(t.SuccessText),
+		"--danger-bg": css(t.DangerBg), "--danger-border": css(t.DangerBorder),
+		"--hover-tint": css(t.HoverTint), "--idle": css(t.Idle),
 		"--shadow-float": floatShadow(t),
 		"--window":       css(t.Window), "--shadow-xs": shadow(theme.ShadowXs),
 		"--window-material": windowMaterial(t),

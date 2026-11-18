@@ -1,6 +1,6 @@
 import { RiArrowDownSLine } from "@remixicon/react";
 import { type ReactNode, type Ref, useId, useImperativeHandle, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -133,13 +133,7 @@ export function Fields({
         "compose.to",
         "compose.to.input",
         !showCc && (
-          <Button
-            variant="link"
-            size="sm"
-            className="h-auto shrink-0 px-0 font-normal text-sm text-muted-foreground hover:text-foreground"
-            disabled={frozen}
-            onClick={() => setCcOpen(true)}
-          >
+          <Button variant="link" disabled={frozen} onClick={() => setCcOpen(true)}>
             {t("compose.cc_bcc")}
           </Button>
         ),

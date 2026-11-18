@@ -42,11 +42,10 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
-import { toneButton } from "@/components/tone";
+import { Button } from "@/components/button";
 import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -2534,7 +2533,7 @@ export function Panel({
     <Alert variant="destructive" className="border-0 bg-destructive/10">
       <AlertDescription>{witError(chat.error?.message ?? failed ?? "", t)}</AlertDescription>
       <AlertAction>
-        <Button className={toneButton.danger} size="sm" onClick={() => void chat.regenerate()}>
+        <Button variant="outline" tone="danger" size="sm" onClick={() => void chat.regenerate()}>
           {t("common.retry")}
         </Button>
       </AlertAction>
@@ -2947,12 +2946,7 @@ export function Panel({
             {onModels && (
               <>
                 {" "}
-                <Button
-                  variant="link"
-                  size="sm"
-                  className="h-auto p-0 align-baseline text-xs"
-                  onClick={onModels}
-                >
+                <Button variant="link" size="sm" className="align-baseline" onClick={onModels}>
                   {t("wit.compose.translate_only.models")}
                 </Button>
               </>
