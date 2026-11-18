@@ -174,7 +174,7 @@ export function Editor(props: {
           const end = trail ? (editor.api.before(head, { distance: trail }) ?? head) : head;
           // Only a correction of that word may replace it: anything else would delete text
           // the replacement was never meant for (#816). Dropping it loses nothing.
-          if (resembles(word.trimEnd(), text)) targetRange = { anchor: before, focus: end };
+          targetRange = resembles(word.trimEnd(), text) ? { anchor: before, focus: end } : null;
         }
       }
       if (targetRange) {
