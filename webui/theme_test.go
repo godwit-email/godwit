@@ -19,7 +19,7 @@ func TestThemeVars(t *testing.T) {
 		"--secondary": css(l.Hover), "--secondary-foreground": css(l.Foreground),
 		"--muted": css(l.Hover), "--muted-foreground": css(l.Muted),
 		"--accent": css(l.Hover), "--accent-foreground": css(l.Foreground),
-		"--destructive": css(l.Danger), "--destructive-foreground": css(l.PrimaryText),
+		"--destructive": css(l.Danger), "--destructive-foreground": css(l.OnSolid),
 		"--border": css(l.Border), "--input": css(l.Input), "--ring": css(l.Ring),
 		"--radius": "8px",
 		"--ins-bg": css(l.InsBg), "--ins-text": css(l.InsText),
@@ -48,6 +48,10 @@ func TestThemeVars(t *testing.T) {
 	}
 	if got := ThemeVars(theme.Dark())["--shadow-xs"]; got != v["--shadow-xs"] {
 		t.Errorf("dark --shadow-xs = %q, want the light's %q", got, v["--shadow-xs"])
+	}
+	// Text on the red fill stays white in the dark, where PrimaryText is near-black.
+	if got := ThemeVars(theme.Dark())["--destructive-foreground"]; got != v["--destructive-foreground"] {
+		t.Errorf("dark --destructive-foreground = %q, want the light's %q", got, v["--destructive-foreground"])
 	}
 	// ui.RGBA takes alpha in 0..1, so the byte alpha is set directly.
 	if got := css(ui.Color{R: 10, G: 20, B: 30, A: 128}); got != "rgb(10 20 30 / 0.502)" {

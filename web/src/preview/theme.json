@@ -11,7 +11,7 @@
     "--del-bg": "rgb(70 8 9 / 1)",
     "--del-text": "rgb(255 162 162 / 1)",
     "--destructive": "rgb(231 0 11 / 1)",
-    "--destructive-foreground": "rgb(23 23 23 / 1)",
+    "--destructive-foreground": "rgb(255 255 255 / 1)",
     "--dialog-centre": "40vh",
     "--dialog-lg": "640px",
     "--dialog-md": "560px",

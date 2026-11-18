@@ -119,7 +119,7 @@ func TestOnboardingJMAPNoSubmission(t *testing.T) {
 	h.click("连接")
 	h.see("不能通过 JMAP 发信：服务器（或此 API 令牌）未开启 JMAP 发信权限。")
 	h.see("JMAP 登录成功")
-	h.click("仍然添加（仅收信）") // receiving works: the account may still be added
+	h.click("仍然添加（只收信）") // receiving works: the account may still be added
 	h.click("开始使用")
 	h.until("the mail page", func() bool { return h.app.route.Page == PageMail })
 	accs, err := h.env.Svc.ListAccounts(context.Background())

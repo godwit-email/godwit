@@ -53,7 +53,7 @@ func ThemeVars(t theme.Tokens) map[string]string {
 		"--secondary": css(t.Hover), "--secondary-foreground": css(t.Foreground),
 		"--muted": css(t.Hover), "--muted-foreground": css(t.Muted),
 		"--accent": css(t.Hover), "--accent-foreground": css(t.Foreground),
-		"--destructive": css(t.Danger), "--destructive-foreground": css(t.PrimaryText),
+		"--destructive": css(t.Danger), "--destructive-foreground": css(t.OnSolid),
 		"--border": css(t.Border), "--input": css(t.Input), "--ring": css(t.Ring),
 		"--radius": fmt.Sprintf("%gpx", t.Radius.Lg),
 		// Wit's review marks: inserted and deleted words.
