@@ -115,9 +115,8 @@ func (p *settingsPage) clientsRow(c *ui.Context, copied func(string)) {
 			for _, id := range ids {
 				st := p.clients[id]
 				on := st == mcpclients.On
-				b := kit.Choice(c, kit.Pressable(c.Key(id), kit.PressableOpts{Bare: true, OnClick: func() { p.toggleClient(id) }}).
-					Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(1.5)).AlignItems(ui.Center).Label(clientNames[id]), on, kit.ChoiceOpts{}) // a control's size
-				b.Children(func() {
+				b := kit.ChoiceCard(c, kit.Pressable(c.Key(id), kit.PressableOpts{Bare: true, OnClick: func() { p.toggleClient(id) }}).
+					Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(1.5)).AlignItems(ui.Center).Label(clientNames[id]), kit.ChoiceCardOpts{Selected: on}, func() { // a control's size
 					// connected: the app's own colors; else its mark and name in gray
 					if on && (id == mcpclients.Codex || id == mcpclients.Grok) { // marks with no colors
 						ui.Icon(c, icons.BrandIcon(id+"-mono")).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)

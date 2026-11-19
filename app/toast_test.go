@@ -69,7 +69,7 @@ func TestArchiveToastUndo(t *testing.T) {
 	h, acc := archiveOnlyMail(t)
 	h.click("first")
 	h.tt.Key(0, ui.KeyE)
-	h.see(i18n.T("view.archived"))
+	h.see(i18n.Tf("view.archived_n", 1))
 	h.waitMail("archived", func() bool { return h.folderOf(acc, "archive").Total == 1 })
 	h.click(i18n.T("compose.undo"))
 	h.waitMail("back in the inbox", func() bool { return h.folderOf(acc, "inbox").Total == 1 && h.folderOf(acc, "archive").Total == 0 })
@@ -85,7 +85,7 @@ func TestArchiveToastUndoEndsWithItsWindow(t *testing.T) {
 	h.clock.advance(core.UndoArchiveWindow + time.Second)
 	h.tt.Advance(core.UndoArchiveWindow + time.Second)
 	h.tt.Frame()
-	if h.tt.HasText(i18n.T("compose.undo")) || !h.tt.HasText(i18n.T("view.archived")) {
+	if h.tt.HasText(i18n.T("compose.undo")) || !h.tt.HasText(i18n.Tf("view.archived_n", 1)) {
 		t.Fatalf("after the window, held: %q, want the toast without 撤销", h.tt.Texts())
 	}
 }

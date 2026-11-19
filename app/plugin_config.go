@@ -202,7 +202,7 @@ func (e *extView) configFields(c *ui.Context, f *pluginForm, fields []plugins.Co
 		label := fd.Label.For(lang)
 		cc := c.Key(fd.Key)
 		if fd.Type == "boolean" {
-			kit.SwitchRow(cc, &v.on, label, v.err).Padding(0)
+			kit.FieldWith(cc, kit.FieldOpts{Horizontal: true, Switch: &v.on}, label, "", v.err, nil).Padding(0)
 			continue
 		}
 		ui.Field(cc, label, func() {
@@ -218,11 +218,7 @@ func (e *extView) configFields(c *ui.Context, f *pluginForm, fields []plugins.Co
 				for _, o := range fd.Options {
 					sugg = append(sugg, o.Value)
 				}
-				box := kit.InputGroup(c, kit.InputOpts{Invalid: v.err != "", Flat: true})
-				box.Children(func() {
-					ui.Autocomplete(c, &v.s, sugg).Label(label).Grow(1).MinWidth(0).
-						Height(th.Space(8)-theme.Stroke-theme.Stroke).Padding(0, th.Space(2.5)).Border(0, t.Input).FocusRing(false)
-				})
+				kit.Input(c, &v.s, kit.InputOpts{Invalid: v.err != "", Flat: true, Autocomplete: true, Suggest: sugg}).Label(label)
 			case fd.Type == "select":
 				opts := make([]kit.Option[string], len(fd.Options))
 				for i, o := range fd.Options {

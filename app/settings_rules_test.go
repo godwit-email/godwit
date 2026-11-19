@@ -263,6 +263,35 @@ func TestSettingsRulesForwardConfirm(t *testing.T) {
 	h.see("转发给 carol@example.com")
 }
 
+// The confirmation says which account a forward goes out from: for a rule
+// on all accounts, the one that received the mail; for one account, it.
+func TestSettingsRulesForwardConfirmSender(t *testing.T) {
+	for _, scoped := range []bool{false, true} {
+		t.Run(map[bool]string{false: "all", true: "scoped"}[scoped], func(t *testing.T) {
+			h, acc := withAccount(t)
+			h.openSettings("rules")
+			h.click("新建规则")
+			h.click("值")
+			h.typeText("billing@")
+			if scoped {
+				h.click("收信账户")
+				h.click(accountName(acc))
+			}
+			h.click("动作 1")
+			h.click("转发给")
+			h.click("收件人邮箱")
+			h.typeText("carol@example.com")
+			h.click("保存")
+			h.see("确认转发收件人")
+			fromReceiver, fromAccount := "从收到邮件的账户发出", "从 "+acc.Email+" 发出"
+			h.see(map[bool]string{false: fromReceiver, true: fromAccount}[scoped])
+			if h.tt.HasText(map[bool]string{false: fromAccount, true: fromReceiver}[scoped]) {
+				t.Errorf("scoped=%v: the confirmation names the other scope's sender", scoped)
+			}
+		})
+	}
+}
+
 // The editor lists the existing mail its conditions match once typing
 // pauses; saving can run the rule once over it.
 func TestSettingsRulesPreviewRunsOnExisting(t *testing.T) {
@@ -428,10 +457,7 @@ func TestSettingsRulesAccountScope(t *testing.T) {
 	h.click("值")
 	h.typeText("billing@")
 	h.click("收信账户")
-	h.see(accountName(acc)) // the option; the sidebar has the name too, so the keys choose it
-	h.tt.Key(0, ui.KeyDown)
-	h.tt.Key(0, ui.KeyEnter)
-	h.tt.Frame()
+	h.click(accountName(acc)) // the option is an item of the system menu, which takes no keys here
 	h.saveRule()
 	h.until("the rule saved", func() bool { return len(h.rules()) == 1 })
 	if d := h.rules()[0].Doc; d.Account != acc.ID {

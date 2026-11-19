@@ -758,18 +758,17 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 	t, th := theme.Of(c), c.Theme()
 	if p.searchOpen {
 		ui.Column(c).Padding(th.Space(3), th.Space(3), th.Space(2), th.Space(3)).Gap(th.Space(2)).Children(func() {
-			box := kit.InputGroup(c, kit.InputOpts{Glass: true}).Gap(th.Space(2)).Padding(0, th.Space(1), 0, th.Space(2.5))
-			box.Children(func() {
-				ui.Icon(c, icons.Get("search")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
-				in := kit.Input(c, &p.query, kit.InputOpts{Placeholder: i18n.T("mail.search.placeholder"), Bare: true}).FocusRing(false).AutoFocus().Grow(1)
-				if in.Submitted() {
-					p.runSearch()
-				}
-				if p.query != "" {
-					kit.IconButton(c, "x", i18n.T("mail.search.clear"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-						Size(th.Space(6), th.Space(6)).TextColor(t.Muted).OnClick(p.clearSearch)
-				}
-			})
+			in := kit.Input(c, &p.query, kit.InputOpts{Placeholder: i18n.T("mail.search.placeholder"), Glass: true,
+				Leading: func() { kit.InputIcon(c, "search") },
+				Trailing: func() {
+					if p.query != "" {
+						kit.IconButton(c, "x", i18n.T("mail.search.clear"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs}).OnClick(p.clearSearch)
+					}
+				},
+			}).AutoFocus()
+			if in.Submitted() {
+				p.runSearch()
+			}
 			p.filterChips(c)
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Children(func() {
 				kit.Text(c, p.searchHint(), t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
@@ -1270,30 +1269,33 @@ func (p *mailPage) resultWho(it mailItem) string {
 func (p *mailPage) resultRow(c *ui.Context, it mailItem) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	q := p.hlQuery
-	col := ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2), th.Space(3))
+	col := ui.Column(c).Padding(th.Space(2), th.Space(3))
 	return col.Children(func() {
-		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, p.resultWho(it)).FontWeight(500).SingleLine().Shrink(1) // the lead line, as a list row's
-			securityIcon(c, p.a.settings, it.Security)
-			ui.Spacer(c)
-			p.starButton(c, it, col.Hovered())
-			if it.Attach {
-				ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
+		who := p.resultWho(it)
+		withAvatar(c, who, func() {
+			ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, who).FontWeight(500).SingleLine().Shrink(1) // the lead line, as a list row's
+				securityIcon(c, p.a.settings, it.Security)
+				ui.Spacer(c)
+				p.starButton(c, it, col.Hovered())
+				if it.Attach {
+					ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).Shrink(0).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
+				}
+				kit.Text(c, listTime(p.a.clock.Now(), it.Date), t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(0)
+			})
+			subject := it.Subject
+			if subject == "" {
+				subject = i18n.T("mail.no_subject")
 			}
-			kit.Text(c, listTime(p.a.clock.Now(), it.Date), t.Text.Xs).TextColor(t.Muted)
+			marked(c, subject, q).SingleLine()
+			if it.Snippet != "" {
+				marked(c, it.Snippet, q).FontSize(t.Text.Xs).TextColor(t.Muted).SingleLine()
+			}
+			if line := p.folderLine(it); line != "" {
+				kit.Text(c, line, t.Text.Xs).TextColor(t.Muted).SingleLine()
+			}
+			p.a.rowChips(c, it.Labels)
 		})
-		subject := it.Subject
-		if subject == "" {
-			subject = i18n.T("mail.no_subject")
-		}
-		marked(c, subject, q).SingleLine()
-		if it.Snippet != "" {
-			marked(c, it.Snippet, q).FontSize(t.Text.Xs).TextColor(t.Muted).SingleLine()
-		}
-		if line := p.folderLine(it); line != "" {
-			kit.Text(c, line, t.Text.Xs).TextColor(t.Muted).SingleLine()
-		}
-		p.a.rowChips(c, it.Labels)
 	})
 }
 
@@ -1385,7 +1387,7 @@ func (p *mailPage) starButton(c *ui.Context, it mailItem, hovered bool) {
 	if starred {
 		icon, label = "star-fill", i18n.T("mail.action.unstar")
 	}
-	b := kit.IconButton(c, icon, label, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeMini})
+	b := kit.IconButton(c, icon, label, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeMini}).Shrink(0)
 	if it.Flagged > 0 {
 		b.TextColor(t.Attention)
 	} else if !hovered && !b.FocusVisible() {
@@ -1396,9 +1398,20 @@ func (p *mailPage) starButton(c *ui.Context, it mailItem, hovered bool) {
 	})
 }
 
+// withAvatar lays out lines in a column beside who's avatar: a row's body, the
+// labels under its text. The avatar only decorates, as the sender is named in
+// the first line: it has no label of its own.
+func withAvatar(c *ui.Context, who string, lines func()) {
+	th := c.Theme()
+	ui.Row(c).Gap(th.Space(2)).Children(func() {
+		kit.Avatar(c, who).AlignSelf(ui.Start).Label("").Role(ui.RoleNone)
+		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(0.5)).Children(lines)
+	})
+}
+
 // row is one thread or message: who, when, the subject and the start of the
-// text; unread ones in bold, with a dot in the row's left gutter that says
-// how many are unread to assistive technology.
+// text beside the sender's avatar; unread ones in bold, with a dot in the
+// row's left gutter that says how many are unread to assistive technology.
 func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 	t := theme.Of(c)
 	th, small := c.Theme(), t.Text.Xs
@@ -1409,52 +1422,54 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 	if it.Unread > 0 {
 		lead, ink = 600, t.Foreground
 	}
-	col := ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5))
+	col := ui.Column(c).Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5))
 	return col.Children(func() {
 		if it.Unread > 0 {
 			ui.Box(c).Absolute().Left(th.Space(1.5)).Top(th.Space(4)).Size(th.Space(2), th.Space(2)).Radius(th.Space(1)).Background(t.Unread).
 				Label(i18n.Tf("mail.row.unread", it.Unread))
 		}
-		subject := it.Subject
-		if subject == "" {
-			subject = i18n.T("mail.no_subject")
-		}
-		subjectFirst := p.a.settings.ListRowOrder == core.ListRowSubject
-		// who is who the mail is with, its count and security mark: the line's lead, or its second line.
-		who := func(weight int) {
-			ui.Text(c, it.Who).FontWeight(weight).TextColor(ink).SingleLine().Shrink(1)
-			if it.Thread && it.Count > 1 { // how many messages the conversation holds, a plain count as the sidebar's
-				kit.Text(c, strconv.Itoa(it.Count), small).TextColor(t.Muted).Shrink(0).Label(i18n.Tf("reader.thread_count", it.Count))
+		withAvatar(c, it.Who, func() {
+			subject := it.Subject
+			if subject == "" {
+				subject = i18n.T("mail.no_subject")
 			}
-			securityIcon(c, p.a.settings, it.Security)
-		}
-		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
-			if subjectFirst {
-				ui.Text(c, subject).FontWeight(lead).TextColor(ink).SingleLine().Shrink(1)
-			} else {
-				who(lead)
+			subjectFirst := p.a.settings.ListRowOrder == core.ListRowSubject
+			// who is who the mail is with, its count and security mark: the line's lead, or its second line.
+			who := func(weight int) {
+				ui.Text(c, it.Who).FontWeight(weight).TextColor(ink).SingleLine().Shrink(1)
+				if it.Thread && it.Count > 1 { // how many messages the conversation holds, a plain count as the sidebar's
+					kit.Text(c, strconv.Itoa(it.Count), small).TextColor(t.Muted).Shrink(0).Label(i18n.Tf("reader.thread_count", it.Count))
+				}
+				securityIcon(c, p.a.settings, it.Security)
 			}
-			ui.Spacer(c)
-			p.starButton(c, it, col.Hovered())
-			if it.Attach {
-				ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
-			}
-			kit.Text(c, listTime(p.a.clock.Now(), it.Date), small).TextColor(t.Muted)
-		})
-		if subjectFirst {
-			ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() { who(400) })
-		} else {
-			ui.Text(c, subject).TextColor(ink).SingleLine()
-		}
-		if icon, line := p.viewLine(it); line != "" {
-			ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).TextColor(t.Muted).Children(func() {
-				ui.Icon(c, icons.Get(icon)).Size(theme.IconXs, theme.IconXs).Shrink(0)
-				kit.Text(c, line, t.Text.Xs).SingleLine()
+			ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+				if subjectFirst {
+					ui.Text(c, subject).FontWeight(lead).TextColor(ink).SingleLine().Shrink(1)
+				} else {
+					who(lead)
+				}
+				ui.Spacer(c)
+				p.starButton(c, it, col.Hovered())
+				if it.Attach {
+					ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).Shrink(0).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
+				}
+				kit.Text(c, listTime(p.a.clock.Now(), it.Date), small).TextColor(t.Muted).SingleLine().Shrink(0) // the sender gives way first
 			})
-		} else if it.Snippet != "" {
-			kit.Text(c, it.Snippet, t.Text.Xs).TextColor(t.Muted).SingleLine()
-		}
-		p.a.rowChips(c, it.Labels)
+			if subjectFirst {
+				ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() { who(400) })
+			} else {
+				ui.Text(c, subject).TextColor(ink).SingleLine()
+			}
+			if icon, line := p.viewLine(it); line != "" {
+				ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).TextColor(t.Muted).Children(func() {
+					ui.Icon(c, icons.Get(icon)).Size(theme.IconXs, theme.IconXs).Shrink(0)
+					kit.Text(c, line, t.Text.Xs).SingleLine()
+				})
+			} else if it.Snippet != "" {
+				kit.Text(c, it.Snippet, t.Text.Xs).TextColor(t.Muted).SingleLine()
+			}
+			p.a.rowChips(c, it.Labels)
+		})
 	})
 }
 

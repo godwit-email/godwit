@@ -154,10 +154,10 @@ func toneColors(t theme.Tokens, tone Tone) (bg, border, text ui.Color, ok bool) 
 
 // PressableOpts say how a Pressable looks and what clicking it does.
 type PressableOpts struct {
-	Selected, Bordered bool
-	Glass              bool // frosted glass appearance with hairline border and GlassHover (no blur)
-	Bare               bool // no hover or selected background: the caller draws its own
-	OnClick            func()
+	Selected bool
+	Glass    bool // frosted glass appearance with hairline border and GlassHover (no blur)
+	Bare     bool // no hover or selected background: the caller draws its own
+	OnClick  func()
 }
 
 // Pressable is a clickable surface for content the caller builds, left-aligned.
@@ -174,8 +174,6 @@ func Pressable(c *ui.Context, o PressableOpts) ui.Element {
 			Background(tint).
 			Border(theme.Hairline, t.GlassBorder)
 		Elevate(c, b, theme.ShadowXs)
-	} else if o.Bordered {
-		b.Border(theme.Stroke, t.Border).Background(t.Background)
 	}
 	if !o.Bare && !o.Glass {
 		switch {

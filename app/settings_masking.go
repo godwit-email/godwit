@@ -31,7 +31,7 @@ type maskDraft struct {
 func (p *settingsPage) maskingView(c *ui.Context) {
 	st := &p.st
 	rows := []func(){func() {
-		kit.SwitchRow(c, &st.Masking, i18n.T("settings.masking.on"), i18n.T("settings.masking.on.help"))
+		kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &st.Masking}, i18n.T("settings.masking.on"), i18n.T("settings.masking.on.help"), "", nil)
 	}}
 	if st.Masking {
 		rows = append(rows, func() { p.recognitionModelRow(c) })
@@ -117,7 +117,7 @@ func (p *settingsPage) recognitionModelRow(c *ui.Context) {
 		return
 	}
 	on := st.RecognitionModel
-	kit.SwitchRow(c, &on, label, help)
+	kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &on}, label, help, "", nil)
 	if on && !st.RecognitionModel && !p.recognition.installed {
 		p.downloadRecognitionModel()
 	} else {
@@ -228,10 +228,10 @@ func (p *settingsPage) maskCustom(c *ui.Context) {
 	settingsSection(c, i18n.T("settings.masking.custom"), i18n.T("settings.masking.custom.foot"),
 		area(i18n.T("settings.masking.words"), i18n.T("settings.masking.words.help"), "", &d.words, false),
 		func() {
-			kit.SwitchRow(c, &st.MaskWordsCase, i18n.T("settings.masking.words.case"), "")
+			kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &st.MaskWordsCase}, i18n.T("settings.masking.words.case"), "", "", nil)
 		},
 		func() {
-			kit.SwitchRow(c, &st.MaskWordsWhole, i18n.T("settings.masking.words.whole"), i18n.T("settings.masking.words.whole.help"))
+			kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &st.MaskWordsWhole}, i18n.T("settings.masking.words.whole"), i18n.T("settings.masking.words.whole.help"), "", nil)
 		},
 		area(i18n.T("settings.masking.rules"), i18n.T("settings.masking.rules.help"), d.err, &d.rules, true),
 		area(i18n.T("settings.masking.allow"), i18n.T("settings.masking.allow.help"), "", &d.allow, false),

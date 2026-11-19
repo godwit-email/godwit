@@ -75,7 +75,7 @@ func (v *labelsView) view(c *ui.Context, p *settingsPage) {
 		})
 	settingsSection(c, i18n.T("settings.labels.auto"), "",
 		func() {
-			kit.SwitchRow(c, &p.st.AutoLabel, i18n.T("settings.labels.auto.on"), i18n.T("settings.labels.auto.on.help"))
+			kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &p.st.AutoLabel}, i18n.T("settings.labels.auto.on"), i18n.T("settings.labels.auto.on.help"), "", nil)
 		},
 		func() {
 			settingRow(c, i18n.T("settings.labels.model"), i18n.T("settings.labels.model.help"), func() {

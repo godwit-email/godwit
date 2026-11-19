@@ -197,7 +197,7 @@ func (p *settingsPage) generalView(c *ui.Context) {
 		return func() { settingRow(c, label, desc, func() { control() }) }
 	}
 	sw := func(on *bool, label, help string) func() {
-		return func() { kit.SwitchRow(c, on, label, help) }
+		return func() { kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: on}, label, help, "", nil) }
 	}
 	pageHeading(c, i18n.T("settings.general"), i18n.T("settings.general.sub"))
 	settingsSection(c, i18n.T("settings.appearance"), "",
@@ -327,11 +327,11 @@ func (p *settingsPage) labsView(c *ui.Context) {
 	st := &p.st
 	pageHeading(c, i18n.T("settings.labs"), i18n.T("settings.labs.sub"))
 	settingsCard(c, func() {
-		kit.SwitchRow(c, &st.ExperimentalJMAP, i18n.T("settings.experimental_jmap"), i18n.T("settings.experimental_jmap.help"))
-		kit.SwitchRow(c, &st.ExperimentalEWS, i18n.T("settings.experimental_ews"), i18n.T("settings.experimental_ews.help"))
-		kit.SwitchRow(c, &st.ExperimentalPOP3, i18n.T("settings.experimental_pop3"), i18n.T("settings.experimental_pop3.help"))
-		kit.SwitchRow(c, &st.ExperimentalGraph, i18n.T("settings.experimental_graph"), i18n.T("settings.experimental_graph.help"))
-		kit.SwitchRow(c, &st.ExperimentalGmailAPI, i18n.T("settings.experimental_gmailapi"), i18n.T("settings.experimental_gmailapi.help"))
+		kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &st.ExperimentalJMAP}, i18n.T("settings.experimental_jmap"), i18n.T("settings.experimental_jmap.help"), "", nil)
+		kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &st.ExperimentalEWS}, i18n.T("settings.experimental_ews"), i18n.T("settings.experimental_ews.help"), "", nil)
+		kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &st.ExperimentalPOP3}, i18n.T("settings.experimental_pop3"), i18n.T("settings.experimental_pop3.help"), "", nil)
+		kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &st.ExperimentalGraph}, i18n.T("settings.experimental_graph"), i18n.T("settings.experimental_graph.help"), "", nil)
+		kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &st.ExperimentalGmailAPI}, i18n.T("settings.experimental_gmailapi"), i18n.T("settings.experimental_gmailapi.help"), "", nil)
 	})
 }
 
@@ -378,6 +378,8 @@ func (p *settingsPage) proxySection(c *ui.Context) {
 		rows = append(rows,
 			input(i18n.T("settings.proxy.url"), cmp.Or(d.addrErr, i18n.T("settings.proxy.url.help")), &d.addr,
 				kit.InputOpts{Invalid: d.addrErr != "", Placeholder: "socks5://127.0.0.1:1080"}),
+			input(i18n.T("settings.proxy.bypass"), d.bypassErr, &d.bypass,
+				kit.InputOpts{Invalid: d.bypassErr != "", Placeholder: "localhost, 127.0.0.1, *.corp.example"}),
 			input(i18n.T("settings.proxy.user"), "", &st.ProxyUser, kit.InputOpts{Placeholder: i18n.T("settings.proxy.optional")}),
 			func() {
 				ph := i18n.T("settings.proxy.optional")
@@ -392,9 +394,7 @@ func (p *settingsPage) proxySection(c *ui.Context) {
 						}
 					})
 				})
-			},
-			input(i18n.T("settings.proxy.bypass"), d.bypassErr, &d.bypass,
-				kit.InputOpts{Invalid: d.bypassErr != "", Placeholder: "*.corp.example, .lan, 10.0.0.0/8"}))
+			})
 	}
 	// a typed password saves; erasing it removes the stored one
 	if d.pass != d.sent {
@@ -441,7 +441,7 @@ func (p *settingsPage) aiFeaturesView(c *ui.Context) {
 		return func() { settingRow(c, label, desc, func() { control() }) }
 	}
 	sw := func(on *bool, label, help string) func() {
-		return func() { kit.SwitchRow(c, on, label, help) }
+		return func() { kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: on}, label, help, "", nil) }
 	}
 	settingsSection(c, i18n.T("settings.ai"), "",
 		sw(&st.Summary, i18n.T("settings.summary"), i18n.T("settings.summary.help")),

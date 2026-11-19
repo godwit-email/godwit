@@ -105,7 +105,7 @@ func TestReaderAvatarLoadsWithoutLayoutJump(t *testing.T) {
 	release <- struct{}{}
 	h.until("avatar", func() bool { return h.app.mail.reader.bodies[m.ID].avatar != nil })
 	after, _ := h.tt.Find("Bob")
-	if before != after || slices.Contains(h.tt.Texts(), "B") {
+	if before != after || h.inReader("B") {
 		t.Fatalf("layout %v -> %v, texts %q", before, after, h.tt.Texts())
 	}
 	if px := h.tt.Image().RGBAAt(int(after.X+16), int(after.Y+16)); px.R < 250 || px.G > 5 || px.B > 5 {
@@ -212,7 +212,7 @@ func TestReaderAvatarPulsesUntilDone(t *testing.T) {
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
 	h.until("avatar started", func() bool { return r.bodies[m.ID].avatarRun.loading })
-	initial := func() bool { h.tt.Frame(); return slices.Contains(h.tt.Texts(), "B") }
+	initial := func() bool { h.tt.Frame(); return h.inReader("B") }
 	if initial() {
 		t.Fatal("the initial shows while the avatar loads")
 	}
@@ -230,7 +230,9 @@ func TestReaderAvatarParseFailure(t *testing.T) {
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
 	h.until("avatar completed", func() bool { b := r.bodies[m.ID]; return !b.avatarRun.loading })
-	h.see("B")
+	if !h.inReader("B") {
+		t.Fatalf("no initial in the reader: %q", h.tt.Texts())
+	}
 	if r.bodies[m.ID].avatar != nil {
 		t.Fatal("invalid SVG displayed")
 	}
@@ -529,6 +531,25 @@ func (h *harness) countTexts(sub string) int {
 	n := 0
 	for _, s := range h.tt.Texts() {
 		if strings.Contains(s, sub) {
+			n++
+		}
+	}
+	return n
+}
+
+// inReader reports whether the reader shows a text s, as its avatar's initial:
+// the texts after its label row's button. The list's avatars show initials too.
+func (h *harness) inReader(s string) bool {
+	texts := h.tt.Texts()
+	from := slices.Index(texts, i18n.T("reader.labels.add.label"))
+	return from >= 0 && slices.Contains(texts[from:], s)
+}
+
+// countExact is how many texts of the last frame are s.
+func (h *harness) countExact(s string) int {
+	n := 0
+	for _, text := range h.tt.Texts() {
+		if text == s {
 			n++
 		}
 	}
@@ -2159,7 +2180,7 @@ func TestReaderCrossFolderJunkAndFraudDonorAvatars(t *testing.T) {
 	if r.open[mJunk.ID] {
 		t.Fatal("older junk message should start folded")
 	}
-	if !slices.Contains(h.tt.Texts(), "B") {
+	if !h.inReader("B") {
 		t.Fatalf("folded Junk message borrowed Inbox message's CardDAV PHOTO instead of showing initial B: %q", h.tt.Texts())
 	}
 
@@ -2180,7 +2201,7 @@ func TestReaderCrossFolderJunkAndFraudDonorAvatars(t *testing.T) {
 		return b != nil && b.avatarDone && b.avatar != nil
 	})
 	h.tt.Frame()
-	if !slices.Contains(h.tt.Texts(), "P") {
+	if !h.inReader("P") {
 		t.Fatalf("folded SecurityFraud message borrowed CardDAV PHOTO instead of showing initial P: %q", h.tt.Texts())
 	}
 
@@ -2204,7 +2225,7 @@ func TestReaderCrossFolderJunkAndFraudDonorAvatars(t *testing.T) {
 	})
 	h.until("folded SecurityFraud message reuses explicit non-CardDAV avatar", func() bool {
 		h.tt.Frame()
-		return !slices.Contains(h.tt.Texts(), "P")
+		return !h.inReader("P")
 	})
 }
 

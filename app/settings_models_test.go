@@ -330,7 +330,7 @@ func TestProviderTiles(t *testing.T) {
 		t.Fatalf("the subscription group opens first: form %+v", f)
 	}
 	h.click("API 密钥")
-	h.see("选好服务商，填上 Key")
+	h.see("用服务商的 API Key 接入")
 	if h.tt.HasText("Grok") {
 		t.Fatal("a subscription tile shows in the API key group")
 	}

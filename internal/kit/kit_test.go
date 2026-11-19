@@ -136,10 +136,12 @@ func TestKitSwitchToggles(t *testing.T) {
 }
 
 func TestKitSelectChooses(t *testing.T) {
-	sel := 1
-	opts := []Option[int]{{Value: 1, Label: "Alpha"}, {Value: 2, Label: "Beta"}, {Value: 3, Label: "Gamma"}}
+	sel, changed := 1, 0
+	opts := []Option[int]{{Value: 1, Label: "Alpha"}, {Value: 2, Label: "Beta"}, {Value: 3, Label: "Gamma", Disabled: true}}
 	tt := ui.NewTester(themed(func(c *ui.Context) {
-		Select(c, &sel, opts).Label("Letter")
+		if Select(c, &sel, opts).Label("Letter").Changed() {
+			changed++
+		}
 	}), 300, 300)
 	if !tt.HasText("Alpha") || tt.HasText("Beta") {
 		t.Fatalf("closed select shows %q", tt.Texts())
@@ -147,11 +149,32 @@ func TestKitSelectChooses(t *testing.T) {
 	if err := tt.Click("Letter"); err != nil {
 		t.Fatal(err)
 	}
-	if err := tt.Click("Beta"); err != nil {
-		t.Fatalf("%v; texts %q", err, tt.Texts())
+	if menu := tt.Menu(); !slices.Equal(menu, []string{"Alpha", "Beta", "Gamma"}) {
+		t.Fatalf("the system menu lists %q", menu)
 	}
-	if sel != 2 {
-		t.Errorf("selected %d, want 2", sel)
+	if err := tt.ChooseMenuItem("Gamma"); err == nil || sel != 1 {
+		t.Errorf("a disabled option was chosen: err %v, selected %d", err, sel)
+	}
+	if err := tt.ChooseMenuItem("Alpha"); err != nil || changed != 0 {
+		t.Errorf("the current option reported a change: err %v, changed %d", err, changed)
+	}
+	if err := tt.Click("Letter"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.ChooseMenuItem("Beta"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	tt.Frame()
+	if sel != 2 || changed != 1 || !tt.HasText("Beta") {
+		t.Errorf("selected %d, changed %d times, texts %q; want 2, once, Beta shown", sel, changed, tt.Texts())
+	}
+	if err := tt.Click("Letter"); err != nil {
+		t.Fatal(err)
+	}
+	tt.CloseMenu()
+	if tt.Menu() != nil || sel != 2 || changed != 1 {
+		t.Errorf("closing the menu changed things: menu %q, selected %d, changed %d", tt.Menu(), sel, changed)
 	}
 }
 
@@ -793,39 +816,6 @@ func TestPaletteRowSelectedText(t *testing.T) {
 func TestShadowX2l(t *testing.T) {
 	if len(theme.ShadowX2l) != 1 || theme.ShadowX2l[0] != (theme.ShadowLayer{Y: 25, Blur: 50, Spread: -12, Alpha: 0.25}) {
 		t.Errorf("ShadowX2l %v is not Tailwind's shadow-2xl", theme.ShadowX2l)
-	}
-}
-
-func TestKitBareInputMatchesBase(t *testing.T) {
-	a, b, d := "", "", ""
-	var th theme.Tokens
-	tt := ui.NewTester(themed(func(c *ui.Context) {
-		th = theme.Of(c)
-		ui.Column(c).FillWidth().Background(th.Sidebar).Gap(8).Padding(8).Children(func() {
-			Input(c, &a, InputOpts{Bare: true}).Label("bare")
-			ui.TextInputBase(c, &b).Label("base")
-			Input(c, &d, InputOpts{}).Label("normal")
-		})
-	}), 400, 300)
-	rb, ok1 := tt.Find("bare")
-	rr, ok2 := tt.Find("base")
-	rn, ok3 := tt.Find("normal")
-	if !ok1 || !ok2 || !ok3 {
-		t.Fatalf("missing inputs in %q", tt.Texts())
-	}
-	if d := rb.H - rr.H; d < -0.01 || d > 0.01 { // a float's rounding apart
-		t.Errorf("bare height %v, base %v", rb.H, rr.H)
-	}
-	px := func(r ui.Rect) [3]uint8 {
-		c := tt.Image().RGBAAt(int(r.X), int(r.Y+r.H/2))
-		return [3]uint8{c.R, c.G, c.B}
-	}
-	rgb := func(c ui.Color) [3]uint8 { return [3]uint8{c.R, c.G, c.B} }
-	if px(rb) != rgb(th.Sidebar) {
-		t.Errorf("bare edge pixel %v, want sidebar %v", px(rb), rgb(th.Sidebar))
-	}
-	if px(rn) != rgb(th.Border) {
-		t.Errorf("normal edge pixel %v, want border %v", px(rn), rgb(th.Border))
 	}
 }
 
@@ -1620,28 +1610,6 @@ func TestFrostRoundsOneSide(t *testing.T) {
 		if top == round || bottom != round {
 			t.Errorf("%s: top-left corner filled %v, bottom-left %v", name, top, bottom)
 		}
-	}
-}
-
-// A RadioCard is chosen by a click anywhere on it, its help included.
-func TestRadioCardClicks(t *testing.T) {
-	bg := false
-	tt := ui.NewTester(themed(func(c *ui.Context) {
-		ui.Column(c).Fill().Padding(10).Gap(8).Children(func() {
-			RadioCard(c, &bg, false, "Window", "Only while the window is open.")
-			RadioCard(c, &bg, true, "Background", "Keeps running after the window closes.")
-		})
-	}), 320, 200)
-	r, ok := tt.Find("Keeps running after the window closes.")
-	if !ok {
-		t.Fatalf("no help text: %q", tt.Texts())
-	}
-	tt.Move(r.X+r.W-4, r.Y+r.H/2)
-	tt.Press(r.X+r.W-4, r.Y+r.H/2)
-	tt.Release(r.X+r.W-4, r.Y+r.H/2)
-	tt.Frame()
-	if !bg {
-		t.Fatal("a click on the help did not choose the card")
 	}
 }
 

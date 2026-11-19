@@ -252,9 +252,6 @@ func (m *modelsView) dialog(c *ui.Context) {
 	f.follow()
 	f.edited()
 	title, desc := i18n.T("settings.models.dialog.add"), i18n.T("settings.models.dialog.desc")
-	if m.group == 0 {
-		desc = i18n.T("settings.models.dialog.desc.sub")
-	}
 	if f.id != 0 {
 		title, desc = i18n.Tf("settings.models.edit", f.name), svcProvider(f.provider)+" · "+cmp.Or(f.email, f.baseURL)
 	}
@@ -327,15 +324,23 @@ func formRow(c *ui.Context, label string, control func() ui.Element, extra func(
 func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 	t, th := theme.Of(c), c.Theme()
 	if f.id == 0 {
-		ui.Row(c).Children(func() { // a row, so the tabs hug their labels instead of stretching
-			kit.Tabs(c, &m.group, kit.TabsOpts{}, kit.TabLabels(i18n.T("settings.models.group.sub"), i18n.T("settings.models.group.api")))
-		})
-		if providerGroup(f.provider) != m.group { // another group starts the form over on its first tile
-			m.cancelForm()
-			f = newForm(providerGroups[m.group][0])
-			m.form = f
+		access := i18n.T("settings.models.access.api")
+		if m.group == 0 {
+			access = i18n.T("settings.models.access.sub")
 		}
-		m.tiles(c, f)
+		ui.Column(c).Gap(th.Space(3)).Children(func() {
+			formRow(c, i18n.T("settings.models.access"), func() ui.Element {
+				return ui.Row(c).Children(func() { // a row, so the tabs hug their labels instead of stretching
+					kit.Tabs(c, &m.group, kit.TabsOpts{}, kit.TabLabels(i18n.T("settings.models.group.sub"), i18n.T("settings.models.group.api")))
+				})
+			}, func() { kit.Text(c, access, t.Text.Xs).TextColor(t.Muted) })
+			if providerGroup(f.provider) != m.group { // another group starts the form over on its first tile
+				m.cancelForm()
+				f = newForm(providerGroups[m.group][0])
+				m.form = f
+			}
+			formRow(c, i18n.T("settings.models.provider"), func() ui.Element { return m.tiles(c, f) }, nil)
+		})
 	}
 	ui.Column(c).Gap(th.Space(3)).Children(func() {
 		formRow(c, i18n.T("settings.models.name"), func() ui.Element {
@@ -525,9 +530,9 @@ func (m *modelsView) capStatus(c *ui.Context, r capTest) {
 }
 
 // tiles are the providers, with what each can do.
-func (m *modelsView) tiles(c *ui.Context, f *modelForm) {
+func (m *modelsView) tiles(c *ui.Context, f *modelForm) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	ui.RadioGroup(c, func() {
+	return ui.RadioGroup(c, func() {
 		for _, p := range providerGroups[m.group] {
 			sub := i18n.T("settings.models.tile." + p)
 			if core.ModelProviderLogin(p) != "oauth" {
@@ -542,19 +547,18 @@ func (m *modelsView) tiles(c *ui.Context, f *modelForm) {
 				sub = strings.Join(caps, " · ")
 			}
 			name := svcProvider(p)
-			b := kit.Choice(c, ui.RadioBase(c.Key(p), &f.provider, p).Label(name).Grow(1).Basis(0).MinWidth(0).Radius(t.Radius.Xl).Padding(th.Space(2.5), th.Space(3)), f.provider == p, kit.ChoiceOpts{})
-			if b.Changed() { // another provider starts the form over
-				m.cancelForm()
-				m.form = newForm(p)
-			}
-			b.Children(func() {
+			b := kit.ChoiceCard(c, ui.RadioBase(c.Key(p), &f.provider, p).Label(name).Grow(1).Basis(0).MinWidth(0).Radius(t.Radius.Xl).Padding(th.Space(2.5), th.Space(3)), kit.ChoiceCardOpts{Selected: f.provider == p}, func() {
 				ui.Column(c).Gap(th.Space(0.5)).Children(func() {
 					ui.Text(c, name).FontWeight(500).SingleLine() // the row's CJK caption sets its line
 					kit.Text(c, sub, t.Text.Xs).TextColor(t.Muted).SingleLine()
 				})
 			})
+			if b.Changed() { // another provider starts the form over
+				m.cancelForm()
+				m.form = newForm(p)
+			}
 		}
-	}).Row().Label(i18n.T("settings.models.provider")).Gap(th.Space(2))
+	}).Row().Gap(th.Space(2))
 }
 
 // gatewayChips are the usual compatible services, to fill the address (and
@@ -566,7 +570,7 @@ func (m *modelsView) gatewayChips(c *ui.Context, f *modelForm) {
 		for _, g := range gateways {
 			name := cmp.Or(g.name, i18n.T("settings.models.local.name"))
 			on := f.baseURL == g.url
-			kit.ToggleChip(c.Key(g.url), name, on, kit.ChoiceOpts{}).Label(name + " " + i18n.T("settings.models.common")).
+			kit.ToggleChip(c.Key(g.url), name, on, kit.ChoiceDefault).Label(name + " " + i18n.T("settings.models.common")).
 				OnClick(func() { f.pickGateway(name, g.url) })
 		}
 	})
@@ -650,7 +654,7 @@ func (m *modelsView) modelPicker(c *ui.Context, f *modelForm, p picker) {
 			ph := i18n.Tf("settings.models.filter", len(p.offered))
 			kit.Input(c, &p.view.query, kit.InputOpts{Placeholder: ph, Flat: true, Size: kit.SizeSm}).Label(ph).Grow(1).MinWidth(theme.ModelIDInputWidth)
 			label := i18n.T("settings.models.only_on")
-			kit.ToggleChip(c, label, p.view.onlyOn, kit.ChoiceOpts{}).OnClick(func() { p.view.onlyOn = !p.view.onlyOn })
+			kit.ToggleChip(c, label, p.view.onlyOn, kit.ChoiceDefault).OnClick(func() { p.view.onlyOn = !p.view.onlyOn })
 			manual()
 		})
 	}
@@ -662,7 +666,7 @@ func (m *modelsView) modelPicker(c *ui.Context, f *modelForm, p picker) {
 				if n := f.names[name]; n != "" {
 					label, font = n, "" // a display name reads as prose, an ID as code
 				}
-				b := kit.ToggleChipFrame(c.Key(name), on, kit.ChoiceOpts{Dashed: true}).Label(label) // offered, in dashes, until it is added
+				b := kit.ToggleChipFrame(c.Key(name), on, kit.ChoiceDashed).Label(label) // offered, in dashes, until it is added
 				r := f.modelTests[p.cap+"\n"+name]
 				b.Children(func() {
 					if r.state != "" { // its test from the menu
@@ -766,16 +770,16 @@ func (m *modelsView) keyField(c *ui.Context, f *modelForm) {
 	}
 	formRow(c, label, func() ui.Element {
 		var in ui.Element
-		box := kit.InputGroup(c, kit.InputOpts{Invalid: f.keyErr != "", Flat: true}).Padding(0, th.Space(0.5), 0, 0)
-		box.Children(func() {
-			in = kit.Input(c, &f.key, kit.InputOpts{Password: !f.showKey, Placeholder: ph, Bare: true}).Grow(1).Shrink(1).PaddingX(th.Space(2.5)).OnSubmit(func() { m.fetch(f) })
-			icon, tip := "eye", i18n.T("settings.models.key.show")
-			if f.showKey {
-				icon, tip = "eye-off", i18n.T("settings.models.key.hide")
-			}
+		icon, tip := "eye", i18n.T("settings.models.key.show")
+		if f.showKey {
+			icon, tip = "eye-off", i18n.T("settings.models.key.hide")
+		}
+		in = kit.Input(c, &f.key, kit.InputOpts{Invalid: f.keyErr != "", Flat: true, Password: !f.showKey, Placeholder: ph,
 			// only what was typed this session: a stored key is never read into the form
-			kit.IconButton(c, icon, tip, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(func() { f.showKey = !f.showKey })
-		})
+			Trailing: func() {
+				kit.IconButton(c, icon, tip, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs}).OnClick(func() { f.showKey = !f.showKey })
+			},
+		}).OnSubmit(func() { m.fetch(f) })
 		focused := in.Focused()
 		if f.keyFocus && !focused {
 			m.fetch(f)

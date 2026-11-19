@@ -13,6 +13,7 @@ import (
 	"github.com/godwit-email/godwit/backend/jmap"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -46,33 +47,56 @@ func (p *mailPage) outboxView(c *ui.Context, title string, items []outboxEntry, 
 		if len(items) == 0 {
 			listEmpty(c, kit.EmptyOpts{Icon: "outbox", Title: i18n.T("mail.empty")})
 		}
-		ui.Column(c).Padding(0, th.Space(4)).Gap(th.Space(3)).Children(func() {
+		ui.Column(c).Padding(0, th.Space(2)).Gap(theme.Stroke).Children(func() {
 			for _, it := range items {
-				kit.Block(c, ui.Column(c.Key(it.ID)), kit.ToneOutline).Gap(th.Space(1)).Padding(th.Space(2.5)).Children(func() {
-					ui.Text(c, subjectOf(it.OutboxItem)).FontWeight(500).SingleLine()
-					kit.Text(c, it.Account, small).TextColor(t.Muted).SingleLine()
-					kit.Text(c, outboxStatus(it.OutboxItem, now), small).TextColor(t.Muted)
-					if it.State == "failed" {
-						why, server := failureText(it.OutboxItem)
-						kit.Text(c, why, small).TextColor(t.Danger)
-						if server != "" {
-							kit.Text(c, server, small).TextColor(t.Muted)
+				ui.Row(c.Key(it.ID)).AlignItems(ui.Start).Gap(th.Space(3)).Padding(th.Space(3), th.Space(2)).Children(func() {
+					outboxTile(c, it.OutboxItem, now)
+					ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(0.5)).Children(func() {
+						ui.Text(c, subjectOf(it.OutboxItem)).FontWeight(500).SingleLine()
+						status, color := outboxStatus(it.OutboxItem, now), t.Muted
+						var server string
+						if it.State == "failed" {
+							status, server = failureText(it.OutboxItem)
+							color = t.Danger
+						} else if it.LastError != "" {
+							status += " · " + it.LastError
 						}
-					} else if it.LastError != "" {
-						kit.Text(c, it.LastError, small).TextColor(t.Danger)
-					}
-					if acts := p.outboxActions(it.OutboxItem, now); len(acts) > 0 {
-						ui.Row(c).Wrap().Gap(th.Space(1.5)).Margin(th.Space(1), 0, 0, 0).Children(func() {
-							for _, act := range acts {
-								o := act.o
-								o.Size = kit.SizeSm
-								kit.Button(c, i18n.T("outbox."+act.key), o).OnClick(act.do)
-							}
-						})
-					}
+						kit.Text(c, status+" · "+it.Account, small).TextColor(color)
+						if server != "" {
+							kit.Text(c, server, small).FontWeight(500).TextColor(t.Muted)
+						}
+						if acts := p.outboxActions(it.OutboxItem, now); len(acts) > 0 {
+							ui.Row(c).Wrap().Gap(th.Space(2)).Margin(th.Space(1.5), 0, 0, 0).Children(func() {
+								for _, act := range acts {
+									o := act.o
+									o.Size = kit.SizeSm
+									kit.Button(c, i18n.T("outbox."+act.key), o).OnClick(act.do)
+								}
+							})
+						}
+					})
 				})
 			}
 		})
+	})
+}
+
+// outboxTile is the 28 tile leading an item, by its state: a failure in the
+// danger tint, mail that may have gone out in the warning one, and what waits
+// (an undo window, a retry, its time) in the neutral one.
+func outboxTile(c *ui.Context, it core.OutboxItem, now time.Time) {
+	t, th := theme.Of(c), c.Theme()
+	icon, fill, ink := "time", t.Hover, t.Muted
+	switch {
+	case it.State == "failed":
+		icon, fill, ink = "triangle-alert", t.DangerBg, t.DangerText
+	case it.State == "send_uncertain" || it.State == "archive_uncertain":
+		icon, fill, ink = "question", t.WarningBg, t.WarningText
+	case it.State == "queued" && it.NextAttempt.After(now):
+		icon = "refresh-cw"
+	}
+	kit.Tile(c, th.Space(7), th.Space(7), kit.ToneCard).Background(fill).Children(func() {
+		ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon).TextColor(ink)
 	})
 }
 

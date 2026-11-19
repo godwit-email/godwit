@@ -164,7 +164,6 @@ func TestSettingsProxyMode(t *testing.T) {
 	h.tt.ClickAt(dark.X+dark.W-8, (lab.Y+src.Y+src.H)/2)
 	h.drain()
 	h.tt.Frame()
-	h.see("不使用代理")
 	h.click("不使用代理")
 	h.until("proxy mode off", func() bool { return h.app.settings.ProxyMode == "off" })
 	st, err := h.env.Svc.GetSettings(context.Background())

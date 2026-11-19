@@ -11,7 +11,7 @@ type GalleryState struct {
 	Switch, Switch2, Check                bool
 	Radio, Select, Tabs                   int
 	Nav                                   int
-	Input, Password, Mono, Bare, Area     string
+	Input, Password, Mono, Search, Area   string
 	InvalidIn, HelpIn, ErrorIn            string
 	Dialog, Confirm, Popover, Collapsible bool
 	Group                                 bool
@@ -65,7 +65,11 @@ func Gallery(c *ui.Context, g *GalleryState) {
 					Input(c, &g.InvalidIn, InputOpts{Placeholder: "Invalid", Invalid: true})
 					Input(c, &g.Password, InputOpts{Placeholder: "Password", Password: true})
 					Input(c, &g.Mono, InputOpts{Placeholder: "Mono", Mono: true})
-					Input(c, &g.Bare, InputOpts{Placeholder: "Bare", Bare: true})
+					Input(c, &g.Search, InputOpts{Placeholder: "Search", Leading: func() { InputIcon(c, "search") }, Trailing: func() {
+						if g.Search != "" {
+							IconButton(c, "x", "Clear", ButtonOpts{Variant: Ghost, Size: SizeXs}).OnClick(func() { g.Search = "" })
+						}
+					}})
 				})
 			})
 			section("TextArea", func() {
@@ -89,7 +93,7 @@ func Gallery(c *ui.Context, g *GalleryState) {
 			})
 			section("Switch", func() {
 				Switch(c, &g.Switch).Label("Bare switch")
-				SwitchRow(c, &g.Switch2, "Switch row", "Help under the row")
+				FieldWith(c, FieldOpts{Horizontal: true, Switch: &g.Switch2}, "Switch row", "Help under the row", "", nil)
 			})
 			section("Tabs", func() {
 				labels := TabLabels("Tab A", "Tab B", "Tab C")
@@ -166,9 +170,16 @@ func Gallery(c *ui.Context, g *GalleryState) {
 			})
 			section("Choice", func() {
 				row(func() {
-					ToggleChip(c, "On", true, ChoiceOpts{})
-					ToggleChip(c, "Off", false, ChoiceOpts{})
-					ToggleChip(c, "Offered", false, ChoiceOpts{Dashed: true})
+					ToggleChip(c, "On", true, ChoiceDefault)
+					ToggleChip(c, "Off", false, ChoiceDefault)
+					ToggleChip(c, "Offered", false, ChoiceDashed)
+				})
+				ui.Column(c).Gap(th.Space(2)).Width(theme.SheetWidth).Children(func() {
+					for i, look := range []ChoiceLook{ChoiceDefault, ChoiceOnCard, ChoiceDashed} {
+						ChoiceCard(c, ui.RadioBase(c.Key(i), &g.Radio, i).Label("Card "+string(rune('1'+i))), ChoiceCardOpts{Selected: g.Radio == i, Look: look, Radio: true}, func() {
+							ChoiceText(c, "Card "+string(rune('1'+i)), "Help text")
+						})
+					}
 				})
 			})
 			section("Badge", func() {
@@ -246,7 +257,7 @@ func Gallery(c *ui.Context, g *GalleryState) {
 					for _, o := range []struct {
 						l string
 						o PressableOpts
-					}{{"Plain press", PressableOpts{}}, {"Bordered press", PressableOpts{Bordered: true}}, {"Selected press", PressableOpts{Selected: true}}} {
+					}{{"Plain press", PressableOpts{}}, {"Selected press", PressableOpts{Selected: true}}} {
 						Pressable(c, o.o).Padding(th.Space(2)).Children(func() { ui.Text(c, o.l) })
 					}
 				})

@@ -427,16 +427,7 @@ func hairline(c *ui.Context) {
 // settingRow is a labelled control: label and description on the left, the
 // control on the right; at least 48 high.
 func settingRow(c *ui.Context, label, desc string, control func()) ui.Element {
-	t, th := theme.Of(c), c.Theme()
-	return ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
-		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-			kit.Text(c, label, t.Text.Sm)
-			if desc != "" {
-				kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted)
-			}
-		})
-		control()
-	})
+	return kit.FieldWith(c, kit.FieldOpts{Horizontal: true}, label, desc, "", control)
 }
 
 // settingBlock is a card row of free content (padded like a settingRow).
@@ -529,7 +520,7 @@ func (p *settingsPage) localAPIView(c *ui.Context) {
 			settingBlock(c, func() { kit.Alert(c, kit.ToneInfo, i18n.T("settings.local_api.always"), nil) })
 			return
 		}
-		kit.SwitchRow(c, &p.st.LocalAPI, i18n.T("settings.local_api.on"), i18n.T("settings.local_api.help"))
+		kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &p.st.LocalAPI}, i18n.T("settings.local_api.on"), i18n.T("settings.local_api.help"), "", nil)
 	}}
 	path := a.localAPIPath()
 	if path != "" {
@@ -603,13 +594,13 @@ func (p *settingsPage) clientsPage(c *ui.Context) {
 func (p *settingsPage) securityView(c *ui.Context) {
 	settingsSection(c, i18n.T("settings.security"), "",
 		func() {
-			kit.SwitchRow(c, &p.st.SecurityWarnings, i18n.T("settings.security.warnings"), i18n.T("settings.security.warnings.help"))
+			kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &p.st.SecurityWarnings}, i18n.T("settings.security.warnings"), i18n.T("settings.security.warnings.help"), "", nil)
 		},
 		func() {
-			kit.SwitchRow(c, &p.st.VerifiedBadge, i18n.T("settings.security.verified"), i18n.T("settings.security.verified.help"))
+			kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &p.st.VerifiedBadge}, i18n.T("settings.security.verified"), i18n.T("settings.security.verified.help"), "", nil)
 		},
 		func() {
-			kit.SwitchRow(c, &p.st.SecurityAI, i18n.T("settings.security.ai"), i18n.T("settings.security.ai.help"))
+			kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &p.st.SecurityAI}, i18n.T("settings.security.ai"), i18n.T("settings.security.ai.help"), "", nil)
 		},
 	)
 	if p.st.SecurityWarnings || p.st.VerifiedBadge || p.st.SecurityAI {
@@ -872,7 +863,7 @@ func (a *App) mcpConfig() string {
 func (p *settingsPage) aboutView(c *ui.Context) {
 	t, th, a := theme.Of(c), c.Theme(), p.a
 	p.bird()
-	ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(1)).Children(func() {
+	ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(3)).Children(func() {
 		ui.Column(c).FillWidth().Height(theme.AboutBird).Center().Children(func() {
 			if p.birdView != nil {
 				kit.WebView(c, p.birdView).FillWidth().Height(theme.AboutBird) // on the panel's color (NewBirdView)
@@ -880,8 +871,18 @@ func (p *settingsPage) aboutView(c *ui.Context) {
 				ui.Icon(c, logo).Size(theme.Logo, theme.Logo).TextColor(t.Foreground)
 			}
 		})
-		kit.Text(c, "Godwit", t.Text.Xl).FontWeight(600)
-		ui.Text(c, i18n.Tf("settings.about.version", Version)).TextColor(t.Muted)
+		ui.Column(c).AlignItems(ui.Center).Gap(th.Space(1)).Children(func() {
+			kit.Text(c, "Godwit", t.Text.Xl).FontWeight(600)
+			ui.Text(c, i18n.Tf("settings.about.version", Version+" ("+runtime.GOOS+"/"+runtime.GOARCH+")")).TextColor(t.Muted).Selectable()
+		})
+		// Either opens the updater's window (the Store's page): up to date, or the newer version to install.
+		label, v := i18n.T("settings.about.updates.check"), kit.Outline
+		if a.latest != "" {
+			label, v = i18n.Tf("settings.about.upgrade", a.latest), kit.Default
+		}
+		if kit.Button(c, label, kit.ButtonOpts{Variant: v, Size: kit.SizeSm}).Margin(th.Space(1), 0, 0, 0).Clicked() {
+			a.plat.CheckForUpdates()
+		}
 	})
 	// value is a row's muted value on the right, a button with icon after it.
 	value := func(text, icon string) bool {
@@ -894,28 +895,12 @@ func (p *settingsPage) aboutView(c *ui.Context) {
 		a.do(func(context.Context) error { return a.plat.OpenURL(url) }, a.toastErr)
 	}
 	rows := []func(){func() {
-		settingRow(c, i18n.T("settings.about.build"), "", func() {
-			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "Godwit "+Version+" ("+runtime.GOOS+"/"+runtime.GOARCH+")").TextColor(t.Muted).Selectable()
-				// Either opens the updater's window (the Store's page): up to date, or the newer version to install.
-				label, v := i18n.T("settings.about.updates.check"), kit.Outline
-				if a.latest != "" {
-					label, v = i18n.Tf("settings.about.upgrade", a.latest), kit.Default
-				}
-				if settingButton(c, label, v, false).Clicked() {
-					a.plat.CheckForUpdates()
-				}
-			})
-		})
-	}, func() {
 		settingRow(c, i18n.T("settings.about.license"), "", func() {
 			if value("Apache-2.0", "arrow-up-right") {
 				open(repoURL + "/blob/main/LICENSE")
 			}
 		})
-	}}
-	settingsCard(c, rows...)
-	links := []func(){func() {
+	}, func() {
 		settingRow(c, i18n.T("settings.about.source"), "", func() {
 			if !p.starred {
 				p.starButton(c)
@@ -929,7 +914,7 @@ func (p *settingsPage) aboutView(c *ui.Context) {
 		{"settings.about.changelog", "GitHub Releases", repoURL + "/releases"},
 		{"settings.about.feedback", "GitHub Issues", repoURL + "/issues"},
 	} {
-		links = append(links, func() {
+		rows = append(rows, func() {
 			settingRow(c, i18n.T(l.key), "", func() {
 				if value(l.value, "arrow-up-right") {
 					open(l.url)
@@ -937,7 +922,7 @@ func (p *settingsPage) aboutView(c *ui.Context) {
 			})
 		})
 	}
-	settingsSection(c, i18n.T("settings.about.links"), "", links...)
+	settingsCard(c, rows...)
 }
 
 // starButton stars Godwit's repository with the GitHub CLI; without gh it

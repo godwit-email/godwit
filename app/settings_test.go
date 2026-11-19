@@ -270,12 +270,12 @@ func TestSettingsDefaultAccount(t *testing.T) {
 	h.until("initial load", func() bool { return h.app.loaded })
 	h.openSettings(accountRoute(b.ID))
 	h.see("bob@example.com")
-	if _, badge := h.tt.Find("默认发件"); badge {
+	if h.tt.HasText("· 默认发件") {
 		t.Fatalf("bob shows as the default: %q", h.tt.Texts())
 	}
 	h.click("设为默认发件账户")
 	h.until("bob is the default", func() bool { return h.account(b.ID).IsDefault && !h.account(a.ID).IsDefault })
-	h.until("the badge", func() bool { _, badge := h.tt.Find("默认发件"); return badge })
+	h.until("the header says so", func() bool { return h.tt.HasText("· 默认发件") })
 }
 
 func TestSettingsReorderAccounts(t *testing.T) {
@@ -1066,19 +1066,19 @@ func TestAccountHeaderMeta(t *testing.T) {
 	}
 	h.syncedHoursAgo(acc.ID, 3)
 	h.see("已同步 · 3 小时前")
-	// The sidebar footer shows the same text, so find the chip by its place: on the badge's row, right of it.
-	badge, ok := h.tt.Find("默认发件")
+	// The header's sync status follows the meta, a green dot left of its text.
+	status, ok := h.tt.Find("已同步 · 3 小时前")
 	if !ok {
-		t.Fatalf("no badge: %q", h.tt.Texts())
+		t.Fatalf("no sync status: %q", h.tt.Texts())
 	}
-	img, want, found := h.tt.Image(), theme.Dark().SuccessBg.SRGB(), false
-	y := int(badge.Y + badge.H/2)
-	for x := int(badge.X + badge.W); x < int(badge.X+badge.W)+400 && !found; x++ {
+	img, want, found := h.tt.Image(), theme.Dark().Success.SRGB(), false
+	y := int(status.Y + status.H/2)
+	for x := int(status.X) - 1; x > int(status.X)-theme.Icon && !found; x-- {
 		got := img.RGBAAt(x, y)
 		found = max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)) <= 8
 	}
 	if !found {
-		t.Fatalf("no dark SuccessBg chip on the badge's row %d", y)
+		t.Fatalf("no Success dot left of the status on row %d", y)
 	}
 }
 

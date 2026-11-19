@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/plugins"
+	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -29,6 +31,8 @@ type shotEnv struct {
 	*harness
 	you, work core.Account
 	llm       *coretest.LLM
+	design    bool             // shotDesignMail's: threads, labels and gists as the design draws them
+	gists     map[int64]string // a folded message's AI gist, by message
 }
 
 func day(m, d, hh, mm int) time.Time {
@@ -45,9 +49,18 @@ func (h *harness) putSeen(acc core.Account, folder string, raw []byte) {
 
 // shotMail seeds the design's inbox. set adjusts the settings (summary and
 // quick replies are on unless it turns them off).
-func shotMail(t *testing.T, set func(*core.Settings)) *shotEnv {
+func shotMail(t *testing.T, set func(*core.Settings)) *shotEnv { return shotMailWith(t, set, false) }
+
+// shotDesignMail is shotMail with the reader's states the design draws on its
+// main artboards: the proposal a thread of three, a long thread under a
+// history card, labels on the rows, the folded messages' gists.
+func shotDesignMail(t *testing.T, set func(*core.Settings)) *shotEnv {
+	return shotMailWith(t, set, true)
+}
+
+func shotMailWith(t *testing.T, set func(*core.Settings), design bool) *shotEnv {
 	t.Helper()
-	s := &shotEnv{}
+	s := &shotEnv{design: design}
 	h := newHarnessWith(t, nil, func(e *coretest.Env) {
 		s.you, s.work = addQQ(t, e, "you@example.com"), e.AddAccount(t, "work@company.example")
 		def := true // the second account took the default
@@ -61,6 +74,9 @@ func shotMail(t *testing.T, set func(*core.Settings)) *shotEnv {
 			t.Fatal(err)
 		}
 		st.Summary, st.QuickReplies = true, true
+		if design {
+			st.AutoLabel = false // the labels are put by hand: the classifier would take the scripted model turns
+		}
 		if set != nil {
 			set(&st)
 		}
@@ -79,9 +95,14 @@ func shotMail(t *testing.T, set func(*core.Settings)) *shotEnv {
 	flightHTML := `<p>尊敬的旅客：</p><p>你预订的 NW 1858 航班将于明天 14:20 起飞。</p>` + strings.Repeat(`<img src="https://img.northwind.example/p.png">`, 3)
 	h.put(you, "INBOX", m("Code Host <noreply@codehost.example>", "[Code Host] 你的登录验证码", "有人正在尝试登录你的账户，验证码 482913，10 分钟内有效。", "otp@x", day(10, 9, 9, 41)))
 	h.put(you, "INBOX", m("Northwind Airlines <checkin@northwind.example>", "值机提醒：NW 1858 上海 → 成都", "你的航班将于明天 14:20 起飞，现已开放在线值机。", "fl@x", day(10, 9, 8, 15), coretest.HTML(flightHTML)))
+	lena := []coretest.MsgOption{coretest.Attachment("Q4-proposal.pdf", "application/pdf", make([]byte, 218*1024*3/4))}
+	if design {
+		lena = append(lena, coretest.InReplyTo("alex@x"))
+		h.putDesignThreads(you, m)
+	}
 	h.putSeen(you, "INBOX", m("Lena Fischer <lena@partner.example>", "Q4 partnership proposal",
 		"Hi,\n\nFollowing up on our call last week, I put together a draft proposal for the Q4 partnership. The main points are a shared launch in November and a joint webinar.\n\nCould you take a look and let me know by Friday whether the timeline works on your side?\n\nBest, Lena",
-		"lena@x", day(10, 8, 21, 3), coretest.Attachment("Q4-proposal.pdf", "application/pdf", make([]byte, 218*1024*3/4))))
+		"lena@x", day(10, 8, 21, 3), lena...))
 	h.putSeen(you, "INBOX", m("财务部 <finance@company.example>", "10 月报销单已审批通过", "你提交的 10 月差旅报销单已审批通过，款项将于 3 个工作日内到账。", "fin@x", day(10, 5, 11, 0)))
 	h.putSeen(you, "INBOX", m("Acme Cloud <billing@acme.example>", "Your receipt for October", "Thanks for your payment. Amount: [AMOUNT]", "acme@x", day(10, 2, 9, 0)))
 	h.putSeen(you, "Sent", coretest.Msg("Me <you@example.com>", "Lena Fischer <lena@partner.example>", "Re: proposal timeline", "Sounds good. Let us aim to finalize the proposal by Friday.", coretest.MessageID("sent@x"), coretest.Date(day(10, 3, 10, 0))))
@@ -97,7 +118,104 @@ func shotMail(t *testing.T, set func(*core.Settings)) *shotEnv {
 	h.waitMail("the sample mail", func() bool {
 		return h.tt.HasText("Q4 partnership proposal") && h.tt.HasText("Your receipt for October")
 	})
+	if design {
+		s.labelDesignMail()
+	}
 	return s
+}
+
+// putDesignThreads puts the proposal's two earlier messages and the long
+// thread, before the proposal that answers them (m builds a message to you).
+func (h *harness) putDesignThreads(you core.Account, m func(from, subj, body, id string, when time.Time, o ...coretest.MsgOption) []byte) {
+	lena, alex := "Lena Fischer <lena@partner.example>", "Alex Kim <alex@partner.example>"
+	h.putSeen(you, "INBOX", m(lena, "Q4 partnership proposal", "提议 10 月底联合发布，附初版方案。", "lena0@x", day(10, 2, 10, 0)))
+	h.putSeen(you, "INBOX", m(alex, "Re: Q4 partnership proposal", "10 月排不开，建议改到 11 月。", "alex@x", day(10, 3, 15, 0), coretest.InReplyTo("lena0@x")))
+	people := []string{"Mark Chen <mark@partner.example>", lena, alex, "Mark Chen <mark@partner.example>", lena, alex, "Mark Chen <mark@partner.example>", "Sofia Rossi <sofia@partner.example>"}
+	notes := []string{"法务审完了第一版协议", "研讨会的嘉宾名单有变动", "预算表更新了，见附件", "新闻稿第二稿，请批注", "落地页文案定稿", "发布日期待定", "合同条款已确认", "汇总一下目前的结论"}
+	parent := ""
+	for i, from := range people {
+		id := fmt.Sprintf("long%d@x", i)
+		body := notes[i] + "。"
+		if i == len(people)-1 {
+			body = "Hi all,\n\n汇总一下目前的结论，按模块列在下面。每一块后面写了负责人，请各自确认，有出入的直接回复这封。\n\n发布日期：定在 11 月的第二周。具体哪一天，等场地确认之后再定，两边都留了机动时间。\n\n下一步：请各位在周五前回复确认自己负责的部分。"
+		}
+		opts := []coretest.MsgOption{}
+		if parent != "" {
+			opts = append(opts, coretest.InReplyTo(parent))
+		}
+		h.putSeen(you, "INBOX", m(from, "11 月联合发布：计划与分工", body, id, day(10, 1+i, 18, 40), opts...))
+		parent = id
+	}
+}
+
+// idOf is the inbox message whose text starts with phrase.
+func (s *shotEnv) idOf(phrase string) int64 {
+	h := s.harness
+	h.t.Helper()
+	inbox, err := h.env.Svc.ListMessages(context.Background(), core.View{Unified: "inbox"}, "", 200)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	i := slices.IndexFunc(inbox.Items, func(m core.MessageSummary) bool { return strings.Contains(m.Snippet, phrase) })
+	if i < 0 {
+		h.t.Fatalf("no message with %q among %d", phrase, len(inbox.Items))
+	}
+	return inbox.Items[i].ID
+}
+
+// labelDesignMail puts the design's labels on the rows, and the gists on the
+// proposal's folded messages, which the reader asks the model for otherwise.
+func (s *shotEnv) labelDesignMail() {
+	h := s.harness
+	ctx := context.Background()
+	ids := map[string]int64{} // by a phrase of the message's start
+	for _, phrase := range []string{"验证码 482913", "现已开放在线值机", "提议 10 月底", "10 月排不开", "Following up on our call", "汇总一下目前", "报销单已审批通过", "新闻稿第二稿", "落地页文案定稿", "发布日期待定", "合同条款已确认"} {
+		ids[phrase] = s.idOf(phrase)
+	}
+	labels, err := h.env.Svc.ListLabels(ctx)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	named := map[string]int64{}
+	for _, l := range labels {
+		named[l.Slug] = l.ID
+	}
+	for name, in := range map[string]core.LabelInput{
+		"q4":      {Name: "Q4 项目", Color: "violet", Icon: "briefcase-4"},
+		"expense": {Name: "报销", Color: "pink", Icon: "money-dollar-circle"},
+	} {
+		l, err := h.env.Svc.CreateLabel(ctx, in)
+		if err != nil {
+			h.t.Fatal(err)
+		}
+		named[name] = l.ID
+	}
+	for _, put := range []struct {
+		phrase string
+		labels []string
+	}{
+		{"验证码 482913", []string{"otp"}},
+		{"现已开放在线值机", []string{"travel", "calendar", "order"}}, // not notice: core gives a notice no quick replies
+		{"Following up on our call", []string{"q4"}},
+		{"汇总一下目前", []string{"q4"}},
+		{"报销单已审批通过", []string{"expense", "notice"}},
+	} {
+		for _, slug := range put.labels {
+			if err := h.env.Svc.SetLabel(ctx, []int64{ids[put.phrase]}, named[slug], true); err != nil {
+				h.t.Fatal(err)
+			}
+		}
+	}
+	s.gists = map[int64]string{
+		ids["提议 10 月底"]: "提议 10 月底联合发布，附初版方案",
+		ids["10 月排不开"]:  "10 月排不开，建议改到 11 月",
+		ids["新闻稿第二稿"]:   "新闻稿第二稿，请批注",
+		ids["落地页文案定稿"]:  "落地页文案定稿",
+		ids["发布日期待定"]:   "发布日期待定",
+		ids["合同条款已确认"]:  "合同条款已确认",
+	}
+	s.app.mail.reader.gistFn = func(_ context.Context, id int64) (string, error) { return s.gists[id], nil }
+	h.waitMail("the labels", func() bool { return h.tt.HasText("Q4 项目") && h.tt.HasText("航班与出行") })
 }
 
 // addQQ adds the default account as a QQ mailbox on fake servers, so its
@@ -230,9 +348,17 @@ func TestShots(t *testing.T) {
 	// replies (the fake model answers in the order scripted).
 	openLena := func(s *shotEnv) {
 		writeSkill(t, s.env, "brief") // the design's 更多 Skill
-		s.llm.Script(coretest.Turn{Text: []string{"- 对方发来 Q4 合作提案草稿（附件 PDF）。\n- 要点：11 月联合发布、一场联合网络研讨会。\n- 需要你在周五前确认时间安排是否可行。\n"}})
+		todo := "需要你在周五前确认"
+		if s.design { // the thread's digest, each step citing its message
+			cite := func(phrase string) string { return fmt.Sprintf(` <mail id="%d"/>`, s.idOf(phrase)) }
+			todo = "周五前回复，确认 11 月的时间是否可行"
+			s.llm.Script(coretest.Turn{Text: []string{"- 提议 10 月底联合发布" + cite("提议 10 月底") + "\n- 你回复 10 月排不开，希望改到 11 月" + cite("10 月排不开") +
+				"\n- 发来修订提案：11 月联合发布，加一场联合研讨会（附件 PDF）" + cite("Following up on our call") + "\nTODO: " + todo + "\n"}})
+		} else {
+			s.llm.Script(coretest.Turn{Text: []string{"- 对方发来 Q4 合作提案草稿（附件 PDF）。\n- 要点：11 月联合发布、一场联合网络研讨会。\n- 需要你在周五前确认时间安排是否可行。\n"}})
+		}
 		s.click("Q4 partnership proposal")
-		s.see("需要你在周五前确认")
+		s.see(todo)
 		s.llm.Script(coretest.Turn{Text: []string{`{"replies":[{"label":"同意","html":"<p>Hi Lena, thanks for the proposal. November works for us, happy to move ahead.</p>"},{"label":"同意但调整","html":"<p>Hi Lena, November works, but could we move the webinar one week later?</p>"},{"label":"稍后答复","html":"<p>Hi Lena, thanks! I will review it with the team and get back to you by Friday.</p>"}]}`}})
 		quick(s)
 		s.see("Hi Lena, thanks! I will review it")
@@ -276,7 +402,7 @@ func TestShots(t *testing.T) {
 	})
 
 	t.Run("Main", func(t *testing.T) {
-		s := shotMail(t, noQuick)
+		s := shotDesignMail(t, noQuick)
 		openLena(s)
 		shot(s.harness, "Main")
 		*s.app.mail.accountOpen(s.work.ID) = true
@@ -331,17 +457,45 @@ func TestShots(t *testing.T) {
 		shot(s.harness, "MainWindows")
 	})
 	t.Run("MainDefault", func(t *testing.T) { // the design's default window
-		s := shotMail(t, noQuick)
+		s := shotDesignMail(t, noQuick)
 		s.resize(1280, 820)
 		openLena(s)
 		shot(s.harness, "MainDefault")
 	})
 	t.Run("MainCompact", func(t *testing.T) { // the least window, with the sidebar folded (surface mail-compact)
-		s := shotMail(t, noQuick)
+		s := shotDesignMail(t, noQuick)
 		s.resize(960, 600)
 		s.app.sidebarHidden = true
 		openLena(s)
 		shot(s.harness, "MainCompact")
+	})
+	t.Run("MainLongThread", func(t *testing.T) { // a long thread under its history card, no summary (129:303)
+		s := shotDesignMail(t, noQuick)
+		todo := "周五前确认自己负责的部分"
+		s.llm.Script(coretest.Turn{Text: []string{"- 目前的结论已按模块汇总\nTODO: " + todo + "\n"}})
+		s.click("11 月联合发布：计划与分工")
+		s.see(todo)
+		s.see("展开历史邮件（3 封）")
+		s.post(func() { s.app.mail.reader.toggleSummary() }) // the design shows the thread without it
+		s.until("the summary hidden", func() bool { s.tt.Frame(); return !s.tt.HasText(todo) })
+		shot(s.harness, "MainLongThread")
+	})
+	t.Run("MainAttachments", func(t *testing.T) { // a message with several attachments, one chosen (215:2091)
+		s := shotDesignMail(t, noQuick)
+		file := func(name, kind string, kb int) coretest.MsgOption {
+			return coretest.Attachment(name, kind, make([]byte, kb*1024*3/4))
+		}
+		s.putSeen(s.you, "INBOX", coretest.Msg("Lena Fischer <lena@partner.example>", s.you.Email, "Q4 revised proposal",
+			"Hi,\n\nThanks for the quick reply. November works on our side. I have attached a revised proposal and the webinar dates.",
+			coretest.MessageID("rev@x"), coretest.Date(day(10, 8, 22, 0)),
+			file("proposal-revised.pdf", "application/pdf", 218), file("webinar-dates.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 86)))
+		s.syncNow(s.you)
+		s.waitMail("the revised proposal", func() bool { return s.tt.HasText("Q4 revised proposal") })
+		s.click("Q4 revised proposal")
+		s.see("proposal-revised.pdf")
+		s.click(i18n.Tf("reader.attachments.select_item", "proposal-revised.pdf"))
+		s.see(i18n.Tf("reader.attachments.selected", 1, 2))
+		shot(s.harness, "MainAttachments")
 	})
 	t.Run("MainDrafts", func(t *testing.T) {
 		s := shotMail(t, noAuto)
@@ -383,7 +537,7 @@ func TestShots(t *testing.T) {
 		shot(s.harness, "MainProgramDraftEditing")
 	})
 	t.Run("MainOlder", func(t *testing.T) { // the row while older mail loads (no artboard: compared by eye)
-		s := shotMail(t, noAuto)
+		s := shotDesignMail(t, noAuto)
 		f := s.folderOf(s.you, "inbox")
 		s.post(func() { s.app.navigate(Route{Page: PageMail, View: core.View{FolderID: f.ID}}) })
 		s.until("the folder", func() bool { return s.app.mail.view.FolderID == f.ID && !s.app.mail.list.loading })
@@ -413,7 +567,7 @@ func TestShots(t *testing.T) {
 		shot(s.harness, "MainSearch")
 	})
 	t.Run("MainOTP", func(t *testing.T) {
-		s := shotMail(t, noAuto)
+		s := shotDesignMail(t, noAuto)
 		writeSkill(t, s.env, "brief")
 		// the built-in sign-in codes plugin draws the card
 		s.click("[Code Host] 你的登录验证码")
@@ -421,7 +575,7 @@ func TestShots(t *testing.T) {
 		shot(s.harness, "MainOTP")
 	})
 	t.Run("MainFlight", func(t *testing.T) {
-		s := shotMail(t, noAuto)
+		s := shotDesignMail(t, noAuto)
 		writeSkill(t, s.env, "brief")
 		shotPlugin(t, s.harness, "flight-cards", "NW 1858", `{ title: "航班 NW 1858 · 明天 14:20 起飞 · 登机口 [待定]", fields: [{ label: "", value: "PVG → CTU" }, { label: "座位", value: "[待选] · 行李额 [待确认]" }], buttons: [{ label: "在线值机", kind: "open-url", value: "https://northwind.example/checkin" }] }`)
 		s.click("值机提醒：NW 1858 上海 → 成都")
@@ -762,7 +916,7 @@ func TestShots(t *testing.T) {
 		openLena(s)
 		s.app.toastAs(kit.ToastSuccess, "邮件已发送")
 		s.app.toastAs(kit.ToastWarning, "work@company.example 没有归档文件夹，已跳过")
-		s.app.toasts = append(s.app.toasts, ui.Toast{ID: "archived", Title: "已归档", Action: "撤销", Data: kit.ToastData{Deadline: s.clock.Now().Add(core.UndoArchiveWindow)}})
+		s.app.toasts = append(s.app.toasts, ui.Toast{ID: "archived", Title: "已归档 3 封", Action: "撤销", Data: kit.ToastData{Deadline: s.clock.Now().Add(core.UndoArchiveWindow)}})
 		s.see("撤销")
 		s.tt.Advance(2 * theme.MotionBase)
 		shot(s.harness, "Toasts")
@@ -780,6 +934,29 @@ func TestShots(t *testing.T) {
 		s.advance(debounce)
 		s.see("识别为 QQ 邮箱")
 		shot(s.harness, "AddAccountSheet")
+	})
+	t.Run("AddAccountConnected", func(t *testing.T) {
+		plaintext(t)
+		s := shotMail(t, noAuto)
+		s.openSettings(accountRoute(s.you.ID))
+		s.app.openAddAccount()
+		s.see("添加账户")
+		s.fill("邮箱地址", "12345678@qq.com")
+		s.advance(debounce)
+		s.see("识别为 QQ 邮箱")
+		s.click("继续")
+		s.see("授权码")
+		s.manualServers()
+		s.fill("授权码", "abcdefghijk")
+		shot(s.harness, "AddAccountManual")
+		s.click("连接")
+		s.see("连接成功")
+		s.tt.Advance(confettiLife)
+		shot(s.harness, "AddAccountConnected")
+		s.click("完成")
+		s.until("the new account's settings", func() bool { return s.app.addAccount == nil && s.app.route.Settings != accountRoute(s.you.ID) })
+		s.see("设为默认发件账户")
+		shot(s.harness, "AddAccountNewAccount")
 	})
 	// onboarding starts the first run, on fake servers for the checks.
 	onboarding := func(t *testing.T) *harness {
@@ -803,6 +980,7 @@ func TestShots(t *testing.T) {
 		h.fill("授权码", "abcdefghijk")
 		shot(h, "OnboardingPassword")
 		h.manualServers()
+		shot(h, "OnboardingManualServers")
 		h.fill("授权码", "wrong")
 		h.click("连接")
 		h.see("连接失败")

@@ -96,10 +96,9 @@ func fileReady(d *core.RuleDoc) bool {
 func (v *rulesView) fileDir(c *ui.Context, d *core.RuleDoc, i int) {
 	t, th := theme.Of(c), c.Theme()
 	dir := d.Actions[i].Dir
-	b := kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { v.pickDir(d, i) }}).
+	kit.ChoiceCard(c, kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { v.pickDir(d, i) }}).
 		Label(i18n.T("settings.rules.files.choose")).Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(1.5)).
-		Radius(t.Radius.Lg).AlignItems(ui.Center).Grow(1).Shrink(1).Basis(0).MinWidth(0)
-	b.Children(func() {
+		Radius(t.Radius.Lg).AlignItems(ui.Center).Grow(1).Shrink(1).Basis(0).MinWidth(0), kit.ChoiceCardOpts{}, func() {
 		ui.Icon(c, icons.Get("folder")).Size(theme.Icon, theme.Icon).TextColor(t.Muted).Shrink(0)
 		if dir == "" {
 			kit.Text(c, i18n.T("settings.rules.files.choose"), t.Text.Xs).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1).MinWidth(0)

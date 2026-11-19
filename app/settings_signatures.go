@@ -131,7 +131,7 @@ func (p *settingsPage) signaturesView(c *ui.Context) {
 	p.syncSettings()
 	defer p.syncSettings() // what the switch changed while building
 	settingsSection(c, i18n.T("settings.signatures.options"), "", func() {
-		kit.SwitchRow(c, &p.st.SignatureDelimiter, i18n.T("settings.signatures.delimiter"), i18n.T("settings.signatures.delimiter.help"))
+		kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &p.st.SignatureDelimiter}, i18n.T("settings.signatures.delimiter"), i18n.T("settings.signatures.delimiter.help"), "", nil)
 	})
 }
 

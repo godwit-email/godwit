@@ -982,16 +982,16 @@ func (r *reader) replyBar(c *ui.Context) ui.Element {
 					})
 				}
 			}
-			field := kit.InputGroup(c, kit.InputOpts{Flat: true, Size: kit.SizeLg}).Padding(0, th.Space(1), 0, th.Space(3)).Gap(th.Space(1))
+			var field ui.Element
+			in := kit.Input(c, &r.replyAsk, kit.InputOpts{Flat: true, Size: kit.SizeLg, Placeholder: i18n.Tf("reader.reply_wit", r.replyName(target)), Box: &field,
+				Trailing: func() {
+					kit.IconButton(c, "arrow-up", i18n.T("reader.ask_wit"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(r.askReply)
+				},
+			}).Label(i18n.T("reader.ask_wit"))
+			if in.Submitted() {
+				r.askReply()
+			}
 			kit.ToastBar(c, bar, field)
-			field.Children(func() {
-				name := r.replyName(target)
-				in := kit.Input(c, &r.replyAsk, kit.InputOpts{Bare: true, Placeholder: i18n.Tf("reader.reply_wit", name)}).Grow(1).Shrink(1).Label(i18n.T("reader.ask_wit"))
-				if in.Submitted() {
-					r.askReply()
-				}
-				kit.IconButton(c, "arrow-up", i18n.T("reader.ask_wit"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(r.askReply)
-			})
 		})
 	})
 }

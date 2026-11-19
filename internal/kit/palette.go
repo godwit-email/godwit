@@ -149,6 +149,7 @@ func PalettePreview(c *ui.Context, body func()) {
 		card := ui.Column(c).AttachTo(row, ui.AnchorTopEnd, ui.AnchorTopStart).MarginStart(th.Space(4)).
 			Width(th.Space(72))
 		popoverCard(c, card)
+		card.Gap(th.Space(2)) // the design's 8, not a popover card's 10
 		card.Children(body)
 	})
 }
@@ -179,4 +180,16 @@ func PaletteChip(c *ui.Context, label, remove string) ui.Element {
 		x = IconButton(c, "x", remove, ButtonOpts{Variant: Ghost, Size: SizeMini})
 	})
 	return x
+}
+
+// PaletteAvatar is the 24 avatar leading a PaletteRow: image, once its sender's
+// is read and allowed, else the initial of name.
+func PaletteAvatar(c *ui.Context, name string, image ui.ImageSource) ui.Element {
+	t, size := theme.Of(c), c.Theme().Space(6)
+	if image == nil {
+		return AvatarSized(c, name, size)
+	}
+	return ui.Box(c).Size(size, size).Shrink(0).Radius(t.Radius.Lg).Clip().Background(t.MarkTile).Label(name).Children(func() {
+		ui.Image(c, image).Size(size, size).Fit(ui.Cover)
+	})
 }

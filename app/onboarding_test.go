@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1046,5 +1047,89 @@ func TestOnboardingFastmailSignsInToIMAP(t *testing.T) {
 	o.choose(fm)
 	if o.imapHost != "imap.fastmail.com" || o.smtpHost != "smtp.fastmail.com" || o.secretName() != "应用专用密码" {
 		t.Fatalf("servers %s / %s, secret %q", o.imapHost, o.smtpHost, o.secretName())
+	}
+}
+
+// A second account added from the sheet opens on its own settings page with
+// 设为默认发件账户 off and operable: the first account keeps the default until
+// the user turns it on.
+func TestAddAccountSheetNewAccountOffersDefaultSender(t *testing.T) {
+	plaintext(t)
+	h, first := withAccount(t)
+	h.app.openAddAccount()
+	h.click("其他邮箱")
+	h.fill("邮箱地址", "second@example.com")
+	h.manualServers()
+	h.fill("密码", "secret")
+	h.click("连接")
+	h.see("连接成功")
+	h.click("完成")
+	h.until("the new account's settings", func() bool { return h.app.route.Page == PageSettings })
+	var added core.Account
+	h.until("the new account listed", func() bool {
+		for _, acc := range h.app.accounts {
+			if acc.Email == "second@example.com" {
+				added = acc
+			}
+		}
+		return added.ID != 0
+	})
+	h.until("its settings page", func() bool { _, ok := h.tt.Access("设为默认发件账户"); return ok })
+	info, _ := h.tt.Access("设为默认发件账户")
+	if info.Checked || info.Disabled || added.IsDefault || added.ReceiveOnly {
+		t.Fatalf("the default-sender switch: %+v, account %+v", info, added)
+	}
+	h.click("设为默认发件账户")
+	h.until("the new account is the default", func() bool { return h.account(added.ID).IsDefault && !h.account(first.ID).IsDefault })
+	h.until("the switch on and spent", func() bool {
+		info, _ := h.tt.Access("设为默认发件账户")
+		return info.Checked && info.Disabled
+	})
+}
+
+// The pick step is the design's: Continue beside the address field, and the
+// import button on the line that introduces the providers.
+func TestOnboardingPickStepRows(t *testing.T) {
+	h := newHarness(t)
+	h.firstRun()
+	h.see("先把邮箱接进来")
+	field, ok1 := h.tt.Find("邮箱地址")
+	next, ok2 := h.tt.Find("继续")
+	if !ok1 || !ok2 || next.X < field.X+field.W || next.Y > field.Y+field.H || next.Y+next.H < field.Y {
+		t.Errorf("Continue %v (found %v) is not beside the address field %v (found %v)", next, ok2, field, ok1)
+	}
+	intro, ok1 := h.tt.Find("或选择服务商")
+	imp, ok2 := h.tt.Find("导入账户…")
+	if !ok1 || !ok2 || imp.X < intro.X+intro.W || imp.Y > intro.Y+intro.H || imp.Y+imp.H < intro.Y {
+		t.Errorf("the import button %v (found %v) is not on the line of %v (found %v)", imp, ok2, intro, ok1)
+	}
+}
+
+// A failed check ends in its way on at the foot of the card, on the right:
+// the servers, then the sign-in again as the main action.
+func TestOnboardingCheckFailureActionsFootTheCard(t *testing.T) {
+	plaintext(t)
+	h := newHarness(t)
+	h.firstRun()
+	h.fill("邮箱地址", "x@qq.com")
+	h.advance(debounce)
+	h.see("识别为 QQ 邮箱")
+	h.click("继续")
+	h.see("授权码")
+	h.manualServers()
+	h.fill("授权码", "wrong")
+	h.click("连接")
+	h.see("连接失败")
+	last, ok1 := h.tt.Find("等待上一步")
+	manual, ok2 := h.tt.Find("手动设置服务器")
+	retype, ok3 := h.tt.Find("重新输入授权码")
+	if !ok1 || !ok2 || !ok3 {
+		t.Fatalf("last step %v, manual %v, retype %v in %q", ok1, ok2, ok3, h.tt.Texts())
+	}
+	if manual.Y < last.Y+last.H || retype.Y < last.Y+last.H || manual.X+manual.W > retype.X {
+		t.Errorf("actions manual %v, retype %v are not in order under the steps (last %v)", manual, retype, last)
+	}
+	if got, want := retype.X+retype.W, last.X+last.W; math.Abs(float64(got-want)) > 1 { // the steps' text fills the card's width
+		t.Errorf("the actions end at %v, the steps at %v", got, want)
 	}
 }

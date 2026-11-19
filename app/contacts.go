@@ -330,11 +330,9 @@ func (p *contactsPage) listView(c *ui.Context) {
 				OnClick(p.syncAddressBooks)
 		}
 	})
-	box := kit.InputGroup(c, kit.InputOpts{}).Gap(th.Space(2)).Margin(0, th.Space(3), th.Space(2), th.Space(3)).Padding(0, th.Space(1), 0, th.Space(2.5))
-	box.Children(func() {
-		ui.Icon(c, icons.Get("search")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
-		kit.Input(c, &p.query, kit.InputOpts{Placeholder: i18n.T("contacts.filter"), Bare: true}).FocusRing(false).Grow(1).Label(i18n.T("contacts.filter"))
-	})
+	var box ui.Element
+	kit.Input(c, &p.query, kit.InputOpts{Placeholder: i18n.T("contacts.filter"), Leading: func() { kit.InputIcon(c, "search") }, Box: &box}).Label(i18n.T("contacts.filter"))
+	box.Margin(0, th.Space(3), th.Space(2), th.Space(3))
 	_, p.cur = findContact(rows, p.a.route.Contact)
 	p.list.Key = func(i int) any { return rows[i].Address }
 	p.list.Selected = &p.cur
@@ -390,9 +388,72 @@ func (p *contactsPage) row(c *ui.Context, ct core.Contact) ui.Element {
 	})
 }
 
-// detailView is the route's contact: who, the ways to clean up after them,
-// what they add up to, then all their mail with the user, newest first, read
-// on as it scrolls.
+// ready reports whether the loaded detail is ct's, not another's while this
+// one's loads, or failed to.
+func (p *contactsPage) ready(ct core.Contact) bool {
+	return p.detailOf != "" && (p.detailOf == ct.Address || slices.ContainsFunc(contactAddrs(ct), func(ea core.ContactAddress) bool {
+		return ea.Address == p.detailOf
+	}))
+}
+
+// titleActions are the chosen contact's actions at the title bar's right
+// end, as the mail page's: write (a menu of the addresses with more than one)
+// and unsubscribe, then archive and block, as icon buttons. None shows while
+// no contact is chosen.
+func (p *contactsPage) titleActions(c *ui.Context) {
+	ct, ok := p.current()
+	if !ok {
+		return
+	}
+	a := p.a
+	t, th := theme.Of(c), c.Theme()
+	addrs, blocked := contactAddrs(ct), contactAllBlocked(a, ct)
+	d := p.detail
+	if !p.ready(ct) {
+		d = core.ContactDetail{}
+	}
+	act := func(icon, label string, disabled bool) ui.Element {
+		b := kit.IconButton(c, icon, label, kit.ButtonOpts{Variant: kit.Ghost, Disabled: disabled})
+		if !disabled {
+			b.TextColor(t.Foreground)
+		}
+		return b
+	}
+	ui.Row(c).Shrink(0).Gap(th.Space(0.5)).AlignItems(ui.Center).Children(func() {
+		if ct.ListMessage != 0 {
+			act("mail-forbid", i18n.T("reader.unsubscribe"), false).OnClick(func() { p.unsubscribe(ct) })
+		}
+		if ct.ListMessage == 0 || ct.FromAddressBook {
+			compose := act("square-pen", i18n.T("palette.action.compose"), false)
+			if len(addrs) <= 1 {
+				compose.OnClick(func() { a.composeTo(ct.Address) })
+			} else {
+				compose.Menu(func(m *ui.Menu) {
+					for _, ea := range addrs {
+						addr := ea.Address
+						if m.Item(addr).Chosen() {
+							a.composeTo(addr)
+						}
+					}
+				})
+			}
+		}
+		kit.GroupDivider(c).Margin(0, th.Space(1.5))
+		act("archive", archiveLabel(d, p.ready(ct)), d.Archivable == 0).OnClick(func() { p.archive(ct.Address) })
+		label := i18n.T("reader.block_sender")
+		if blocked {
+			label = i18n.T("reader.unblock_sender")
+		}
+		block := act("spam", label, false).OnClick(func() { p.blockAll(addrs, !blocked) })
+		if blocked { // on: the tint a pressed toggle keeps
+			block.Background(t.HoverTint)
+		}
+	})
+}
+
+// detailView is the route's contact: who and what they add up to, then all
+// their mail with the user, newest first, read on as it scrolls. The ways to
+// clean up after them are the title bar's (titleActions).
 func (p *contactsPage) detailView(c *ui.Context) {
 	a := p.a
 	t, th := theme.Of(c), c.Theme()
@@ -407,17 +468,15 @@ func (p *contactsPage) detailView(c *ui.Context) {
 		return
 	}
 	addrs := contactAddrs(ct)
-	d, mail, name := p.detail, p.mail, cmp.Or(ct.Name, ct.Address)
-	ready := p.detailOf != "" && (p.detailOf == ct.Address || slices.ContainsFunc(addrs, func(ea core.ContactAddress) bool {
-		return ea.Address == p.detailOf
-	})) // another's while this one's loads, or failed to
+	mail, name := p.mail, cmp.Or(ct.Name, ct.Address)
+	ready := p.ready(ct)
 	if !ready {
-		d, mail = core.ContactDetail{}, nil
+		mail = nil
 	}
 	blocked := contactAllBlocked(a, ct)
 	// one column as wide as the reader's, centered: the head, then a row per message
 	column := func() ui.Element {
-		return ui.Column(c).FillWidth().MaxWidth(theme.ReaderMaxWidth).AlignSelf(ui.Center).Padding(0, th.Space(10))
+		return ui.Column(c).FillWidth().MaxWidth(theme.ReaderMaxWidth).AlignSelf(ui.Center).Padding(0, th.Space(7))
 	}
 	p.mailList.Key = func(i int) any {
 		if i == 0 {
@@ -430,80 +489,42 @@ func (p *contactsPage) detailView(c *ui.Context) {
 			column().Children(func() { p.mailRow(c, mail[i-1]) })
 			return
 		}
-		column().Padding(th.Space(10), th.Space(10), th.Space(1), th.Space(10)).Gap(th.Space(6)).Children(func() {
-			// who, centered: the avatar, the name, subtitle and address, then the actions
-			ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(4)).Children(func() {
+		// who, on one row: the avatar, then the name and subtitle over the
+		// count, the addresses and their marks, with the counts at the end
+		column().Padding(th.Space(5), th.Space(7), th.Space(2), th.Space(7)).Children(func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(4)).Children(func() {
 				p.bigAvatar(c, ct, name)
-				ui.Column(c).MaxWidth(theme.ReaderMaxWidth).AlignItems(ui.Center).Gap(th.Space(0.5)).Children(func() {
-					kit.Text(c, name, t.Text.Xl).FontWeight(600).TextAlign(ui.Center)
-					if ct.Subtitle != "" {
-						kit.Text(c, ct.Subtitle, t.Text.Xs).TextColor(t.Muted).TextAlign(ui.Center)
-					}
-					p.addressLine(c, addrs)
-					if ct.ListMessage != 0 || blocked {
-						ui.Row(c).Wrap().Gap(th.Space(1.5)).Padding(th.Space(1.5), 0, 0, 0).Children(func() {
-							if ct.ListMessage != 0 {
-								kit.Badge(c, i18n.T("contacts.subscription"))
-							}
-							if blocked {
-								kit.Badge(c, i18n.T("reader.blocked_badge"))
-							}
-						})
-					}
-				})
-				ui.Row(c).Gap(th.Space(2)).Children(func() {
-					if ct.ListMessage != 0 {
-						kit.RoundAction(c, "mail-forbid", i18n.T("reader.unsubscribe"), "", false, false).OnClick(func() { p.unsubscribe(ct) })
-					}
-					if ct.ListMessage == 0 || ct.FromAddressBook {
-						compose := kit.RoundAction(c, "square-pen", i18n.T("palette.action.compose"), "", false, false)
-						if len(addrs) <= 1 {
-							compose.OnClick(func() { a.composeTo(ct.Address) })
-						} else {
-							compose.Menu(func(m *ui.Menu) {
-								for _, ea := range addrs {
-									addr := ea.Address
-									if m.Item(addr).Chosen() {
-										a.composeTo(addr)
-									}
-								}
-							})
+				ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(1)).Children(func() {
+					ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2.5)).Children(func() {
+						kit.Text(c, name, t.Text.Xl).FontWeight(600).SingleLine().Shrink(1)
+						if ct.Subtitle != "" {
+							kit.Text(c, ct.Subtitle, t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(1)
 						}
-					}
-					kit.RoundAction(c, "archive", i18n.T("contacts.archive_all"), archiveLabel(d, ready), d.Archivable == 0, false).OnClick(func() { p.archive(ct.Address) })
-					short, long := i18n.T("contacts.block"), i18n.T("reader.block_sender")
-					if blocked {
-						short, long = i18n.T("contacts.unblock"), i18n.T("reader.unblock_sender")
-					}
-					kit.RoundAction(c, "spam", short, long, false, blocked).OnClick(func() { p.blockAll(addrs, !blocked) })
+					})
+					ui.Row(c).Wrap().AlignItems(ui.Center).Gap(th.Space(4)).Children(func() {
+						ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Children(func() {
+							kit.Text(c, i18n.Tf("contacts.exchanged", ct.Messages), t.Text.Xs).TextColor(t.Muted).SingleLine()
+							p.addressLine(c, addrs)
+						})
+						if ct.ListMessage != 0 {
+							kit.Badge(c, i18n.T("contacts.subscription"))
+						}
+						if blocked {
+							kit.Badge(c, i18n.T("reader.blocked_badge"))
+						}
+						lastStat := "—"
+						if !ct.Last.IsZero() {
+							lastStat = listTime(a.clock.Now(), ct.Last)
+						}
+						kit.Text(c, strings.Join([]string{
+							i18n.T("contacts.stat.received") + " " + strconv.Itoa(ct.Received),
+							i18n.T("contacts.stat.sent") + " " + strconv.Itoa(ct.Sent),
+							i18n.T("mail.filter.unread") + " " + strconv.Itoa(ct.Unread),
+							i18n.T("contacts.stat.last") + " " + lastStat,
+						}, " · "), t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(1)
+					})
 				})
 			})
-			// the counts in a row between hairlines, each centered
-			ui.Column(c).FillWidth().Children(func() {
-				kit.Separator(c, false)
-				ui.Row(c).Padding(th.Space(3.5), 0).Children(func() {
-					lastStat := "—"
-					if !ct.Last.IsZero() {
-						lastStat = listTime(a.clock.Now(), ct.Last)
-					}
-					for i, st := range [][2]string{
-						{i18n.T("contacts.stat.received"), strconv.Itoa(ct.Received)},
-						{i18n.T("contacts.stat.sent"), strconv.Itoa(ct.Sent)},
-						{i18n.T("mail.filter.unread"), strconv.Itoa(ct.Unread)},
-						{i18n.T("contacts.stat.last"), lastStat},
-					} {
-						if i > 0 {
-							kit.Separator(c, true)
-						}
-						ui.Column(c).Grow(1).Basis(0).MinWidth(0).AlignItems(ui.Center).Gap(th.Space(0.5)).Padding(0, th.Space(3)).Children(func() {
-							kit.Text(c, st[0], t.Text.Xs).TextColor(t.Muted).SingleLine()
-							kit.Text(c, st[1], t.Text.Xl).FontWeight(600).SingleLine()
-						})
-					}
-				})
-				kit.Separator(c, false)
-			})
-			kit.Text(c, i18n.Tf("contacts.mail", ct.Messages), t.Text.Xs).FontWeight(500).TextColor(t.Muted).Padding(0, th.Space(3))
 		})
 	}).Grow(1)
 	if _, last := p.mailList.Visible(); ready && last >= len(mail)-5 {
@@ -522,13 +543,13 @@ func (p *contactsPage) addressLine(c *ui.Context, addrs []core.ContactAddress) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
 		first := addrs[0].Address
-		kit.Button(c, first, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).TextColor(t.Muted).
+		kit.Button(c, first, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Trailing: "chevron-down"}).TextColor(t.Muted).
 			Label(i18n.Tf("contacts.address_menu", first)).Menu(func(m *ui.Menu) { p.addressMenu(c, m, first, slices.Contains(a.blocked, first)) })
 		if len(addrs) < 2 {
 			return
 		}
 		more := len(addrs) - 1
-		filterChip(c, "+"+strconv.Itoa(more), false, nil, nil).Label(i18n.Tf("contacts.addresses.more", more)).Menu(func(m *ui.Menu) {
+		kit.BadgeButton(c, "+"+strconv.Itoa(more), kit.BadgeOpts{}).Label(i18n.Tf("contacts.addresses.more", more)).Menu(func(m *ui.Menu) {
 			var groups [2][]core.ContactAddress // the others, then the blocked
 			for _, ea := range addrs {
 				i := 0

@@ -7,7 +7,6 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
-	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -33,7 +32,7 @@ var settingsIndex = map[string][]string{
 	"images":     {"settings.remote_images", "settings.remote_images.sub", "settings.remote_images.avatars", "settings.remote_images.mode", "settings.remote_images.mode.help", "settings.remote_images.auto", "settings.remote_images.trusted", "settings.remote_images.ask", "settings.remote_images.cache", "settings.remote_images.cache.help", "settings.remote_images.clear", "settings.remote_images.keep", "settings.remote_images.keep.help", "settings.remote_images.keep.forever", "settings.remote_images.keep.days", "settings.trusted", "settings.trusted.sub", "settings.trusted.none"},
 	"blocked":    {"settings.blocked", "settings.blocked.sub", "settings.blocked.none", "settings.blocked.remove"},
 	"labs":       {"settings.labs", "settings.labs.sub", "settings.experimental_jmap", "settings.experimental_jmap.help", "settings.experimental_ews", "settings.experimental_ews.help", "settings.experimental_pop3", "settings.experimental_pop3.help", "settings.experimental_graph", "settings.experimental_graph.help", "settings.experimental_gmailapi", "settings.experimental_gmailapi.help"},
-	"about":      {"settings.about", "settings.about.build", "settings.about.updates.check", "settings.about.upgrade", "settings.about.links", "settings.about.site", "settings.about.source", "settings.about.star", "settings.about.changelog", "settings.about.feedback", "settings.about.license"},
+	"about":      {"settings.about", "settings.about.version", "settings.about.updates.check", "settings.about.upgrade", "settings.about.site", "settings.about.source", "settings.about.star", "settings.about.changelog", "settings.about.feedback", "settings.about.license"},
 }
 
 // searchHit is what the sidebar shows for a query: the app pages that match,
@@ -102,22 +101,20 @@ func accountMatches(acc core.Account, q string) bool {
 // searchField is the sidebar's 搜索设置 field; Enter opens the first match.
 func (p *settingsPage) searchField(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	box := kit.InputGroup(c, kit.InputOpts{Flat: true}).FillWidth().Gap(th.Space(2)).PaddingX(th.Space(2)).Margin(0, 0, th.Space(1.5), theme.RingWidth).Background(t.HoverTint)
-	box.Children(func() {
-		ui.Icon(c, icons.Get("search")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
-		in := kit.Input(c, &p.query, kit.InputOpts{Placeholder: i18n.T("settings.search"), Bare: true}).FocusRing(false).Label(i18n.T("settings.search")).Grow(1)
-		if in.Submitted() {
-			m := p.matching(p.query)
-			switch {
-			case m.accounts && len(p.a.accounts) > 0:
-				acc := &p.a.accounts[0]
-				if m.email != "" {
-					acc = p.accountByEmail(m.email)
-				}
-				p.a.navigate(Route{Page: PageSettings, Settings: accountRoute(acc.ID)})
-			case len(m.apps) > 0:
-				p.a.navigate(Route{Page: PageSettings, Settings: m.apps[0]})
+	var box ui.Element
+	in := kit.Input(c, &p.query, kit.InputOpts{Placeholder: i18n.T("settings.search"), Flat: true, Leading: func() { kit.InputIcon(c, "search") }, Box: &box}).Label(i18n.T("settings.search"))
+	box.FillWidth().Margin(0, 0, th.Space(1.5), theme.RingWidth).Background(t.HoverTint)
+	if in.Submitted() {
+		m := p.matching(p.query)
+		switch {
+		case m.accounts && len(p.a.accounts) > 0:
+			acc := &p.a.accounts[0]
+			if m.email != "" {
+				acc = p.accountByEmail(m.email)
 			}
+			p.a.navigate(Route{Page: PageSettings, Settings: accountRoute(acc.ID)})
+		case len(m.apps) > 0:
+			p.a.navigate(Route{Page: PageSettings, Settings: m.apps[0]})
 		}
-	})
+	}
 }

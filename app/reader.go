@@ -1159,7 +1159,7 @@ func (r *reader) draw(c *ui.Context, next *session) {
 		// would go and come again with its motion (a grey block, a fade).
 		ui.Column(c).Absolute().Left(th.Space(7)).Right(th.Space(7)).Top(0).Children(func() {
 			if next != nil {
-				next.unseenBody(c)
+				r.column(c).Padding(0, th.Space(3)).Children(func() { next.unseenBody(c) }) // inside a message's paper
 			}
 		})
 		r.pane = ui.Scroll(c).Grow(1).TrackScroll(&r.scroll).ScrollbarInsets(0, 0, r.barBottom).Children(func() {
@@ -1184,7 +1184,7 @@ func (r *reader) draw(c *ui.Context, next *session) {
 							r.column(c).Children(func() { r.summaryPanel(c, m) })
 						}
 					}
-					r.renderMessages(c)
+					ui.Column(c).FillWidth().Gap(th.Space(2)).Children(func() { r.renderMessages(c) })
 					r.viewWhyLine(c)
 				})
 			})
@@ -1312,7 +1312,7 @@ func (r *reader) starred() bool {
 	})
 }
 
-// renderMessages renders a thread's messages. A thread of more than
+// renderMessages renders a thread's messages, each a paper of its own. A thread of more than
 // Settings.ThreadCollapseThreshold messages keeps its newest that many in
 // sight; of its history before them, the open ones show and each run of two
 // or more folded collapses into a card. A card shows the whole history,
@@ -1325,7 +1325,6 @@ func (r *reader) renderMessages(c *ui.Context) {
 		history = max(0, len(r.msgs)-st.ThreadCollapseThreshold)
 	}
 	hidden := func(i int) bool { return i < history && !r.historyShown && !r.historyOpen[r.msgs[i].ID] }
-	n := 0 // what was rendered: a hairline parts each from the one before
 	enter := func(m ui.ElementTransition) ui.ElementTransition {
 		if !r.entered {
 			m.Enter = nil
@@ -1333,27 +1332,22 @@ func (r *reader) renderMessages(c *ui.Context) {
 		return m
 	}
 	defer func() { r.entered = true }()
-	// part renders one part of the thread under key, with motion; a hairline
-	// keeps to the message after it (sep).
-	part := func(sep, key any, motion ui.ElementTransition, f func()) ui.Element {
+	// part renders one part of the thread under key, with motion.
+	part := func(key any, motion ui.ElementTransition, f func()) ui.Element {
 		motion = enter(motion)
-		if n > 0 {
-			r.column(c).Key(sep).Transition(enter(threadMotion)).Children(func() { kit.Separator(c, false) })
-		}
-		n++
 		// Clipped, a little larger than its content for the hovers that reach
-		// past it (a folded row's, the sender's): it grows and shrinks as the
-		// message opens, folds or its body reports.
+		// past it (the sender's): it grows and shrinks as the message opens,
+		// folds or its body reports.
 		// Stretched, not FillWidth: its negative margins widen it, keeping its content where the subject is.
 		return ui.Column(c).AlignSelf(ui.Stretch).Margin(-th.Space(1), -th.Space(2)).Padding(th.Space(1), th.Space(2)).Clip().Key(key).Transition(motion).Children(f)
 	}
 	if history > 0 && r.historyShown {
-		part(threadSep{0}, threadHistory{0}, threadMotion, func() { r.historyToggle(c, 0, history) })
+		part(threadHistory{0}, threadMotion, func() { r.historyToggle(c, 0, history) })
 	}
 	for i := 0; i < len(r.msgs); {
 		m := r.msgs[i]
 		if r.open[m.ID] {
-			r.revealAt(c, m.ID, part(threadSep{m.ID}, threadPart{m.ID}, openMotion, func() { r.message(c, m) }))
+			r.revealAt(c, m.ID, part(threadPart{m.ID}, openMotion, func() { r.message(c, m) }))
 			i++
 			continue
 		}
@@ -1362,9 +1356,9 @@ func (r *reader) renderMessages(c *ui.Context) {
 			j++
 		}
 		if n := j - i; n >= 2 {
-			part(threadSep{-m.ID}, threadHistory{m.ID}, threadMotion, func() { r.historyToggle(c, n, history) })
+			part(threadHistory{m.ID}, threadMotion, func() { r.historyToggle(c, n, history) })
 		} else { // in sight, or alone in the history: a card would hide no line
-			part(threadSep{m.ID}, threadPart{m.ID}, threadMotion, func() { r.folded(c, m) })
+			part(threadPart{m.ID}, threadMotion, func() { r.folded(c, m) })
 		}
 		i = j
 	}
@@ -1388,12 +1382,10 @@ func (r *reader) revealAt(c *ui.Context, id int64, e ui.Element) {
 // The keys of a thread's parts (renderMessages): a message, open or folded
 // (one element, so it resizes rather than one form going as the other
 // comes), a history card (by the first message of its run; 0 the one that
-// collapses the history), and the hairline before a message (before a
-// card: its first message's, negated).
+// collapses the history).
 type (
 	threadPart    struct{ id int64 }
 	threadHistory struct{ first int64 }
-	threadSep     struct{ id int64 }
 )
 
 // threadMotion is how a thread's parts come, go, move and resize.
@@ -1415,16 +1407,17 @@ type senderName struct{ id int64 }
 // cannot hold its body's native page (it showed as a grey block).
 var openMotion = ui.ElementTransition{Duration: theme.MotionBase, Enter: &ui.Motion{Collapse: true}}
 
-// historyToggle is a history card: one that shows the history, hiding a
-// run of n of its messages, or with n 0 the one that collapses the history
-// (its first messages of the thread), folding the open ones too.
+// historyToggle is a history card, a paper as tall as a folded message: one
+// that shows the history, hiding a run of n of its messages, or with n 0 the
+// one that collapses the history (its first messages of the thread), folding
+// the open ones too.
 func (r *reader) historyToggle(c *ui.Context, n, history int) {
 	t, th := theme.Of(c), c.Theme()
 	label, rot := i18n.Tf("reader.thread.expand", n), float32(0)
 	if n == 0 {
 		label, rot = i18n.T("reader.thread.collapse"), 180
 	}
-	b := kit.Pressable(c, kit.PressableOpts{OnClick: func() {
+	b := paperButton(c, func() {
 		r.historyShown = n > 0
 		if n > 0 {
 			return
@@ -1438,25 +1431,41 @@ func (r *reader) historyToggle(c *ui.Context, n, history int) {
 				}
 			}
 		}
-	}}).
-		FillWidth().MaxWidth(r.p.a.readerMaxWidth()).AlignSelf(ui.Center).Gap(th.Space(2.5)).Padding(th.Space(1.5), 0).Justify(ui.Center)
+	}).FillWidth().MaxWidth(r.p.a.readerMaxWidth()).AlignSelf(ui.Center).Height(th.Space(11)).Gap(th.Space(2.5)).Padding(th.Space(2), th.Space(3)).Justify(ui.Center)
 	b.Children(func() {
-		ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted).Rotate(rot)
+		foldArrow(c, rot)
 		kit.Text(c, label, t.Text.Xs).FontWeight(500).TextColor(t.Foreground)
 	})
 }
 
-// folded is a message as one line: avatar, sender, the start of its text,
-// time, and the chevron that expands it.
+// paperButton is a paper that clicks: the tint of a hover over its hairline box.
+func paperButton(c *ui.Context, onClick func()) ui.Element {
+	b := kit.Card(c, kit.Pressable(c, kit.PressableOpts{OnClick: onClick}), kit.ToneOutline)
+	if b.Hovered() {
+		b.Background(theme.Of(c).HoverTint)
+	}
+	return b.AlignItems(ui.Center)
+}
+
+// foldArrow is the chevron in the slot a folded row gives it, as wide as an
+// open message's fold button: the chevrons line up.
+func foldArrow(c *ui.Context, rot float32) {
+	t, th := theme.Of(c), c.Theme()
+	ui.Box(c).Size(th.Space(7), th.Space(7)).Center().Shrink(0).Children(func() {
+		ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted).Rotate(rot)
+	})
+}
+
+// folded is a message as one line on a paper: avatar, sender, the start of
+// its text, time, and the chevron that expands it.
 func (r *reader) folded(c *ui.Context, m core.MessageSummary) {
 	t, th := theme.Of(c), c.Theme()
 	name, _ := senderOf(m)
 	avatar := r.shownAvatar(m) // else its initial
-	// Its hover reaches past the column, so the avatar keeps the open messages' edge yet clears the hover's.
 	r.column(c).Children(func() {
-		kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.toggle(m.ID) }}).AlignSelf(ui.Stretch).Margin(0, -th.Space(2)).
-			AlignItems(ui.Center).Gap(th.Space(2.5)).Padding(th.Space(1.5), th.Space(2)).Children(func() {
-			kit.AvatarImage(c, name, avatar)
+		// 44 high from its content: the paper's 2 and the avatar's 4 above it, as an open message's header has them, so its avatar stays exactly where it was.
+		paperButton(c, func() { r.toggle(m.ID) }).AlignSelf(ui.Stretch).Gap(th.Space(2.5)).Padding(th.Space(0.5), th.Space(3)).Children(func() {
+			kit.AvatarImage(c, name, avatar).Margin(th.Space(1), 0)
 			ui.Text(c, name).FontWeight(500).SingleLine().Shrink(0).Transition(nameMotion(m.ID))
 			if r.isBlocked(m.From) {
 				kit.Badge(c, i18n.T("reader.blocked_badge"))
@@ -1474,10 +1483,7 @@ func (r *reader) folded(c *ui.Context, m core.MessageSummary) {
 				ui.Text(c, m.Snippet).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1)
 			}
 			kit.Text(c, listTime(r.p.a.clock.Now(), m.Date), t.Text.Xs).TextColor(t.Muted).Shrink(0)
-			// in a box as wide as an open message's fold button: the chevrons line up
-			ui.Box(c).Size(th.Space(7), th.Space(7)).Center().Shrink(0).Children(func() {
-				ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
-			})
+			foldArrow(c, 0)
 		})
 	})
 }
@@ -1749,9 +1755,12 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 	if gomail.SecurityRank(m.Security.Status) > gomail.SecurityRank(sec.Status) { // the listed warning, before the body loads
 		sec = m.Security
 	}
-	ui.Column(c).FillWidth().Gap(th.Space(3.5)).Children(func() {
+	// A paper: the hairline's box the header, the body and the files sit in,
+	// 2 above the header, whose avatar and name keep to their folded row's place.
+	kit.Card(c, r.column(c), kit.ToneOutline).Padding(th.Space(0.5), th.Space(3), th.Space(3)).Gap(th.Space(3.5)).Children(func() {
 		name, addr := senderOf(m)
-		head := r.column(c).Gap(th.Space(3.5))
+		// the header, 14 above what follows; the AI parts, alerts and body in a column of their own 10 apart
+		head := ui.Column(c).FillWidth().Gap(th.Space(2.5))
 		var bodyReady bool
 		head.Children(func() {
 			// The sender, its avatar or name, opens its actions (block, copy,
@@ -1762,10 +1771,10 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 					e.Menu(func(menu *ui.Menu) { r.senderMenu(c, menu, addr, target, m.ID, sec) })
 				}
 			}
-			ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Center).Children(func() {
-				// At its folded row's place (its padding), so it stays still as the message opens.
+			ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Center).Margin(0, 0, th.Space(1), 0).Children(func() {
+				// At its folded row's place (the paper's padding and this margin), so it stays still as the message opens.
 				avatar := kit.Pressable(c, kit.PressableOpts{}).Shrink(0).Radius(t.Radius.Lg).Label(target).
-					AlignSelf(ui.Start).Margin(th.Space(1.5), 0, 0, 0)
+					AlignSelf(ui.Start).Margin(th.Space(1), 0, 0, 0)
 				senderActions(avatar)
 				avatar.Children(func() {
 					// Until the avatar is fetched or refused, a pulse, or in a thread what
@@ -1782,7 +1791,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 					}
 				})
 				// The name's line tops the avatar, whose margin keeps it where its folded row had it.
-				ui.Column(c).Shrink(1).Gap(th.Space(0.5)).AlignSelf(ui.Start).Margin(th.Space(1.5), 0, 0, 0).Children(func() {
+				ui.Column(c).Shrink(1).Gap(th.Space(0.5)).AlignSelf(ui.Start).Margin(th.Space(1), 0, 0, 0).Children(func() {
 					ui.Row(c).Wrap().Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 						// Its hover clears the text by its padding; the margin keeps the text where it was.
 						who := kit.Pressable(c, kit.PressableOpts{}).Gap(th.Space(1)).AlignItems(ui.Center).Label(target).
@@ -1812,11 +1821,11 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 				})
 				ui.Spacer(c)
 				// on the name's line: its middle, a smaller text's and the chevron's
-				kit.Text(c, senderDate(r.p.a.clock.Now(), m.Date), t.Text.Xs).TextColor(t.Muted).Shrink(0).AlignSelf(ui.Start).Margin(th.Space(2), 0, 0, 0)
+				kit.Text(c, senderDate(r.p.a.clock.Now(), m.Date), t.Text.Xs).TextColor(t.Muted).Shrink(0).AlignSelf(ui.Start).Margin(th.Space(1.5), 0, 0, 0)
 				if len(r.msgs) > 1 { // only a thread of more than one message folds
 					fold := kit.Pressable(c, kit.PressableOpts{OnClick: func() { r.toggle(m.ID) }}).
 						Size(th.Space(7), th.Space(7)).Radius(t.Radius.Md).Center().Shrink(0).Label(i18n.T("reader.fold")).
-						AlignSelf(ui.Start).Margin(th.Space(0.5), 0, 0, 0)
+						AlignSelf(ui.Start)
 					fold.Children(func() {
 						ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted).Rotate(180)
 					})
@@ -1851,17 +1860,17 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 				})
 			}
 			r.translationState(c, m)
+			if b.view != nil { // the body takes the paper's width
+				// a line until the page reports; rounded, so a mail filled edge to edge
+				// with its own color sits as a card; Draw's box is where the web view goes this frame
+				kit.WebView(c, b.view).Height(max(float32(b.height), th.Space(6))).Radius(t.Radius.Xl).Clip().
+					Draw(func(_ *ui.Painter, box ui.Rect) { r.glass(b, box) })
+			}
 		})
 		if !bodyReady {
 			return
 		}
-		if b.view != nil { // the body takes the pane's width; what frames it keeps to the column
-			// a line until the page reports; rounded, so a mail filled edge to edge
-			// with its own color sits as a card; Draw's box is where the web view goes this frame
-			kit.WebView(c, b.view).Height(max(float32(b.height), th.Space(6))).Radius(t.Radius.Xl).Clip().
-				Draw(func(_ *ui.Painter, box ui.Rect) { r.glass(b, box) })
-		}
-		r.column(c).Gap(th.Space(3.5)).Children(func() {
+		ui.Column(c).FillWidth().Gap(th.Space(3.5)).Children(func() {
 			if b.cut {
 				ui.Row(c).Wrap().Gap(th.Space(3)).Children(func() {
 					kit.Text(c, i18n.T("reader.truncated"), t.Text.Xs).TextColor(t.Muted)
@@ -1985,8 +1994,8 @@ func (r *reader) attachments(c *ui.Context, b *msgBody) {
 				c := c.Key(att.ID)
 				name := core.FileName(att.Filename, "attachment")
 				checked := multi && b.attSel[att.ID]
-				kit.Choice(c, ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1.5)).Padding(th.Space(2), th.Space(2.5)).
-					Radius(t.Radius.Lg).AlignItems(ui.Center), checked, kit.ChoiceOpts{}).Children(func() {
+				kit.ChoiceCard(c, ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1.5)).Padding(th.Space(2), th.Space(2.5)).
+					Radius(t.Radius.Lg).AlignItems(ui.Center), kit.ChoiceCardOpts{Selected: checked}, func() {
 					if multi {
 						if kit.Checkbox(c.Key("sel"), &checked, "").Shrink(0).Label(i18n.Tf("reader.attachments.select_item", name)).Changed() {
 							if checked {

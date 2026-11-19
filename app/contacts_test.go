@@ -13,6 +13,8 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/theme"
 )
 
 // The contacts page lists who the user exchanged mail with and chooses the
@@ -126,7 +128,7 @@ func TestContactsMailReadsOn(t *testing.T) {
 	}
 	h.syncNow(acc)
 	h.click("联系人")
-	h.see(fmt.Sprintf("往来邮件 · %d 封", n))
+	h.see(fmt.Sprintf("%d 封往来", n))
 	p := h.app.contacts()
 	h.until("the first page", func() bool { return len(p.mail) == contactMailPage && p.cursor != "" })
 	h.until("the rest, read on at the end", func() bool {
@@ -419,5 +421,25 @@ func TestContactsFilterHistoricalAndSecondaryMergedTerms(t *testing.T) {
 		if h.tt.HasText("other@example.com") {
 			t.Fatalf("unexpected match for query %q", query)
 		}
+	}
+}
+
+// TestContactsActionsAreInTheTitleBar: the chosen contact's write, archive
+// and block actions are icon buttons in the title bar, not in the page, and
+// none shows while no contact is chosen.
+func TestContactsActionsAreInTheTitleBar(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.deliverOne(accs[0], coretest.Msg("Bob <bob@example.com>", accs[0].Email, "Lunch?", "Noon?"))
+	labels := []string{i18n.T("palette.action.compose"), i18n.T("reader.block_sender")}
+	h.click("联系人")
+	h.until("bob chosen", func() bool { return h.app.route.Contact == "bob@example.com" })
+	for _, label := range labels {
+		r, ok := h.tt.Find(label)
+		if !ok || r.Y+r.H > theme.TopBarHeight {
+			t.Errorf("%q at %+v (found %v) is not in the title bar", label, r, ok)
+		}
+	}
+	if r, ok := h.tt.Find(i18n.T("contacts.archive_all") + " · " + i18n.T("contacts.archive.tip_none")); ok && r.Y+r.H > theme.TopBarHeight {
+		t.Errorf("archive at %+v is not in the title bar", r)
 	}
 }

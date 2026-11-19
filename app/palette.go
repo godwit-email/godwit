@@ -62,6 +62,8 @@ type palette struct {
 // palItem is a row of the palette: what it shows and what choosing it does.
 type palItem struct {
 	icon, title, sub string
+	avatar           string // the name its 24 avatar shows, in place of the icon's tile
+	bare             bool   // its icon stands alone, 16, without a tile
 	meta             string // in place of when, as a contact's mail count
 	kbd              string // its key, after the rest
 	when             time.Time
@@ -200,7 +202,20 @@ func (p *palette) row(c *ui.Context, i int, it palItem) ui.Element {
 		r.ScrollIntoView()
 	}
 	r.Children(func() {
-		ui.Icon(c, icons.Get(it.icon)).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
+		switch {
+		case it.avatar != "":
+			var img ui.ImageSource // the card's, read under the remote-image setting
+			if it.msg != nil && p.cards[it.msg.ID] != nil {
+				img = p.cards[it.msg.ID].avatar
+			}
+			kit.PaletteAvatar(c, it.avatar, img)
+		case it.bare:
+			ui.Icon(c, icons.Get(it.icon)).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
+		default:
+			kit.Tile(c, th.Space(6), th.Space(6), kit.ToneCard).Children(func() {
+				ui.Icon(c, icons.Get(it.icon)).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
+			})
+		}
 		marked(c, it.title, p.hl).SingleLine().Shrink(1)
 		if it.sub != "" {
 			marked(c, it.sub, p.hl).FontSize(t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(1)
@@ -368,7 +383,7 @@ func (p *palette) mailItems(ms []core.MessageSummary) []palItem {
 			sub += " · " + mp.folderLine(it)
 		}
 		thread, id := m.ThreadID, m.ID
-		out = append(out, palItem{icon: "mail", title: cmp.Or(m.Subject, i18n.T("mail.no_subject")), sub: sub, when: m.Date, unread: it.Unread > 0, msg: &m,
+		out = append(out, palItem{icon: "mail", avatar: cmp.Or(m.FromName, displayName(m.From)), title: cmp.Or(m.Subject, i18n.T("mail.no_subject")), sub: sub, when: m.Date, unread: it.Unread > 0, msg: &m,
 			open: func() {
 				p.a.navigate(Route{Page: PageMail, View: core.View{Unified: "inbox"}, ThreadID: thread, MessageID: id})
 			}, acts: p.mailActs(m, it.Unread > 0)})
@@ -405,7 +420,7 @@ func (p *palette) contactItems(cs []core.Contact) []palItem {
 			sub += " · " + ct.Subtitle
 		}
 		open := func() { p.a.openContact(addr) }
-		out = append(out, palItem{icon: "user", title: cmp.Or(ct.Name, addr), sub: sub, when: ct.Last, meta: i18n.Tf("palette.contact.mails", ct.Messages),
+		out = append(out, palItem{icon: "user", avatar: cmp.Or(ct.Name, addr), title: cmp.Or(ct.Name, addr), sub: sub, when: ct.Last, meta: i18n.Tf("palette.contact.mails", ct.Messages),
 			open: open, acts: p.contactActs(addr)})
 	}
 	return out

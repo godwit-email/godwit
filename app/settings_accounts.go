@@ -426,39 +426,40 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	f := p.form(acc)
 	prov := accountProvider(a, acc)
 
-	ui.Row(c).Gap(th.Space(4)).Children(func() {
-		a.accountIcon(c, acc, theme.MarkXl)
-		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
-			kit.Text(c, accountAddr(acc), t.Text.X3l).FontWeight(600).SingleLine()
-			ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-				meta := providerName(prov)
-				if isArchive(acc) {
-					meta = i18n.T("mail.archive.kind")
+	ui.Column(c).Gap(theme.HeadingGap).Children(func() {
+		pageHeading(c, accountAddr(acc), "")
+		ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+			meta := providerName(prov)
+			if isArchive(acc) {
+				meta = i18n.T("mail.archive.kind")
+			}
+			if acc.Folders > 0 { // 0 until the first sync
+				meta += " · " + i18n.Tf("settings.account.folders", acc.Folders)
+			}
+			if acc.IsDefault {
+				meta += " · " + i18n.T("settings.account.default")
+			}
+			if acc.StatusDetail != "" {
+				meta += " · " + cmpTr("settings.account.detail."+acc.StatusDetail, acc.StatusDetail)
+			}
+			ui.Text(c, meta).TextColor(t.Muted)
+			if acc.ReceiveOnly {
+				kit.Badge(c, i18n.T("settings.account.receive_only"))
+			}
+			if isArchive(acc) { // never syncs
+				return
+			}
+			text, dot := cmpTr("settings.account.status."+acc.Status, acc.Status), kit.Attention
+			if acc.Status == "ok" {
+				dot = kit.OK
+				if at, ok := a.syncedAtBy[acc.ID]; ok {
+					text = i18n.Tf("shell.sync.synced", a.ago(at))
 				}
-				if acc.Folders > 0 { // 0 until the first sync
-					meta += " · " + i18n.Tf("settings.account.folders", acc.Folders)
-				}
-				if acc.StatusDetail != "" {
-					meta += " · " + cmpTr("settings.account.detail."+acc.StatusDetail, acc.StatusDetail)
-				}
-				ui.Text(c, meta).TextColor(t.Muted)
-				if acc.IsDefault {
-					kit.Badge(c, i18n.T("settings.account.default"))
-				}
-				if acc.ReceiveOnly {
-					kit.Badge(c, i18n.T("settings.account.receive_only"))
-				}
-				if isArchive(acc) { // never syncs
-					return
-				}
-				text, tone := cmpTr("settings.account.status."+acc.Status, acc.Status), kit.BadgeWarning
-				if acc.Status == "ok" {
-					tone = kit.BadgeSuccess
-					if at, ok := a.syncedAtBy[acc.ID]; ok {
-						text = i18n.Tf("shell.sync.synced", a.ago(at))
-					}
-				}
-				kit.BadgeWith(c, text, kit.BadgeOpts{Tone: tone})
+			}
+			ui.Text(c, "·").TextColor(t.Muted)
+			ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+				kit.StatusDot(c, dot)
+				ui.Text(c, text).TextColor(t.Muted)
 			})
 		})
 	})
@@ -511,7 +512,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	if !isArchive(acc) { // never the default
 		basic = append(basic, func() {
 			on := acc.IsDefault
-			if kit.SwitchRow(c, &on, i18n.T("settings.account.make_default"), i18n.T("settings.account.make_default.help")).Disabled(acc.IsDefault).Changed() && !acc.IsDefault {
+			if kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &on}, i18n.T("settings.account.make_default"), i18n.T("settings.account.make_default.help"), "", nil).Disabled(acc.IsDefault || acc.ReceiveOnly).Changed() && !acc.IsDefault && !acc.ReceiveOnly {
 				p.makeDefault(acc.ID)
 			}
 		})
@@ -526,16 +527,13 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	if isArchive(acc) {
 		removeHelp = i18n.T("settings.account.archive.remove.help")
 	}
-	remove := func() {
-		settingsSection(c, i18n.T("settings.account.remove"), "",
-			row(i18n.T("settings.account.remove.row"), strings.TrimRight(removeHelp, "。."), func() {
-				kit.Button(c, i18n.T("settings.account.remove.button"), kit.ButtonOpts{Variant: kit.Outline, Tone: kit.ToneDanger}).Label(i18n.Tf("settings.account.remove.aria", accountAddr(acc))).OnClick(func() { p.openDialog("remove", acc) })
-			}))
-	}
+	removeRow := row(i18n.T("settings.account.remove.row"), strings.TrimRight(removeHelp, "。."), func() {
+		kit.Button(c, i18n.T("settings.account.remove.button"), kit.ButtonOpts{Variant: kit.Outline, Tone: kit.ToneDanger}).Label(i18n.Tf("settings.account.remove.aria", accountAddr(acc))).OnClick(func() { p.openDialog("remove", acc) })
+	})
 	if isArchive(acc) { // no servers, sync, sending or mailbox roles: only its storage
 		settingsSection(c, i18n.T("settings.account.archive.storage"), "",
 			row(i18n.T("settings.account.usage"), i18n.T("settings.account.archive.usage.help"), func() { ui.Text(c, usage).TextColor(t.Muted) }))
-		remove()
+		settingsSection(c, i18n.T("settings.account.remove"), "", removeRow)
 		return
 	}
 	p.accountSignatureView(c, acc)
@@ -567,7 +565,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 		}),
 		func() {
 			on := acc.LabelKeywords
-			if kit.SwitchRow(c, &on, i18n.T("settings.account.label_keywords"), i18n.T("settings.account.label_keywords.help")).Changed() {
+			if kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &on}, i18n.T("settings.account.label_keywords"), i18n.T("settings.account.label_keywords.help"), "", nil).Changed() {
 				p.setLabelKeywords(acc.ID, on)
 			}
 		},
@@ -619,8 +617,8 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 		}),
 		row(i18n.T("settings.account.import.row"), i18n.T("settings.account.import.help"), func() {
 			settingButton(c, i18n.T("settings.account.import.button"), kit.Outline, p.importing).OnClick(p.importAccounts)
-		}))
-	remove()
+		}),
+		removeRow)
 }
 
 func (p *settingsPage) exportAccounts() {

@@ -404,6 +404,9 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 		if a.route.Page == PageMail {
 			a.mail.titleActions(c)
 		}
+		if p, ok := a.page().(*contactsPage); ok {
+			p.titleActions(c)
+		}
 	})
 }
 

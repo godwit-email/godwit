@@ -220,9 +220,9 @@ func (v *rulesView) view(c *ui.Context) {
 func (v *rulesView) templateCard(c *ui.Context, key, icon string, d core.RuleDoc) {
 	t, th := theme.Of(c), c.Theme()
 	name := i18n.T("settings.rules.template." + key)
-	kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { v.fromTemplate(d, name) }}).
+	kit.ChoiceCard(c, kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { v.fromTemplate(d, name) }}).
 		Label(i18n.Tf("settings.rules.template.use.label", name)).Grow(1).Basis(0).Shrink(1).
-		AlignItems(ui.Start).Gap(th.Space(3)).Padding(th.Space(3), th.Space(3.5)).Radius(t.Radius.Xl).Children(func() {
+		AlignItems(ui.Start).Gap(th.Space(3)).Padding(th.Space(3), th.Space(3.5)).Radius(t.Radius.Xl), kit.ChoiceCardOpts{}, func() {
 		kit.Tile(c, th.Space(8), th.Space(8), kit.ToneTint).Children(func() {
 			ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
 		})

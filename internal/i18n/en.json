@@ -1209,7 +1209,6 @@
   },
   "reader_unsubscribe_title": "Unsubscribe from this list?",
   "settings_about": "About",
-  "settings_about_build": "Version",
   "settings_about_updates_check": "Check for Updates",
   "settings_about_upgrade": "Update to {arg1}",
   "@settings_about_upgrade": {
@@ -1219,7 +1218,6 @@
       }
     }
   },
-  "settings_about_links": "Links",
   "settings_about_site": "Website",
   "settings_about_source": "Source code",
   "settings_about_star": "Star",
@@ -1260,7 +1258,7 @@
   "settings_account_detail_keychain_unavailable": "The keychain is unavailable",
   "settings_account_detail_token_revoked": "The sign-in was revoked",
   "settings_account_edit_servers": "Edit",
-  "settings_account_export": "Export accounts",
+  "settings_account_export": "Export and delete",
   "settings_account_export_button": "Export…",
   "settings_account_export_done": "Accounts exported",
   "settings_account_export_help": "Includes servers, sender names, signatures and sync ranges, without passwords, tokens or mail",
@@ -2036,8 +2034,10 @@
   },
   "settings_models_del_title": "Confirm deletion",
   "settings_models_dialog_add": "Add a model service",
-  "settings_models_dialog_desc": "Pick a provider, enter its key, then decide whether it generates, judges, or both. A service can offer several formats; pick one for each capability.",
-  "settings_models_dialog_desc_sub": "Sign in with a ChatGPT or SuperGrok plan you already have; no API key needed. The generating model judges too.",
+  "settings_models_dialog_desc": "Connect a model service, then decide whether it generates, judges, or both.",
+  "settings_models_access": "Access",
+  "settings_models_access_api": "Connect with the provider's API key. A service can offer several formats; pick one for each capability.",
+  "settings_models_access_sub": "Sign in with a ChatGPT or SuperGrok plan you already have; no API key needed. The generating model judges too.",
   "settings_models_edit": "Edit {arg1}",
   "@settings_models_edit": {
     "placeholders": {
@@ -3267,7 +3267,7 @@
   "contacts_stat_received": "Received",
   "contacts_stat_sent": "Sent",
   "contacts_stat_last": "Last Exchanged",
-  "contacts_mail": "Mail Exchanged · {arg1, number, ::group-off}",
+  "contacts_exchanged": "{arg1, number, ::group-off} exchanged",
   "contacts_replied": "Replied",
   "reader_view_contact": "View Contact",
   "mail_menu_labels": "Labels",
@@ -3812,7 +3812,7 @@
   "view_save_search": "Save as view",
   "view_added": "Added to “{arg1}”",
   "view_removed": "Removed from “{arg1}”",
-  "view_archived": "Archived",
+  "view_archived_n": "{arg1, plural, one {Archived {arg1, number, ::group-off} email} other {Archived {arg1, number, ::group-off} emails}}",
   "view_follow_up": "Write a follow-up",
   "view_band_new_reply": "New reply, back in your inbox.",
   "view_band_unreplied": "Sent directly to you, not replied yet.",

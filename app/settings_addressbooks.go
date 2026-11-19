@@ -172,7 +172,7 @@ func (v *addressBooksView) accountSection(c *ui.Context, acc core.Account) {
 	}
 	rows := []func(){func() {
 		on := linked || v.linking[acc.ID]
-		if kit.SwitchRow(c, &on, i18n.Tf("settings.addressbooks.link", brand), desc).Disabled(v.linking[acc.ID]).Changed() {
+		if kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &on}, i18n.Tf("settings.addressbooks.link", brand), desc, "", nil).Disabled(v.linking[acc.ID]).Changed() {
 			if on {
 				v.link(acc)
 			} else {
@@ -206,7 +206,7 @@ func (v *addressBooksView) bookRows(c *ui.Context, ab core.AddressBook) []func()
 		for _, col := range ab.Collections {
 			rows = append(rows, func() {
 				on := col.Enabled
-				if kit.SwitchRow(c.Key(col.ID), &on, col.Name, i18n.Plural("settings.addressbooks.cards", col.CardCount)).
+				if kit.FieldWith(c.Key(col.ID), kit.FieldOpts{Horizontal: true, Switch: &on}, col.Name, i18n.Plural("settings.addressbooks.cards", col.CardCount), "", nil).
 					Label(i18n.Tf("settings.addressbooks.collection.toggle", col.Name)).Changed() {
 					v.toggleCollection(ab.ID, col.ID, on)
 				}
@@ -238,16 +238,13 @@ func (v *addressBooksView) syncText(ab core.AddressBook) string {
 // sign-in and removal, as an account's page.
 func (v *addressBooksView) page(c *ui.Context, ab core.AddressBook) {
 	a := v.a
-	t, th := theme.Of(c), c.Theme()
+	t := theme.Of(c)
 	if v.renameID != ab.ID {
 		v.renameID, v.rename = ab.ID, ab.Name
 	}
-	ui.Row(c).Gap(th.Space(4)).Children(func() {
-		presetMark(c, ab.Preset, theme.MarkXl)
-		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
-			kit.Text(c, ab.Name, t.Text.X3l).FontWeight(600).SingleLine()
-			ui.Text(c, abKind(ab)).TextColor(t.Muted)
-		})
+	ui.Column(c).Gap(theme.HeadingGap).Children(func() {
+		pageHeading(c, ab.Name, "")
+		ui.Text(c, abKind(ab)).TextColor(t.Muted)
 	})
 	settingsSection(c, i18n.T("settings.account.basic"), "", func() {
 		settingRow(c, i18n.T("settings.account.alias"), "", func() {

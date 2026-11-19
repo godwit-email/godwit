@@ -422,12 +422,31 @@ func (p *mailPage) archiveThreads(rows []mailItem) {
 		for _, it := range rows { // not the row advance chose meanwhile
 			l.sel.Remove(it.key())
 		}
-		p.offerUndoArchive([]core.ArchiveUndo{undo}, start)
+		p.offerUndoArchiveOf(len(threads), []core.ArchiveUndo{undo}, start)
 	})
 }
 
-// offerUndoArchive is the toast after an archive: it says so, and takes it back.
+// offerUndoArchive is the toast after archiving messages: it says how many
+// moved, and takes it back. Those are the messages the user chose that moved,
+// not the conversations' other copies.
 func (p *mailPage) offerUndoArchive(undos []core.ArchiveUndo, start time.Time) {
+	moved := map[int64]bool{}
+	marked := map[int64]bool{}
+	for _, u := range undos {
+		for _, m := range u.Moved {
+			moved[m.ID] = true
+		}
+		for _, m := range u.Marks {
+			marked[m.ThreadID] = true
+		}
+	}
+	p.offerUndoArchiveOf(max(len(moved), len(marked)), undos, start)
+}
+
+// offerUndoArchiveOf is offerUndoArchive titled with n, how many the user
+// archived: the conversations of ArchiveThreads, whose Moved holds every inbox
+// copy of each.
+func (p *mailPage) offerUndoArchiveOf(n int, undos []core.ArchiveUndo, start time.Time) {
 	a := p.a
 	var all core.ArchiveUndo
 	for _, u := range undos {
@@ -436,13 +455,14 @@ func (p *mailPage) offerUndoArchive(undos []core.ArchiveUndo, start time.Time) {
 	if len(all.Moved) == 0 && len(all.Marks) == 0 {
 		return
 	}
+	title := i18n.Tf("view.archived_n", n)
 	// Start before the Service call so the toast cannot outlive its durable deadline.
 	left := start.Add(core.UndoArchiveWindow).Sub(a.clock.Now())
 	if left <= 0 {
-		a.toast(i18n.T("view.archived"))
+		a.toast(title)
 		return
 	}
-	a.toasts = append(a.toasts, ui.Toast{ID: fmt.Sprintf("archive-%d", a.clock.Now().UnixNano()), Title: i18n.T("view.archived"),
+	a.toasts = append(a.toasts, ui.Toast{ID: fmt.Sprintf("archive-%d", a.clock.Now().UnixNano()), Title: title,
 		Action: i18n.T("compose.undo"), Timeout: left, Data: kit.ToastData{Deadline: start.Add(core.UndoArchiveWindow)}, OnAction: func() {
 			a.writes.Chain("mail:expand", func(ctx context.Context) error { return a.svc.UndoArchiveThreads(ctx, all) }, a.toastErr)
 		}})

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"sync"
@@ -229,7 +230,7 @@ func TestReaderAvatarStill(t *testing.T) {
 	h.seeBody(msgs[1].ID)
 	initial := func() ui.Rect { // bob's: the first message's avatar
 		h.t.Helper()
-		box, ok := h.tt.Find("B")
+		box, ok := h.tt.Find("bob@example.com") // its avatar's box: the list's avatar has no label
 		if !ok {
 			t.Fatalf("no avatar: %q", h.tt.Texts())
 		}
@@ -251,8 +252,8 @@ func TestReaderAvatarStill(t *testing.T) {
 	}
 }
 
-// A message's header keeps to the column its subject does: the avatar's
-// left edge under the subject's.
+// A message is a paper in the column its subject keeps to: its paper's left
+// edge is the subject's, its avatar a padding in from it.
 func TestReaderMessageAligned(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	h.resize(2400, 900) // the pane wider than its column, which centers in it
@@ -262,9 +263,44 @@ func TestReaderMessageAligned(t *testing.T) {
 	h.tt.Advance(2 * theme.MotionBase)
 	subject, _ := h.tt.Find("Plan")
 	avatar, ok := h.tt.Find("bob@example.com") // the avatar first, its pressable labelled by the address
-	if !ok || avatar.X != subject.X {
-		t.Fatalf("avatar at x %v, subject at x %v", avatar.X, subject.X)
+	const padding = 12                         // Space(3)
+	if !ok || math.Abs(float64(avatar.X-subject.X-padding)) > 1 {
+		t.Fatalf("avatar at x %v, subject at x %v: want it %d in", avatar.X, subject.X, padding)
 	}
+}
+
+// Folded messages are papers of a height: one after the other they are that
+// and the gap apart, with no hairline between; a click opens one into its
+// paper, which the fold button folds again.
+func TestReaderFoldedPapers(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	h.setSettings(func(s *core.Settings) { s.ThreadCollapse = false })
+	base := h.clock.Now()
+	h.put(acc, "INBOX", coretest.Msg("bob@example.com", acc.Email, "Plan", "first words", coretest.MessageID("a@x"), at(base, 3)))
+	h.put(acc, "INBOX", coretest.Msg("carol@example.com", acc.Email, "Re: Plan", "second words", coretest.MessageID("b@x"), coretest.InReplyTo("a@x"), at(base, 2)))
+	h.put(acc, "INBOX", coretest.Msg("dave@example.com", acc.Email, "Re: Plan", "third words", coretest.MessageID("c@x"), coretest.InReplyTo("b@x"), at(base, 1)))
+	h.syncNow(acc)
+	h.waitMail("the thread", func() bool { return len(h.items()) == 1 })
+	msgs := h.messages(h.items()[0].ID)
+	r := h.app.mail.reader
+	h.openThread(msgs[0].ThreadID)
+	h.seeBody(msgs[2].ID)
+	h.tt.Advance(2 * theme.MotionBase)
+	first, _ := h.tt.Find("first words")
+	second, _ := h.tt.Find("second words")
+	const folded, gap = 44, 8 // Space(11), Space(2)
+	if got := second.Y - first.Y; math.Abs(float64(got-(folded+gap))) > 2 {
+		t.Fatalf("folded rows %v apart, want %d", got, folded+gap)
+	}
+	if r.open[msgs[0].ID] || r.open[msgs[1].ID] || !r.open[msgs[2].ID] {
+		t.Fatalf("open %v: want only the newest", r.open)
+	}
+	h.click("first words")
+	h.until("the first open", func() bool { return r.open[msgs[0].ID] })
+	h.tt.Advance(2 * theme.MotionBase)
+	h.click("收起")
+	h.until("the first folded again", func() bool { return !r.open[msgs[0].ID] })
 }
 
 // A folded message shows its AI gist, marked, in place of the start of its

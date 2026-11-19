@@ -709,7 +709,10 @@ func (v *rulesView) aside(c *ui.Context) {
 			bg  bool
 			key string
 		}{{false, "window"}, {true, "background"}} {
-			kit.RadioCard(c.Key(o.key), &v.edit.Background, o.bg, i18n.T("settings.rules.run."+o.key), i18n.T("settings.rules.run."+o.key+".help"))
+			label := i18n.T("settings.rules.run." + o.key)
+			kit.ChoiceCard(c, ui.RadioBase(c.Key(o.key), &v.edit.Background, o.bg).Label(label), kit.ChoiceCardOpts{Selected: v.edit.Background == o.bg, Look: kit.ChoiceOnCard, Radio: true}, func() {
+				kit.ChoiceText(c, label, i18n.T("settings.rules.run."+o.key+".help"))
+			})
 		}
 	})
 	kit.Card(c, ui.Column(c), kit.ToneTint).FillWidth().Gap(th.Space(2)).Padding(th.Space(3)).Children(func() {
