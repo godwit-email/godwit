@@ -110,6 +110,9 @@ func Alert(c *ui.Context, tone Tone, text string, actions func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return Block(c, ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), th.Space(2.5)), tone).
 		FontSize(t.Text.Sm).Children(func() {
+		if tone == ToneWarning || tone == ToneDanger { // the design's mark before what went wrong
+			ui.Icon(c, icons.Get("info")).Size(theme.IconSm, theme.IconSm).Shrink(0).AlignSelf(ui.Start).Margin(th.Space(0.5), 0, 0, 0).Role(ui.RoleNone)
+		}
 		ui.Text(c, text).Grow(1).Shrink(1) // the text wraps; the actions stay on its right
 		if actions != nil {
 			actions()
