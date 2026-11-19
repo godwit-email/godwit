@@ -400,7 +400,8 @@ func (p *mailPage) removeFromView(b core.SavedView, rows []mailItem) {
 	a, threads := p.a, threadsOf(rows)
 	p.setViewExceptions(b.ID, threads, core.ViewExceptionRemoved, func() {
 		a.toasts = append(a.toasts, ui.Toast{ID: fmt.Sprintf("view-out-%d-%d", b.ID, threads[0]), Title: i18n.Tf("view.removed", b.Name),
-			Action: i18n.T("compose.undo"), Timeout: viewUndoWindow, OnAction: func() { p.setViewExceptions(b.ID, threads, "", nil) }})
+			Action: i18n.T("compose.undo"), Timeout: viewUndoWindow, OnAction: func() { p.setViewExceptions(b.ID, threads, "", nil) },
+			Data: kit.ToastData{Deadline: a.clock.Now().Add(viewUndoWindow)}}) // a pointer holding the toast does not hold the undo
 	})
 }
 
@@ -623,7 +624,7 @@ func (r *reader) viewBand(c *ui.Context) {
 	}
 	t, th := theme.Of(c), c.Theme()
 	r.column(c).Children(func() {
-		kit.Block(c, ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(4), th.Space(6)), kit.ToneTint).Radius(t.Radius.Xl).Children(func() {
+		kit.Card(c, ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(4), th.Space(6)), kit.ToneTint).Children(func() {
 			ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon).Shrink(0).TextColor(t.Muted)
 			kit.Text(c, text, t.Text.Sm).Grow(1).Shrink(1)
 			if w.Status == core.ReplyStatusWaiting {

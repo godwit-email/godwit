@@ -216,6 +216,16 @@ func TestViewWhyAndRemove(t *testing.T) {
 	h.waitMail("it gone", func() bool { return len(h.items()) == 0 })
 	h.click(i18n.T("compose.undo"))
 	h.waitMail("it back", func() bool { return len(h.items()) == 1 })
+
+	// Held under the pointer past its window, the toast stays but its undo goes.
+	h.click(i18n.T("view.remove"))
+	h.waitMail("it gone again", func() bool { return len(h.items()) == 0 })
+	title, _ := h.tt.Find(i18n.Tf("view.removed", "Acme"))
+	h.tt.Move(title.X+1, title.Y+1)
+	h.advance(viewUndoWindow + time.Second)
+	if !h.tt.HasText(i18n.Tf("view.removed", "Acme")) || h.tt.HasText(i18n.T("compose.undo")) {
+		t.Fatalf("past its window the toast offers undo: %q", h.tt.Texts())
+	}
 }
 
 // TestViewSaveSearch: a search becomes a view with the same results, and a
@@ -247,6 +257,10 @@ func TestViewSaveSearch(t *testing.T) {
 	})
 	if got := p.viewEdit.box.Doc.Conditions; len(got) != 2 || got[0].Field != core.FieldAny || got[1].Field != core.FieldDate || got[1].Value != "30" {
 		t.Fatalf("conditions %+v", got)
+	}
+	// The preview only shows: its rows have no star to toggle.
+	if h.tt.HasText(i18n.T("mail.action.star")) {
+		t.Errorf("the preview's row offers a star: %q", h.tt.Texts())
 	}
 	h.click(i18n.T("view.editor.create"))
 	h.waitMail("the view", func() bool { return p.viewEdit == nil && p.savedViewID() != 0 && len(h.items()) == 1 })

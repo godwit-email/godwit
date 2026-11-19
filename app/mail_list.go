@@ -1241,7 +1241,7 @@ func (p *mailPage) item(c *ui.Context, it mailItem) ui.Element {
 	if p.searched {
 		return p.resultRow(c, it)
 	}
-	return p.row(c, it)
+	return p.row(c, it, func() { p.batch("toggle_star", []mailItem{it}) })
 }
 
 // folderLine is "folder · account" of a result.
@@ -1277,7 +1277,7 @@ func (p *mailPage) resultRow(c *ui.Context, it mailItem) ui.Element {
 				ui.Text(c, who).FontWeight(500).SingleLine().Shrink(1) // the lead line, as a list row's
 				securityIcon(c, p.a.settings, it.Security)
 				ui.Spacer(c)
-				p.starButton(c, it, col.Hovered())
+				p.star(c, it, col.Hovered(), func() { p.batch("toggle_star", []mailItem{it}) })
 				if it.Attach {
 					ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).Shrink(0).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
 				}
@@ -1377,11 +1377,18 @@ func (p *mailPage) searchedDesc() string {
 	return i18n.T("mail.search.empty_desc")
 }
 
-// starButton is a direct star/unstar toggle button on a mail row. As S, it
+// star is a row's star: a star/unstar button that runs toggle (as S, it
 // unstars only a row all starred; an unstarred row's shows on hover or focus,
-// always there for the keyboard and assistive technology.
-func (p *mailPage) starButton(c *ui.Context, it mailItem, hovered bool) {
+// always there for the keyboard and assistive technology), or with toggle nil
+// (a preview's row) its state alone, shown only when starred.
+func (p *mailPage) star(c *ui.Context, it mailItem, hovered bool, toggle func()) {
 	t := theme.Of(c)
+	if toggle == nil {
+		if it.Flagged > 0 {
+			ui.Icon(c, icons.Get("star-fill")).Size(theme.IconXs, theme.IconXs).Shrink(0).TextColor(t.Attention).Label(i18n.T("mail.unified.starred"))
+		}
+		return
+	}
 	starred := it.Flagged == it.Count
 	icon, label := "star", i18n.T("mail.action.star")
 	if starred {
@@ -1393,9 +1400,7 @@ func (p *mailPage) starButton(c *ui.Context, it mailItem, hovered bool) {
 	} else if !hovered && !b.FocusVisible() {
 		b.Opacity(0)
 	}
-	b.OnClick(func() {
-		p.batch("toggle_star", []mailItem{it})
-	})
+	b.OnClick(toggle)
 }
 
 // withAvatar lays out lines in a column beside who's avatar: a row's body, the
@@ -1412,7 +1417,8 @@ func withAvatar(c *ui.Context, who string, lines func()) {
 // row is one thread or message: who, when, the subject and the start of the
 // text beside the sender's avatar; unread ones in bold, with a dot in the
 // row's left gutter that says how many are unread to assistive technology.
-func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
+// toggleStar is its star's action, nil for a row that only shows (star).
+func (p *mailPage) row(c *ui.Context, it mailItem, toggleStar func()) ui.Element {
 	t := theme.Of(c)
 	th, small := c.Theme(), t.Text.Xs
 	// The lead line carries the weight, 600 unread and 500 read; the line
@@ -1449,7 +1455,7 @@ func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
 					who(lead)
 				}
 				ui.Spacer(c)
-				p.starButton(c, it, col.Hovered())
+				p.star(c, it, col.Hovered(), toggleStar)
 				if it.Attach {
 					ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).Shrink(0).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
 				}

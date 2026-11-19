@@ -301,12 +301,12 @@ func (e *viewEditor) form(c *ui.Context) {
 			kit.Input(c, &e.box.Name, kit.InputOpts{Placeholder: i18n.T("view.editor.name.placeholder")}).Label(i18n.T("view.editor.name")).Grow(1)
 		})
 	}, func() {
-		settingRow(c, i18n.T("view.editor.account"), "", func() {
+		settingRow(c, i18n.T("view.editor.account"), "", func() ui.Element {
 			accts := []kit.Option[int64]{{Value: 0, Label: i18n.T("settings.rules.account.all")}}
 			for _, acc := range a.accounts {
 				accts = append(accts, kit.Option[int64]{Value: acc.ID, Label: accountName(acc)})
 			}
-			settingSelect(c, i18n.T("view.editor.account"), &d.Account, accts)
+			return settingSelect(c, i18n.T("view.editor.account"), &d.Account, accts)
 		})
 	})
 	ui.Column(c).FillWidth().Gap(theme.SectionGap).Children(func() {
@@ -649,7 +649,7 @@ func (e *viewEditor) preview(c *ui.Context) {
 						viewHeading(c.Key("head:"+g.ID), listEntry{head: cmp.Or(g.Name, i18n.T("view.other")), group: g.ID, count: g.Total})
 					}
 					for _, r := range g.Items {
-						e.p.row(c.Key(r.ID), viewItem(r, g.ID))
+						e.p.row(c.Key(r.ID), viewItem(r, g.ID), nil) // a preview: no star to toggle
 					}
 				}
 			})
