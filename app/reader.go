@@ -1223,7 +1223,7 @@ func (r *reader) measured(c *ui.Context, e ui.Element, was float32) float32 {
 // messages scroll under.
 func (r *reader) toolbar(c *ui.Context) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return ui.Row(c).Wrap().Gap(th.Space(0.5)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(5)).Material(kit.Bar(t.Background)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
+	return ui.Row(c).Wrap().Gap(th.Space(0.5)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(5)).Material(kit.Bar(t.MaterialBar)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
 		kit.ButtonGroup(c,
 			kit.GroupItem{Icon: "reply", Tip: i18n.T("reader.reply"), OnClick: func() { r.draft("reply") }},
 			kit.GroupItem{Icon: "reply-all", Tip: i18n.T("reader.reply_all"), OnClick: func() { r.draft("reply_all") }},

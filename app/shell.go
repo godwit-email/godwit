@@ -6,6 +6,7 @@ import (
 	"math"
 	"runtime"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -206,6 +207,10 @@ func (a *App) tick() {
 	})
 }
 
+// actionToastTime is how long a toast with an action shows unless it says,
+// longer than a plain one so the user can reach the action.
+const actionToastTime = 8 * time.Second
+
 func (a *App) toast(msg string) { a.toastAs("", msg) }
 
 // toastAs shows msg as a toast of a kind: kit.ToastSuccess, ToastWarning,
@@ -244,7 +249,16 @@ func (a *App) View(c *ui.Context) {
 			root = t.Window.Alpha(theme.MaterialTint) // lighter, as the design's material, the blur still showing
 		}
 	}
+	kit.ToastNow(c, a.clock.Now())
 	for _, ts := range a.toasts {
+		if ts.Action != "" {
+			if ts.Timeout == 0 {
+				ts.Timeout = actionToastTime
+			}
+			if ts.OnAction != nil {
+				ts.OnAction = sync.OnceFunc(ts.OnAction)
+			}
+		}
 		c.AddToast(ts)
 	}
 	for _, id := range a.closeToasts {
@@ -420,7 +434,11 @@ func (a *App) body(c *ui.Context) {
 		})
 	}
 	row.Children(func() {
-		content := func() { ui.Column(c).Fill().Children(func() { p.Content(c) }) }
+		content := func() {
+			panel := ui.Column(c).Fill()
+			kit.ToastAnchor(c, panel)
+			panel.Children(func() { p.Content(c) })
+		}
 		if a.sidebarHidden {
 			a.edgeGrip(c, visible, sidebar, content)
 			return

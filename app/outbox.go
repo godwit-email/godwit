@@ -242,10 +242,10 @@ func (a *App) offerUndo() {
 				continue
 			}
 			a.undoToasts[e.ID] = true
+			window := min(e.SendAfter.Sub(now), core.UndoSendWindow) // the window, should the clocks disagree
 			a.toasts = append(a.toasts, ui.Toast{ID: undoToastID(e.ID), Title: i18n.T("outbox.undo.sending"),
 				Description: subjectOf(e.OutboxItem) + " · " + e.Account, Action: i18n.T("outbox.undo"),
-				OnAction: func() { a.undoSend(e) },
-				Timeout:  min(e.SendAfter.Sub(now), core.UndoSendWindow)}) // the window, should the clocks disagree
+				OnAction: func() { a.undoSend(e) }, Timeout: window, Data: kit.ToastData{Deadline: now.Add(window)}})
 		}
 		for id, showing := range a.undoToasts {
 			if showing && !open[id] {

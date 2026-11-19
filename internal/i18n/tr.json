@@ -2153,6 +2153,7 @@
   "mail_archive_import_files": ".eml dosyalarını içe aktar…",
   "mail_archive_import_folder": "Klasörü içe aktar…",
   "mail_archive_importing": "İçe aktarılıyor {arg1, number, ::group-off}/{arg2, number, ::group-off}",
+  "mail_archive_import_cancel": "İçe aktarmayı iptal et",
   "mail_archive_import_done": "İçe aktarılan: {arg1, number, ::group-off}",
   "mail_archive_import_canceled": "İçe aktarma iptal edildi, aktarılan: {arg1, number, ::group-off}",
   "mail_archive_import_duplicates": "Zaten arşivde, atlanan: {arg1, number, ::group-off}",

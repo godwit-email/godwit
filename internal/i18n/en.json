@@ -3933,6 +3933,7 @@
   "mail_archive_import_files": "Import .eml files…",
   "mail_archive_import_folder": "Import folder…",
   "mail_archive_importing": "Importing {arg1, number, ::group-off} of {arg2, number, ::group-off}",
+  "mail_archive_import_cancel": "Cancel import",
   "mail_archive_import_done": "{arg1, plural, one {Imported {arg1, number, ::group-off} message} other {Imported {arg1, number, ::group-off} messages}}",
   "mail_archive_import_canceled": "Import canceled after {arg1, number, ::group-off} imported",
   "mail_archive_import_duplicates": "{arg1, number, ::group-off} already in the archive, skipped",

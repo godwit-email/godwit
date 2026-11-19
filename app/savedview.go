@@ -444,7 +444,7 @@ func (p *mailPage) offerUndoArchive(undos []core.ArchiveUndo, start time.Time) {
 		return
 	}
 	a.toasts = append(a.toasts, ui.Toast{ID: fmt.Sprintf("archive-%d", a.clock.Now().UnixNano()), Title: i18n.T("view.archived"),
-		Action: i18n.T("compose.undo"), Timeout: left, OnAction: func() {
+		Action: i18n.T("compose.undo"), Timeout: left, Data: kit.ToastData{Deadline: start.Add(core.UndoArchiveWindow)}, OnAction: func() {
 			a.writes.Chain("mail:expand", func(ctx context.Context) error { return a.svc.UndoArchiveThreads(ctx, all) }, a.toastErr)
 		}})
 }

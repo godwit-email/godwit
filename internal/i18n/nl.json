@@ -2153,6 +2153,7 @@
   "mail_archive_import_files": ".eml-bestanden importeren…",
   "mail_archive_import_folder": "Map importeren…",
   "mail_archive_importing": "Importeren {arg1, number, ::group-off} van {arg2, number, ::group-off}",
+  "mail_archive_import_cancel": "Import annuleren",
   "mail_archive_import_done": "Geïmporteerd: {arg1, number, ::group-off}",
   "mail_archive_import_canceled": "Import geannuleerd, geïmporteerd: {arg1, number, ::group-off}",
   "mail_archive_import_duplicates": "Al in het archief, overgeslagen: {arg1, number, ::group-off}",

@@ -2153,6 +2153,7 @@
   "mail_archive_import_files": "Importa file .eml…",
   "mail_archive_import_folder": "Importa cartella…",
   "mail_archive_importing": "Importazione {arg1, number, ::group-off} di {arg2, number, ::group-off}",
+  "mail_archive_import_cancel": "Annulla importazione",
   "mail_archive_import_done": "Importati: {arg1, number, ::group-off}",
   "mail_archive_import_canceled": "Importazione annullata, importati: {arg1, number, ::group-off}",
   "mail_archive_import_duplicates": "Già nell’archivio, saltati: {arg1, number, ::group-off}",

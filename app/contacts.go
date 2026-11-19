@@ -686,7 +686,7 @@ func (p *contactsPage) archive(addr string) {
 		}
 		left := start.Add(core.UndoArchiveWindow).Sub(a.clock.Now())
 		if len(res.Moved) > 0 && left > 0 {
-			toast.Timeout = left
+			toast.Timeout, toast.Data = left, kit.ToastData{Deadline: start.Add(core.UndoArchiveWindow)}
 			toast.Action, toast.OnAction = i18n.T("compose.undo"), func() {
 				a.do(func(ctx context.Context) error { return a.svc.UndoArchive(ctx, res) }, func(err error) {
 					if err != nil {

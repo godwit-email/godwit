@@ -2153,6 +2153,7 @@
   "mail_archive_import_files": ".eml 파일 가져오기…",
   "mail_archive_import_folder": "폴더 가져오기…",
   "mail_archive_importing": "가져오는 중 {arg1, number, ::group-off}/{arg2, number, ::group-off}",
+  "mail_archive_import_cancel": "가져오기 취소",
   "mail_archive_import_done": "{arg1, number, ::group-off}개 메일을 가져왔습니다",
   "mail_archive_import_canceled": "가져오기를 취소했습니다({arg1, number, ::group-off}개 가져옴)",
   "mail_archive_import_duplicates": "{arg1, number, ::group-off}개는 이미 보관함에 있어 건너뛰었습니다",

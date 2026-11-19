@@ -58,7 +58,7 @@ func Palette(c *ui.Context, open *bool, query *string, o PaletteOpts, head, body
 		// a dialog's scrim, but fixed near the top: as hits come and go the panel only grows down
 		backdrop.Background(t.Scrim.Alpha(k)).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0).Transition(leave(c))
 		panel.Label(o.Label).Opacity(k).Margin(rise(k), 0, 0, 0).Width(theme.DialogWideWidth).MaxHeight(theme.SheetMaxHeight).
-			Radius(t.Radius.Xl).Clip().Border(theme.Hairline, t.Border)
+			Radius(t.Radius.X2l).Clip().Border(theme.Hairline, t.GlassBorder)
 		glassPanel(panel, t)
 		Elevate(c, panel, theme.ShadowX2l)
 		var in ui.Element
@@ -154,14 +154,12 @@ func PalettePreview(c *ui.Context, body func()) {
 	if row == (ui.Element{}) {
 		return
 	}
-	t, th := theme.Of(c), c.Theme()
+	th := c.Theme()
 	ui.Overlay(c, func() {
 		// The row stops the list's 8px padding short of the panel's edge.
 		card := ui.Column(c).AttachTo(row, ui.AnchorTopEnd, ui.AnchorTopStart).MarginStart(th.Space(4)).
-			Width(th.Space(72)).Gap(th.Space(2)).Padding(th.Space(4)).Radius(t.Radius.Xl).Clip().
-			Material(LiquidGlass(t.GlassBg)).
-			Border(theme.Hairline, t.GlassBorder)
-		Elevate(c, card, theme.ShadowLg)
+			Width(th.Space(72))
+		popoverCard(c, card)
 		card.Children(body)
 	})
 }

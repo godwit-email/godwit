@@ -986,6 +986,7 @@ func TestBatchAcrossAccounts(t *testing.T) {
 	h.until("both archives filled", func() bool {
 		return h.countIn(h.folderOf(accs[0], "archive")) == 1 && h.countIn(h.folderOf(accs[1], "archive")) == 1
 	})
+	h.hoverOn(i18n.T("compose.undo")) // the skip's toast is behind the undo's until the stack opens
 	h.until("the skip told", func() bool {
 		return slices.ContainsFunc(h.tt.Texts(), func(s string) bool {
 			return strings.Contains(s, "dave@example.com") && strings.Contains(s, "归档")

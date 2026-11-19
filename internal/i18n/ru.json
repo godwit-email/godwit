@@ -2153,6 +2153,7 @@
   "mail_archive_import_files": "Импорт файлов .eml…",
   "mail_archive_import_folder": "Импорт папки…",
   "mail_archive_importing": "Импорт {arg1, number, ::group-off} из {arg2, number, ::group-off}",
+  "mail_archive_import_cancel": "Отменить импорт",
   "mail_archive_import_done": "Импортировано писем: {arg1, number, ::group-off}",
   "mail_archive_import_canceled": "Импорт отменён, импортировано: {arg1, number, ::group-off}",
   "mail_archive_import_duplicates": "Уже в архиве, пропущено: {arg1, number, ::group-off}",

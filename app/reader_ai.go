@@ -958,8 +958,9 @@ func (r *reader) tagChips(c *ui.Context) {
 func (r *reader) replyBar(c *ui.Context) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	target, _ := r.replyTarget()
-	return ui.Column(c).Padding(th.Space(2.5), th.Space(7), th.Space(3)).Material(kit.Bar(t.Background)).
-		BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
+	bar := ui.Column(c).Padding(th.Space(2.5), th.Space(7), th.Space(3)).Material(kit.Bar(t.MaterialBar)).
+		BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border)
+	return bar.Children(func() {
 		r.column(c).Gap(th.Space(2)).Children(func() {
 			r.programReplyRow(c)
 			if st := r.ai[target.ID]; st != nil && r.taskReady("") && r.p.a.settings.QuickReplies {
@@ -981,7 +982,9 @@ func (r *reader) replyBar(c *ui.Context) ui.Element {
 					})
 				}
 			}
-			kit.InputGroup(c, kit.InputOpts{Flat: true, Size: kit.SizeLg}).Padding(0, th.Space(1), 0, th.Space(3)).Gap(th.Space(1)).Children(func() {
+			field := kit.InputGroup(c, kit.InputOpts{Flat: true, Size: kit.SizeLg}).Padding(0, th.Space(1), 0, th.Space(3)).Gap(th.Space(1))
+			kit.ToastBar(c, bar, field)
+			field.Children(func() {
 				name := r.replyName(target)
 				in := kit.Input(c, &r.replyAsk, kit.InputOpts{Bare: true, Placeholder: i18n.Tf("reader.reply_wit", name)}).Grow(1).Shrink(1).Label(i18n.T("reader.ask_wit"))
 				if in.Submitted() {

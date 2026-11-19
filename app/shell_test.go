@@ -463,8 +463,8 @@ func TestToasts(t *testing.T) {
 	h.app.toastErr(core.ErrTooLarge)
 	h.app.toastErr(context.Canceled)
 	h.tt.Frame()
+	h.hoverOn(humanize(core.ErrTooLarge)) // the newest is in front; the older shows once the stack opens
 	h.see("已保存")
-	h.see(humanize(core.ErrTooLarge))
 	if _, ok := h.tt.Find("报告问题"); ok {
 		t.Fatal("a known error offers a report")
 	}

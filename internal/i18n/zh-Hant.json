@@ -2153,6 +2153,7 @@
   "mail_archive_import_files": "匯入 .eml 檔案…",
   "mail_archive_import_folder": "匯入資料夾…",
   "mail_archive_importing": "正在匯入 {arg1, number, ::group-off}/{arg2, number, ::group-off}",
+  "mail_archive_import_cancel": "取消匯入",
   "mail_archive_import_done": "已匯入 {arg1, number, ::group-off} 封郵件",
   "mail_archive_import_canceled": "已取消匯入，匯入了 {arg1, number, ::group-off} 封",
   "mail_archive_import_duplicates": "{arg1, number, ::group-off} 封已在封存中，已略過",

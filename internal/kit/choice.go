@@ -201,11 +201,8 @@ func SelectWith[T comparable](c *ui.Context, o SelectOpts, sel *T, opts []Option
 	}
 	selectFace(c, s.Trigger, current, o)
 	s.Popup(func(panel ui.Element) {
-		panel.Margin(theme.PopupOffset, 0, 0, 0).Padding(th.Space(1)).
-			Radius(t.Radius.Lg).Clip().
-			Material(LiquidGlass(t.GlassBg)).
-			Border(theme.Hairline, t.GlassBorder)
-		Elevate(c, panel, theme.ShadowMd)
+		panel.Margin(theme.PopupOffset, 0, 0, 0).Padding(th.Space(1))
+		popupLook(c, panel, t.Radius.Lg)
 		for _, o := range opts {
 			item := s.Item(o.Value).Height(th.Space(7)).PaddingX(th.Space(1.5)).Gap(th.Space(1.5)).Radius(t.Radius.Md) // as a MenuItem
 			if o.Disabled {

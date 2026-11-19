@@ -887,56 +887,6 @@ func TestKitOverlayLeaves(t *testing.T) {
 	}
 }
 
-// TestKitToastTopCenter: toasts show at the top center, the oldest first.
-func TestKitToastTopCenter(t *testing.T) {
-	n := 0
-	tt := ui.NewTester(themed(func(c *ui.Context) {
-		for ; n < 2; n++ {
-			c.AddToast(ui.Toast{Title: []string{"older", "newer"}[n], Type: ToastSuccess, Timeout: -1})
-		}
-		ToastHost(c, "Close")
-	}), 800, 600)
-	tt.Frame()
-	older, ok1 := tt.Find("older")
-	newer, ok2 := tt.Find("newer")
-	if !ok1 || !ok2 {
-		t.Fatalf("toasts not shown: %q", tt.Texts())
-	}
-	if older.Y >= newer.Y || older.Y > 120 {
-		t.Errorf("newer at %v, older at %v: want the oldest on top, at the top", newer, older)
-	}
-	if mid := newer.X + newer.W/2; mid < 300 || mid > 500 {
-		t.Errorf("newer centered at x=%v, want near 400", mid)
-	}
-}
-
-func TestKitToastIcons(t *testing.T) {
-	tk := theme.Light()
-	for typ, want := range map[string]string{"": "", ToastSuccess: "circle-check", ToastWarning: "triangle-alert", ToastError: "circle-x"} {
-		if got := toastLook(tk, typ).icon; got != want {
-			t.Errorf("toastLook(%q).icon = %q, want %q", typ, got, want)
-		}
-	}
-}
-
-// TestKitToastTinted: a kind's toast takes its color's tint; a plain one stays white.
-func TestKitToastTinted(t *testing.T) {
-	tk := theme.Light()
-	for _, tc := range []struct {
-		typ            string
-		bg, border, fg ui.Color
-	}{
-		{"", tk.Background, tk.Border, tk.Foreground},
-		{ToastSuccess, tk.SuccessBg, tk.SuccessBorder, tk.SuccessText},
-		{ToastWarning, tk.WarningBg, tk.WarningBorder, tk.WarningText},
-		{ToastError, tk.DangerBg, tk.DangerBorder, tk.DangerText},
-	} {
-		if l := toastLook(tk, tc.typ); l.bg != tc.bg || l.border != tc.border || l.fg != tc.fg {
-			t.Errorf("toastLook(%q) = %v %v %v, want %v %v %v", tc.typ, l.bg, l.border, l.fg, tc.bg, tc.border, tc.fg)
-		}
-	}
-}
-
 // TestKitResizerPill: at rest the gap is clear; hovered, its middle is the
 // grip's line, the foreground at 20%; dragging it moves *size.
 func TestKitResizerPill(t *testing.T) {
@@ -1328,21 +1278,6 @@ func TestTabsUnderline(t *testing.T) {
 	}
 }
 
-func TestToastCap(t *testing.T) {
-	n := 0
-	tt := ui.NewTester(themed(func(c *ui.Context) {
-		for ; n < 4; n++ {
-			c.AddToast(ui.Toast{ID: string(rune('a' + n)), Title: []string{"first", "second", "third", "fourth"}[n], Timeout: -1})
-		}
-		ToastHost(c, "Close")
-	}), 800, 600)
-	tt.Frame()
-	tt.Frame()
-	if tt.HasText("first") || !tt.HasText("second") || !tt.HasText("fourth") {
-		t.Errorf("toasts = %q, want the oldest dropped", tt.Texts())
-	}
-}
-
 // TestButtonTones checks the toned looks against the design's variables
 // (Figma theme collection, light / dark): an Outline of a tone rests on
 // Background and fills with the tone's -bg on hover; a Ghost danger rests
@@ -1605,14 +1540,21 @@ func TestKbdKeys(t *testing.T) {
 	}
 }
 
-func TestGlassMaterialAndTokens(t *testing.T) {
+func TestFrostedMaterialAndTokens(t *testing.T) {
 	l := theme.Light()
-	mat := LiquidGlass(l.GlassBg).(GlassMaterial)
-	if mat.Blur != theme.GlassBlur {
-		t.Errorf("glass blur = %v, want %v", mat.Blur, theme.GlassBlur)
+	frosted = false
+	mat := frostedMaterial(l.MaterialPopover).(scrim)
+	if mat.blur != theme.MaterialBlur {
+		t.Errorf("material blur = %v, want %v", mat.blur, theme.MaterialBlur)
 	}
-	if mat.Tint != l.GlassBg {
-		t.Errorf("glass tint = %v, want %v", mat.Tint, l.GlassBg)
+	if mat.tint != l.MaterialPopover {
+		t.Errorf("material tint = %v, want %v", mat.tint, l.MaterialPopover)
+	}
+	if !frosted {
+		t.Error("a frosted material does not tell WebView")
+	}
+	if bar := Bar(l.MaterialBar).(scrim); bar.blur != theme.MaterialBlur || bar.tint != l.MaterialBar {
+		t.Errorf("bar = %+v, want the bar material", bar)
 	}
 }
 

@@ -36,6 +36,10 @@ var (
 	Black = OKLCH{0, 0, 0} // #000
 	// MacAlertGray is the gray macOS washes a window with under an alert, at 60%.
 	MacAlertGray = OKLCH{0.7412, 0, 0} // #ababab
+	// MacMaterial and MacMaterialDark are the grays of macOS's menu material,
+	// light and dark, which the design's popovers and toasts are tinted with.
+	MacMaterial     = OKLCH{0.9731, 0, 0} // #f6f6f6
+	MacMaterialDark = OKLCH{0.2768, 0, 0} // #282828
 
 	Neutral50  = OKLCH{0.985, 0, 0}
 	Neutral100 = OKLCH{0.97, 0, 0}

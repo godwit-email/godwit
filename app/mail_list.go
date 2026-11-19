@@ -1910,7 +1910,8 @@ func (p *mailPage) offerUndoPurge(title string, ids []int64, start time.Time) {
 		return
 	}
 	a.toasts = append(a.toasts, ui.Toast{ID: fmt.Sprintf("purge-%d-%d", start.UnixNano(), ids[0]), Title: title,
-		Action: i18n.T("compose.undo"), OnAction: func() { p.undoPurge(ids) }, Timeout: left})
+		Action: i18n.T("compose.undo"), OnAction: func() { p.undoPurge(ids) }, Timeout: left,
+		Data: kit.ToastData{Deadline: start.Add(core.UndoPurgeWindow)}})
 }
 
 // closeReaderOf closes the reader when what it shows is all among ids: the

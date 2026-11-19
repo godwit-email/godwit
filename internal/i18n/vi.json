@@ -2153,6 +2153,7 @@
   "mail_archive_import_files": "Nhập tệp .eml…",
   "mail_archive_import_folder": "Nhập thư mục…",
   "mail_archive_importing": "Đang nhập {arg1, number, ::group-off}/{arg2, number, ::group-off}",
+  "mail_archive_import_cancel": "Hủy nhập",
   "mail_archive_import_done": "Đã nhập {arg1, number, ::group-off} thư",
   "mail_archive_import_canceled": "Đã hủy nhập, đã nhập {arg1, number, ::group-off} thư",
   "mail_archive_import_duplicates": "{arg1, number, ::group-off} thư đã có trong kho, đã bỏ qua",

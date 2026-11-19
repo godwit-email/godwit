@@ -25,6 +25,12 @@ type Tokens struct {
 	// GlassBg, GlassBorder and GlassHover are the semantic tokens for frosted liquid glass surfaces
 	// (popovers, dropdowns, and floating menus).
 	GlassBg, GlassBorder, GlassHover ui.Color
+	// MaterialPopover, MaterialDialog and MaterialBar are the tints of the
+	// design's frosted materials over a backdrop blurred by MaterialBlur:
+	// popovers, menus and toasts (macOS's menu gray at 84%, 80% in the
+	// dark); dialogs and the search palette (Raised at 80%); a bar the
+	// content scrolls under (Background at 85%). GlassBorder edges them.
+	MaterialPopover, MaterialDialog, MaterialBar ui.Color
 	// HoverTint is a tint of the foreground for what sits on the window's
 	// material (the page switch's track, the top bar's ghost buttons), which
 	// a solid gray would cover; over white it is Hover's gray.
@@ -131,7 +137,7 @@ const (
 	TopBarHeight        = 44   // the top bar's least height
 	DialogSmWidth       = 440  // confirmations
 	BackdropBlur        = 4    // a frosted panel blurs what is behind it 4× this much
-	GlassBlur           = 20   // DIPs of Gaussian blur behind floating glass popovers
+	MaterialBlur        = 25   // DIPs of Gaussian blur behind the design's materials (its blur/material 50 is a CSS blur radius twice this); shortcut: matched by eye on macOS only, recheck on Windows
 	DialogLift          = 0.2  // a dialog's backdrop pads its bottom by this share of its height: the panel centred at 40%
 	DialogMinTop        = 32   // yet a dialog stays at least this far below the window's top
 	DialogTop           = 64   // a Top dialog's distance from the window's top
@@ -172,12 +178,13 @@ const (
 	LabelThumb            = 35  // its thumb's height; it is as much wider than a cell
 	LabelThumbRing        = 2   // the ring of the background the thumb sits on
 	LabelIconCell         = 36  // a cell of the label icon grid
-	ToastMaxWidth         = 420
-	ToastMax              = 3  // toasts shown at once
-	TitleButtonHeight     = 24 // buttons in the top bar
-	PopupOffset           = 4  // room between a popup and its anchor
-	SelectedBorder        = 2  // the border of a chosen tile
-	GripWidth             = 3  // a resize grip's line, down the middle of the panels' gap
+	ToastWidth            = 360 // a toast's width, the design's fixed one
+	ToastStackInset       = 9   // each toast behind the front one is this much narrower on either side: 95%, then 90% of ToastWidth
+	ToastMax              = 3   // toasts shown at once
+	TitleButtonHeight     = 24  // buttons in the top bar
+	PopupOffset           = 4   // room between a popup and its anchor
+	SelectedBorder        = 2   // the border of a chosen tile
+	GripWidth             = 3   // a resize grip's line, down the middle of the panels' gap
 	GripHeight            = 56
 	RingWidth             = 3    // shadcn's focused box ring, outside its border
 	QuoteBar              = 2    // the bar left of a quote in a mail body
@@ -252,6 +259,10 @@ const FloatInsetBlur = 1
 // 0 0 0 1px #0000000a, 0 2px 8px #0000000a, 0 4px 80px 8px #00000006. The dark
 // appearance's is an inner edge, FloatInset.
 var ShadowFloat = Elevation{{0, 0, 1, 0x0a / 255.0}, {2, 8, 0, 0x0a / 255.0}, {4, 80, 8, 0x06 / 255.0}}
+
+// ShadowPopover is the drop of the design's popover material: popovers, menus
+// and toasts, 0 8px 40px of the ink at 16% over 0 1px 3px at 8%.
+var ShadowPopover = Elevation{{8, 40, 0, 0.16}, {1, 3, 0, 0.08}}
 
 // sized fills the size tokens from the font size.
 func sized(t Tokens) Tokens {
@@ -348,6 +359,7 @@ func Light() Tokens {
 		HoverTint: p.Neutral950.Color().Alpha(0.04),
 		Hover:     p.Neutral100.Color(),
 		GlassBg:   p.White.Color().Alpha(0.70), GlassBorder: p.Neutral950.Color().Alpha(0.12), GlassHover: p.Neutral100.Color().Alpha(0.80),
+		MaterialPopover: p.MacMaterial.Color().Alpha(0.84), MaterialDialog: p.White.Color().Alpha(0.8), MaterialBar: p.White.Color().Alpha(0.85),
 	})
 }
 
@@ -362,6 +374,7 @@ func Dark() Tokens {
 		HoverTint: p.White.Color().Alpha(0.08),
 		Hover:     p.Neutral800.Color(),
 		GlassBg:   p.Neutral900.Color().Alpha(0.70), GlassBorder: p.White.Color().Alpha(0.15), GlassHover: p.Neutral800.Color().Alpha(0.80),
+		MaterialPopover: p.MacMaterialDark.Color().Alpha(0.8), MaterialDialog: p.Neutral900.Color().Alpha(0.8), MaterialBar: p.Neutral950.Color().Alpha(0.85),
 	})
 }
 
