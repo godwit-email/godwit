@@ -532,7 +532,7 @@ func settingSelect[T comparable](c *ui.Context, label string, sel *T, opts []kit
 // the keychain's state stands by the title.
 func (p *settingsPage) privacyView(c *ui.Context) {
 	pageHeading(c, i18n.T("settings.privacy"), i18n.T("settings.privacy.sub"), func() { p.keychainState(c) })
-	kit.TabsUnderline(c, &p.privacyTab, i18n.T("settings.masking"), i18n.T("settings.security"), i18n.T("settings.remote_images"), i18n.T("settings.blocked"))
+	kit.Tabs(c, &p.privacyTab, kit.TabsOpts{Look: kit.TabsUnderline}, kit.TabLabels(i18n.T("settings.masking"), i18n.T("settings.security"), i18n.T("settings.remote_images"), i18n.T("settings.blocked")))
 	p.syncSettings()
 	defer p.syncSettings() // what the controls changed while building
 	switch p.privacyTab {
@@ -642,8 +642,8 @@ func (p *settingsPage) aiView(c *ui.Context) {
 		add = append(add, func() { settingButton(c, i18n.T("settings.models.add"), kit.Default, false).OnClick(m.add) })
 	}
 	pageHeading(c, i18n.T("settings.models"), i18n.T("settings.models.sub"), add...)
-	kit.TabsUnderline(c, &p.aiTab, i18n.T("settings.ai.tab.models"), i18n.T("settings.ai.tab.features"), i18n.Tf("settings.ext.tab.mcp", len(p.ext.servers)),
-		i18n.T("settings.ai.tab.apps"))
+	kit.Tabs(c, &p.aiTab, kit.TabsOpts{Look: kit.TabsUnderline}, kit.TabLabels(i18n.T("settings.ai.tab.models"), i18n.T("settings.ai.tab.features"), i18n.Tf("settings.ext.tab.mcp", len(p.ext.servers)),
+		i18n.T("settings.ai.tab.apps")))
 	switch p.aiTab {
 	case 0:
 		m.view(c)
@@ -697,7 +697,7 @@ func (p *settingsPage) securityRescanView(c *ui.Context) {
 		},
 		func() {
 			settingRow(c, i18n.T("settings.security.rescan.mode"), help, func() {
-				kit.Tabs(c, &p.secMode, i18n.T("settings.security.rescan.redo"), i18n.T("settings.security.rescan.missing")).Disabled(p.securityRescanBlocked())
+				kit.Tabs(c, &p.secMode, kit.TabsOpts{}, kit.TabLabels(i18n.T("settings.security.rescan.redo"), i18n.T("settings.security.rescan.missing"))).Disabled(p.securityRescanBlocked())
 			})
 		},
 		func() {

@@ -802,7 +802,7 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 		kit.Text(c, head, t.Text.Xs).FontWeight(500).TextColor(t.Muted)
 		ui.Spacer(c)
 		if !saved {
-			kit.Tabs(c, &p.filter, i18n.T("mail.filter.all"), i18n.T("mail.filter.unread"))
+			kit.Tabs(c, &p.filter, kit.TabsOpts{}, kit.TabLabels(i18n.T("mail.filter.all"), i18n.T("mail.filter.unread")))
 		}
 		if p.a.sidebarHidden { // else the sidebar's header has it
 			kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).

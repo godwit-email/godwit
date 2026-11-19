@@ -997,7 +997,7 @@ func (o *onboarding) passwordView(c *ui.Context) {
 	}
 	if ownClientOffered(o.prov) {
 		tab := o.tab
-		kit.TabsFill(c, &o.tab, o.secretName(), i18n.T("onboarding.tab.browser"))
+		kit.Tabs(c, &o.tab, kit.TabsOpts{Fill: true}, kit.TabLabels(o.secretName(), i18n.T("onboarding.tab.browser")))
 		if o.tab != tab {
 			o.showSecret = false
 		}
@@ -1100,7 +1100,7 @@ func (o *onboarding) ownClientView(c *ui.Context) {
 		labels := []string{"IMAP", i18n.T("onboarding.protocol.gmailapi")}
 		ui.Field(c, i18n.T("onboarding.protocol"), func() {
 			sel := max(slices.Index(protos, o.proto), 0)
-			kit.TabsFill(c, &sel, labels...)
+			kit.Tabs(c, &sel, kit.TabsOpts{Fill: true}, kit.TabLabels(labels...))
 			if protos[sel] != o.proto {
 				o.proto = protos[sel]
 			}
@@ -1212,7 +1212,7 @@ func (o *onboarding) serversForm(c *ui.Context) {
 		if len(protos) > 1 {
 			ui.Field(c, i18n.T("onboarding.protocol"), func() {
 				sel := max(slices.Index(protos, o.proto), 0)
-				kit.TabsFill(c, &sel, labels...)
+				kit.Tabs(c, &sel, kit.TabsOpts{Fill: true}, kit.TabLabels(labels...))
 				if protos[sel] != o.proto {
 					o.setProto(protos[sel])
 				}
@@ -1235,7 +1235,7 @@ func (o *onboarding) serversForm(c *ui.Context) {
 			ui.Field(c, i18n.T("onboarding.jmap.url"), func() { kit.Input(c, &o.jmapURL, kit.InputOpts{Placeholder: "https://example.com/.well-known/jmap"}) }).
 				Description(i18n.T("onboarding.jmap.url.help")).FontSize(t.Text.Xs).TextColor(t.Muted)
 			ui.Field(c, i18n.T("onboarding.jmap.login"), func() {
-				kit.TabsFill(c, &o.jmapAuth, i18n.T("onboarding.login.password"), i18n.T("onboarding.login.api_token"))
+				kit.Tabs(c, &o.jmapAuth, kit.TabsOpts{Fill: true}, kit.TabLabels(i18n.T("onboarding.login.password"), i18n.T("onboarding.login.api_token")))
 			}).FontSize(t.Text.Xs).TextColor(t.Muted)
 		} else {
 			if o.pop3() {
@@ -1267,7 +1267,7 @@ func (o *onboarding) oauthView(c *ui.Context) {
 		protos := []string{"", auth.Graph}
 		ui.Field(c, i18n.T("onboarding.protocol"), func() {
 			sel := max(slices.Index(protos, o.proto), 0)
-			kit.TabsFill(c, &sel, "IMAP", i18n.T("onboarding.protocol.graph"))
+			kit.Tabs(c, &sel, kit.TabsOpts{Fill: true}, kit.TabLabels("IMAP", i18n.T("onboarding.protocol.graph")))
 			if protos[sel] != o.proto {
 				o.proto = protos[sel]
 			}

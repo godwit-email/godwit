@@ -328,7 +328,7 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 	t, th := theme.Of(c), c.Theme()
 	if f.id == 0 {
 		ui.Row(c).Children(func() { // a row, so the tabs hug their labels instead of stretching
-			kit.Tabs(c, &m.group, i18n.T("settings.models.group.sub"), i18n.T("settings.models.group.api"))
+			kit.Tabs(c, &m.group, kit.TabsOpts{}, kit.TabLabels(i18n.T("settings.models.group.sub"), i18n.T("settings.models.group.api")))
 		})
 		if providerGroup(f.provider) != m.group { // another group starts the form over on its first tile
 			m.cancelForm()
@@ -482,7 +482,7 @@ func formatSegments(c *ui.Context, label string, list []string, sel *string) (ch
 		labels[i] = formats[id].label
 	}
 	i := max(0, slices.Index(list, *sel))
-	kit.Tabs(c, &i, labels...).Label(label).AlignSelf(ui.Start)
+	kit.Tabs(c, &i, kit.TabsOpts{}, kit.TabLabels(labels...)).Label(label).AlignSelf(ui.Start)
 	if list[i] != *sel {
 		*sel, changed = list[i], true
 	}

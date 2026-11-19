@@ -254,13 +254,13 @@ func (p *mailPage) viewEmpty(c *ui.Context) {
 // count and menu; its header's menu makes one (viewsMenu). It returns the header.
 func (p *mailPage) viewNav(c *ui.Context) ui.Element {
 	th := c.Theme()
-	head := kit.SidebarCollapsible(c, &p.viewsOpen, true, func() {
-		ui.Text(c, i18n.T("view.title")).SingleLine().Grow(1).Shrink(1)
-	}, func() {
-		for _, b := range p.views {
-			p.viewRow(c.Key(b.ID), b)
-		}
-	})
+	head := kit.SidebarItem(c, kit.SidebarItemOpts{Muted: true, Open: &p.viewsOpen,
+		Title: func() { ui.Text(c, i18n.T("view.title")).SingleLine().Shrink(1) },
+		Group: func() {
+			for _, b := range p.views {
+				p.viewRow(c.Key(b.ID), b)
+			}
+		}})
 	ui.Box(c).Height(th.Space(2))
 	return head
 }

@@ -270,7 +270,7 @@ func (e *extView) view(c *ui.Context) {
 		return
 	}
 	pageHeading(c, i18n.T("settings.extensions"), i18n.T("settings.ext.sub"))
-	kit.TabsUnderline(c, &e.tab, i18n.Tf("settings.ext.tab.skills", len(e.skills)), i18n.Tf("settings.ext.tab.plugins", len(e.plugins)))
+	kit.Tabs(c, &e.tab, kit.TabsOpts{Look: kit.TabsUnderline}, kit.TabLabels(i18n.Tf("settings.ext.tab.skills", len(e.skills)), i18n.Tf("settings.ext.tab.plugins", len(e.plugins))))
 	if e.tab == 0 {
 		e.skillsView(c)
 	} else {

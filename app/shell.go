@@ -515,10 +515,13 @@ func panelRadius(c *ui.Context) float32 {
 
 // pageSwitch is the Mail / Contacts / Wit switch at the top of their sidebars.
 func (a *App) pageSwitch(c *ui.Context) ui.Element {
-	return kit.NavSwitch(c,
-		kit.NavItem{Icon: "mail", Label: i18n.T("shell.nav.mail"), Selected: a.route.Page == PageMail, OnClick: func() { a.navigate(Route{Page: PageMail, View: core.View{Unified: "inbox"}}) }},
-		kit.NavItem{Icon: "contacts", Label: i18n.T("shell.nav.contacts"), Selected: a.route.Page == PageContacts, OnClick: func() { a.navigate(Route{Page: PageContacts}) }},
-		kit.NavItem{Icon: "sparkles", Label: i18n.T("shell.nav.wit"), Selected: a.route.Page == PageWit, OnClick: func() { a.navigate(Route{Page: PageWit}) }})
+	routes := []Route{{Page: PageMail, View: core.View{Unified: "inbox"}}, {Page: PageContacts}, {Page: PageWit}}
+	sel := slices.IndexFunc(routes, func(r Route) bool { return r.Page == a.route.Page })
+	return kit.Tabs(c, &sel, kit.TabsOpts{}, []kit.TabItem{
+		{Icon: "mail", Label: i18n.T("shell.nav.mail")},
+		{Icon: "contacts", Label: i18n.T("shell.nav.contacts")},
+		{Icon: "sparkles", Label: i18n.T("shell.nav.wit")},
+	}).OnChange(func() { a.navigate(routes[sel]) })
 }
 
 // sidebarInset is the sidebar's right inset. The sidebar itself has none:

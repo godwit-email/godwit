@@ -7,8 +7,8 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
-// soft holds, for each theme, its copy whose accent is the sidebar's selected gray
-// and whose row hover is softened to prevent harsh contrast against the background.
+// soft holds, for each theme, its copy whose accent is the sidebar's selected
+// tint and whose row hover is its hover tint.
 var soft sync.Map // *ui.Theme → *ui.Theme
 
 // List is ui.List with the selected rows in the sidebar's selected gray and
@@ -24,8 +24,8 @@ func List(c *ui.Context, s *ui.ListState, n int, row func(i int)) ui.Element {
 	q, ok := soft.Load(base)
 	if !ok {
 		t, th := theme.Of(c), *base
-		th.Accent, th.AccentText = t.Hover, t.Foreground
-		th.SurfaceHover = t.Hover.Mix(t.Background, 0.5)
+		th.Accent, th.AccentText = tint(t, 1.75), t.Foreground
+		th.SurfaceHover = tint(t, 1)
 		q, _ = soft.LoadOrStore(base, &th)
 	}
 	c.SetTheme(q.(*ui.Theme))

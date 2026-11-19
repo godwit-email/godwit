@@ -226,13 +226,13 @@ func (p *mailPage) sectionShown(s string) bool {
 // (accountsMenu). It returns the header.
 func (p *mailPage) accountsNav(c *ui.Context) ui.Element {
 	a := p.a
-	head := kit.SidebarCollapsible(c, &p.accountsOpen, true, func() {
-		ui.Text(c, i18n.T("mail.accounts")).SingleLine().Grow(1).Shrink(1)
-	}, func() {
-		for _, acc := range a.accounts {
-			p.account(c, acc)
-		}
-	})
+	head := kit.SidebarItem(c, kit.SidebarItemOpts{Muted: true, Open: &p.accountsOpen,
+		Title: func() { ui.Text(c, i18n.T("mail.accounts")).SingleLine().Shrink(1) },
+		Group: func() {
+			for _, acc := range a.accounts {
+				p.account(c, acc)
+			}
+		}})
 	return head
 }
 
@@ -285,30 +285,32 @@ func (p *mailPage) viewShown(v core.View) bool {
 func (p *mailPage) account(c *ui.Context, acc core.Account) {
 	t := theme.Of(c)
 	name := accountName(acc)
-	count := "" // at the row's end, under the counts above it; the chevron follows the name
+	count := "" // at the row's end, under the counts above it
 	if n := p.a.unread[acc.ID]; n > 0 {
 		count = strconv.Itoa(n)
 	}
-	row := kit.SidebarCollapsibleCount(c, p.accountOpen(acc.ID), false, func() {
-		p.a.accountMark(c, acc) // as in the settings sidebar
-		ui.Text(c, name).SingleLine().Shrink(1).TextColor(t.Foreground)
-	}, count, func() {
-		hide := "" // the subtree of a folded folder
-		for _, f := range sidebarFolders(acc.ID, p.folders[acc.ID]) {
-			if f.Role == "drafts" {
-				p.accountLabelsNav(c, acc.ID)
+	row := kit.SidebarItem(c, kit.SidebarItemOpts{Open: p.accountOpen(acc.ID), Count: count,
+		Title: func() {
+			p.a.accountMark(c, acc) // as in the settings sidebar
+			ui.Text(c, name).SingleLine().Shrink(1).TextColor(t.Foreground)
+		},
+		Group: func() {
+			hide := "" // the subtree of a folded folder
+			for _, f := range sidebarFolders(acc.ID, p.folders[acc.ID]) {
+				if f.Role == "drafts" {
+					p.accountLabelsNav(c, acc.ID)
+				}
+				if hide != "" && strings.HasPrefix(f.key, hide) {
+					continue
+				}
+				hide = ""
+				open := boolAt(p.folderOpen, folderKey{acc.ID, f.key}, true)
+				if f.kids && !*open {
+					hide = f.key + "\x00"
+				}
+				p.folderRow(c, f, open)
 			}
-			if hide != "" && strings.HasPrefix(f.key, hide) {
-				continue
-			}
-			hide = ""
-			open := boolAt(p.folderOpen, folderKey{acc.ID, f.key}, true)
-			if f.kids && !*open {
-				hide = f.key + "\x00"
-			}
-			p.folderRow(c, f, open)
-		}
-	})
+		}})
 	row.ContextMenu(func(m *ui.Menu) { p.accountItems(m, acc, 0) })
 	p.saveAccountOpen(acc.ID)
 }
@@ -364,9 +366,9 @@ func (p *mailPage) folderRow(c *ui.Context, f sideFolder, open *bool) {
 			kit.Text(c, strconv.Itoa(n), t.Text.Xs).TextColor(t.Muted)
 		}
 		if f.kids {
-			ch, label := kit.SidebarChevron(c, 0), "mail.folder.expand"
+			ch, label := kit.Chevron(c, *open, theme.IconXs), "mail.folder.expand"
 			if *open {
-				ch, label = ch.Rotate(90), "mail.folder.collapse"
+				label = "mail.folder.collapse"
 			}
 			if real { // the row opens the folder; the chevron folds it
 				ch.OnClick(toggle).Label(i18n.Tf(label, f.name))
@@ -465,36 +467,38 @@ func (p *mailPage) accountLabelsNav(c *ui.Context, accID int64) {
 	if !hasLabels && !viewInAccount {
 		return
 	}
-	t, th := theme.Of(c), c.Theme()
+	t := theme.Of(c)
 	open := p.accountLabelsOpen(accID)
 	totalUnread := 0
 	for _, l := range labels {
 		totalUnread += l.Unread
 	}
-	tr := kit.SidebarCollapsible(c, open, false, func() {
-		ui.Icon(c, icons.Get("tag")).Size(theme.Icon, theme.Icon).Shrink(0).TextColor(t.Muted)
-		ui.Text(c, i18n.T("mail.labels")).SingleLine().Grow(1).Shrink(1)
-		if !*open && totalUnread > 0 {
-			kit.Text(c, strconv.Itoa(totalUnread), t.Text.Xs).TextColor(t.Muted)
-		}
-	}, func() {
-		for _, l := range labels {
-			if l.Count == 0 {
-				continue
-			}
-			v := core.View{AccountID: accID, LabelID: l.ID}
-			on := p.viewShown(v)
-			item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Covered: p.viewEdit != nil, Indent: 8, OnClick: func() { p.a.navigate(Route{Page: PageMail, View: v}) }})
-			item.Children(func() {
-				ui.Icon(c, icons.Get("label-"+l.Icon)).Size(theme.Icon, theme.Icon).TextColor(t.Label(l.Color).Text)
-				ui.Text(c, l.Name).SingleLine().Grow(1).Shrink(1)
-				if l.Unread > 0 {
-					kit.Text(c, strconv.Itoa(l.Unread), t.Text.Xs).TextColor(t.Muted)
+	count := ""
+	if !*open && totalUnread > 0 {
+		count = strconv.Itoa(totalUnread)
+	}
+	kit.SidebarItem(c, kit.SidebarItemOpts{Open: open, Indent: 4, Count: count,
+		Title: func() {
+			ui.Icon(c, icons.Get("tag")).Size(theme.Icon, theme.Icon).Shrink(0).TextColor(t.Muted)
+			ui.Text(c, i18n.T("mail.labels")).SingleLine().Shrink(1)
+		},
+		Group: func() {
+			for _, l := range labels {
+				if l.Count == 0 {
+					continue
 				}
-			})
-		}
-	})
-	tr.Padding(0, th.Space(2), 0, th.Space(6))
+				v := core.View{AccountID: accID, LabelID: l.ID}
+				on := p.viewShown(v)
+				item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Covered: p.viewEdit != nil, Indent: 8, OnClick: func() { p.a.navigate(Route{Page: PageMail, View: v}) }})
+				item.Children(func() {
+					ui.Icon(c, icons.Get("label-"+l.Icon)).Size(theme.Icon, theme.Icon).TextColor(t.Label(l.Color).Text)
+					ui.Text(c, l.Name).SingleLine().Grow(1).Shrink(1)
+					if l.Unread > 0 {
+						kit.Text(c, strconv.Itoa(l.Unread), t.Text.Xs).TextColor(t.Muted)
+					}
+				})
+			}
+		}})
 }
 
 // boolAt is m[k], first set to def: a pointer that outlives the frame, as kit.Collapsible needs.

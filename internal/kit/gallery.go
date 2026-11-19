@@ -10,10 +10,11 @@ import (
 type GalleryState struct {
 	Switch, Switch2, Check                bool
 	Radio, Select, Tabs                   int
-	Toggle                                int
+	Nav                                   int
 	Input, Password, Mono, Bare, Area     string
 	InvalidIn, HelpIn, ErrorIn            string
 	Dialog, Confirm, Popover, Collapsible bool
+	Group                                 bool
 }
 
 var galleryVariants = []struct {
@@ -91,21 +92,12 @@ func Gallery(c *ui.Context, g *GalleryState) {
 				SwitchRow(c, &g.Switch2, "Switch row", "Help under the row")
 			})
 			section("Tabs", func() {
-				Tabs(c, &g.Tabs, "Tab A", "Tab B", "Tab C")
-				TabsFill(c, &g.Tabs, "Fill A", "Fill B", "Fill C")
-			})
-			section("ToggleGroup", func() {
-				ToggleGroup(c, "Gallery toggles", func() {
-					for i, l := range []string{"Left", "Middle", "Right"} {
-						v := Ghost
-						if g.Toggle == i {
-							v = Secondary
-						}
-						if Button(c, l, ButtonOpts{Variant: v}).Clicked() {
-							g.Toggle = i
-						}
-					}
-				})
+				labels := TabLabels("Tab A", "Tab B", "Tab C")
+				Tabs(c, &g.Tabs, TabsOpts{}, labels)
+				Tabs(c, &g.Tabs, TabsOpts{Fill: true}, TabLabels("Fill A", "Fill B", "Fill C"))
+				Tabs(c, &g.Tabs, TabsOpts{Look: TabsUnderline}, labels)
+				Tabs(c, &g.Tabs, TabsOpts{Look: TabsPill}, labels)
+				Tabs(c, &g.Nav, TabsOpts{}, []TabItem{{Icon: "mail", Label: "Mail"}, {Icon: "sparkles", Label: "Wit"}})
 			})
 			section("Dialog", func() {
 				if Button(c, "Open Dialog", ButtonOpts{Variant: Outline}).Clicked() {
@@ -239,11 +231,9 @@ func Gallery(c *ui.Context, g *GalleryState) {
 						{"Small", SidebarItemOpts{Small: true}}, {"Indented", SidebarItemOpts{Indent: 4}}} {
 						SidebarItem(c, o.o).Children(func() { ui.Text(c, o.l+" item") })
 					}
-				})
-			})
-			section("NavSwitch", func() {
-				row(func() {
-					NavSwitch(c, NavItem{Icon: "mail", Label: "Mail", Selected: true}, NavItem{Icon: "sparkles", Label: "Wit"})
+					SidebarItem(c, SidebarItemOpts{Muted: true, Open: &g.Group, Count: "3",
+						Title: func() { ui.Text(c, "Group title") },
+						Group: func() { SidebarItem(c, SidebarItemOpts{Indent: 4}).Children(func() { ui.Text(c, "Grouped item") }) }})
 				})
 			})
 			section("Panel", func() {

@@ -340,7 +340,7 @@ func (v *labelsView) rescan(c *ui.Context) {
 		},
 		func() {
 			settingRow(c, i18n.T("settings.labels.rescan.mode"), help, func() {
-				kit.Tabs(c, &v.mode, i18n.T("settings.labels.rescan.missing"), i18n.T("settings.labels.rescan.redo"))
+				kit.Tabs(c, &v.mode, kit.TabsOpts{}, kit.TabLabels(i18n.T("settings.labels.rescan.missing"), i18n.T("settings.labels.rescan.redo")))
 			})
 		},
 		func() {

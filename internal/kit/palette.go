@@ -103,7 +103,7 @@ func Palette(c *ui.Context, open *bool, query *string, o PaletteOpts, head, body
 			})
 		}
 		if head != nil {
-			ui.Row(c).Role(ui.RoleTabList).KeepFocus().Shrink(0).Gap(th.Space(1)).Padding(0, th.Space(3), th.Space(2), th.Space(3)).Children(head)
+			ui.Row(c).KeepFocus().Shrink(0).Padding(0, th.Space(3), th.Space(2), th.Space(3)).Children(head)
 		}
 		if body != nil {
 			paletteSel = ui.Element{}
@@ -133,17 +133,6 @@ func Palette(c *ui.Context, open *bool, query *string, o PaletteOpts, head, body
 			})
 		}
 	})
-}
-
-// PaletteTab is a kind tab of a Palette's head, tinted while chosen.
-func PaletteTab(c *ui.Context, label string, chosen bool) ui.Element {
-	t, th := theme.Of(c), c.Theme()
-	b := ui.ButtonBase(c).Role(ui.RoleTab).Selected(chosen).Height(th.Space(7)).PaddingX(th.Space(2.5)).Radius(t.Radius.Md).
-		FontSize(t.Text.Xs).TextColor(t.Muted).Transition(colors(theme.MotionFast))
-	if chosen {
-		b.Background(t.HoverTint).TextColor(t.Foreground)
-	}
-	return b.Children(func() { ui.Text(c, label) })
 }
 
 // PalettePreview is a card 8px off a Palette's right edge, level with the

@@ -136,9 +136,11 @@ func (p *palette) view(c *ui.Context) {
 		o.Keys = p.menuShortcut
 	}
 	kit.Palette(c, &p.open, &p.query, o, func() {
+		kinds := make([]string, len(paletteKinds))
 		for i, k := range paletteKinds {
-			kit.PaletteTab(c, kindLabel(k), i == p.kind).OnClick(func() { p.kind = i })
+			kinds[i] = kindLabel(k)
 		}
+		kit.Tabs(c, &p.kind, kit.TabsOpts{Look: kit.TabsPill}, kit.TabLabels(kinds...))
 	}, func() {
 		switch {
 		case p.filtering:
