@@ -1321,7 +1321,7 @@
   "settings_account_purge_junk_help": "Junk older than this is deleted for good",
   "settings_account_purge_trash": "Purge deleted mail",
   "settings_account_purge_trash_help": "Deleted mail older than this is deleted for good",
-  "settings_account_reauth": "The sign-in has expired and syncing stopped {arg1}. Mail on this computer can still be read and searched; mail you write stays in the outbox and goes out once you sign in again.",
+  "settings_account_reauth": "Syncing stopped {arg1}. Mail on this computer can still be read and searched; mail you write stays in the outbox and goes out once you sign in again.",
   "@settings_account_reauth": {
     "placeholders": {
       "arg1": {
@@ -1331,7 +1331,8 @@
   },
   "settings_account_reauth_browser": "Sign in again in the browser",
   "settings_account_reauth_done": "Signed in again",
-  "settings_account_reauth_unknown": "The sign-in has expired and syncing has stopped. Mail on this computer can still be read and searched; mail you write stays in the outbox and goes out once you sign in again.",
+  "settings_account_reauth_unknown": "Syncing has stopped. Mail on this computer can still be read and searched; mail you write stays in the outbox and goes out once you sign in again.",
+  "settings_account_reauth_title": "Sign-in expired",
   "settings_account_reauth_waiting": "Waiting for the browser…",
   "settings_account_receive_only": "Receive only",
   "settings_account_receive_only_help": "Sending didn’t pass: this account can’t send. Fix the servers or sign in again, or check sending again once it works.",
@@ -3672,7 +3673,7 @@
       }
     }
   },
-  "settings_rules_confirm_to": "Forwards to",
+  "settings_rules_confirm_to": "Forwards to {arg1}",
   "settings_rules_confirm_outbox": "Sent from the account that received it; each goes to the Outbox first and can be undone for 10 seconds",
   "settings_rules_confirm_new_only": "Only mail that arrives after saving is forwarded; existing mail is not",
   "settings_rules_confirm_again": "If you change the recipient later, you’ll be asked again",

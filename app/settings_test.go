@@ -1105,10 +1105,10 @@ func TestReauthBannerElapsed(t *testing.T) {
 	h.openSettings(accountRoute(acc.ID))
 	h.until("unknown-time banner", func() bool {
 		h.advance(refreshEvery)
-		return h.tt.HasText("登录已过期，已停止同步。")
+		return h.tt.HasText("登录已过期") && h.tt.HasText("已停止同步。")
 	})
 	h.syncedHoursAgo(acc.ID, 3)
-	h.see("登录已过期，3 小时前起停止同步。")
+	h.see("3 小时前起停止同步。")
 	h.see("需要重新登录")
 }
 

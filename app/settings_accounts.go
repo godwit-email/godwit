@@ -465,18 +465,18 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	})
 
 	if acc.Status == "reauth_required" {
-		msg := i18n.T("settings.account.reauth.unknown")
+		title, msg := i18n.T("settings.account.reauth.title"), i18n.T("settings.account.reauth.unknown")
 		// Imported, never signed in: no folder synced yet, but for a POP3
 		// account's three local ones (Trash, Archive, Sent).
 		if acc.StatusDetail == "credentials_missing" && (acc.Folders == 0 || acc.Receiving.Protocol == auth.POP3 && acc.Folders <= 3) {
-			msg = i18n.T("settings.account.reauth.imported")
+			title, msg = "", i18n.T("settings.account.reauth.imported")
 		} else if at, ok := a.syncedAtBy[acc.ID]; ok {
 			msg = i18n.Tf("settings.account.reauth", a.ago(at))
 		}
 		if oauthRefused(acc) {
-			msg = i18n.T("shell.sync.refused.reason")
+			title, msg = "", i18n.T("shell.sync.refused.reason")
 		}
-		kit.Alert(c, kit.ToneWarning, msg, func() { p.authButton(c, acc, prov, true) })
+		kit.TitledAlert(c, kit.ToneWarning, title, msg, func() { p.authButton(c, acc, prov, true) })
 	}
 
 	row := func(label, desc string, control func()) func() {

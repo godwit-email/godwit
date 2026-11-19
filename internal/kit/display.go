@@ -107,13 +107,27 @@ func badge(c *ui.Context, e ui.Element, text string, o BadgeOpts) ui.Element {
 // Block of tone (ToneWarning, ToneDanger, ToneInfo). Its actions are small
 // Outline buttons of the same tone.
 func Alert(c *ui.Context, tone Tone, text string, actions func()) ui.Element {
+	return TitledAlert(c, tone, "", text, actions)
+}
+
+// TitledAlert is the design's Alert: a warning or danger one leads with its
+// mark, level with the first line; title in medium weight over text (either
+// may be ""); the actions at the end, centred.
+func TitledAlert(c *ui.Context, tone Tone, title, text string, actions func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return Block(c, ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), th.Space(2.5)), tone).
+	return Block(c, ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4)), tone).Radius(t.Radius.Xl).
 		FontSize(t.Text.Sm).Children(func() {
-		if tone == ToneWarning || tone == ToneDanger { // the design's mark before what went wrong
-			ui.Icon(c, icons.Get("info")).Size(theme.IconSm, theme.IconSm).Shrink(0).AlignSelf(ui.Start).Margin(th.Space(0.5), 0, 0, 0).Role(ui.RoleNone)
+		if tone == ToneWarning || tone == ToneDanger {
+			ui.Icon(c, icons.Get("circle-alert")).Size(theme.IconSm, theme.IconSm).Shrink(0).AlignSelf(ui.Start).Margin(th.Space(0.5), 0, 0, 0).Role(ui.RoleNone)
 		}
-		ui.Text(c, text).Grow(1).Shrink(1) // the text wraps; the actions stay on its right
+		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() { // the text wraps; the actions stay on its right
+			if title != "" {
+				ui.Text(c, title).FontWeight(500).Selectable() // what it names (an address, a host) can be copied
+			}
+			if text != "" {
+				ui.Text(c, text).Selectable()
+			}
+		})
 		if actions != nil {
 			actions()
 		}

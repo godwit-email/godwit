@@ -879,18 +879,13 @@ func (v *rulesView) confirmDialog(c *ui.Context) {
 	}
 	kit.Dialog(c, &v.confirming, i18n.T("settings.rules.confirm.title"), kit.DialogOpts{Size: kit.DialogSm, Alert: true,
 		Desc: i18n.Tf("settings.rules.confirm.desc", ruleName(v.edit.Doc)), Close: i18n.T("common.close")}, func() {
-		amber := t.Label("amber")
-		kit.Block(c, ui.Column(c).FillWidth().Gap(th.Space(1.5)).Padding(th.Space(3.5)), kit.ToneWarning).Children(func() {
-			kit.Text(c, i18n.T("settings.rules.confirm.to"), t.Text.Xs).TextColor(t.WarningText)
-			for _, to := range v.unconfirmed {
-				ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-					kit.Text(c, to, t.Text.Sm).Font(theme.Mono).FontWeight(500).Selectable()
-					if slices.ContainsFunc(v.firstTime, func(f string) bool { return mail.AddrKey(f) == mail.AddrKey(to) }) {
-						ruleTag(c, i18n.T("settings.rules.confirm.first"), amber.Fill, amber.Text, "")
-					}
-				})
+		for _, to := range v.unconfirmed { // the design's warning, one per address, its first time said under it
+			first := ""
+			if slices.ContainsFunc(v.firstTime, func(f string) bool { return mail.AddrKey(f) == mail.AddrKey(to) }) {
+				first = i18n.T("settings.rules.confirm.first")
 			}
-		})
+			kit.TitledAlert(c.Key(to), kit.ToneWarning, i18n.Tf("settings.rules.confirm.to", to), first, nil)
+		}
 		ui.Column(c).Gap(th.Space(1.5)).Children(func() {
 			for _, s := range []string{outbox, i18n.T("settings.rules.confirm.new_only"), i18n.T("settings.rules.confirm.again")} {
 				kit.Text(c, "· "+s, t.Text.Sm)
