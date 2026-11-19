@@ -36,7 +36,7 @@ func ThemeOf(st core.Settings) Theme {
 
 // ThemeVars maps tokens to shadcn's CSS variables, plus Wit's review marks
 // (--ins-* and --del-*), the notice colours (--warning-*, --info-*, --success-*,
-// and --danger-bg and --danger-border), the button's greys (--hover-tint, the
+// and --danger-bg, --danger-border and --danger-text), the button's greys (--hover-tint, the
 // tint a ghost or secondary button takes on hover, and --idle, a disabled
 // label) and the floating
 // input's shadow (--shadow-float: ShadowFloat in the light appearance, the
@@ -45,13 +45,19 @@ func ThemeOf(st core.Settings) Theme {
 // look for web/src/components/dialog.tsx: the panel (--raised), the scrims
 // (--scrim, --alert-scrim), ShadowX2l (--shadow-dialog), the widths
 // (--dialog-sm/md/lg) and the place (--dialog-centre: the panel's centre,
-// --dialog-min-top: its least distance from the top). --radius is Radius.Lg; styles.css
-// derives sm…4xl from it by fixed offsets, landing on the native 4/6/8/12/16/24/32.
+// --dialog-min-top: its least distance from the top), and the design's frosted
+// materials: --popover and --material-popover (MaterialPopover: popovers, menus, toasts),
+// --material-dialog, --material-bar, the blur behind them (--material-blur), their drop
+// (--shadow-popover: ShadowPopover) and a toast's width (--toast-width). --radius is
+// Radius.Lg; styles.css derives sm…4xl from it by fixed offsets, landing on the native
+// 4/6/8/12/16/24/32 (2xl, a popover card's and a dialog's, is Radius.X2l), and each mail
+// label colour of theme.LabelNames as --label-<name>-dot, -fill, -edge and -text (the
+// picker's dot, the fill under an avatar or chip, its edge, and the text on it).
 func ThemeVars(t theme.Tokens) map[string]string {
-	return map[string]string{
+	vars := map[string]string{
 		"--background": css(t.Background), "--foreground": css(t.Foreground),
 		"--card": css(t.Background), "--card-foreground": css(t.Foreground),
-		"--popover": css(t.Background), "--popover-foreground": css(t.Foreground),
+		"--popover": css(t.MaterialPopover), "--popover-foreground": css(t.Foreground),
 		"--primary": css(t.Primary), "--primary-foreground": css(t.PrimaryText),
 		"--secondary": css(t.Hover), "--secondary-foreground": css(t.Foreground),
 		"--muted": css(t.Hover), "--muted-foreground": css(t.Muted),
@@ -67,7 +73,7 @@ func ThemeVars(t theme.Tokens) map[string]string {
 		"--warning-bg":    css(t.WarningBg), "--warning-border": css(t.WarningBorder), "--warning-text": css(t.WarningText),
 		"--info-bg": css(t.InfoBg), "--info-border": css(t.InfoBorder), "--info-text": css(t.InfoText),
 		"--success-bg": css(t.SuccessBg), "--success-border": css(t.SuccessBorder), "--success-text": css(t.SuccessText),
-		"--danger-bg": css(t.DangerBg), "--danger-border": css(t.DangerBorder),
+		"--danger-bg": css(t.DangerBg), "--danger-border": css(t.DangerBorder), "--danger-text": css(t.DangerText),
 		"--hover-tint": css(t.HoverTint), "--idle": css(t.Idle),
 		"--shadow-float": floatShadow(t),
 		"--window":       css(t.Window), "--shadow-xs": shadow(theme.ShadowXs),
@@ -77,11 +83,21 @@ func ThemeVars(t theme.Tokens) map[string]string {
 		"--glass-hover":     css(t.GlassHover),
 		"--raised":          css(t.Raised),
 		"--scrim":           css(t.Scrim), "--alert-scrim": css(t.AlertScrim),
-		"--shadow-dialog": shadow(theme.ShadowX2l),
-		"--dialog-sm":     px(theme.DialogSmWidth), "--dialog-md": px(theme.SheetWidth), "--dialog-lg": px(theme.DialogWideWidth),
+		"--shadow-dialog":    shadow(theme.ShadowX2l),
+		"--material-popover": css(t.MaterialPopover), "--material-dialog": css(t.MaterialDialog), "--material-bar": css(t.MaterialBar),
+		"--material-blur":  px(theme.MaterialBlur),
+		"--shadow-popover": shadow(theme.ShadowPopover),
+		"--toast-width":    px(theme.ToastWidth),
+		"--dialog-sm":      px(theme.DialogSmWidth), "--dialog-md": px(theme.SheetWidth), "--dialog-lg": px(theme.DialogWideWidth),
 		"--dialog-centre":  fmt.Sprintf("%gvh", 100*(0.5-theme.DialogLift/2)),
 		"--dialog-min-top": px(theme.DialogMinTop),
 	}
+	for i, name := range theme.LabelNames {
+		c := t.Labels[i]
+		vars["--label-"+name+"-dot"], vars["--label-"+name+"-fill"] = css(c.Dot), css(c.Fill)
+		vars["--label-"+name+"-edge"], vars["--label-"+name+"-text"] = css(c.Edge), css(c.Text)
+	}
+	return vars
 }
 
 // windowMaterial is a page's background over the window's material: the

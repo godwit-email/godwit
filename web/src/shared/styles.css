@@ -84,17 +84,32 @@
 /* Where the native kit differs from shadcn's components on purpose, the pages follow the kit, here
    and once rather than in each page's classes. A badge has radius-sm and reads at 400 beside the
    mail label chips (shadcn: a pill at 500). A title is at 600 (shadcn: 500). */
-/* Popups have one edge, their border, and the native ShadowMd: Nova's ring
-   would stack a second line on it. */
-.glass-popover,
+/* Popups are the design's popover material (webui.ThemeVars): its tint over the backdrop blurred
+   by --material-blur, one hairline edge of GlassBorder and ShadowPopover, which Nova's ring would
+   stack a second line on. Popover cards and hover cards are 16 round, menus and lists 8. */
+.material-popover,
 [data-slot="popover-content"],
 [data-slot="dropdown-menu-content"],
 [data-slot="dropdown-menu-sub-content"],
 [data-slot="select-content"],
 [data-slot="hover-card-content"] {
-  box-shadow:
-    0 4px 6px -1px rgb(0 0 0 / 0.1),
-    0 2px 4px -2px rgb(0 0 0 / 0.1); /* shadow-md */
+  background-color: var(--material-popover);
+  backdrop-filter: blur(var(--material-blur));
+  -webkit-backdrop-filter: blur(var(--material-blur));
+  border: 0.5px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-popover);
+}
+[data-slot="popover-content"],
+[data-slot="hover-card-content"] {
+  border-radius: var(--radius-2xl);
+}
+
+/* A bar the content scrolls under: MaterialBar over the blurred backdrop. */
+.material-bar {
+  background-color: var(--material-bar);
+  backdrop-filter: blur(var(--material-blur));
+  -webkit-backdrop-filter: blur(var(--material-blur));
 }
 
 [data-slot="badge"] {
@@ -222,27 +237,119 @@ kbd {
   --app-region: no-drag;
 }
 
-@layer components {
-  /* Frosted liquid glass for popups, menus and dropdowns. */
-  .glass-popover,
-  [data-slot="popover-content"],
-  [data-slot="dropdown-menu-content"],
-  [data-slot="dropdown-menu-sub-content"],
-  [data-slot="select-content"],
-  [data-slot="hover-card-content"] {
-    --popover: var(--glass-bg);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--glass-border);
-  }
+/* The select list's scroll arrows sit on the list's own material. */
+[data-slot="select-scroll-up-button"],
+[data-slot="select-scroll-down-button"] {
+  background-color: transparent;
+}
 
-  [data-slot="select-scroll-up-button"],
-  [data-slot="select-scroll-down-button"] {
-    --popover: var(--glass-bg);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-  }
+/* The toast (components/toast.tsx), as kit.ToastHost draws it: 12 round on the popover material,
+   padding 8/8/8/12, 16 for the icon, the action a ghost button of 28 behind a 1×20 rule. Under
+   .godwit-toaster and :is(button) to beat sonner's own sheet, which is injected after this one. */
+.godwit-toaster [data-sonner-toast][data-styled="true"] {
+  --border-radius: var(--radius-xl);
+  padding: 8px 8px 8px 12px;
+  gap: 8px;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  color: var(--popover-foreground);
+  background: var(--material-popover);
+  backdrop-filter: blur(var(--material-blur));
+  -webkit-backdrop-filter: blur(var(--material-blur));
+  border: 0.5px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-popover);
+}
+.godwit-toaster [data-sonner-toast][data-styled="true"]:focus-visible {
+  box-shadow:
+    var(--shadow-popover),
+    0 0 0 2px var(--ring);
+}
+.godwit-toaster [data-sonner-toast][data-styled="true"] [data-icon] {
+  margin: 0;
+  width: 16px;
+  height: 16px;
+}
+.godwit-toaster [data-sonner-toast][data-styled="true"] [data-icon] svg {
+  margin: 0;
+  width: 16px;
+  height: 16px;
+}
+.godwit-toaster [data-tone="success"] {
+  color: var(--success-text);
+}
+.godwit-toaster [data-tone="warning"] {
+  color: var(--warning-text);
+}
+.godwit-toaster [data-tone="error"] {
+  color: var(--destructive);
+}
+.godwit-toaster [data-sonner-toast][data-styled="true"] [data-content] {
+  gap: 0;
+}
+.godwit-toaster [data-sonner-toast][data-styled="true"] [data-title] {
+  font-weight: 500;
+  line-height: inherit;
+  color: var(--foreground);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.godwit-toaster [data-sonner-toast][data-styled="true"] [data-description] {
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+  color: var(--muted-foreground);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.godwit-toaster [data-sonner-toast][data-styled="true"] [data-button]:is(button) {
+  order: 2;
+  position: relative;
+  height: 28px;
+  margin: 0;
+  padding: 0 10px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--foreground);
+  background: transparent;
+}
+.godwit-toaster [data-sonner-toast][data-styled="true"] [data-button]:is(button)::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: -5px;
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+}
+.godwit-toaster [data-sonner-toast][data-styled="true"] [data-button]:is(button):hover {
+  background: var(--hover-tint);
+}
+.godwit-toaster [data-sonner-toast][data-styled="true"] [data-button]:is(button):active {
+  background: var(--tint-2);
+}
+.godwit-toaster [data-sonner-toast][data-styled="true"] [data-button]:is(button):focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 50%, transparent);
+}
+.godwit-toaster [data-sonner-toast][data-styled="true"] [data-close-button]:is(button) {
+  order: 3;
+  position: static;
+  transform: none;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  color: var(--muted-foreground);
+  background: transparent;
+}
+.godwit-toaster [data-sonner-toast][data-styled="true"]:hover [data-close-button]:is(button):hover {
+  color: var(--foreground);
+  background: var(--hover-tint);
 }
 
 /* Wit's review marks: the native InsBg/InsText/DelBg/DelText, set by applyTheme (webui.ThemeVars). */

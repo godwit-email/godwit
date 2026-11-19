@@ -1,13 +1,17 @@
-import { RiAttachment2, RiPlayFill, RiRefreshLine, RiSparkling2Line } from "@remixicon/react";
+import {
+  RiArrowRightSLine,
+  RiAttachment2,
+  RiErrorWarningLine,
+  RiRefreshLine,
+} from "@remixicon/react";
 import { cn } from "cn";
 import { currentWindow } from "mygo-runtime";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
-import { toast } from "sonner";
+import { Alert } from "@/components/alert";
 import { Button } from "@/components/button";
-import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
+import { Toaster, toast } from "@/components/toast";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
-import { Toaster } from "@/components/ui/sonner";
 import { Textarea } from "@/components/ui/textarea";
 import {
   type Approval,
@@ -24,11 +28,13 @@ import {
   type WitHistory,
 } from "@/mygo";
 import { type T, timeZone, useT } from "@/shared/i18n";
+import { material } from "@/shared/material";
 import { applyTheme, type Theme } from "@/shared/theme";
 import { formRound, Panel as WitPanel, witError } from "@/wit/Panel";
 import { useResume } from "@/wit/resume";
 import { approvalsOf, WitTransport } from "@/wit/transport";
 import { Attachments } from "./Attachments";
+import { ProgramBanner, WitBanner } from "./Banner";
 import { type CmdKSelection, Editor, type EditorHandle } from "./editor/Editor";
 import { IdleToolbar } from "./editor/Toolbar";
 import { Fields, type FieldsEdit, type FieldsHandle } from "./fields/Fields";
@@ -37,10 +43,15 @@ import { CmdK } from "./review/CmdK";
 import { BODY, Review, reviewSummary, Static } from "./review/Review";
 import { SendBar } from "./SendBar";
 import { createSaver, type Saver } from "./saver";
+import { TitleBar } from "./TitleBar";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-/** The window shows the main window's material (macOS): the page tints it rather than covers it. */
-const material = new URLSearchParams(location.search).has("material");
+
+/** What the toasts rise above and line up with: the bottom bar, and the send button in it. */
+interface Dock {
+  bar: RefObject<HTMLDivElement | null>;
+  send: RefObject<HTMLDivElement | null>;
+}
 
 /** What a closing needs of the editor: whether input is frozen, the IME composition in progress, and where the settling's blur took focus from. */
 interface CloseGate {
@@ -76,10 +87,10 @@ export function ComposePage() {
   const [state, setState] = useState<ComposeState>();
   const [failed, setFailed] = useState<string>();
   const [frozen, setFrozen] = useState(false);
-  const [mode, setMode] = useState<Theme["mode"]>(); // a theme event's, once one came
   const saver = useRef<Saver>(undefined);
   const gate = useRef<CloseGate>({ frozen: false, closings: 0 });
   const load = useRef<() => void>(() => {});
+  const dock = useRef<Dock>({ bar: { current: null }, send: { current: null } });
 
   useEffect(() => {
     const g = gate.current;
@@ -145,14 +156,10 @@ export function ComposePage() {
 
   useEffect(() => {
     if (!state) return;
-    const apply = (t: Theme) => {
-      setMode(t.mode);
-      return applyTheme(t);
-    };
-    let stop = apply(state.theme as Theme);
+    let stop = applyTheme(state.theme as Theme);
     const off = events.theme.on((t) => {
       stop();
-      stop = apply(t as Theme);
+      stop = applyTheme(t as Theme);
     });
     return () => {
       off();
@@ -163,11 +170,7 @@ export function ComposePage() {
   if (failed !== undefined) return <Failed error={failed} retry={() => load.current()} />;
   if (!state) return <main />;
   return (
-    <>
-      <Compose state={state} saver={saver} gate={gate.current} frozen={frozen} />
-      {/* sonner ignores the html dark class: the theme's mode is its own ("system" follows the OS as applyTheme does) */}
-      <Toaster theme={mode ?? (state.theme as Theme).mode} />
-    </>
+    <Compose state={state} saver={saver} gate={gate.current} frozen={frozen} dock={dock.current} />
   );
 }
 
@@ -280,11 +283,13 @@ function Compose({
   saver,
   gate,
   frozen,
+  dock,
 }: {
   state: ComposeState;
   saver: { current: Saver | undefined };
   gate: CloseGate;
   frozen: boolean;
+  dock: Dock;
 }) {
   const t = useT(state.locale);
   const currentT = useRef(t);
@@ -816,8 +821,8 @@ function Compose({
             aria-expanded={showQuote}
             onClick={() => setShowQuote(!showQuote)}
           >
-            <RiPlayFill
-              className={`-ml-1.25 size-3.5 transition-transform ${showQuote ? "rotate-90" : ""}`}
+            <RiArrowRightSLine
+              className={`-ml-1.5 size-4 transition-transform ${showQuote ? "rotate-90" : ""}`}
             />
             {t("compose.quote.show")}
           </Button>
@@ -856,12 +861,12 @@ function Compose({
         void send();
       }}
     >
-      <header className="compose-titlebar flex shrink-0 items-center gap-2 pr-4">
-        <h1 className="min-w-0 truncate font-semibold text-sm">{title}</h1>
-        <p className="shrink-0 text-muted-foreground text-xs">
-          {status === "saved" ? t("compose.status.saved", savedAt) : t(`compose.status.${status}`)}
-        </p>
-      </header>
+      <TitleBar
+        title={title}
+        status={
+          status === "saved" ? t("compose.status.saved", savedAt) : t(`compose.status.${status}`)
+        }
+      />
       {/* A row of cards on the window's material: the compose column, the Wit panel beside it,
           the gap between them a grip that sets the panel's width. */}
       <ResizablePanelGroup
@@ -872,13 +877,12 @@ function Compose({
       >
         <ResizablePanel id="editor" minSize={320}>
           <section className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)">
-            <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+            <div data-scroll className="flex min-h-0 flex-1 flex-col overflow-auto">
               {fromProgram && (
-                // A strip across the card's top, as the Wit banner below, its text in line with the fields; blue, as the native notice (kit.ToneInfo).
-                <div className="flex flex-wrap gap-x-2 border-b-[0.5px] border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-700 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-300">
-                  <span className="font-medium">{t("mail.draft.from_program")}</span>
-                  <span>{t("mail.draft.from_program_help")}</span>
-                </div>
+                <ProgramBanner
+                  title={t("mail.draft.from_program")}
+                  help={t("mail.draft.from_program_help")}
+                />
               )}
               <Fields
                 key={fieldsKey}
@@ -900,11 +904,10 @@ function Compose({
               <div ref={bodyRef} className="flex flex-col">
                 {reloadErr && (
                   <Alert
-                    variant="destructive"
-                    className="mx-4 mt-2 w-auto border-0 bg-destructive/10"
-                  >
-                    <AlertDescription>{reloadErr}</AlertDescription>
-                    <AlertAction>
+                    tone="danger"
+                    icon={<RiErrorWarningLine />}
+                    className="mx-4 mt-2"
+                    action={
                       <Button
                         variant="outline"
                         tone="danger"
@@ -913,17 +916,17 @@ function Compose({
                       >
                         {t("common.retry")}
                       </Button>
-                    </AlertAction>
+                    }
+                  >
+                    <p>{reloadErr}</p>
                   </Alert>
                 )}
                 {running && (
-                  <div className="flex items-center gap-2 bg-sidebar px-4 py-2 text-sm">
-                    <RiSparkling2Line className="size-3.5 shrink-0" />
-                    <span className="flex-1">{t("wit.compose.writing_banner")}</span>
+                  <WitBanner text={t("wit.compose.writing_banner")}>
                     <Button variant="outline" size="sm" onClick={stop}>
                       {t("wit.stop")}
                     </Button>
-                  </div>
+                  </WitBanner>
                 )}
                 {applied && !witLocked && !locked && (
                   <div className="mx-4 mt-2 flex items-center gap-2 text-muted-foreground text-xs">
@@ -1019,11 +1022,16 @@ function Compose({
               </div>
             </div>
             {/* The toolbar (rendered by the editor into the slot, or idle while none shows), then Send. */}
-            <div data-bar className="mx-4 flex shrink-0 flex-wrap items-center gap-2 py-3">
-              <div ref={setToolbarSlot} className="contents">
+            <div
+              ref={dock.bar}
+              data-bar
+              className="mx-4 flex shrink-0 flex-wrap items-center gap-2 py-3"
+            >
+              <div ref={setToolbarSlot} data-toolbar className="contents">
                 {!showEditor && <IdleToolbar t={t} attach={attach} />}
               </div>
               <SendBar
+                anchor={dock.send}
                 sending={sending}
                 frozen={locked}
                 anyway={warned}
@@ -1131,6 +1139,7 @@ function Compose({
           </ResizablePanel>
         )}
       </ResizablePanelGroup>
+      <Toaster bar={dock.bar} input={dock.send} closeLabel={t("toast.close")} />
     </main>
   );
 }

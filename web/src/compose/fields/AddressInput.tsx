@@ -96,7 +96,11 @@ export function AddressInput({
             role="group"
             aria-label={addr}
             variant={bad ? "destructive" : "secondary"}
-            className="h-auto px-2 py-0.5 text-sm leading-4"
+            className={
+              bad
+                ? "h-5 bg-(--danger-bg) px-1.5 font-normal text-(--danger-text) text-xs"
+                : "h-5 bg-(--hover-tint) px-1.5 font-normal text-foreground text-xs"
+            }
           >
             <Tooltip>
               {/* invalid: the entry as typed, so what is wrong shows */}
@@ -170,7 +174,7 @@ export function AddressInput({
           role="listbox"
           id={listId}
           aria-label={t("shell.nav.contacts")}
-          className="absolute top-full left-0 z-50 mt-2 flex w-80 max-w-full flex-col rounded-lg border border-glass-border bg-glass-bg p-1.5 text-popover-foreground shadow-md backdrop-blur-2xl"
+          className="absolute top-full left-0 z-50 mt-2 material-popover flex w-80 max-w-full flex-col p-1.5 text-popover-foreground"
         >
           {hits.map((h, i) => (
             <div

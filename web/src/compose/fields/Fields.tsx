@@ -173,10 +173,10 @@ export function Fields({
             aria-label={t("compose.from.select")}
             title={fromEmail}
             disabled={frozen}
-            className="flex h-5.5 min-w-0 items-center rounded-sm bg-muted px-2 text-sm leading-4 transition-colors hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-popup-open:bg-accent"
+            className="flex h-6 min-w-0 items-center gap-1 rounded-md bg-(--hover-tint) px-2 font-medium text-xs transition-colors hover:bg-(--tint-2) focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-popup-open:bg-(--tint-2)"
           >
             <span className="min-w-0 truncate">{fromEmail}</span>
-            <RiArrowDownSLine className="ml-1 size-3.5 shrink-0 text-muted-foreground" />
+            <RiArrowDownSLine className="size-3.5 shrink-0" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-80 w-auto min-w-52 max-w-80">
             <DropdownMenuRadioGroup

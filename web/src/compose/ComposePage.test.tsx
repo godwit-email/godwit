@@ -851,3 +851,31 @@ test("a failed load shows the error and retries into the draft", async () => {
     vi.unstubAllGlobals();
   }
 });
+
+test("at 640 by 480 the fields and body scroll while the toolbar and Send stay put", async () => {
+  vi.stubGlobal("innerWidth", 640);
+  vi.stubGlobal("innerHeight", 480);
+  vi.mocked(api.load).mockResolvedValue({ ...state, body: "a long line\n".repeat(400) });
+  const { container } = render(<ComposePage />);
+  const editor = await body();
+  const scroll = container.querySelector<HTMLElement>("[data-scroll]");
+  const bar = container.querySelector<HTMLElement>("[data-bar]");
+  const toolbar = container.querySelector<HTMLElement>("[data-toolbar]");
+  const send = screen.getByRole("button", { name: "发送" });
+  if (!scroll || !bar || !toolbar) throw new Error("the card's regions are missing");
+  // The fields and the body are in the one scroll area, which takes the card's spare height...
+  expect(scroll).toContainElement(screen.getByRole("textbox", { name: "主题" }));
+  expect(scroll).toContainElement(editor);
+  expect(scroll).toHaveClass("overflow-auto", "min-h-0", "flex-1");
+  // ...the toolbar and Send are in the bar beside it, in no scroll area and never shrunk.
+  expect(bar).toContainElement(toolbar);
+  expect(bar).toContainElement(send);
+  expect(bar).toHaveClass("shrink-0");
+  expect(scroll).not.toContainElement(bar);
+  expect(bar.closest("[data-scroll]")).toBeNull();
+  // The card clips (so only the scroll area scrolls) and fills the window's height.
+  expect(scroll.parentElement).toBe(bar.parentElement);
+  expect(bar.parentElement).toHaveClass("flex", "flex-col", "overflow-hidden", "h-full");
+  expect(container.querySelector("main")).toHaveClass("h-screen", "flex-col");
+  vi.unstubAllGlobals();
+});

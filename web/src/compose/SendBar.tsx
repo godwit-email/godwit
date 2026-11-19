@@ -1,5 +1,5 @@
 import { RiArrowDownSLine } from "@remixicon/react";
-import { useState } from "react";
+import { type Ref, useState } from "react";
 import { Button } from "@/components/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { currentLocale, type T } from "@/shared/i18n";
@@ -20,6 +20,7 @@ export function presets(now: Date): { key: string; at: Date }[] {
  * with a native menu: send now, the presets, and Send later…, a dialog for any date and time.
  */
 export function SendBar({
+  anchor,
   sending,
   frozen,
   anyway = false,
@@ -29,6 +30,8 @@ export function SendBar({
   menu,
   t,
 }: {
+  /** The buttons' box, which the toasts line their right edge up with. */
+  anchor?: Ref<HTMLDivElement>;
   sending: boolean;
   /** True while any operation runs: the buttons are inert. */
   frozen: boolean;
@@ -67,7 +70,7 @@ export function SendBar({
   };
   const off = sending || frozen;
   return (
-    <ButtonGroup className="ml-auto">
+    <ButtonGroup ref={anchor} className="ml-auto">
       <Button disabled={off} onClick={onSend}>
         {t(anyway ? "compose.send_anyway" : "compose.send")}
       </Button>

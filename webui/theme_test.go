@@ -14,7 +14,7 @@ func TestThemeVars(t *testing.T) {
 	want := map[string]string{
 		"--background": css(l.Background), "--foreground": css(l.Foreground),
 		"--card": css(l.Background), "--card-foreground": css(l.Foreground),
-		"--popover": css(l.Background), "--popover-foreground": css(l.Foreground),
+		"--popover": css(l.MaterialPopover), "--popover-foreground": css(l.Foreground),
 		"--primary": css(l.Primary), "--primary-foreground": css(l.PrimaryText),
 		"--secondary": css(l.Hover), "--secondary-foreground": css(l.Foreground),
 		"--muted": css(l.Hover), "--muted-foreground": css(l.Muted),
@@ -28,7 +28,7 @@ func TestThemeVars(t *testing.T) {
 		"--warning-bg": css(l.WarningBg), "--warning-border": css(l.WarningBorder), "--warning-text": css(l.WarningText),
 		"--info-bg": css(l.InfoBg), "--info-border": css(l.InfoBorder), "--info-text": css(l.InfoText),
 		"--success-bg": css(l.SuccessBg), "--success-border": css(l.SuccessBorder), "--success-text": css(l.SuccessText),
-		"--danger-bg": css(l.DangerBg), "--danger-border": css(l.DangerBorder),
+		"--danger-bg": css(l.DangerBg), "--danger-border": css(l.DangerBorder), "--danger-text": css(l.DangerText),
 		"--hover-tint": css(l.HoverTint), "--idle": css(l.Idle),
 		"--shadow-float": "0 0px 0px 1px rgb(0 0 0 / 0.039), 0 2px 8px 0px rgb(0 0 0 / 0.039), 0 4px 80px 8px rgb(0 0 0 / 0.024)",
 		"--window":       css(l.Window), "--shadow-xs": "0 1px 2px 0px rgb(0 0 0 / 0.050)",
@@ -38,9 +38,17 @@ func TestThemeVars(t *testing.T) {
 		"--glass-hover":     css(l.GlassHover),
 		"--raised":          css(l.Raised),
 		"--scrim":           "rgb(0 0 0 / 0.200)", "--alert-scrim": css(l.AlertScrim),
-		"--shadow-dialog": "0 25px 50px -12px rgb(0 0 0 / 0.250)",
-		"--dialog-sm":     "440px", "--dialog-md": "560px", "--dialog-lg": "640px",
+		"--shadow-dialog":    "0 25px 50px -12px rgb(0 0 0 / 0.250)",
+		"--material-popover": css(l.MaterialPopover), "--material-dialog": css(l.MaterialDialog), "--material-bar": css(l.MaterialBar),
+		"--material-blur": "25px", "--toast-width": "360px",
+		"--shadow-popover": "0 8px 40px 0px rgb(0 0 0 / 0.160), 0 1px 3px 0px rgb(0 0 0 / 0.080)",
+		"--dialog-sm":      "440px", "--dialog-md": "560px", "--dialog-lg": "640px",
 		"--dialog-centre": "40vh", "--dialog-min-top": "32px",
+	}
+	for i, name := range theme.LabelNames {
+		c := l.Labels[i]
+		want["--label-"+name+"-dot"], want["--label-"+name+"-fill"] = css(c.Dot), css(c.Fill)
+		want["--label-"+name+"-edge"], want["--label-"+name+"-text"] = css(c.Edge), css(c.Text)
 	}
 	for k, w := range want {
 		if v[k] != w {
