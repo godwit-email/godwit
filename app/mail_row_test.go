@@ -16,14 +16,10 @@ func TestMailRowAvatar(t *testing.T) {
 	h, _, m := labeledMail(t)
 	h.autoLabel(m.ID, "otp")
 	h.waitMail("the row's chip", func() bool { return h.tt.HasText("验证码") && h.tt.HasText("Check-in open") })
-	// The sidebar lists the label too, and Find takes the first of two: with
-	// no counts the sidebar drops its labels section; the row's chips stay.
-	h.post(func() {
-		for i := range h.app.labels {
-			h.app.labels[i].Count = 0
-		}
-	})
-	// The sidebar's label can show before the row's chips load: wait for the row's.
+	// The sidebar lists the label too, and Find takes the first of two: fold
+	// it (a refresh brings its counts back, not the sidebar), then wait for the
+	// row's own chips to load.
+	h.post(func() { h.app.sidebarHidden = true })
 	h.until("the row's chip alone", func() bool {
 		h.drain()
 		h.tt.Frame()
