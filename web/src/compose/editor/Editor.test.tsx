@@ -469,6 +469,16 @@ describe("Editor", () => {
     expect(box.textContent).toBe("ciao dall'Agenzia di Matteo ");
   });
 
+  // A smart quote has no letters: it must not replace the word before the caret ("i'" became "’").
+  it("insertReplacementText without a range ignores a punctuation-only replacement", async () => {
+    const { box, onChange } = setup("<p>hello i'</p>");
+    await select(box, 8, 0);
+    replace(box, "\u2019");
+    await new Promise((res) => setTimeout(res, 50));
+    expect(last(onChange) ?? "").not.toContain("\u2019");
+    expect(box.textContent).toBe("hello i'");
+  });
+
   it("insertReplacementText without a range still applies a correction of the last word", async () => {
     for (const [initial, data, want] of [
       ["<p>teh </p>", "the", "<p>the </p>"],
