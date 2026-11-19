@@ -32,9 +32,9 @@ type outboxAction struct {
 }
 
 // outboxView lists items under title, note ("" for none) above them: the
-// outbox's mail not yet sent and filed, with its state (mail that may or may
-// not have gone out, or failed, waits for the user's decision), or the
-// scheduled mail waiting for its time.
+// outbox's mail not yet sent and filed, or the scheduled mail waiting for its
+// time. Each is who it goes to, its subject and its state (mail that may or
+// may not have gone out, or failed, waits for the user's decision).
 func (p *mailPage) outboxView(c *ui.Context, title string, items []outboxEntry, note string) {
 	t := theme.Of(c)
 	th, small := c.Theme(), t.Text.Xs
@@ -53,7 +53,8 @@ func (p *mailPage) outboxView(c *ui.Context, title string, items []outboxEntry, 
 					BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
 					outboxTile(c, it.OutboxItem, now)
 					ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(0.5)).Children(func() {
-						ui.Text(c, subjectOf(it.OutboxItem)).FontWeight(500).SingleLine()
+						ui.Text(c, cmp.Or(recipients(it.To), i18n.T("mail.no_recipient"))).FontWeight(500).SingleLine() // who it goes to leads, as the design's row
+						ui.Text(c, subjectOf(it.OutboxItem)).SingleLine()
 						status, color := outboxStatus(it.OutboxItem, now), t.Muted
 						var server string
 						switch {
