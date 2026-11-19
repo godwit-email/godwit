@@ -382,6 +382,20 @@ func TestShots(t *testing.T) {
 	})
 	noAuto := func(st *core.Settings) { st.QuickReplies, st.Summary = false, false }
 
+	t.Run("SettingsRulesForward", func(t *testing.T) {
+		s := shotMail(t, noAuto)
+		s.openSettings("rules")
+		s.click("新建规则")
+		s.click("值")
+		s.typeText("billing@")
+		s.click("动作 1")
+		s.click("转发给")
+		s.click("收件人邮箱")
+		s.typeText("accountant@company.example")
+		s.click("保存")
+		s.see("第一次发往这个地址")
+		shot(s.harness, "SettingsRulesForward")
+	})
 	t.Run("Scheduled", func(t *testing.T) {
 		s := shotMail(t, noAuto)
 		ctx := context.Background()
@@ -389,7 +403,7 @@ func TestShots(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		d.To, d.Subject, d.HTML = []string{"lena@partner.example"}, "Re: Q4 partnership proposal", "<p>November works.</p>"
+		d.To, d.Subject, d.HTML = []string{"Lena Fischer <lena@partner.example>"}, "Re: Q4 partnership proposal", "<p>November works.</p>"
 		if d, err = s.env.Svc.SaveDraft(ctx, d); err != nil {
 			t.Fatal(err)
 		}
@@ -572,10 +586,7 @@ func TestShots(t *testing.T) {
 	t.Run("MainSearch", func(t *testing.T) {
 		s := shotMail(t, noAuto)
 		search := func(q string) {
-			s.post(func() { s.app.mail.searchOpen = true }) // ⌘F opens the palette; the list's search is its 查看全部
-			s.tt.Key(ui.Cmd, ui.KeyA)
-			s.typeText(q)
-			s.tt.Key(0, ui.KeyEnter)
+			s.post(func() { s.app.mail.searchFor(q, searchFilters{}) }) // the palette's 查看全部 opens the list's search with its query
 			s.advance(debounce)
 		}
 		search("Q3 预算 v4")
