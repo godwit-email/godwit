@@ -475,7 +475,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 		if oauthRefused(acc) {
 			msg = i18n.T("shell.sync.refused.reason")
 		}
-		kit.Alert(c, kit.Warning, msg, func() { p.authButton(c, acc, prov, true) })
+		kit.Alert(c, kit.ToneWarning, msg, func() { p.authButton(c, acc, prov, true) })
 	}
 
 	row := func(label, desc string, control func()) func() {
@@ -763,7 +763,7 @@ func (p *settingsPage) importDialog(c *ui.Context) {
 				})
 			}
 			if p.importErr != nil {
-				kit.Alert(c, kit.Danger, humanize(p.importErr), nil)
+				kit.Alert(c, kit.ToneDanger, humanize(p.importErr), nil)
 			}
 		},
 		func() {
@@ -921,7 +921,7 @@ func (p *settingsPage) authButton(c *ui.Context, acc core.Account, prov auth.Pro
 	if acc.AuthType != "oauth" {
 		text, open := i18n.Tf("settings.account.login.update", accountSecretName(acc, prov)), func() { p.openDialog("password", acc) }
 		if banner {
-			kit.AlertAction(c, kit.Warning, text, open)
+			kit.Button(c, text, kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneWarning}).Shrink(0).OnClick(open)
 		} else {
 			kit.Button(c, text, o).OnClick(open)
 		}
@@ -935,7 +935,7 @@ func (p *settingsPage) authButton(c *ui.Context, acc core.Account, prov auth.Pro
 		label, o.Disabled = i18n.T("settings.account.reauth.waiting"), true
 	}
 	if banner && !o.Disabled {
-		kit.AlertAction(c, kit.Warning, label, func() { p.reauthorize(acc) })
+		kit.Button(c, label, kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneWarning}).Shrink(0).OnClick(func() { p.reauthorize(acc) })
 		return
 	}
 	kit.Button(c, label, o).OnClick(func() { p.reauthorize(acc) })
@@ -1174,7 +1174,7 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 			if body != nil {
 				body()
 			}
-			kit.Alert(c, kit.Danger, humanize(p.dlgErr), nil)
+			kit.Alert(c, kit.ToneDanger, humanize(p.dlgErr), nil)
 		}
 	}
 	kit.Dialog(c, &p.open, title, kit.DialogOpts{Size: size, Desc: desc, Close: i18n.T("common.close")}, content, func() {

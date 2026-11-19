@@ -542,11 +542,11 @@ func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 	f := e.cfgs[name]
 	ui.Column(c).FillWidth().Gap(th.Space(4)).Padding(th.Space(1), th.Space(4), th.Space(4)).Children(func() {
 		if p.Error != "" {
-			kit.Alert(c, kit.Danger, p.Error, nil)
+			kit.Alert(c, kit.ToneDanger, p.Error, nil)
 		} else if p.DisabledReason == "trust_revoked" && !p.Enabled {
-			kit.Alert(c, kit.Warning, i18n.T("settings.ext.revoked"), nil)
+			kit.Alert(c, kit.ToneWarning, i18n.T("settings.ext.revoked"), nil)
 		} else if p.DisabledReason != "" && !p.Enabled {
-			kit.Alert(c, kit.Warning, p.DisabledReason, nil)
+			kit.Alert(c, kit.ToneWarning, p.DisabledReason, nil)
 		}
 		if en, ok := e.entry(name); ok && en.DataFlow != "" {
 			dataFlowCard(c, en)
@@ -882,7 +882,7 @@ func (e *extView) mcpFormView(c *ui.Context, f *mcpForm) {
 				kv(i18n.T("settings.ext.mcp.env"), &f.env)
 			}
 			if f.err != "" {
-				kit.Alert(c, kit.Danger, f.err, nil)
+				kit.Alert(c, kit.ToneDanger, f.err, nil)
 			}
 			ui.Row(c).Gap(th.Space(2)).Children(func() {
 				kit.Button(c, i18n.T("common.save"), kit.ButtonOpts{Disabled: f.busy}).OnClick(func() { e.saveServer(f) })

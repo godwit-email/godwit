@@ -103,47 +103,18 @@ func badge(c *ui.Context, e ui.Element, text string, o BadgeOpts) ui.Element {
 	})
 }
 
-// AlertKind is an Alert's look.
-type AlertKind int
-
-const (
-	Warning AlertKind = iota
-	Danger
-	Info
-)
-
 // Alert is a bordered message bar with optional actions after the text: a
-// Block of the kind's tone. Its actions are AlertActions, which follow it.
-func Alert(c *ui.Context, kind AlertKind, text string, actions func()) ui.Element {
+// Block of tone (ToneWarning, ToneDanger, ToneInfo). Its actions are small
+// Outline buttons of the same tone.
+func Alert(c *ui.Context, tone Tone, text string, actions func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return Block(c, ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), th.Space(2.5)), alertTone(kind)).
+	return Block(c, ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), th.Space(2.5)), tone).
 		FontSize(t.Text.Sm).Children(func() {
 		ui.Text(c, text).Grow(1).Shrink(1) // the text wraps; the actions stay on its right
 		if actions != nil {
 			actions()
 		}
 	})
-}
-
-// alertTone is the Block tone of an Alert of kind.
-func alertTone(kind AlertKind) Tone {
-	switch kind {
-	case Warning:
-		return ToneWarning
-	case Danger:
-		return ToneDanger
-	}
-	return ToneInfo
-}
-
-// AlertAction is a button for an Alert's actions: a small Outline one in
-// the kind's tone (ButtonOpts.Tone).
-func AlertAction(c *ui.Context, kind AlertKind, label string, onClick func()) ui.Element {
-	b := Button(c, label, ButtonOpts{Variant: Outline, Size: SizeSm, Tone: alertTone(kind)}).Shrink(0)
-	if onClick != nil {
-		b.OnClick(onClick)
-	}
-	return b
 }
 
 // Status is what a StatusDot tells.

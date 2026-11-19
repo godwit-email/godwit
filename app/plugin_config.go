@@ -235,7 +235,7 @@ func (e *extView) configFields(c *ui.Context, f *pluginForm, fields []plugins.Co
 		}).Error(v.err)
 	}
 	if f.err != "" {
-		kit.Alert(c, kit.Danger, f.err, nil)
+		kit.Alert(c, kit.ToneDanger, f.err, nil)
 	}
 	if save {
 		kit.Button(c, i18n.T("common.save"), kit.ButtonOpts{Disabled: f.busy}).AlignSelf(ui.Start).OnClick(func() { e.saveConfig(f, fields) })

@@ -177,8 +177,8 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 		sectionTitle(c, i18n.T("settings.models.usage"))
 		if u.alert != "" {
 			svc := *u.genSvc
-			kit.Alert(c, kit.Danger, u.alert, func() {
-				kit.AlertAction(c, kit.Danger, i18n.T("settings.models.use.fix"), func() { m.openEdit(svc) })
+			kit.Alert(c, kit.ToneDanger, u.alert, func() {
+				kit.Button(c, i18n.T("settings.models.use.fix"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneDanger}).Shrink(0).OnClick(func() { m.openEdit(svc) })
 			})
 		}
 		settingsCard(c,
@@ -271,12 +271,12 @@ func (m *modelsView) footer(c *ui.Context, f *modelForm) {
 		ui.Row(c).Grow(1).Gap(c.Theme().Space(2)).AlignItems(ui.Center).Label(i18n.T("settings.models.del_title")).Children(func() {
 			ui.Text(c, i18n.Tf("settings.models.del_confirm", f.name)).TextColor(t.DangerText).Grow(1).Shrink(1)
 			footButton(c, i18n.T("common.cancel"), kit.Outline, false).OnClick(func() { f.confirmDel = false })
-			footButton(c, i18n.T("common.delete"), kit.Default, f.busy).Background(t.Danger).TextColor(t.OnSolid).OnClick(func() { m.remove(f) })
+			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger, Disabled: f.busy}).OnClick(func() { m.remove(f) })
 		})
 		return
 	}
 	if f.id != 0 {
-		footButton(c, i18n.T("settings.models.remove"), kit.Ghost, f.busy).TextColor(t.Danger).OnClick(func() { f.confirmDel = true })
+		kit.Button(c, i18n.T("settings.models.remove"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger, Disabled: f.busy}).OnClick(func() { f.confirmDel = true })
 	}
 	kit.Text(c, f.hint(), t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
 	label := i18n.T("settings.models.test")
@@ -791,7 +791,7 @@ func (m *modelsView) keyField(c *ui.Context, f *modelForm) {
 		if f.hasKey && f.key == "" && f.moved() {
 			ui.Column(c).Gap(th.Space(2)).Children(func() {
 				if !f.noKey {
-					kit.Alert(c, kit.Warning, i18n.T("settings.models.key_moved"), nil)
+					kit.Alert(c, kit.ToneWarning, i18n.T("settings.models.key_moved"), nil)
 				}
 				kit.Checkbox(c, &f.noKey, i18n.T("settings.models.no_key"))
 			})

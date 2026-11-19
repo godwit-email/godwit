@@ -590,7 +590,7 @@ func (p *settingsPage) localAPIView(c *ui.Context) {
 	}
 	rows := []func(){func() {
 		if a.externalAlways { // the switch would say off while clients connect
-			settingBlock(c, func() { kit.Alert(c, kit.Info, i18n.T("settings.local_api.always"), nil) })
+			settingBlock(c, func() { kit.Alert(c, kit.ToneInfo, i18n.T("settings.local_api.always"), nil) })
 			return
 		}
 		kit.SwitchRow(c, &p.st.LocalAPI, i18n.T("settings.local_api.on"), i18n.T("settings.local_api.help"))
@@ -613,7 +613,7 @@ func (p *settingsPage) localAPIView(c *ui.Context) {
 			p.st.MCPSend = level
 		})
 		if p.st.MCPSend == core.MCPSendDirect {
-			settingBlock(c, func() { kit.Alert(c, kit.Warning, i18n.T("settings.local_api.send.risk"), nil) })
+			settingBlock(c, func() { kit.Alert(c, kit.ToneWarning, i18n.T("settings.local_api.send.risk"), nil) })
 		}
 	})
 	if path != "" {

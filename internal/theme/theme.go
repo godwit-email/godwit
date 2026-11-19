@@ -66,7 +66,7 @@ type Tokens struct {
 	// MarkTile is the tile under a provider's logo: white in either
 	// appearance, as logos are drawn for white.
 	MarkTile ui.Color
-	// OnSolid is text on a solid status fill (AlertAction): white in either appearance.
+	// OnSolid is text on a solid status fill (the web pages' --destructive-foreground): white in either appearance.
 	OnSolid ui.Color
 	// Highlight marks matched text (search hits) in either appearance, with
 	// HighlightText on it.

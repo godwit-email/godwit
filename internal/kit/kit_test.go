@@ -236,7 +236,7 @@ func TestKitDensityScales(t *testing.T) {
 func TestKitFontSizeFollows(t *testing.T) {
 	body := func(c *ui.Context) {
 		Badge(c, "BadgeText")
-		Alert(c, Warning, "AlertText", nil)
+		Alert(c, ToneWarning, "AlertText", nil)
 		Field(c, "FieldLabel", "HelpText", "", func() {})
 		Kbd(c, "KbdText")
 	}
@@ -1346,7 +1346,7 @@ func TestToastCap(t *testing.T) {
 // TestButtonTones checks the toned looks against the design's variables
 // (Figma theme collection, light / dark): an Outline of a tone rests on
 // Background and fills with the tone's -bg on hover; a Ghost danger rests
-// bare and fills with danger-bg. AlertAction is an Outline of its kind.
+// bare and fills with danger-bg. An Alert's action is an Outline of its tone.
 func TestButtonTones(t *testing.T) {
 	hex := func(s string) color.RGBA {
 		v, _ := strconv.ParseUint(s[1:], 16, 32)
@@ -1361,9 +1361,15 @@ func TestButtonTones(t *testing.T) {
 		draw        func(c *ui.Context, onClick func())
 		rest, hover [2]string // light, dark; "" is the page behind (bare)
 	}{
-		{"info", func(c *ui.Context, f func()) { AlertAction(c, Info, "Go", f) }, [2]string{"#ffffff", "#0a0a0a"}, [2]string{"#edf5ff", "#101730"}},
-		{"warning", func(c *ui.Context, f func()) { AlertAction(c, Warning, "Go", f) }, [2]string{"#ffffff", "#0a0a0a"}, [2]string{"#fffbeb", "#461901"}},
-		{"danger", func(c *ui.Context, f func()) { AlertAction(c, Danger, "Go", f) }, [2]string{"#ffffff", "#0a0a0a"}, [2]string{"#fef2f2", "#460809"}},
+		{"info", func(c *ui.Context, f func()) {
+			Button(c, "Go", ButtonOpts{Variant: Outline, Size: SizeSm, Tone: ToneInfo}).OnClick(f)
+		}, [2]string{"#ffffff", "#0a0a0a"}, [2]string{"#edf5ff", "#101730"}},
+		{"warning", func(c *ui.Context, f func()) {
+			Button(c, "Go", ButtonOpts{Variant: Outline, Size: SizeSm, Tone: ToneWarning}).OnClick(f)
+		}, [2]string{"#ffffff", "#0a0a0a"}, [2]string{"#fffbeb", "#461901"}},
+		{"danger", func(c *ui.Context, f func()) {
+			Button(c, "Go", ButtonOpts{Variant: Outline, Size: SizeSm, Tone: ToneDanger}).OnClick(f)
+		}, [2]string{"#ffffff", "#0a0a0a"}, [2]string{"#fef2f2", "#460809"}},
 		{"success", func(c *ui.Context, f func()) {
 			Button(c, "Go", ButtonOpts{Variant: Outline, Tone: ToneSuccess}).OnClick(f)
 		}, [2]string{"#ffffff", "#0a0a0a"}, [2]string{"#f0fdf4", "#032e15"}},

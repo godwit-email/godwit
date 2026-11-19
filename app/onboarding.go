@@ -964,8 +964,8 @@ func secretWhitespaceHint(c *ui.Context, secret *string) {
 	if cleaned == *secret {
 		return
 	}
-	kit.Alert(c, kit.Warning, i18n.T("onboarding.secret.whitespace"), func() {
-		kit.AlertAction(c, kit.Warning, i18n.T("onboarding.secret.clean"), func() { *secret = cleaned })
+	kit.Alert(c, kit.ToneWarning, i18n.T("onboarding.secret.whitespace"), func() {
+		kit.Button(c, i18n.T("onboarding.secret.clean"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneWarning}).Shrink(0).OnClick(func() { *secret = cleaned })
 	})
 }
 
@@ -1279,8 +1279,8 @@ func (o *onboarding) oauthView(c *ui.Context) {
 	}
 	kit.Card(c, ui.Column(c), kit.ToneOutline).Gap(th.Space(3)).Padding(th.Space(5)).BorderStyle(ui.BorderDashed).AlignItems(ui.Center).Children(func() {
 		if o.oauthErr != nil {
-			kit.Alert(c, kit.Danger, humanize(o.oauthErr), func() {
-				kit.AlertAction(c, kit.Danger, i18n.T("common.retry"), o.startOAuth)
+			kit.Alert(c, kit.ToneDanger, humanize(o.oauthErr), func() {
+				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneDanger}).Shrink(0).OnClick(o.startOAuth)
 			})
 			return
 		}
@@ -1516,7 +1516,7 @@ func (o *onboarding) doneView(c *ui.Context) {
 		lineText(c, line, t.Text.Sm).TextColor(t.Muted)
 	})
 	if o.receiveOnly {
-		kit.Alert(c, kit.Warning, i18n.T("onboarding.receive_only.note"), nil)
+		kit.Alert(c, kit.ToneWarning, i18n.T("onboarding.receive_only.note"), nil)
 	}
 	ui.Field(c, i18n.T("onboarding.name"), func() {
 		kit.Input(c, &o.name, kit.InputOpts{Placeholder: i18n.T("onboarding.name.placeholder"), Size: kit.SizeLg}).Disabled(o.adding || o.addedID != 0) // the name saves with the account
@@ -1526,8 +1526,8 @@ func (o *onboarding) doneView(c *ui.Context) {
 	ui.Field(c, i18n.T("onboarding.sync"), func() { kit.SelectWith(c, kit.SelectOpts{Size: kit.SizeLg}, &o.sync, opts).Disabled(o.adding) }).
 		Description(i18n.T("onboarding.sync.help"))
 	if o.saveErr != nil {
-		kit.Alert(c, kit.Danger, humanize(o.saveErr), func() {
-			kit.AlertAction(c, kit.Danger, i18n.T("common.retry"), func() { o.finish(o.again) })
+		kit.Alert(c, kit.ToneDanger, humanize(o.saveErr), func() {
+			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneDanger}).Shrink(0).OnClick(func() { o.finish(o.again) })
 		})
 	}
 	ui.Column(c).Gap(th.Space(2)).Children(func() {

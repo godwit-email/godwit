@@ -486,7 +486,7 @@ func (v *addressBooksView) dialogView(c *ui.Context) {
 				Description(i18n.T("onboarding.secret.help"))
 			secretWhitespaceHint(c, &v.password)
 			if v.dlgErr != nil {
-				kit.Alert(c, kit.Danger, humanize(v.dlgErr), nil)
+				kit.Alert(c, kit.ToneDanger, humanize(v.dlgErr), nil)
 			}
 		}
 		pw, id, updateAuth, gen := v.password, ab.ID, v.updateAuth, v.dlgGen
@@ -520,7 +520,7 @@ func (v *addressBooksView) dialogView(c *ui.Context) {
 			kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("settings.addressbooks.remove.desc"), Close: i18n.T("common.close")},
 			func() {
 				if v.dlgErr != nil {
-					kit.Alert(c, kit.Danger, humanize(v.dlgErr), nil)
+					kit.Alert(c, kit.ToneDanger, humanize(v.dlgErr), nil)
 				}
 			}, func() {
 				kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(v.close)
@@ -639,7 +639,7 @@ func (v *addressBooksView) addDialogView(c *ui.Context) {
 		}
 
 		if v.dlgErr != nil {
-			kit.Alert(c, kit.Danger, humanize(v.dlgErr), nil)
+			kit.Alert(c, kit.ToneDanger, humanize(v.dlgErr), nil)
 		}
 	}
 

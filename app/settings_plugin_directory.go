@@ -245,7 +245,7 @@ func (e *extView) installDialog(c *ui.Context) {
 			dataFlowCard(c, en)
 			entryPermissions(c, en)
 			if en.Installed != "" {
-				kit.Alert(c, kit.Warning, strings.TrimSpace(i18n.Tf("settings.ext.registry.confirm.replace", en.Name)), nil)
+				kit.Alert(c, kit.ToneWarning, strings.TrimSpace(i18n.Tf("settings.ext.registry.confirm.replace", en.Name)), nil)
 			}
 			if en.Homepage != "" {
 				kit.Button(c, i18n.T("settings.ext.dialog.home"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).AlignSelf(ui.Start).OnClick(func() {

@@ -1794,8 +1794,8 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 			r.cards(c, m)
 			switch {
 			case b != nil && b.err != nil && !b.read.loading:
-				kit.Alert(c, kit.Danger, humanize(b.err), func() {
-					kit.AlertAction(c, kit.Danger, i18n.T("common.retry"), func() { r.loadBody(m.ID) })
+				kit.Alert(c, kit.ToneDanger, humanize(b.err), func() {
+					kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneDanger}).Shrink(0).OnClick(func() { r.loadBody(m.ID) })
 				})
 				return
 			case b == nil || !b.ready:
@@ -1805,13 +1805,13 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 			bodyReady = true
 			bodyBlocked := b.msg.RemoteImagesBlocked > 0 && !b.remote && !b.trusted
 			if b.allowErr != nil && (bodyBlocked || addr != "" && b.avatarBlocked && !b.avatarAllow) {
-				kit.Alert(c, kit.Danger, humanize(b.allowErr), func() {
-					kit.AlertAction(c, kit.Danger, i18n.T("common.retry"), func() { r.allowImages(m.ID) })
+				kit.Alert(c, kit.ToneDanger, humanize(b.allowErr), func() {
+					kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneDanger}).Shrink(0).OnClick(func() { r.allowImages(m.ID) })
 				})
 			}
 			if b.imgFailed > 0 && !bodyBlocked {
-				kit.Alert(c, kit.Warning, i18n.Tf("reader.images_failed", b.imgFailed), func() {
-					kit.AlertAction(c, kit.Warning, i18n.T("common.retry"), func() {
+				kit.Alert(c, kit.ToneWarning, i18n.Tf("reader.images_failed", b.imgFailed), func() {
+					kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneWarning}).Shrink(0).OnClick(func() {
 						b.imgFailed = 0
 						r.p.a.plat.AllowImages(m.ID)
 					})

@@ -783,14 +783,14 @@ func (r *reader) runState(c *ui.Context, run *aiRun, retry func()) {
 	case run.running:
 		kit.Spinner(c)
 	case run.err != nil:
-		kit.Alert(c, kit.Danger, humanize(run.err), func() {
+		kit.Alert(c, kit.ToneDanger, humanize(run.err), func() {
 			if isChatGPTUsage(run.err) {
 				a := r.p.a
-				kit.AlertAction(c, kit.Danger, i18n.T("settings.models.manage_usage"),
-					func() { a.do(func(context.Context) error { return a.plat.OpenURL(chatGPTUsageURL) }, a.toastErr) })
+				kit.Button(c, i18n.T("settings.models.manage_usage"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneDanger}).Shrink(0).
+					OnClick(func() { a.do(func(context.Context) error { return a.plat.OpenURL(chatGPTUsageURL) }, a.toastErr) })
 			}
 			if retry != nil {
-				kit.AlertAction(c, kit.Danger, i18n.T("common.retry"), retry)
+				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneDanger}).Shrink(0).OnClick(retry)
 			}
 		})
 	}
@@ -799,13 +799,13 @@ func (r *reader) runState(c *ui.Context, run *aiRun, retry func()) {
 // fetchErr shows a failed read with Retry.
 func (r *reader) fetchErr(c *ui.Context, err error, loading bool, retry func()) {
 	if msg := humanize(err); msg != "" && !loading {
-		kit.Alert(c, kit.Danger, msg, func() {
+		kit.Alert(c, kit.ToneDanger, msg, func() {
 			if isChatGPTUsage(err) {
 				a := r.p.a
-				kit.AlertAction(c, kit.Danger, i18n.T("settings.models.manage_usage"),
-					func() { a.do(func(context.Context) error { return a.plat.OpenURL(chatGPTUsageURL) }, a.toastErr) })
+				kit.Button(c, i18n.T("settings.models.manage_usage"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneDanger}).Shrink(0).
+					OnClick(func() { a.do(func(context.Context) error { return a.plat.OpenURL(chatGPTUsageURL) }, a.toastErr) })
 			}
-			kit.AlertAction(c, kit.Danger, i18n.T("common.retry"), retry)
+			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneDanger}).Shrink(0).OnClick(retry)
 		})
 	}
 }
