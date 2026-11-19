@@ -65,6 +65,7 @@ const fold = (s: string) =>
 function resembles(word: string, text: string): boolean {
   const a = [...fold(word)];
   const b = [...fold(text)];
+  if (b.length === 0) return false; // punctuation only (a smart quote): no word to correct
   // Levenshtein distance, one row at a time.
   let row = Array.from({ length: b.length + 1 }, (_, j) => j);
   for (let i = 1; i <= a.length; i++) {
