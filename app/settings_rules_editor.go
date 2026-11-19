@@ -151,9 +151,10 @@ func (v *rulesView) ready() bool {
 		(v.a.settings.RuleAI || !usesAI(*d))
 }
 
-// editor is the back link and heading, then the rule as a column of node
-// cards joined by lines (名称, 当, 如果, then each action) beside a side
-// panel that stays in view: the existing mail it matches, 运行方式 and notes.
+// editor is the heading, then the rule as a column of node cards joined by
+// lines (名称, 当, 如果, then each action) beside a side panel that stays in
+// view: the existing mail it matches, 运行方式 and notes. 规则 is the way back
+// (Breadcrumb).
 func (v *rulesView) editor(c *ui.Context) {
 	th := c.Theme()
 	d := &v.edit.Doc
@@ -161,13 +162,10 @@ func (v *rulesView) editor(c *ui.Context) {
 	if v.edit.ID != 0 {
 		title, sub = ruleName(*d), v.summary(*d)
 	}
-	ui.Column(c).Gap(theme.HeadingGap).Children(func() {
-		settingsBack(c, i18n.T("settings.rules"), v.closeEditor)
-		pageHeading(c, title, sub, func() {
-			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				settingButton(c, i18n.T("common.cancel"), kit.Outline, false).OnClick(v.closeEditor)
-				settingButton(c, i18n.T("common.save"), kit.Default, !v.ready()).OnClick(v.save)
-			})
+	pageHeading(c, title, sub, func() {
+		ui.Row(c).Gap(th.Space(2)).Children(func() {
+			settingButton(c, i18n.T("common.cancel"), kit.Outline, false).OnClick(v.closeEditor)
+			settingButton(c, i18n.T("common.save"), kit.Default, !v.ready()).OnClick(v.save)
 		})
 	})
 	v.schedulePreview()

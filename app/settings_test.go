@@ -64,7 +64,7 @@ func (h *harness) openSettings(sec string) *settingsPage {
 	return h.app.pages[PageSettings].(*settingsPage)
 }
 
-// The Intelligence page's tabs.
+// The pages of the Intelligence group, in the sidebar's order.
 const (
 	aiModels = iota
 	aiFeatures
@@ -72,13 +72,12 @@ const (
 	aiApps // 接入 AI 应用: the Local API
 )
 
-// aiTab opens the Intelligence page on tab.
-func (h *harness) aiTab(tab int) *settingsPage {
+var aiPages = []string{"models", "features", "mcp", "clients"}
+
+// aiTab opens the Intelligence group's page of that number.
+func (h *harness) aiTab(page int) *settingsPage {
 	h.t.Helper()
-	p := h.openSettings("models")
-	p.aiTab = tab
-	h.tt.Frame()
-	return p
+	return h.openSettings(aiPages[page])
 }
 
 // openSignature makes a signature the account uses, opens it, and waits
@@ -608,7 +607,7 @@ func TestSettingsLoginItemOffInSystem(t *testing.T) {
 
 func TestSettingsPrivacyAndAbout(t *testing.T) {
 	h, _ := withAccount(t)
-	h.openSettings("privacy")
+	h.openSettings("masking")
 	h.see("系统钥匙串可用")
 	h.openSettings("about")
 	h.see("版本 " + Version)
@@ -620,13 +619,13 @@ func TestSettingsPrivacyAndAbout(t *testing.T) {
 	h.plat.mu.Lock()
 	h.plat.latest = "9.0.0"
 	h.plat.mu.Unlock()
-	h.openSettings("privacy")
+	h.openSettings("masking")
 	h.openSettings("about")
 	h.click("升级到 9.0.0")
 	h.plat.mu.Lock()
 	h.plat.gh = true
 	h.plat.mu.Unlock()
-	h.openSettings("privacy")
+	h.openSettings("masking")
 	h.openSettings("about")
 	h.click("加星标")
 	h.called("StarRepo")
@@ -1358,12 +1357,7 @@ func TestSignaturesList(t *testing.T) {
 	})
 	h.click("Work")
 	h.until("opened", func() bool { return h.app.route.Settings == signatureRoute(sig.ID) })
-	// ‹ 签名 above the title goes back to the list (the sidebar's 签名 is selected and does not click).
-	r, ok := h.tt.Find("Work")
-	if !ok {
-		t.Fatal("no title")
-	}
-	h.tt.ClickAt(r.X+8, r.Y-20) // the back link sits just above the title, its text aligned with it
+	h.click("后退") // the title bar's back: the list was the route before
 	h.until("back to the list", func() bool { return h.app.route.Settings == "signatures" })
 }
 
@@ -1424,8 +1418,7 @@ func TestAccountDefaultSignature(t *testing.T) {
 // 隐私与安全 lists the trusted senders; 移除 stops trusting one.
 func TestSettingsTrustedSenders(t *testing.T) {
 	h, _ := withAccount(t)
-	h.openSettings("privacy")
-	h.click("远程图片")
+	h.openSettings("images")
 	h.see("还没有信任的发件人")
 	if err := h.env.Svc.TrustImageSender(context.Background(), "Bob <bob@example.com>"); err != nil {
 		t.Fatal(err)
@@ -1541,8 +1534,7 @@ func TestLinkHref(t *testing.T) {
 
 func TestSettingsBlockedSenders(t *testing.T) {
 	h, _ := withAccount(t)
-	h.openSettings("privacy")
-	h.click("已屏蔽的发件人")
+	h.openSettings("blocked")
 	h.see("没有已屏蔽的发件人")
 	if err := h.env.Svc.BlockSender(context.Background(), "spammer@example.com"); err != nil {
 		t.Fatal(err)
@@ -1620,8 +1612,7 @@ func installClaudeExtension(t *testing.T, home string, s mcpclients.Server) {
 
 func TestSettingsSecuritySection(t *testing.T) {
 	h, _ := withAccount(t)
-	h.openSettings("privacy")
-	h.click(i18n.T("settings.security"))
+	h.openSettings("security")
 	h.see(i18n.T("settings.security"))
 	h.see(i18n.T("settings.security.ai"))
 
@@ -1663,8 +1654,7 @@ func TestSettingsSecurityRescan(t *testing.T) {
 	st := h.app.settings
 	st.SecurityAI = true
 	h.app.changeSettings(st)
-	p := h.openSettings("privacy")
-	h.click(i18n.T("settings.security"))
+	p := h.openSettings("security")
 	h.until("background security queue shown", func() bool { return p.secLoaded && p.secBusy })
 	h.see(i18n.T("settings.security.rescan.busy"))
 	p.startSecurityRescan() // the background queue must block even direct invocation

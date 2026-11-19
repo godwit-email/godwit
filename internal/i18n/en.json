@@ -1417,7 +1417,6 @@
   "settings_add_account": "Add account",
   "settings_ai": "AI features",
   "settings_ai_tab_apps": "AI apps",
-  "settings_ai_tab_features": "Features",
   "settings_ai_tab_models": "Models",
   "settings_masking": "Privacy masking",
   "settings_masking_on": "Mask before sending to the cloud",
@@ -1776,31 +1775,6 @@
   "settings_ext_status_error": "Error",
   "settings_ext_status_needs_grant": "Needs approval",
   "settings_ext_status_pending": "Pending approval",
-  "settings_ext_sub": "Skills are just prompts; script plugins run in a sandbox with only the permissions you approve, native plugins have all of Godwit''s. MCP servers are under AI.",
-  "settings_ext_tab_mcp": "MCP · {arg1, number, ::group-off}",
-  "@settings_ext_tab_mcp": {
-    "placeholders": {
-      "arg1": {
-        "type": "int"
-      }
-    }
-  },
-  "settings_ext_tab_plugins": "Plugins · {arg1, number, ::group-off}",
-  "@settings_ext_tab_plugins": {
-    "placeholders": {
-      "arg1": {
-        "type": "int"
-      }
-    }
-  },
-  "settings_ext_tab_skills": "Skills · {arg1, number, ::group-off}",
-  "@settings_ext_tab_skills": {
-    "placeholders": {
-      "arg1": {
-        "type": "int"
-      }
-    }
-  },
   "settings_ext_login": "Sign in",
   "settings_ext_login_cancel": "Cancel sign-in",
   "settings_ext_login_title": "Sign in to {arg1}?",
@@ -2220,7 +2194,6 @@
   "settings_models_status_bad": "Key invalid",
   "settings_models_status_ok": "OK",
   "settings_models_status_untested": "Untested",
-  "settings_models_sub": "Model services, the AI features that use them, and MCP.",
   "settings_models_test": "Test connection",
   "settings_models_test_busy": "Testing…",
   "settings_models_test_ok": "Connected · {arg1, number, ::group-off} ms",
@@ -2455,14 +2428,6 @@
   "settings_unread_on_app_icon": "Show the unread count on the app icon",
   "shell_back": "Back",
   "shell_forward": "Forward",
-  "shell_nav_back_to": "Back to {arg1}",
-  "@shell_nav_back_to": {
-    "placeholders": {
-      "arg1": {
-        "type": "String"
-      }
-    }
-  },
   "shell_nav_mail": "Mail",
   "shell_nav_settings": "Settings",
   "shell_update_available": "Update Available",
@@ -4147,5 +4112,16 @@
   "error_mcp_send_no_ui": "Godwit cannot ask you to confirm right now: no Godwit window is open and it cannot show a notification.",
   "settings_account_import_ai_instructions": "AI instructions",
   "settings_account_import_signature": "Signature: {arg1}",
-  "settings_account_import_username": "Signs in as {arg1}"
+  "settings_account_import_username": "Signs in as {arg1}",
+  "settings_group_ai": "Intelligence & extensions",
+  "settings_mcp": "MCP",
+  "settings_plugins": "Plugins",
+  "settings_models_desc": "Connect model services and choose which model each AI feature uses.",
+  "settings_ai_sub": "Turn the features that use a model on or off, and set the languages for reading, replying and translating.",
+  "settings_skills_sub": "Skills are just prompts; no code needed.",
+  "settings_plugins_sub": "Script plugins run in a sandbox with only the permissions you approve; native plugins have all the permissions of Godwit.",
+  "settings_mcp_sub": "MCP servers that Wit can call.",
+  "settings_clients_sub": "Let AI apps such as Claude and ChatGPT use Godwit through the Local API.",
+  "settings_security_sub": "Flag suspicious mail and show which senders are verified.",
+  "settings_rules_editor": "Rule editor"
 }

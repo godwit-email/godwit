@@ -26,7 +26,7 @@ type syncFail struct {
 // before the status turns red and asks the user to look.
 const syncGiveUp = 30 * time.Minute
 
-// syncLevel orders accounts in the sync status: the top bar names the worst.
+// syncLevel orders accounts in the sync status: its row names the worst.
 type syncLevel int
 
 const (
@@ -41,7 +41,7 @@ type syncHealth struct {
 	acc     core.Account
 	level   syncLevel
 	status  string // 自动重试中, 需要重新登录…
-	short   string // the top bar's word for it; empty: status
+	short   string // the sync status row's word for it; empty: status
 	reason  string // what happened, in plain words
 	err     string // the raw error, on hover over the reason
 	actions []syncButton
@@ -148,9 +148,9 @@ func syncDot(l syncLevel) (s kit.Status, ok bool) {
 	return 0, false
 }
 
-// syncStatus is the top bar's sync status: the worst account by name when
-// one fails, else syncing or how long ago the last sync finished. A click
-// lists every account's state.
+// syncStatus is the sync status row under Settings in the sidebar: the worst
+// account by name when one fails, else syncing or how long ago the last sync
+// finished. A click lists every account's state, above the row.
 func (a *App) syncStatus(c *ui.Context) {
 	hs := a.syncHealths()
 	if len(hs) == 0 {
@@ -159,14 +159,17 @@ func (a *App) syncStatus(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	w := hs[0]
 	text, color := "", t.Muted
+	named := false // the text starts with the account's name, which gives way before the reason
 	dotLevel := w.level
 	switch {
 	case a.syncBatch != nil: // a Sync All shows syncing until its last account returns
 		text, dotLevel = i18n.T("shell.sync.syncing"), syncBusy
 	case w.level == syncAction:
 		text, color = i18n.Tf("shell.sync.account", accountName(w.acc), cmp.Or(w.short, w.status)), t.DangerText
+		named = true
 	case w.level == syncRetrying:
 		text, color = i18n.Tf("shell.sync.account", accountName(w.acc), w.short), t.WarningText
+		named = true
 	case w.level == syncBusy:
 		text = w.status
 	default:
@@ -175,17 +178,31 @@ func (a *App) syncStatus(c *ui.Context) {
 		}
 		text = a.syncedAgo()
 	}
-	chip := kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).FontSize(t.Text.Xs).TextColor(color).
-		Gap(th.Space(1.5)).Expanded(a.syncOpen).Label(text)
-	chip.OnClick(func() { a.syncOpen = !a.syncOpen })
+	name, rest := "", text
+	if tail, ok := strings.CutPrefix(text, accountName(w.acc)); ok && named {
+		name, rest = accountName(w.acc), tail
+	}
+	restShrink := float32(1) // the reason after a name stays whole
+	if name != "" {
+		restShrink = 0
+	}
+	chip := kit.SidebarItem(c, kit.SidebarItemOpts{Small: true, OnClick: func() { a.syncOpen = !a.syncOpen }}).
+		Gap(th.Space(2)).TextColor(color).Expanded(a.syncOpen).Label(text)
 	chip.Children(func() {
-		if s, ok := syncDot(dotLevel); ok {
-			kit.StatusDot(c, s)
-		}
-		ui.Text(c, text).SingleLine().Shrink(1)
-		ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconXs, theme.IconXs)
+		ui.Box(c).Size(theme.Icon, theme.Icon).Shrink(0).Center().Children(func() {
+			if s, ok := syncDot(dotLevel); ok {
+				kit.StatusDot(c, s)
+			}
+		})
+		ui.Row(c).Grow(1).Shrink(1).MinWidth(0).Children(func() {
+			if name != "" {
+				ui.Text(c, name).FontWeight(500).SingleLine().MaxWidth(theme.SyncAccountMax).Shrink(1)
+			}
+			ui.Text(c, rest).FontWeight(500).SingleLine().Shrink(restShrink)
+		})
+		ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconXs, theme.IconXs).Shrink(0)
 	})
-	kit.PopoverAt(c, chip, &a.syncOpen, ui.AnchorBottomEnd, ui.AnchorTopEnd, theme.PopupOffset, func() { a.syncMenu(c, hs) })
+	kit.PopoverAt(c, chip, &a.syncOpen, ui.AnchorTopStart, ui.AnchorBottomStart, -theme.PopupOffset, func() { a.syncMenu(c, hs) })
 }
 
 // syncMenu lists each account: its state, why, and what to do about it.

@@ -1316,8 +1316,8 @@ func TestRelativeSenderDate(t *testing.T) {
 	}
 }
 
-// TestReaderToolbarAt16: the toolbar's buttons fit the window, unclipped and
-// apart, at font 13 and 16.
+// TestReaderToolbarAt16: the title bar's buttons and the header's AI buttons
+// fit the window, unclipped and apart, at font 13 and 16.
 func TestReaderToolbarAt16(t *testing.T) {
 	for _, font := range []int{13, 16} {
 		t.Run(strconv.Itoa(font), func(t *testing.T) {
@@ -1549,13 +1549,13 @@ func TestReaderSaveAndPrint(t *testing.T) {
 		t.Fatal("cancelling SaveFile toasted reader.saved")
 	}
 
-	// 1. Save in the toolbar
+	// 1. Save in the title bar
 	h.plat.mu.Lock()
 	h.plat.savePath = savePath
 	h.plat.calls = nil
 	h.plat.mu.Unlock()
 
-	// Save and print sit in the toolbar's more menu.
+	// Save and print sit in the title bar's more menu.
 	choose := func(item string) {
 		t.Helper()
 		h.click(i18n.T("reader.more"))
@@ -1575,7 +1575,7 @@ func TestReaderSaveAndPrint(t *testing.T) {
 	})
 	h.see(i18n.T("reader.saved"))
 
-	// 2. Print in the toolbar
+	// 2. Print in the title bar
 	choose(i18n.T("reader.print"))
 	printArg := h.callArg("Print")
 	if printArg != fmt.Sprint(m.ID) {

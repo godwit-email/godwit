@@ -21,7 +21,7 @@ func (m *modelsView) empty() bool {
 	return m.loaded && len(m.services) == 0 && !slices.ContainsFunc(m.plugins, func(p core.PluginModels) bool { return len(p.Models) > 0 })
 }
 
-// view is the Intelligence page's 模型 tab, under the page's heading (aiView).
+// view is the 模型 page, under its heading (modelsPage).
 func (m *modelsView) view(c *ui.Context) {
 	if m.empty() {
 		kit.Empty(c, kit.EmptyOpts{Icon: "cpu", Title: i18n.T("settings.models.empty.title"), Desc: i18n.T("settings.models.empty.desc"), Dashed: true, Actions: func() {
@@ -74,7 +74,7 @@ func (m *modelsView) list(c *ui.Context, u usage) {
 				m.svcMark(c, s)
 				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
 					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, s.Name).FontWeight(500).SingleLine().Shrink(1)
+						ui.Text(c, s.Name).SingleLine().Shrink(1)
 						l, label := svcLook(s)
 						statusLine(c, line{label, l})
 					})
@@ -111,7 +111,7 @@ func (m *modelsView) list(c *ui.Context, u usage) {
 				})
 				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
 					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, "Apple Intelligence").FontWeight(500).SingleLine().Shrink(1)
+						ui.Text(c, "Apple Intelligence").SingleLine().Shrink(1)
 						statusLine(c, pluginLook(p, m.pluginStatus))
 					})
 					kit.Text(c, i18n.T("settings.models.apple_intelligence.sub"), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted).SingleLine()
@@ -232,7 +232,7 @@ func usageRow(c *ui.Context, label, desc string, l *line, control func()) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-			kit.Text(c, label, t.Text.Sm).FontWeight(500)
+			kit.Text(c, label, t.Text.Sm)
 			kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted)
 			if l != nil {
 				statusLine(c, *l).Margin(th.Space(1), 0, 0, 0)

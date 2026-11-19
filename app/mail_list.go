@@ -804,7 +804,7 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 		if !saved {
 			kit.Tabs(c, &p.filter, kit.TabsOpts{}, kit.TabLabels(i18n.T("mail.filter.all"), i18n.T("mail.filter.unread")))
 		}
-		if p.a.sidebarHidden { // else the sidebar's header has it
+		if p.a.sidebarHidden { // as the title bar's field, while the sidebar is folded
 			kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 				OnClick(p.a.openPalette)
 		}

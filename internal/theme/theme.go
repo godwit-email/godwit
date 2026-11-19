@@ -134,7 +134,11 @@ const (
 	ListWidth           = 340 // the mail list column, until the user drags it
 	ListMinWidth        = 280 // the narrowest and widest a drag makes it
 	ListMaxWidth        = 560
-	TopBarHeight        = 44   // the top bar's least height
+	TopBarHeight        = 44  // the top bar's least height
+	TitleSearchWidth    = 360 // the top bar's search field, which shrinks in a narrow window
+	TitleNameMax        = 200 // the top bar's title, then its subtitle: longer ones end in …
+	TitleSubMax         = 112
+	SyncAccountMax      = 80   // the account's name in the sync status row
 	DialogSmWidth       = 440  // confirmations
 	BackdropBlur        = 4    // a frosted panel blurs what is behind it 4× this much
 	MaterialBlur        = 25   // DIPs of Gaussian blur behind the design's materials (its blur/material 50 is a CSS blur radius twice this); shortcut: matched by eye on macOS only, recheck on Windows

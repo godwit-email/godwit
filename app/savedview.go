@@ -307,9 +307,8 @@ func (p *mailPage) titleMenu(c *ui.Context) {
 	if !ok || p.a.route.Page != PageMail || p.viewEdit != nil {
 		return
 	}
-	t, th := theme.Of(c), c.Theme()
-	kit.IconButton(c, "ellipsis", i18n.T("view.menu"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-		Size(th.Space(5), th.Space(5)).TextColor(t.Muted).Menu(func(m *ui.Menu) { p.savedViewMenu(m, b) })
+	kit.IconButton(c, "ellipsis", i18n.T("view.menu"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs}).
+		TextColor(theme.Of(c).Muted).Menu(func(m *ui.Menu) { p.savedViewMenu(m, b) })
 }
 
 // viewDeleteDialog asks before deleting a view.

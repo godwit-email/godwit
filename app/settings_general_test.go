@@ -108,10 +108,9 @@ func TestSettingsGeneralCopy(t *testing.T) {
 		h.see(s)
 	}
 	if _, ok := h.tt.Find("总结、翻译和 Wit 的回答用这种语言"); ok {
-		t.Fatal("阅读语言 is on General; it belongs to the Intelligence page's 功能 tab")
+		t.Fatal("阅读语言 is on General; it belongs to the AI 功能 page")
 	}
-	h.openSettings("models")
-	h.click("功能")
+	h.openSettings("features")
 	h.see("总结、翻译和 Wit 的回答用这种语言")
 	h.see("为收到的邮件准备几条简短的回复")
 }

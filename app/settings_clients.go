@@ -100,7 +100,7 @@ func (p *settingsPage) clientsRow(c *ui.Context, copied func(string)) {
 	settingBlock(c, func() {
 		ui.Row(c).FillWidth().Gap(th.Space(6)).AlignItems(ui.Start).Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-				kit.Text(c, i18n.T("settings.local_api.connect"), t.Text.Sm).FontWeight(500)
+				kit.Text(c, i18n.T("settings.local_api.connect"), t.Text.Sm)
 				kit.Text(c, i18n.T("settings.local_api.connect.help"), t.Text.Xs).TextColor(t.Muted)
 			})
 			if settingButton(c, i18n.T("settings.local_api.copy"), kit.Outline, false).Clicked() {

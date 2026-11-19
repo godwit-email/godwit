@@ -102,7 +102,7 @@ func (p *settingsPage) signaturesView(c *ui.Context) {
 				Label(sig.Name).Radius(0).FillWidth().Gap(th.Space(4)).Padding(th.Space(3), th.Space(4)).AlignItems(ui.Center).Children(func() {
 				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(2)).Children(func() {
 					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-						kit.Text(c, sig.Name, t.Text.Sm).FontWeight(500).SingleLine().Shrink(1)
+						kit.Text(c, sig.Name, t.Text.Sm).SingleLine().Shrink(1)
 						kit.Text(c, usedBy(len(a.signatureUsers(sig.ID))), t.Text.Xs).TextColor(t.Muted).SingleLine()
 					})
 					lines := core.SignaturePreview(sig.HTML, 2)
@@ -160,11 +160,7 @@ func (p *settingsPage) signatureView(c *ui.Context, sig core.Signature) {
 	}
 	users := a.signatureUsers(sig.ID)
 
-	ui.Column(c).Gap(theme.HeadingGap).Children(func() {
-		settingsBack(c, i18n.T("settings.signatures"), func() { a.navigate(Route{Page: PageSettings, Settings: "signatures"}) })
-		kit.Text(c, sig.Name, t.Text.X3l).FontWeight(600)
-		kit.Text(c, usedBy(len(users)), t.Text.Sm).TextColor(t.Muted)
-	})
+	pageHeading(c, sig.Name, usedBy(len(users)))
 
 	bad := !validSignatureName(f.name)
 	settingsSection(c, i18n.T("settings.account.basic"), "", func() {
@@ -216,7 +212,7 @@ func (p *settingsPage) signatureView(c *ui.Context, sig core.Signature) {
 			ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
 				a.accountMark(c, acc)
 				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-					kit.Text(c, acc.Email, t.Text.Sm).FontWeight(500).SingleLine()
+					kit.Text(c, acc.Email, t.Text.Sm).SingleLine()
 					kit.Text(c, note, t.Text.Xs).TextColor(t.Muted)
 				})
 				was := on

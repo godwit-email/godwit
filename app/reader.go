@@ -60,8 +60,7 @@ type readerPane struct {
 	ai        map[int64]*msgAI         // by message; kept across switches so a summary runs once
 	skills    fetch[[]core.SkillInfo]  // the skill menu: skills on messages but summarize and translate
 	actions   fetch[[]core.ActionInfo] // and plugin actions on messages
-	barTop    float32                  // the floating toolbar's height as the last frame laid it out: the messages start under it
-	barBottom float32                  // the reply bar's, likewise: the messages end above it
+	barBottom float32                  // the floating reply bar's height as the last frame laid it out: the messages end above it
 	pane      ui.Rect                  // the messages' scroll box as the last frame laid it out, in the window: the bars float at its top and bottom
 
 	getThread  func(ctx context.Context, id int64) (core.Thread, error)                       // tests wrap it
@@ -650,7 +649,7 @@ func (r *reader) account() int64 {
 	return r.p.accountOf(m.FolderID)
 }
 
-// items are what the toolbar's actions apply to: the thread, or the message.
+// items are what the title bar's actions apply to: the thread, or the message.
 func (r *reader) items() []mailItem {
 	if r.key[1] != 0 {
 		if m, ok := r.last(); ok {
@@ -1104,7 +1103,7 @@ func (r *reader) printMail() {
 	}
 }
 
-// view is the reading pane: the toolbar over the subject and the messages;
+// view is the reading pane: the subject and the messages under the reply bar;
 // while a switch's body builds, the thread before it, the new body under.
 func (r *reader) view(c *ui.Context) {
 	if r.prev != nil && !r.waiting() {
@@ -1152,8 +1151,8 @@ func (r *reader) draw(c *ui.Context, next *session) {
 			r.printMail()
 		}
 	}
-	// The toolbar and the reply bar float over the messages, which scroll
-	// under them: one sheet, the bars frosted over it.
+	// The reply bar floats over the messages, which scroll under it: one
+	// sheet, the bar frosted over it.
 	col.Children(func() {
 		// next's unseen body, placed first so it stacks under r's pages, in a
 		// slot always there: what follows keeps its place in the tree, or it
@@ -1163,8 +1162,8 @@ func (r *reader) draw(c *ui.Context, next *session) {
 				next.unseenBody(c)
 			}
 		})
-		r.pane = ui.Scroll(c).Grow(1).TrackScroll(&r.scroll).ScrollbarInsets(r.barTop, 0, r.barBottom).Children(func() {
-			ui.Column(c).FillWidth().Padding(r.barTop+th.Space(5), th.Space(7), r.barBottom+th.Space(5)).Children(func() {
+		r.pane = ui.Scroll(c).Grow(1).TrackScroll(&r.scroll).ScrollbarInsets(0, 0, r.barBottom).Children(func() {
+			ui.Column(c).FillWidth().Padding(th.Space(5), th.Space(7), r.barBottom+th.Space(5)).Children(func() {
 				ui.Column(c).FillWidth().Gap(th.Space(3.5)).Children(func() {
 					subject := cmp.Or(r.subject, i18n.T("mail.no_subject"))
 					r.column(c).Gap(th.Space(2)).Children(func() {
@@ -1177,7 +1176,7 @@ func (r *reader) draw(c *ui.Context, next *session) {
 							}
 							r.tagChips(c)
 						})
-						r.labelRow(c)
+						r.headerRow(c)
 					})
 					r.viewBand(c)
 					if len(r.msgs) > 1 { // a thread's summary is the thread's: under its subject, not in a message
@@ -1190,7 +1189,6 @@ func (r *reader) draw(c *ui.Context, next *session) {
 				})
 			})
 		}).LayoutBounds()
-		r.barTop = r.measured(c, r.toolbar(c).Absolute().Left(0).Top(0).Right(0), r.barTop)
 		r.barBottom = r.measured(c, r.replyBar(c).Absolute().Left(0).Right(0).Bottom(0), r.barBottom)
 	})
 }
@@ -1200,7 +1198,7 @@ func (r *reader) draw(c *ui.Context, next *session) {
 // see a web view.
 func (r *reader) glass(b *msgBody, box ui.Rect) {
 	cover := func(px float32) int { return int(math.Ceil(float64(max(0, min(px, box.H))))) }
-	g := [2]int{cover(r.pane.Y + r.barTop - box.Y), cover(box.Y + box.H - (r.pane.Y + r.pane.H - r.barBottom))}
+	g := [2]int{cover(r.pane.Y - box.Y), cover(box.Y + box.H - (r.pane.Y + r.pane.H - r.barBottom))}
 	if g != b.glass && b.view != nil {
 		b.glass = g
 		r.p.a.plat.BodyGlass(b.view, g[0], g[1])
@@ -1218,12 +1216,37 @@ func (r *reader) measured(c *ui.Context, e ui.Element, was float32) float32 {
 	return h
 }
 
-// toolbar: the reply group and the archive group as icon buttons, a menu
-// of the rarer save and print, then the AI buttons, on a frosted bar the
-// messages scroll under.
-func (r *reader) toolbar(c *ui.Context) ui.Element {
+// openReader is the reader whose message the title bar's actions act on: the
+// thread shown (the one before it while a switch builds), when there is one.
+// None when the list is empty, a draft or the outbox shows, or a view is edited.
+func (p *mailPage) openReader() (*reader, bool) {
+	if p.viewEdit != nil || p.view.Unified == "outbox" || p.view.Unified == "scheduled" {
+		return nil, false
+	}
+	if _, drafts := draftsOf(p.folders, p.view); drafts {
+		return nil, false
+	}
+	r := p.reader
+	if r.prev != nil {
+		r = r.on(r.prev)
+	}
+	if r.key[0] == 0 || !r.loaded || len(r.msgs) == 0 {
+		return nil, false
+	}
+	return r, true
+}
+
+// titleActions are the mail page's actions at the title bar's right end: the
+// reply group and the archive group as icon buttons, and a menu of the rarer
+// save and print. Neither group shows while no message is open.
+func (p *mailPage) titleActions(c *ui.Context) {
+	r, ok := p.openReader()
+	if !ok {
+		return
+	}
 	t, th := theme.Of(c), c.Theme()
-	return ui.Row(c).Wrap().Gap(th.Space(0.5)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(5)).Material(kit.Bar(t.MaterialBar)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
+	// While a switch builds, the pane keeps the thread before it and ignores input; so do its actions.
+	ui.Row(c).Shrink(0).AlignItems(ui.Center).IgnoreInput(p.reader.prev != nil).Children(func() {
 		kit.ButtonGroup(c,
 			kit.GroupItem{Icon: "reply", Tip: i18n.T("reader.reply"), OnClick: func() { r.draft("reply") }},
 			kit.GroupItem{Icon: "reply-all", Tip: i18n.T("reader.reply_all"), OnClick: func() { r.draft("reply_all") }},
@@ -1253,22 +1276,32 @@ func (r *reader) toolbar(c *ui.Context) ui.Element {
 		}
 		file = append(file, item("trash-2", i18n.T("mail.action.delete"), "delete"))
 		kit.GroupDivider(c).Margin(0, th.Space(1.5))
-		kit.ButtonGroup(c, file...)
-		kit.IconButton(c, "ellipsis", i18n.T("reader.more"), kit.ButtonOpts{Variant: kit.Ghost}).TextColor(t.Foreground).Menu(func(m *ui.Menu) {
-			if m.Item(i18n.T("reader.save")).Icon(menuIcon("save")).Chosen() {
-				r.saveMail()
-			}
-			if m.Item(i18n.T("reader.print")).Icon(menuIcon("printer")).Chosen() {
-				r.printMail()
-			}
+		ui.Row(c).Gap(th.Space(0.5)).AlignItems(ui.Center).Children(func() {
+			kit.ButtonGroup(c, file...)
+			kit.IconButton(c, "ellipsis", i18n.T("reader.more"), kit.ButtonOpts{Variant: kit.Ghost}).TextColor(t.Foreground).Menu(func(m *ui.Menu) {
+				if m.Item(i18n.T("reader.save")).Icon(menuIcon("save")).Chosen() {
+					r.saveMail()
+				}
+				if m.Item(i18n.T("reader.print")).Icon(menuIcon("printer")).Chosen() {
+					r.printMail()
+				}
+			})
 		})
-		ui.Spacer(c)
+	})
+}
+
+// headerRow is the label row under the subject with the AI buttons at its
+// right end; they wrap under it when the pane is narrow.
+func (r *reader) headerRow(c *ui.Context) {
+	th := c.Theme()
+	ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(th.Space(2)).Children(func() {
+		ui.Column(c).Grow(1).MinWidth(0).Children(func() { r.labelRow(c) })
 		ui.Row(c).Wrap().Gap(th.Space(1)).AlignItems(ui.Center).Children(func() { r.aiTools(c) })
 	})
 }
 
-// starred reports whether all the toolbar acts on is starred: toggle_star
-// unstars only then, else it stars the rest.
+// starred reports whether all the title bar's actions act on is starred:
+// toggle_star unstars only then, else it stars the rest.
 func (r *reader) starred() bool {
 	msgs := r.msgs
 	if r.key[1] != 0 && len(msgs) > 0 { // a message's reader acts on it alone
@@ -1337,7 +1370,7 @@ func (r *reader) renderMessages(c *ui.Context) {
 	}
 }
 
-// revealAt scrolls the messages to message id's top, under the toolbar, once
+// revealAt scrolls the messages to message id's top, at the pane's top, once
 // e, its part, has been laid out, when it is the one to reveal.
 func (r *reader) revealAt(c *ui.Context, id int64, e ui.Element) {
 	if id != r.revealID {
@@ -1348,7 +1381,7 @@ func (r *reader) revealAt(c *ui.Context, id int64, e ui.Element) {
 		c.Invalidate()
 		return
 	}
-	r.scroll.Y = max(0, r.scroll.Y+b.Y-r.pane.Y-r.barTop)
+	r.scroll.Y = max(0, r.scroll.Y+b.Y-r.pane.Y)
 	r.revealID = 0
 }
 

@@ -22,12 +22,11 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
-// extView is the Extensions page: skills, plugins and MCP servers in three
-// tabs. Writes chain per kind ("skills", "plugins", "mcp"); a result for a
-// form replaced since leaves the new form alone.
+// extView is the Skill, 插件 and MCP pages. Writes chain per kind ("skills",
+// "plugins", "mcp"); a result for a form replaced since leaves the new form
+// alone.
 type extView struct {
 	a               *App
-	tab             int    // 0 skills, 1 plugins (the first shown); MCP is on the Intelligence page
 	list            latest // the plugins and MCP servers; only the newest read applies
 	skillsRead      latest // a skill write drops it: an old read cannot replace a toggle
 	skills          []core.SkillInfo
@@ -264,18 +263,22 @@ func (e *extView) write(key string, fn func(ctx context.Context) error, done fun
 	})
 }
 
-func (e *extView) view(c *ui.Context) {
+// skillsPage is the Skill page.
+func (e *extView) skillsPage(c *ui.Context) {
+	pageHeading(c, pageName("skills"), i18n.T("settings.skills.sub"))
+	e.skillsView(c)
+	e.confirmView(c)
+	e.loginPageView(c)
+}
+
+// pluginsPage is the 插件 page, or its subpage, the plugin directory.
+func (e *extView) pluginsPage(c *ui.Context) {
 	if e.onDirectory && e.reg.On {
 		e.directoryView(c)
 		return
 	}
-	pageHeading(c, i18n.T("settings.extensions"), i18n.T("settings.ext.sub"))
-	kit.Tabs(c, &e.tab, kit.TabsOpts{Look: kit.TabsUnderline}, kit.TabLabels(i18n.Tf("settings.ext.tab.skills", len(e.skills)), i18n.Tf("settings.ext.tab.plugins", len(e.plugins))))
-	if e.tab == 0 {
-		e.skillsView(c)
-	} else {
-		e.pluginsView(c)
-	}
+	pageHeading(c, pageName("plugins"), i18n.T("settings.plugins.sub"))
+	e.pluginsView(c)
 	e.confirmView(c)
 	e.loginPageView(c)
 }
@@ -354,7 +357,6 @@ func (e *extView) install() {
 		}, func(err error) {
 			e.installing = ""
 			if err == nil {
-				e.tab = 1
 				e.plugin = info.Name
 			}
 		})
@@ -496,7 +498,7 @@ func (e *extView) pluginRow(c *ui.Context, p core.PluginInfo) {
 						if p.Builtin {
 							statusPill(c, i18n.T("settings.ext.builtin"), false)
 						}
-						kit.Text(c, title, t.Text.Sm).FontWeight(500)
+						kit.Text(c, title, t.Text.Sm)
 						if p.NeedsGrant {
 							kit.Text(c, p.Version, t.Text.Xs).TextColor(t.Muted)
 						}
@@ -835,7 +837,7 @@ func (e *extView) mcpView(c *ui.Context) {
 					kit.Pressable(cc, kit.PressableOpts{Selected: s.ID == e.mcp && e.mform == nil, OnClick: func() { e.mcp, e.mform = s.ID, nil }}).
 						Grow(1).Shrink(1).Children(func() {
 						ui.Column(cc).Gap(th.Space(0.5)).Children(func() {
-							ui.Text(cc, s.Name).FontWeight(500)
+							ui.Text(cc, s.Name)
 							kit.Text(cc, s.Transport+" · "+i18n.Plural("settings.ext.mcp.tools", len(s.Tools)), t.Text.Xs).TextColor(t.Muted)
 						})
 					})
@@ -1119,7 +1121,7 @@ func (e *extView) installFromRegistry(name string, approved *core.RegistryEntry)
 	}, func(err error) {
 		e.installing = ""
 		if err == nil {
-			e.tab, e.plugin, e.onDirectory = 1, name, false
+			e.plugin, e.onDirectory = name, false
 		}
 	})
 }

@@ -9,6 +9,25 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
+// An InputButton is as high as an Input of its size, and a click on it is its action's.
+func TestInputButton(t *testing.T) {
+	clicked := 0
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Column(c).Fill().Padding(10).Children(func() {
+			InputButton(c, InputOpts{Size: SizeSm, Flat: true, Tint: true}, func() { clicked++ }).Label("search").Children(func() {
+				ui.Text(c, "search").Role(ui.RoleNone)
+			})
+		})
+	}), 200, 100)
+	r, ok := tt.Find("search")
+	if !ok || r.H != 28 {
+		t.Fatalf("the field at %+v (found %v), want 28 high", r, ok)
+	}
+	if err := tt.Click("search"); err != nil || clicked != 1 {
+		t.Fatalf("click: %v, clicked %d times", err, clicked)
+	}
+}
+
 func TestInputFocusFades(t *testing.T) {
 	for _, reduce := range []bool{false, true} {
 		for _, group := range []bool{false, true} {

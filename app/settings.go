@@ -35,9 +35,10 @@ const (
 var logo = ui.MustParseSVG(assets.Logo)
 
 // settingsPage is the Settings section: the accounts and the app's pages,
-// chosen by Route.Settings ("account:<id>", "general", "signatures",
-// "signature:<id>", "models", "labels", "extensions", "privacy", "masklog"
-// (脱敏记录, under privacy), "labs", "about").
+// chosen by Route.Settings ("account:<id>", "addressbook:<id>", and the keys
+// of settingsNav; "signature:<id>" and "masklog" are subpages of
+// "signatures" and "masking"). The old "extensions" and "privacy" open their
+// first page (legacySettingsRoutes).
 type settingsPage struct {
 	a *App
 
@@ -71,9 +72,8 @@ type settingsPage struct {
 	importErr     error                                                                          // ImportAccounts's failure
 	update        func(ctx context.Context, id int64, p core.AccountPatch) (core.Account, error) // tests swap it
 
-	aiTab, privacyTab int                         // the AI and 隐私与安全 pages' tabs
-	clients           map[string]mcpclients.State // 接入 AI 应用: how each AI app stands, as last read
-	logFilter         maskLogFilter               // what 脱敏记录 lists
+	clients   map[string]mcpclients.State // 接入 AI 应用: how each AI app stands, as last read
+	logFilter maskLogFilter               // what 脱敏记录 lists
 
 	// general
 	st, shown   core.Settings         // what the controls are bound to, and what they showed last frame
@@ -114,8 +114,7 @@ type settingsPage struct {
 	starred    bool // the user starred Godwit, by gh
 	starring   bool // StarRepo runs
 
-	query    string // the sidebar's search
-	searched string // query, lowercased, when it last picked the tabs
+	query string // the sidebar's search
 
 	models       *modelsView
 	ext          *extView
@@ -141,7 +140,7 @@ type settingsPage struct {
 func newSettingsPage(a *App) *settingsPage {
 	return &settingsPage{a: a, forms: map[int64]*accountForm{}, usage: map[int64]int64{}, imgSize: -1, boxes: map[int64]*mailbox{}, reauth: map[int64]bool{}, rechecking: map[int64]bool{}, sigDocs: map[int64]sigDoc{},
 		secDays: 30,
-		update:  a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestCapability, testPlugin: a.svc.TestPluginModel, serviceAvatar: a.svc.ModelServiceAvatar}, ext: &extView{a: a, tab: 1}, labels: newLabelsView(a), rules: &rulesView{a: a}, addressBooks: newAddressBooksView(a)}
+		update:  a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestCapability, testPlugin: a.svc.TestPluginModel, serviceAvatar: a.svc.ModelServiceAvatar}, ext: &extView{a: a}, labels: newLabelsView(a), rules: &rulesView{a: a}, addressBooks: newAddressBooksView(a)}
 }
 
 // section is the page shown: an unknown or missing account or address book
@@ -149,6 +148,9 @@ func newSettingsPage(a *App) *settingsPage {
 func (p *settingsPage) section() (sec string, acc *core.Account) {
 	a := p.a
 	sec = a.route.Settings
+	if first, ok := legacySettingsRoutes[sec]; ok {
+		sec = first
+	}
 	if rest, ok := strings.CutPrefix(sec, "addressbook:"); ok {
 		if id, _ := strconv.ParseInt(rest, 10, 64); id > 0 {
 			if _, ok := a.standaloneBook(id); ok {
@@ -191,14 +193,14 @@ func (p *settingsPage) refresh(hints []events.Event) {
 	case acc != nil:
 		p.readUsage(acc.ID)
 		p.readMailbox(acc.ID)
-	case sec == "models":
+	case sec == "models" || sec == "features" || sec == "mcp" || sec == "clients":
 		if hints == nil || slices.ContainsFunc(hints, func(ev events.Event) bool { return extChange(ev) || ev.Type == events.ModelsChanged }) { // a plugin's models come and go with it
 			p.models.load()
 		}
 		if hints != nil && !slices.ContainsFunc(hints, extChange) {
 			break
 		}
-		p.ext.load() // the MCP tab's servers, and the registry naming the translators
+		p.ext.load() // the MCP page's servers, and the registry naming the translators
 		if hints == nil {
 			p.readClients()
 		}
@@ -209,13 +211,14 @@ func (p *settingsPage) refresh(hints []events.Event) {
 					p.translators = list
 				}
 			})
-	case sec == "extensions":
+	case sec == "skills" || sec == "plugins":
 		if hints == nil || slices.ContainsFunc(hints, extChange) {
 			p.ext.load()
 		} else if slices.ContainsFunc(hints, func(ev events.Event) bool { return ev.Type == events.SkillsChanged }) {
 			p.ext.loadSkills()
 		}
 		if hints == nil { // opened: the directory may have changed since
+			p.ext.onDirectory = false // 插件 is its way back
 			p.ext.refreshRegistry()
 		}
 	case sec == "about" && hints == nil:
@@ -223,7 +226,7 @@ func (p *settingsPage) refresh(hints []events.Event) {
 		var starred, ok bool
 		a.query(func(ctx context.Context) error { starred, ok = a.plat.RepoStarred(ctx); return nil },
 			func(error) { p.gh, p.starred = ok, starred })
-	case sec == "privacy" && hints == nil:
+	case isPrivacyPage(sec) && hints == nil:
 		p.readSecurityProgress()
 		var err error
 		a.query(func(ctx context.Context) error { err = a.svc.KeychainStatus(ctx); return nil },
@@ -233,7 +236,7 @@ func (p *settingsPage) refresh(hints []events.Event) {
 		var here bool
 		a.query(func(context.Context) error { here = a.svc.RecognitionModelInstalled(); return nil }, func(error) { p.recognition.installed = here })
 		p.readRecognitionModel()
-	case sec == "privacy":
+	case isPrivacyPage(sec):
 		p.readSecurityProgress()
 		if slices.ContainsFunc(hints, func(ev events.Event) bool { return ev.Type == events.SettingsChanged }) {
 			p.readRecognitionModel() // 识别模型 may have been turned on or off
@@ -267,13 +270,10 @@ func (p *settingsPage) Title() (string, string) {
 	if ab, ok := p.shownBook(sec); ok {
 		return i18n.T("settings.heading"), i18n.T("settings.accounts") + " · " + ab.Name
 	}
-	switch {
-	case strings.HasPrefix(sec, "signature:"):
-		sec = "signatures"
-	case sec == "masklog":
+	if sec == "masklog" {
 		return i18n.T("settings.heading"), i18n.T("settings.privacy") + " · " + i18n.T("settings.masking.log")
 	}
-	return i18n.T("settings.heading"), i18n.T("settings." + sec)
+	return i18n.T("settings.heading"), pageName(settingsParent(sec))
 }
 
 // shownBook is the standalone address book whose page sec is.
@@ -284,86 +284,6 @@ func (p *settingsPage) shownBook(sec string) (core.AddressBook, bool) {
 	}
 	id, _ := strconv.ParseInt(rest, 10, 64)
 	return p.a.standaloneBook(id)
-}
-
-var appSections = []string{"general", "signatures", "models", "labels", "rules", "extensions", "privacy", "labs", "about"}
-
-// sectionIcons are the app sections' sidebar icons.
-var sectionIcons = map[string]string{"general": "settings", "signatures": "quill-pen", "models": "brain-4", "labels": "tag", "rules": "filter", "extensions": "puzzle", "privacy": "shield", "labs": "flask", "about": "info"}
-
-// Sidebar: the accounts list (mail accounts and address books with no mail
-// account, each with its mark, a status dot and what it syncs), then Add
-// account; then the app's pages.
-func (p *settingsPage) Sidebar(c *ui.Context) {
-	a := p.a
-	t, th := theme.Of(c), c.Theme()
-	cur, _ := p.section()
-	switch {
-	case strings.HasPrefix(cur, "signature:"):
-		cur = "signatures" // a signature is a page of the list
-	case cur == "masklog":
-		cur = "privacy" // 脱敏记录 is a page of 隐私与安全
-	}
-	group := func(label string, top, bottom float32) {
-		kit.Text(c, label, t.Text.Xs).TextColor(t.Muted).Padding(top, th.Space(2), bottom, th.Space(2))
-	}
-	item := func(sec string) ui.Element {
-		return kit.SidebarItem(c, kit.SidebarItemOpts{Selected: sec == cur, OnClick: func() { a.navigate(Route{Page: PageSettings, Settings: sec}) }})
-	}
-	sidebarScroll(c, func() {
-		kit.Text(c, i18n.T("settings.heading"), t.Text.Base).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
-		p.searchField(c)
-		hit := p.matching(p.query)
-		if hit.accounts {
-			group(i18n.T("settings.accounts"), th.Space(1), th.Space(1.5))
-		}
-		entries := a.accountEntries()
-		entry := func(e accountEntry) {
-			route := accountRoute(e.key().Account)
-			if e.ab != nil {
-				route = addressBookRoute(e.ab.ID)
-			}
-			p.entryRow(c, e, route == cur, route)
-		}
-		switch n := len(entries); {
-		case !hit.accounts:
-		case hit.email == "" && n > 1: // dragged to reorder; not while a search hides some
-			p.accountOrder.Key = func(i int) any { return entries[i].key() }
-			p.accountOrder.Reorder = func(rows []int, to int) { p.moveEntry(rows[0], to) }
-			gap := th.Space(0.5) // the sidebar column's
-			kit.List(c, &p.accountOrder, n, func(i int) {
-				var top float32
-				if i > 0 {
-					top = gap
-				}
-				ui.Column(c).FillWidth().Padding(top, 0, 0, 0).Children(func() { entry(entries[i]) })
-			}).FillWidth().Height(float32(n)*(th.Space(11)+gap) - gap)
-		default:
-			for _, e := range entries {
-				if hit.email == "" || e.acc != nil && accountMatches(*e.acc, hit.email) || e.ab != nil && strings.Contains(strings.ToLower(e.ab.Name), hit.email) {
-					entry(e)
-				}
-			}
-		}
-		if hit.accounts {
-			kit.SidebarItem(c, kit.SidebarItemOpts{Muted: true, OnClick: a.openAddAccount}).Children(func() {
-				ui.Row(c).Width(theme.MarkSm).Justify(ui.Center).Children(func() { // the accounts' marks' column
-					ui.Icon(c, icons.Get("plus")).Size(theme.IconSm, theme.IconSm)
-				})
-				ui.Text(c, i18n.T("settings.add_account"))
-			})
-		}
-		if len(hit.apps) > 0 {
-			group(i18n.T("settings.app"), th.Space(3), th.Space(1))
-		}
-		for _, sec := range hit.apps {
-			b := item(sec)
-			b.Children(func() {
-				kit.SidebarIcon(c, b, sectionIcons[sec], sec == cur)
-				ui.Text(c, i18n.T("settings."+sec))
-			})
-		}
-	})
 }
 
 func (p *settingsPage) Content(c *ui.Context) {
@@ -394,24 +314,32 @@ func (p *settingsPage) Content(c *ui.Context) {
 						if ab, ok := p.shownBook(sec); ok {
 							p.addressBooks.page(c, ab)
 						}
-					case sec == "privacy":
-						p.privacyView(c)
+					case isPrivacyPage(sec):
+						p.privacyView(c, sec)
 					case sec == "masklog":
 						p.maskLogPage(c)
 					case sec == "models":
-						p.aiView(c)
+						p.modelsPage(c)
+					case sec == "features":
+						p.featuresPage(c)
+					case sec == "mcp":
+						p.mcpPage(c)
+					case sec == "clients":
+						p.clientsPage(c)
 					case sec == "labels":
 						p.labels.view(c, p)
 					case sec == "rules":
 						p.rules.view(c)
-					case sec == "extensions":
-						p.ext.view(c)
+					case sec == "skills":
+						p.ext.skillsPage(c)
+					case sec == "plugins":
+						p.ext.pluginsPage(c)
 					case sec == "labs":
 						p.labsView(c)
 					case sec == "about":
 						p.aboutView(c)
 					default:
-						pageHeading(c, i18n.T("settings."+sec), "")
+						pageHeading(c, pageName(sec), "")
 					}
 				})
 			})
@@ -496,13 +424,13 @@ func hairline(c *ui.Context) {
 	kit.Separator(c, false).Shrink(0).MarginX(c.Theme().Space(4))
 }
 
-// settingRow is a labelled control: label (500) and description on the
-// left, the control on the right; at least 48 high.
+// settingRow is a labelled control: label and description on the left, the
+// control on the right; at least 48 high.
 func settingRow(c *ui.Context, label, desc string, control func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	return ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-			kit.Text(c, label, t.Text.Sm).FontWeight(500)
+			kit.Text(c, label, t.Text.Sm)
 			if desc != "" {
 				kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted)
 			}
@@ -527,20 +455,28 @@ func settingSelect[T comparable](c *ui.Context, label string, sel *T, opts []kit
 	return kit.SelectWith(c, kit.SelectOpts{MinWidth: theme.SettingsSelectMin, MaxWidth: theme.SettingsSelectMax, Flat: true}, sel, opts).Label(label)
 }
 
-// privacyView is 隐私与安全, a tab each: masking with its log, remote
-// images with the senders trusted to load them, and the blocked senders;
-// the keychain's state stands by the title.
-func (p *settingsPage) privacyView(c *ui.Context) {
-	pageHeading(c, i18n.T("settings.privacy"), i18n.T("settings.privacy.sub"), func() { p.keychainState(c) })
-	kit.Tabs(c, &p.privacyTab, kit.TabsOpts{Look: kit.TabsUnderline}, kit.TabLabels(i18n.T("settings.masking"), i18n.T("settings.security"), i18n.T("settings.remote_images"), i18n.T("settings.blocked")))
+// privacyView is a page of 隐私与安全: masking with its log (the keychain's
+// state stands by its title), the sender security checks, remote images with
+// the senders trusted to load them, or the blocked senders.
+func (p *settingsPage) privacyView(c *ui.Context, sec string) {
+	switch sec {
+	case "masking":
+		pageHeading(c, pageName(sec), i18n.T("settings.privacy.sub"), func() { p.keychainState(c) })
+	case "security":
+		pageHeading(c, pageName(sec), i18n.T("settings.security.sub"))
+	case "images":
+		pageHeading(c, pageName(sec), "") // its sub and the avatars note are the section's footnote
+	default:
+		pageHeading(c, pageName(sec), i18n.T("settings.blocked.sub"))
+	}
 	p.syncSettings()
 	defer p.syncSettings() // what the controls changed while building
-	switch p.privacyTab {
-	case 0:
+	switch sec {
+	case "masking":
 		p.maskingView(c)
-	case 1:
+	case "security":
 		p.securityView(c)
-	case 2:
+	case "images":
 		p.remoteImagesView(c)
 		p.trustedView(c)
 	default:
@@ -577,7 +513,7 @@ func (a *App) localAPIPath() string {
 	return filepath.Join(dir, rpc.SocketName)
 }
 
-// localAPIView is the Local API (本机 API), the Intelligence page's 接入 AI 应用 tab: its
+// localAPIView is the Local API (本机 API), the 接入 AI 应用 page: its
 // switch and what godwit mcp may send; while it runs, the MCP client config
 // and the socket to copy. What it can reach is the section's footnote.
 func (p *settingsPage) localAPIView(c *ui.Context) {
@@ -632,29 +568,36 @@ func (p *settingsPage) localAPIView(c *ui.Context) {
 	settingsSection(c, i18n.T("settings.local_api"), i18n.T("settings.local_api.foot"), rows...)
 }
 
-// aiView is the Intelligence page, a tab each: the model services, the features and
-// languages that use them (aiFeaturesView), the MCP servers Wit uses, and
-// the AI apps that use Godwit through the Local API (localAPIView).
-func (p *settingsPage) aiView(c *ui.Context) {
+// modelsPage is 模型: the model services and the models the features use.
+func (p *settingsPage) modelsPage(c *ui.Context) {
 	m := p.models
 	var add []func()
-	if p.aiTab == 0 && !m.empty() {
-		add = append(add, func() { settingButton(c, i18n.T("settings.models.add"), kit.Default, false).OnClick(m.add) })
+	if !m.empty() {
+		add = append(add, func() { kit.Button(c, i18n.T("settings.models.add"), kit.ButtonOpts{Icon: "plus"}).OnClick(m.add) })
 	}
-	pageHeading(c, i18n.T("settings.models"), i18n.T("settings.models.sub"), add...)
-	kit.Tabs(c, &p.aiTab, kit.TabsOpts{Look: kit.TabsUnderline}, kit.TabLabels(i18n.T("settings.ai.tab.models"), i18n.T("settings.ai.tab.features"), i18n.Tf("settings.ext.tab.mcp", len(p.ext.servers)),
-		i18n.T("settings.ai.tab.apps")))
-	switch p.aiTab {
-	case 0:
-		m.view(c)
-	case 1:
-		p.aiFeaturesView(c)
-	case 2:
-		p.ext.mcpView(c)
-		p.ext.confirmView(c)
-	default:
-		p.localAPIView(c)
-	}
+	pageHeading(c, pageName("models"), i18n.T("settings.models.desc"), add...)
+	m.view(c)
+}
+
+// featuresPage is AI 功能: the features that use the models, and the
+// languages and translation they use (aiFeaturesView).
+func (p *settingsPage) featuresPage(c *ui.Context) {
+	pageHeading(c, pageName("features"), i18n.T("settings.ai.sub"))
+	p.aiFeaturesView(c)
+}
+
+// mcpPage is MCP: the servers Wit uses.
+func (p *settingsPage) mcpPage(c *ui.Context) {
+	pageHeading(c, pageName("mcp"), i18n.T("settings.mcp.sub"))
+	p.ext.mcpView(c)
+	p.ext.confirmView(c)
+}
+
+// clientsPage is 接入 AI 应用: the AI apps that use Godwit through the Local
+// API (localAPIView).
+func (p *settingsPage) clientsPage(c *ui.Context) {
+	pageHeading(c, pageName("clients"), i18n.T("settings.clients.sub"))
+	p.localAPIView(c)
 }
 
 func (p *settingsPage) securityView(c *ui.Context) {
@@ -784,7 +727,7 @@ func (p *settingsPage) scheduleSecurityRescan() {
 		p.secPoll()
 	}
 	p.secPoll = p.a.after(time.Second, func() {
-		if p.a.route.Page == PageSettings && p.a.route.Settings == "privacy" {
+		if sec, _ := p.section(); p.a.route.Page == PageSettings && isPrivacyPage(sec) {
 			p.readSecurityProgress()
 		}
 	})
@@ -905,7 +848,7 @@ func (p *settingsPage) blockedView(c *ui.Context) {
 			settingBlock(c, func() { ui.Text(c, i18n.T("settings.blocked.none")).TextColor(t.Muted) })
 		})
 	}
-	settingsSection(c, i18n.T("settings.blocked"), i18n.T("settings.blocked.sub"), rows...)
+	settingsSection(c, i18n.T("settings.blocked"), "", rows...)
 }
 
 // godwitExe is this executable's absolute path.

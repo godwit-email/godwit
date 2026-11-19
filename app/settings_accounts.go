@@ -735,7 +735,7 @@ func (p *settingsPage) importDialog(c *ui.Context) {
 						}
 						ui.Column(c).FillWidth().Padding(th.Space(3), th.Space(3.5)).Gap(th.Space(1)).Children(func() {
 							ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Wrap().Children(func() {
-								kit.Text(c, entry.Email, t.Text.Sm).FontWeight(500)
+								kit.Text(c, entry.Email, t.Text.Sm)
 								if entry.Name != "" {
 									kit.Text(c, entry.Name, t.Text.Xs).TextColor(t.Muted)
 								}

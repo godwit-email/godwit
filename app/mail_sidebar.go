@@ -111,8 +111,8 @@ func sidebarFolders(acc int64, fs []core.Folder) []sideFolder {
 	return out
 }
 
-// Sidebar: the page switch and search; Compose; the unified views; the label
-// and account groups, each foldable; the outbox and Scheduled while they hold mail.
+// Sidebar: the page switch; Compose; the unified views; the label and account
+// groups, each foldable; the outbox and Scheduled while they hold mail.
 func (p *mailPage) Sidebar(c *ui.Context) {
 	a := p.a
 	th := c.Theme()
@@ -539,14 +539,9 @@ func (p *mailPage) newDraft(then func(core.Draft)) {
 	})
 }
 
-// sidebarHead is the top of either page's sidebar: the page switch and the
-// search button.
+// sidebarHead is the top of either page's sidebar: the page switch. Search is
+// the title bar's field.
 func (a *App) sidebarHead(c *ui.Context) {
 	th := c.Theme()
-	ui.Row(c).Padding(0, th.Space(1.5)+sidebarInset(c), th.Space(3), 0).Gap(th.Space(1)).Children(func() {
-		a.pageSwitch(c)
-		ui.Spacer(c)
-		kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-			OnClick(a.openPalette)
-	})
+	ui.Row(c).Padding(0, sidebarInset(c), th.Space(3), 0).Children(func() { a.pageSwitch(c) })
 }

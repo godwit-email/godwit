@@ -18,11 +18,11 @@ import (
 	"github.com/godwit-email/godwit/internal/i18n"
 )
 
-// masking opens 隐私与安全 on its 隐私脱敏 tab, tall enough to show it whole.
+// masking opens 隐私脱敏, tall enough to show it whole.
 func (h *harness) masking() {
 	h.t.Helper()
 	h.resize(1440, 3000)
-	h.openSettings("privacy")
+	h.openSettings("masking")
 	h.see(i18n.T("settings.masking.foot"))
 }
 

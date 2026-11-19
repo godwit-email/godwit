@@ -19,10 +19,7 @@ import (
 // plugin; a card opens its install dialog, or the row of what is installed.
 func (e *extView) directoryView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).Gap(theme.HeadingGap).Children(func() {
-		settingsBack(c, i18n.T("settings.extensions"), func() { e.onDirectory = false })
-		pageHeading(c, i18n.T("settings.ext.directory"), i18n.T("settings.ext.directory.sub"))
-	})
+	pageHeading(c, i18n.T("settings.ext.directory"), i18n.T("settings.ext.directory.sub"))
 	switch {
 	case len(e.reg.Entries) == 0 && e.reg.Stale != "":
 		kit.Block(c, ui.Row(c), kit.ToneCard).FillWidth().Gap(th.Space(6)).Padding(th.Space(3), th.Space(4)).AlignItems(ui.Center).Children(func() {
@@ -168,7 +165,7 @@ func (e *extView) updateButton(c *ui.Context, en core.RegistryEntry) {
 func (e *extView) openEntry(en core.RegistryEntry) {
 	switch {
 	case en.Installed != "" && en.InstalledTrust == "listed":
-		e.onDirectory, e.tab, e.plugin = false, 1, en.Name
+		e.onDirectory, e.plugin = false, en.Name
 	case en.Version != "":
 		e.openDialog(en.Name)
 	}

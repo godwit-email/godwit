@@ -120,7 +120,7 @@ func maskLogSummary(reqs []maskRequest) string {
 	return i18n.Tf("settings.masking.log.summary", len(reqs), blocked, warned)
 }
 
-// maskLogEntry is the 隐私脱敏 tab's way into 脱敏记录.
+// maskLogEntry is 隐私脱敏's way into 脱敏记录.
 func (p *settingsPage) maskLogEntry(c *ui.Context) {
 	t, th, a := theme.Of(c), c.Theme(), p.a
 	settingsSection(c, i18n.T("settings.masking.log"), "", func() {
@@ -128,7 +128,7 @@ func (p *settingsPage) maskLogEntry(c *ui.Context) {
 			FillWidth().MinHeight(th.Space(12)).Padding(th.Space(2), th.Space(4)).Gap(th.Space(6)).AlignItems(ui.Center).Radius(0).Label(i18n.T("settings.masking.log.open"))
 		b.Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-				kit.Text(c, i18n.T("settings.masking.log.open"), t.Text.Sm).FontWeight(500)
+				kit.Text(c, i18n.T("settings.masking.log.open"), t.Text.Sm)
 				kit.Text(c, maskLogSummary(maskRequests(p.maskLog)), t.Text.Xs).TextColor(t.Muted)
 			})
 			ui.Icon(c, icons.Get("chevron-right")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
@@ -136,36 +136,15 @@ func (p *settingsPage) maskLogEntry(c *ui.Context) {
 	})
 }
 
-// settingsBack is the link back up from a settings subpage (a signature,
-// 脱敏记录): a ghost button, muted until hovered, pulled left by its padding
-// so its text lines up with the title under it.
-func settingsBack(c *ui.Context, label string, onClick func()) {
-	t, th := theme.Of(c), c.Theme()
-	back := kit.Pressable(c, kit.PressableOpts{OnClick: onClick}).
-		Label(label).AlignSelf(ui.Start).Height(th.Space(7)).PaddingX(th.Space(2)).Margin(0, 0, 0, -th.Space(2)).
-		Gap(th.Space(1.5)).AlignItems(ui.Center).Radius(t.Radius.Md)
-	fg := t.Muted
-	if back.Hovered() {
-		fg = t.Foreground
-	}
-	back.TextColor(fg).Children(func() {
-		ui.Icon(c, icons.Get("arrow-left")).Size(theme.Icon, theme.Icon)
-		kit.Text(c, label, t.Text.Sm)
-	})
-}
-
-// maskLogPage is 脱敏记录, a subpage of 隐私与安全: tiles that count and
+// maskLogPage is 脱敏记录, a subpage of 隐私脱敏: tiles that count and
 // pick the requests by what was done, the category and feature filters, and
 // the requests by day, each opening on the values it held.
 func (p *settingsPage) maskLogPage(c *ui.Context) {
 	t, th, a := theme.Of(c), c.Theme(), p.a
 	f := &p.logFilter
 	reqs := maskRequests(p.maskLog)
-	ui.Column(c).Gap(theme.HeadingGap).Children(func() {
-		settingsBack(c, i18n.T("settings.privacy"), func() { a.navigate(Route{Page: PageSettings, Settings: "privacy"}) })
-		pageHeading(c, i18n.T("settings.masking.log"), i18n.T("settings.masking.log.foot"), func() {
-			settingButton(c, i18n.T("settings.masking.log.clear"), kit.Outline, len(reqs) == 0).OnClick(func() { f.clearing = true })
-		})
+	pageHeading(c, i18n.T("settings.masking.log"), i18n.T("settings.masking.log.foot"), func() {
+		settingButton(c, i18n.T("settings.masking.log.clear"), kit.Outline, len(reqs) == 0).OnClick(func() { f.clearing = true })
 	})
 
 	blocked, warned, masked := 0, 0, 0

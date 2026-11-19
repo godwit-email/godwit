@@ -313,7 +313,7 @@ func (v *rulesView) row(c *ui.Context, r core.Rule) {
 				kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: toggle}).Label(name).Grow(1).Shrink(1).Children(func() {
 					ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 						ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-							kit.Text(c, name, t.Text.Sm).FontWeight(500).TextColor(fg).SingleLine().Shrink(1)
+							kit.Text(c, name, t.Text.Sm).TextColor(fg).SingleLine().Shrink(1)
 							v.badges(c, r)
 						})
 						kit.Text(c, v.summary(r.Doc), t.Text.Xs).TextColor(t.Muted).SingleLine()

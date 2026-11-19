@@ -330,6 +330,19 @@ func TestShots(t *testing.T) {
 		openLena(s)
 		shot(s.harness, "MainWindows")
 	})
+	t.Run("MainDefault", func(t *testing.T) { // the design's default window
+		s := shotMail(t, noQuick)
+		s.resize(1280, 820)
+		openLena(s)
+		shot(s.harness, "MainDefault")
+	})
+	t.Run("MainCompact", func(t *testing.T) { // the least window, with the sidebar folded (surface mail-compact)
+		s := shotMail(t, noQuick)
+		s.resize(960, 600)
+		s.app.sidebarHidden = true
+		openLena(s)
+		shot(s.harness, "MainCompact")
+	})
 	t.Run("MainDrafts", func(t *testing.T) {
 		s := shotMail(t, noAuto)
 		s.shotDrafts()
@@ -673,7 +686,7 @@ func TestShots(t *testing.T) {
 		}}}
 		h := newHarnessWith(t, []coretest.Option{coretest.WithRegistry(rs.Src)}, func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") })
 		h.until("initial load", func() bool { return h.app.loaded })
-		h.openSettings("extensions")
+		h.openSettings("plugins")
 		h.see("浏览插件目录")
 		shot(h, "SettingsExtensionsPlugins")
 		h.click("浏览插件目录")
@@ -692,8 +705,7 @@ func TestShots(t *testing.T) {
 			`export default function (_ctx: any) {}`, false)
 		shotPlugin(t, s.harness, "flight-cards", "NW", `{ title: "航班", fields: [] }`)
 		shotPlugin(t, s.harness, "attachment-check", "-", `{ title: "附件", fields: [] }`)
-		s.openSettings("extensions")
-		s.click("插件 · 4")
+		s.openSettings("plugins")
 		s.see("deepl-translate")
 		s.see("attachment-check")
 		shot(s.harness, "SettingsExtensions")
@@ -701,10 +713,10 @@ func TestShots(t *testing.T) {
 		p := s.aiTab(aiFeatures)
 		s.see("阅读语言")
 		shot(s.harness, "SettingsAIFeatures")
-		p.aiTab = aiMCP
+		s.aiTab(aiMCP)
 		s.see("添加服务器")
 		shot(s.harness, "SettingsAIMCP")
-		p.aiTab = aiApps
+		s.aiTab(aiApps)
 		s.see("允许外部应用和脚本接入")
 		shot(s.harness, "SettingsAIApps")
 		e, _ := s.app.mcpEnv() // Claude connected, Codex, Antigravity and Grok there but not
@@ -724,17 +736,13 @@ func TestShots(t *testing.T) {
 			s.plat.mu.Unlock()
 		})
 		s.openSettings("general") // back: the AI apps are read again
-		s.openSettings("models")
+		s.openSettings("clients")
 		s.see("ChatGPT (Codex)")
 		shot(s.harness, "SettingsAIAppsOn")
-		p.aiTab = aiModels
-		s.openSettings("privacy")
 		for i, name := range []string{"SettingsPrivacy", "SettingsPrivacyImages", "SettingsPrivacyBlocked"} {
-			p.privacyTab = i
-			s.tt.Frame()
+			s.openSettings([]string{"masking", "images", "blocked"}[i])
 			shot(s.harness, name)
 		}
-		p.privacyTab = 0
 		s.openSettings("masklog")
 		s.post(func() { // the design's sample: two requests, one blocked
 			at := s.clock.Now().Add(-time.Hour)

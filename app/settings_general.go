@@ -431,7 +431,7 @@ func proxyKey(st *core.Settings) string {
 	return st.ProxyMode + " " + st.ProxyURL + " " + strings.Join(st.ProxyBypass, ",")
 }
 
-// aiFeaturesView is the Intelligence page's 功能 tab: the reader's AI features, and
+// aiFeaturesView is the AI 功能 page: the reader's AI features, and
 // the languages and translation they use.
 func (p *settingsPage) aiFeaturesView(c *ui.Context) {
 	p.syncSettings()

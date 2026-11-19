@@ -251,7 +251,7 @@ func TestReaderSwitchKeptThreadTakesNoInput(t *testing.T) {
 	unseenBody(h, b.ID)
 	at, ok := h.tt.Find("回复")
 	if !ok {
-		t.Fatal("the kept thread's toolbar is not shown")
+		t.Fatal("the kept thread's actions are not shown")
 	}
 	h.tt.ClickAt(at.X+at.W/2, at.Y+at.H/2)
 	time.Sleep(50 * time.Millisecond) // a draft is made off the UI thread

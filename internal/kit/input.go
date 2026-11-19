@@ -15,6 +15,7 @@ type InputOpts struct {
 	Bare                    bool // raw Base geometry: the row around it draws the box
 	Flat                    bool // no shadow
 	Glass                   bool // frosted glass appearance with hairline border (no blur)
+	Tint                    bool // the hover tint for the fill, as on the window material (not with Glass)
 }
 
 // inputSize is the height and side padding of an input of size s.
@@ -40,6 +41,9 @@ func inputFrame(c *ui.Context, e ui.Element, o InputOpts) ui.Element {
 		Elevate(c, e, theme.ShadowXs)
 	} else {
 		e.Border(theme.Stroke, t.Input).Background(t.Background)
+		if o.Tint {
+			e.Background(t.HoverTint)
+		}
 		if !o.Flat {
 			Elevate(c, e, theme.ShadowXs)
 		}
@@ -85,6 +89,16 @@ func input(c *ui.Context, e ui.Element, o InputOpts) ui.Element {
 		e.Password()
 	}
 	return e
+}
+
+// InputButton is a press target that looks as an Input of o's size, for a
+// field that opens something else (a palette) instead of taking text: it
+// shows what the caller puts in it, left-aligned, as a placeholder and the
+// keys that open it. Give it its Label, Gap and Children.
+func InputButton(c *ui.Context, o InputOpts, onClick func()) ui.Element {
+	h, padX := inputSize(c, o.Size)
+	b := ui.ButtonBase(c).Height(h).PaddingX(padX).Justify(ui.Start).AlignItems(ui.Center).OnClick(onClick)
+	return inputFrame(c, b, o)
 }
 
 // Input is a single-line text input, 32 high unless o.Size says otherwise.

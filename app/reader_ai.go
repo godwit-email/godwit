@@ -25,7 +25,7 @@ import (
 )
 
 // The AI of the reader, per message: every expanded message gets its
-// summary and plugin cards and can be translated; the toolbar's Summary,
+// summary and plugin cards and can be translated; the header's Summary,
 // Translate and skill menu act on the newest one, which alone gets quick
 // replies. ponytail: r.ai keeps every message read this session; evict the
 // oldest if memory ever matters.
@@ -462,17 +462,17 @@ func (r *reader) quickReply(msgID int64, q core.QuickReply) {
 	})
 }
 
-// aiTools are the toolbar's Summary, Translate and skill menu, for the
-// newest message.
+// aiTools are the header's Summary, Translate and skill menu, for the newest
+// message.
 func (r *reader) aiTools(c *ui.Context) {
 	out := kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}
 	m, _ := r.last()
 	st := r.state(m.ID)
 	t := theme.Of(c)
-	// aiButton is a ghost at the toolbar's icon button height; on, it keeps
-	// the hover fill. It shows icon before label; a menu's shows a chevron after it.
+	// aiButton is a small ghost; on, it keeps the hover fill. It shows icon
+	// before label; a menu's shows a chevron after it.
 	aiButton := func(icon, label string, on, menu bool) ui.Element {
-		b := kit.ButtonFrame(c, out).Label(label).Height(c.Theme().Space(8))
+		b := kit.ButtonFrame(c, out).Label(label)
 		if on {
 			b.Background(t.HoverTint)
 		}

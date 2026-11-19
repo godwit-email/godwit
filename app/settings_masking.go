@@ -25,7 +25,7 @@ type maskDraft struct {
 }
 
 // maskingView is 隐私脱敏 (docs/adr/0025-mask-at-cloud-egress.md), the
-// privacy page's first tab: the switch and the categories save as they
+// privacy group's first page: the switch and the categories save as they
 // change; the words, rules and allowlist with their button, once checked;
 // then the way into 脱敏记录.
 func (p *settingsPage) maskingView(c *ui.Context) {

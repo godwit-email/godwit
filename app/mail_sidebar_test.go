@@ -76,6 +76,14 @@ func TestSidebarFolderTree(t *testing.T) {
 	}
 	h.click("Projects")
 	h.until("Projects unfolded", func() bool { return h.tt.HasText("Contracts") })
+	// The sidebar's foot (Settings, sync status) leaves its list room for fewer rows: scroll it until the row shows.
+	for range 10 {
+		if r, ok := h.tt.Find("Contracts"); ok && r.H > 0 {
+			break
+		}
+		h.tt.Scroll(100, 400, 0, 30)
+		h.tt.Frame()
+	}
 	h.click("Contracts")
 	if v := h.app.route.View; v.FolderID == 0 {
 		t.Fatalf("view %+v", v)

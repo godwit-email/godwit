@@ -202,7 +202,7 @@ func TestAskDeleteShown(t *testing.T) {
 	}
 }
 
-// The Wit page's sidebar has the search button too: it opens the palette.
+// The Wit page's title bar has the search field too: it opens the palette.
 func TestAskSidebarSearch(t *testing.T) {
 	h, _, _ := askHarness(t, true)
 	h.click("搜索")

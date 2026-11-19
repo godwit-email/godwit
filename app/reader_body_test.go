@@ -683,7 +683,7 @@ func remoteImages(t *testing.T, h *harness, mode string) {
 }
 
 // A body's page is told how much of it the bars cover, as it scrolls under
-// them: the reply bar its bottom at first, the toolbar its top once
+// them: the reply bar its bottom at first, the part scrolled out its top once
 // scrolled; again once it reports, as a page drops what came before it
 // listened.
 func TestReaderBodyGlass(t *testing.T) {
@@ -707,8 +707,8 @@ func TestReaderBodyGlass(t *testing.T) {
 	r.scroll.Y = 1000
 	h.tt.Frame()
 	h.tt.Frame()
-	if g := glass(); g[0] < int(r.barTop) || g[1] < int(r.barBottom) {
-		t.Fatalf("glass %v scrolled (bars %v, %v): want both covered", g, r.barTop, r.barBottom)
+	if g := glass(); g[0] <= 0 || g[1] < int(r.barBottom) {
+		t.Fatalf("glass %v scrolled (reply bar %v): want both covered", g, r.barBottom)
 	}
 	r.bodies[m.ID].glass = [2]int{}
 	v.glass = [2]int{}

@@ -28,6 +28,14 @@ type pageView interface {
 	refresh(hints []events.Event)
 }
 
+// breadcrumber is a page whose title bar shows where it is (parent › current)
+// in place of a title and the search: a settings sub-page. Clicking the
+// parent calls BreadcrumbUp.
+type breadcrumber interface {
+	Breadcrumb() (parent, current string, ok bool)
+	BreadcrumbUp()
+}
+
 // goos is a var so a test can pose as another platform.
 var goos = runtime.GOOS
 
@@ -70,6 +78,8 @@ func (a *App) back() {
 		r := a.history[n-1]
 		a.history = a.history[:n-1]
 		a.setRoute(r)
+	} else if a.route.Page == PageSettings { // settings opened with no history still has a way out
+		a.navigate(a.leaveSettings())
 	}
 }
 
@@ -186,7 +196,7 @@ func (a *App) onEvent(ev events.Event) {
 func (a *App) refresh(dirty []events.Event) {
 	a.refreshes++
 	if len(dirty) > 0 && !slices.ContainsFunc(dirty, func(ev events.Event) bool { return ev.Type != events.SkillsChanged }) {
-		if a.route.Page == PageSettings && a.route.Settings == "extensions" {
+		if a.route.Page == PageSettings && a.pages[PageSettings].(*settingsPage).showsSkills() {
 			a.page().refresh(dirty)
 		}
 		return // onEvent 已刷新阅读器的 Skill，隐藏状态也包含在内。
@@ -317,14 +327,20 @@ func (a *App) View(c *ui.Context) {
 	c.Root().Background(root)
 }
 
+// titleShrink makes the title give way first when the window is narrow: the
+// search field and the actions keep their room until it is all gone.
+const titleShrink = 100
+
 // titleBar leaves the window controls their room (c.TitleBar) and drags the
-// window. The page's title lines up with the content's text; settings shows
-// neither a title nor the sync status (its sidebar names the page).
+// window: the navigation buttons over the sidebar's width, then the page's
+// title over the list's, so the search field starts at the reader's edge,
+// and the mail actions at the right end. Settings shows no title or search
+// (its sidebar names the page), but its breadcrumb when the page has one.
 func (a *App) titleBar(c *ui.Context, h float32) {
 	t, th := theme.Of(c), c.Theme()
 	bar := c.TitleBar()
-	padL := bar.Left + th.Space(2)
-	padR := bar.Right + th.Space(2) // the sync status's right edge on the content panels'
+	padL := bar.Left + th.Space(3)
+	padR := bar.Right + th.Space(2)
 	if goos == "windows" {
 		padR = bar.Right + th.Space(3) // the design's 150 = 3 caption buttons of 46 + 12
 	}
@@ -345,26 +361,62 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 				label = i18n.T("shell.sidebar.expand")
 			}
 			kit.IconButton(c, "panel-left", label, ghost).OnClick(func() { a.sidebarHidden = !a.sidebarHidden })
-			ghost.Disabled = len(a.history) == 0
+			ghost.Disabled = len(a.history) == 0 && a.route.Page != PageSettings
 			kit.IconButton(c, "arrow-left", i18n.T("shell.back"), ghost).OnClick(a.back)
 			ghost.Disabled = len(a.ahead) == 0
 			kit.IconButton(c, "arrow-right", i18n.T("shell.forward"), ghost).OnClick(a.forward)
 		})
+		if b, ok := a.page().(breadcrumber); ok {
+			if parent, current, ok := b.Breadcrumb(); ok {
+				ui.Row(c).AlignItems(ui.Center).Gap(th.Space(1)).Padding(0, 0, 0, th.Space(4)).Children(func() {
+					up := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: b.BreadcrumbUp}).Label(parent)
+					fg := t.Muted
+					if up.Hovered() {
+						fg = t.Foreground
+					}
+					up.Children(func() { kit.Text(c, parent, t.Text.Sm).TextColor(fg).SingleLine().Role(ui.RoleNone) })
+					ui.Icon(c, icons.Get("chevron-right")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
+					kit.Text(c, current, t.Text.Sm).FontWeight(500).SingleLine()
+				})
+				return
+			}
+		}
 		if a.route.Page == PageSettings {
 			return
 		}
-		if title, sub := a.page().Title(); title != "" {
-			// over the list's own heading: the panel's edge and its Space(4), less the row's gap
-			ui.Row(c).Gap(th.Space(2)).Padding(0, 0, 0, th.Space(2)).Children(func() {
-				ui.Text(c, title).FontWeight(600).SingleLine()
+		title, sub := a.page().Title()
+		searchable := a.route.Page == PageMail || a.route.Page == PageContacts || a.route.Page == PageWit
+		if title != "" || searchable { // the search field keeps its place without a title
+			// the list's width and the gap to the reader, as the panels below
+			ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2)).Width(a.listWidth()+th.Space(2)).MinWidth(0).Shrink(titleShrink).
+				Padding(0, 0, 0, th.Space(4)).Children(func() {
+				ui.Text(c, title).FontWeight(600).SingleLine().MaxWidth(theme.TitleNameMax).Shrink(1)
 				if sub != "" {
-					kit.Text(c, sub, t.Text.Xs).TextColor(t.Muted).SingleLine()
+					kit.Text(c, sub, t.Text.Xs).TextColor(t.Muted).SingleLine().MaxWidth(theme.TitleSubMax).Shrink(1)
 				}
 				a.mail.titleMenu(c)
 			})
 		}
+		if searchable {
+			a.titleSearch(c)
+		}
 		ui.Spacer(c)
-		a.syncStatus(c)
+		if a.route.Page == PageMail {
+			a.mail.titleActions(c)
+		}
+	})
+}
+
+// titleSearch is the top bar's search field of the mail, contacts and Wit
+// pages: a small flat input that opens the palette (⌘K) at a click.
+func (a *App) titleSearch(c *ui.Context) {
+	t, th := theme.Of(c), c.Theme()
+	box := kit.InputButton(c, kit.InputOpts{Size: kit.SizeSm, Flat: true, Tint: true}, a.openPalette).Label(i18n.T("mail.search")).
+		Width(theme.TitleSearchWidth).MinWidth(0).Gap(th.Space(2))
+	box.Children(func() {
+		ui.Icon(c, icons.Get("search")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
+		ui.Text(c, i18n.T("mail.search")).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1).Role(ui.RoleNone)
+		kit.Kbd(c, "⌘K").Shrink(0)
 	})
 }
 
@@ -537,9 +589,9 @@ func sidebarScroll(c *ui.Context, children func()) {
 	})
 }
 
-// sidebarFoot is pinned under the page's sidebar: Settings (and, in dev
-// builds, the Kit); in settings, the way back to the page it was opened from,
-// in the same spot.
+// sidebarFoot is pinned under the page's sidebar: the update card, Settings
+// (and, in dev builds, the Kit) and the sync status; in settings, the way
+// back to the page it was opened from, in the same spot, with no sync status.
 func (a *App) sidebarFoot(c *ui.Context) {
 	th := c.Theme()
 	a.updateCard(c)
@@ -550,22 +602,14 @@ func (a *App) sidebarFoot(c *ui.Context) {
 			ui.Text(c, label)
 		})
 	}
-	if a.route.Page == PageSettings {
-		r := a.leaveSettings()
-		name := i18n.T("shell.nav.mail")
-		switch r.Page {
-		case PageWit:
-			name = i18n.T("shell.nav.wit")
-		case PageContacts:
-			name = i18n.T("shell.nav.contacts")
-		}
-		item("arrow-left", i18n.Tf("shell.nav.back_to", name), r)
+	if a.route.Page == PageSettings { // the title bar's back leaves settings
 		return
 	}
 	if a.dev {
 		item("component", "Kit", Route{Page: PageKit})
 	}
 	item("sliders-horizontal", i18n.T("shell.nav.settings"), Route{Page: PageSettings})
+	a.syncStatus(c)
 }
 
 // updateCard offers the newer version the update feed has, above Settings:
