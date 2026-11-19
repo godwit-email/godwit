@@ -1,15 +1,9 @@
 import { RiArrowDownSLine } from "@remixicon/react";
-import { type ReactNode, type Ref, useId, useImperativeHandle, useState } from "react";
+import { type ReactNode, type Ref, useId, useImperativeHandle, useRef, useState } from "react";
 import { Button } from "@/components/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { type PopupMenu, popupUnder } from "@/components/wit-menu";
 import type { Account, ContactHit } from "@/mygo";
 import type { T } from "@/shared/i18n";
 import { AddressInput } from "./AddressInput";
@@ -42,6 +36,7 @@ export function Fields({
   accounts,
   from,
   onFrom,
+  menu,
   to,
   cc,
   bcc,
@@ -56,6 +51,8 @@ export function Fields({
   accounts: Account[];
   from: number;
   onFrom(id: number): void;
+  /** Shows the accounts as the system's menu (the pages' PopupMenu). */
+  menu: PopupMenu;
   to: string[];
   cc: string[];
   bcc: string[];
@@ -68,6 +65,8 @@ export function Fields({
   t: T;
 }) {
   const id = useId();
+  const frozenNow = useRef(frozen); // as the menu returns: the fields may have frozen while it was open
+  frozenNow.current = frozen;
   const [pending, setPending] = useState(none);
   const [ccOpen, setCcOpen] = useState(false);
   const lists: Record<AddressKey, string[]> = { to, cc, bcc, replyTo: replyTo ? [replyTo] : [] };
@@ -165,32 +164,32 @@ export function Fields({
       {row(
         "from",
         t("compose.from"),
-        // The sending account: the pill is the value, and the app's own glass menu lists the accounts
-        // (checked one at a time), so switching reads like the rest of the UI rather than an OS popup.
-        <DropdownMenu modal={false}>
-          <DropdownMenuTrigger
-            id={`${id}from`}
-            aria-label={t("compose.from.select")}
-            title={fromEmail}
-            disabled={frozen}
-            className="flex h-6 min-w-0 items-center gap-1 rounded-md bg-(--hover-tint) px-2 font-medium text-xs transition-colors hover:bg-(--tint-2) focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-popup-open:bg-(--tint-2)"
-          >
-            <span className="min-w-0 truncate">{fromEmail}</span>
-            <RiArrowDownSLine className="size-3.5 shrink-0" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="max-h-80 w-auto min-w-52 max-w-80">
-            <DropdownMenuRadioGroup
-              value={from}
-              onValueChange={(v) => !frozen && onFrom(Number(v))}
-            >
-              {accounts.map((a) => (
-                <DropdownMenuRadioItem key={a.id} value={a.id} closeOnClick>
-                  <span className="truncate">{a.email}</span>
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>,
+        // The sending account: the pill is the value; the system's menu lists the accounts, the one
+        // in use checked, as the design's menus are the system's.
+        <button
+          type="button"
+          id={`${id}from`}
+          aria-label={t("compose.from.select")}
+          title={fromEmail}
+          disabled={frozen}
+          className="flex h-6 min-w-0 items-center gap-1 rounded-md bg-(--hover-tint) px-2 font-medium text-xs transition-colors hover:bg-(--tint-2) focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50"
+          onClick={async (e) => {
+            const chosen = await popupUnder(
+              menu,
+              e.currentTarget,
+              accounts.map((a) => ({
+                id: String(a.id),
+                label: a.email,
+                radio: true,
+                checked: a.id === from,
+              })),
+            );
+            if (chosen && !frozenNow.current && Number(chosen) !== from) onFrom(Number(chosen));
+          }}
+        >
+          <span className="min-w-0 truncate">{fromEmail}</span>
+          <RiArrowDownSLine className="size-3.5 shrink-0" />
+        </button>,
       )}
     </div>
   );

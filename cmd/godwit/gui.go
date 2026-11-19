@@ -166,8 +166,10 @@ func gui(ctx context.Context, dataDir, open string) int {
 			}
 			return 0, false
 		},
-		PickFiles:   pickFiles,
-		PopupMenu:   popupMenu,
+		PickFiles: pickFiles,
+		PopupMenu: func(winID int, entries []webui.MenuEntry, x, y int) string {
+			return witPopupMenu(mygo.WindowByID(winID), entries, x, y)
+		},
 		Emit:        emit,
 		OpenURL:     mygo.Shell.OpenExternal,
 		OpenCompose: openCompose,
