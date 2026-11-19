@@ -211,7 +211,11 @@ func (p *settingsPage) refresh(hints []events.Event) {
 					p.translators = list
 				}
 			})
-	case sec == "skills" || sec == "plugins":
+	case sec == "skills": // its own list only: the plugin directory is 插件's to refresh
+		if hints == nil || slices.ContainsFunc(hints, func(ev events.Event) bool { return ev.Type == events.SkillsChanged }) {
+			p.ext.loadSkills()
+		}
+	case sec == "plugins":
 		if hints == nil || slices.ContainsFunc(hints, extChange) {
 			p.ext.load()
 		} else if slices.ContainsFunc(hints, func(ev events.Event) bool { return ev.Type == events.SkillsChanged }) {
@@ -427,9 +431,11 @@ func hairline(c *ui.Context) {
 }
 
 // settingRow is a labelled control: label and description on the left, the
-// control on the right; at least 48 high.
-func settingRow(c *ui.Context, label, desc string, control func()) ui.Element {
-	return kit.FieldWith(c, kit.FieldOpts{Horizontal: true}, label, desc, "", control)
+// control on the right; at least 48 high. control returns the element a click
+// on the label focuses, or ui.Element{} for a row that ends in a button, a
+// link or plain text.
+func settingRow(c *ui.Context, label, desc string, control func() ui.Element) ui.Element {
+	return kit.LabelledRow(c, label, desc, "", control)
 }
 
 // iconLabel is a 32 tile (mark draws its glyph) before a title and a muted
@@ -554,17 +560,18 @@ func (p *settingsPage) localAPIView(c *ui.Context) {
 		}
 		kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &p.st.LocalAPI}, i18n.T("settings.local_api.on"), i18n.T("settings.local_api.help"), "", nil)
 	}, func() {
-		settingRow(c, i18n.T("settings.local_api.send"), i18n.T("settings.local_api.send.help"), func() {
+		settingRow(c, i18n.T("settings.local_api.send"), i18n.T("settings.local_api.send.help"), func() ui.Element {
 			level := p.st.MCPSend
 			if level == "" {
 				level = core.MCPSendConfirm
 			}
-			settingSelect(c, i18n.T("settings.local_api.send"), &level, []kit.Option[string]{
+			sel := settingSelect(c, i18n.T("settings.local_api.send"), &level, []kit.Option[string]{
 				{Value: core.MCPSendOff, Label: i18n.T("settings.local_api.send.off")},
 				{Value: core.MCPSendConfirm, Label: i18n.T("settings.local_api.send.confirm")},
 				{Value: core.MCPSendDirect, Label: i18n.T("settings.local_api.send.direct")},
 			})
 			p.st.MCPSend = level
+			return sel
 		})
 		if p.st.MCPSend == core.MCPSendDirect {
 			settingBlock(c, func() { kit.Alert(c, kit.ToneWarning, i18n.T("settings.local_api.send.risk"), nil) })
@@ -573,10 +580,11 @@ func (p *settingsPage) localAPIView(c *ui.Context) {
 	path := a.localAPIPath()
 	if path != "" {
 		rows = append(rows, func() {
-			settingRow(c, i18n.T("settings.local_api.path"), path, func() {
+			settingRow(c, i18n.T("settings.local_api.path"), path, func() ui.Element {
 				if rowButton(c, i18n.T("settings.local_api.copy_path"), kit.Outline, false).Clicked() {
 					copied(path)
 				}
+				return ui.Element{}
 			})
 		})
 	}
@@ -655,13 +663,13 @@ func (p *settingsPage) securityRescanView(c *ui.Context) {
 	}
 	settingsSection(c, i18n.T("settings.security.rescan"), i18n.T("settings.security.rescan.sub"),
 		func() {
-			settingRow(c, i18n.T("settings.security.rescan.range"), "", func() {
-				settingSelect(c, i18n.T("settings.security.rescan.range"), &p.secDays, opts).Disabled(p.securityRescanBlocked())
+			settingRow(c, i18n.T("settings.security.rescan.range"), "", func() ui.Element {
+				return settingSelect(c, i18n.T("settings.security.rescan.range"), &p.secDays, opts).Disabled(p.securityRescanBlocked())
 			})
 		},
 		func() {
-			settingRow(c, i18n.T("settings.security.rescan.mode"), help, func() {
-				kit.Tabs(c, &p.secMode, kit.TabsOpts{}, kit.TabLabels(i18n.T("settings.security.rescan.redo"), i18n.T("settings.security.rescan.missing"))).Disabled(p.securityRescanBlocked())
+			settingRow(c, i18n.T("settings.security.rescan.mode"), help, func() ui.Element {
+				return kit.Tabs(c, &p.secMode, kit.TabsOpts{}, kit.TabLabels(i18n.T("settings.security.rescan.redo"), i18n.T("settings.security.rescan.missing"))).Disabled(p.securityRescanBlocked())
 			})
 		},
 		func() {
@@ -790,21 +798,22 @@ func (p *settingsPage) remoteImagesView(c *ui.Context) {
 	}
 	settingsSection(c, "", i18n.T("settings.remote_images.sub")+"\n"+i18n.T("settings.remote_images.avatars"),
 		func() {
-			settingRow(c, i18n.T("settings.remote_images.mode"), i18n.T("settings.remote_images.mode.help"), func() {
+			settingRow(c, i18n.T("settings.remote_images.mode"), i18n.T("settings.remote_images.mode.help"), func() ui.Element {
 				mode := p.st.RemoteImages
 				if mode == "" {
 					mode = "auto"
 				}
-				settingSelect(c, i18n.T("settings.remote_images.mode"), &mode, []kit.Option[string]{
+				sel := settingSelect(c, i18n.T("settings.remote_images.mode"), &mode, []kit.Option[string]{
 					{Value: "auto", Label: i18n.T("settings.remote_images.auto")},
 					{Value: "trusted", Label: i18n.T("settings.remote_images.trusted")},
 					{Value: "ask", Label: i18n.T("settings.remote_images.ask")},
 				})
 				p.st.RemoteImages = mode
+				return sel
 			})
 		},
 		func() {
-			settingRow(c, i18n.T("settings.remote_images.cache"), i18n.T("settings.remote_images.cache.help"), func() {
+			settingRow(c, i18n.T("settings.remote_images.cache"), i18n.T("settings.remote_images.cache.help"), func() ui.Element {
 				ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, size).TextColor(t.Muted)
 					if rowButton(c, i18n.T("settings.remote_images.clear"), kit.Outline, false).Clicked() {
@@ -816,15 +825,16 @@ func (p *settingsPage) remoteImagesView(c *ui.Context) {
 						})
 					}
 				})
+				return ui.Element{}
 			})
 		},
 		func() {
-			settingRow(c, i18n.T("settings.remote_images.keep"), i18n.T("settings.remote_images.keep.help"), func() {
+			settingRow(c, i18n.T("settings.remote_images.keep"), i18n.T("settings.remote_images.keep.help"), func() ui.Element {
 				opts := []kit.Option[int]{{Value: 0, Label: i18n.T("settings.remote_images.keep.forever")}}
 				for _, days := range []int{7, 14, 30, 90} {
 					opts = append(opts, kit.Option[int]{Value: days, Label: i18n.Tf("settings.remote_images.keep.days", days)})
 				}
-				settingSelect(c, i18n.T("settings.remote_images.keep"), &p.st.ImageRetentionDays, opts)
+				return settingSelect(c, i18n.T("settings.remote_images.keep"), &p.st.ImageRetentionDays, opts)
 			})
 		})
 }
@@ -932,18 +942,20 @@ func (p *settingsPage) aboutView(c *ui.Context) {
 		a.do(func(context.Context) error { return a.plat.OpenURL(url) }, a.toastErr)
 	}
 	rows := []func(){func() {
-		settingRow(c, i18n.T("settings.about.license"), "", func() {
+		settingRow(c, i18n.T("settings.about.license"), "", func() ui.Element {
 			if value("Apache-2.0", "arrow-up-right") {
 				open(repoURL + "/blob/main/LICENSE")
 			}
+			return ui.Element{}
 		})
 	}, func() {
-		settingRow(c, i18n.T("settings.about.source"), "", func() {
+		settingRow(c, i18n.T("settings.about.source"), "", func() ui.Element {
 			if !p.starred {
 				p.starButton(c)
 			} else if value("GitHub", "arrow-up-right") {
 				open(repoURL)
 			}
+			return ui.Element{}
 		})
 	}}
 	for _, l := range []struct{ key, value, url string }{
@@ -952,10 +964,11 @@ func (p *settingsPage) aboutView(c *ui.Context) {
 		{"settings.about.feedback", "GitHub Issues", repoURL + "/issues"},
 	} {
 		rows = append(rows, func() {
-			settingRow(c, i18n.T(l.key), "", func() {
+			settingRow(c, i18n.T(l.key), "", func() ui.Element {
 				if value(l.value, "arrow-up-right") {
 					open(l.url)
 				}
+				return ui.Element{}
 			})
 		})
 	}

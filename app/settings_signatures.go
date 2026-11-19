@@ -164,10 +164,12 @@ func (p *settingsPage) signatureView(c *ui.Context, sig core.Signature) {
 
 	bad := !validSignatureName(f.name)
 	settingsSection(c, i18n.T("settings.account.basic"), "", func() {
-		settingRow(c, i18n.T("settings.signature.name"), i18n.T("settings.signature.name.help"), func() {
-			if kit.Input(c, &f.name, kit.InputOpts{Invalid: bad}).Width(theme.SettingsInputWidth).Label(i18n.T("settings.signature.name")).Changed() {
+		settingRow(c, i18n.T("settings.signature.name"), i18n.T("settings.signature.name.help"), func() ui.Element {
+			field := kit.Input(c, &f.name, kit.InputOpts{Invalid: bad}).Width(theme.SettingsInputWidth).Label(i18n.T("settings.signature.name"))
+			if field.Changed() {
 				p.editSignatureName()
 			}
+			return field
 		})
 	})
 
@@ -229,8 +231,9 @@ func (p *settingsPage) signatureView(c *ui.Context, sig core.Signature) {
 	settingsSection(c, i18n.T("settings.signature.default"), i18n.T("settings.signature.default.foot"), rows...)
 
 	settingsSection(c, i18n.T("settings.signature.delete"), "", func() {
-		settingRow(c, i18n.T("settings.signature.delete.row"), deleteHint(users), func() {
+		settingRow(c, i18n.T("settings.signature.delete.row"), deleteHint(users), func() ui.Element {
 			kit.Button(c, i18n.T("settings.signature.delete"), kit.ButtonOpts{Variant: kit.Outline, Tone: kit.ToneDanger}).Label(i18n.Tf("settings.signature.delete.aria", sig.Name)).OnClick(func() { p.sigDelete = true })
+			return ui.Element{}
 		})
 	})
 	p.deleteSignatureDialog(c, sig, users)
@@ -390,15 +393,16 @@ func (p *settingsPage) accountSignatureView(c *ui.Context, acc core.Account) {
 	}
 	opts = append(opts, kit.Option[int64]{Value: 0, Label: i18n.T("settings.account.signature.none")})
 	rows := []func(){func() {
-		settingRow(c, i18n.T("settings.account.signature.default"), i18n.T("settings.account.signature.default.help"), func() {
+		settingRow(c, i18n.T("settings.account.signature.default"), i18n.T("settings.account.signature.default.help"), func() ui.Element {
 			sel := acc.SignatureID
 			if cur == nil {
 				sel = 0
 			}
-			settingSelect(c, i18n.T("settings.account.signature.default"), &sel, opts)
+			field := settingSelect(c, i18n.T("settings.account.signature.default"), &sel, opts)
 			if sel != acc.SignatureID && (cur != nil || sel != 0) {
 				p.setAccountSignature(acc.ID, sel)
 			}
+			return field
 		})
 	}}
 	if cur != nil {

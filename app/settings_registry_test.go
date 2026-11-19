@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -355,5 +356,26 @@ func TestRegistrySectionHiddenWhenOff(t *testing.T) {
 	h.see("验证码与登录链接") // the built-in plugin: the list has loaded
 	if _, ok := h.tt.Find("浏览插件目录"); ok {
 		t.Fatal("the plugin directory is offered without a registry")
+	}
+}
+
+// Opening Skill reads the skills alone: the plugin directory is fetched by 插件.
+func TestSkillsPageLeavesTheDirectory(t *testing.T) {
+	h, rs, _ := registryHarness(t)
+	h.openSettings("plugins")
+	h.click("浏览插件目录")
+	h.see("dlx")
+	var fetched atomic.Int32
+	rs.Intercept(func(_ http.ResponseWriter, req *http.Request, _ []byte) bool {
+		if strings.Contains(req.URL.Path, "registry.json") {
+			fetched.Add(1)
+		}
+		return false
+	})
+	h.openSettings("skills")
+	h.see("Summarize")
+	h.drain()
+	if n := fetched.Load(); n != 0 {
+		t.Errorf("Skill fetched the plugin directory %d times", n)
 	}
 }

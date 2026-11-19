@@ -362,6 +362,7 @@
   "mail_draft_send_disabled": "Being edited in the compose window; send it there",
   "mail_draft_from_program": "Draft from a program",
   "mail_draft_from_program_help": "Written or changed by an AI tool, script, plugin or Wit; check the recipients and text before sending",
+  "mail_draft_from_program_detail": "A program (an agent, a script, a plugin or Wit) wrote or changed this draft. Check the recipients and the text before you send it.",
   "mail_draft_approve": "Approve and send",
   "mail_draft_too_long": "This draft is too long to show in full here. Open Continue editing to check all of it and send it from there.",
   "mail_empty": "No mail",
@@ -2265,7 +2266,7 @@
   "settings_notify_preview": "Show a preview in notifications",
   "settings_notify_preview_help": "Off, notifications say only that new mail arrived",
   "settings_privacy": "Privacy & security",
-  "settings_privacy_sub": "Before anything goes to a cloud model, sensitive details are swapped for placeholders.",
+  "settings_privacy_sub": "Choose what happens to sensitive details before they go to a cloud model.",
   "settings_px": "{arg1, number, ::group-off} px",
   "@settings_px": {
     "placeholders": {

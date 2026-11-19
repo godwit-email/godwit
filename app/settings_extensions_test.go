@@ -385,6 +385,7 @@ func TestMCPAddAndTrust(t *testing.T) {
 	h.click("保存")
 	h.see("lookup-server")
 	h.see(i18n.T("settings.ext.mcp.grant.help")) // a server awaiting its grant says so beside the grant
+	h.see(cmd)                                   // and what the grant will start
 	h.click("授权并启用")
 	h.see("lookup")
 	h.see("声明只读（仅供参考）")
@@ -776,5 +777,21 @@ func TestPluginSignInPageRefused(t *testing.T) {
 	h.until("the flow's end", func() bool { return p.ext.loginFlow == "" })
 	if slices.ContainsFunc(h.plat.Calls(), func(c string) bool { return strings.HasPrefix(c, "OpenURL") }) {
 		t.Fatal("a refused page opened")
+	}
+}
+
+// mcpTarget is what a grant lets Godwit reach: an HTTP server's host, or
+// the command a stdio one starts.
+func TestMCPTarget(t *testing.T) {
+	for _, c := range []struct {
+		s    core.MCPServer
+		want string
+	}{
+		{core.MCPServer{Transport: "http", URL: "https://mcp.linear.app/sse"}, "mcp.linear.app"},
+		{core.MCPServer{Transport: "stdio", Command: "npx", Args: []string{"-y", "server"}}, "npx -y server"},
+	} {
+		if got := mcpTarget(c.s); got != c.want {
+			t.Errorf("mcpTarget(%+v) = %q, want %q", c.s, got, c.want)
+		}
 	}
 }

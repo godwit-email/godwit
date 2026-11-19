@@ -104,14 +104,22 @@ func TestFieldHorizontalDisabled(t *testing.T) {
 	}
 }
 
-// An error takes the place of the help, in the danger color, in both layouts.
+// An error takes the place of the help in a Field, a switch row and a LabelledRow.
 func TestFieldErrorReplacesHelp(t *testing.T) {
-	for _, horizontal := range []bool{false, true} {
-		tt := ui.NewTester(themed(func(c *ui.Context) {
-			FieldWith(c, FieldOpts{Horizontal: horizontal}, "Name", "Help text", "Taken already", func() { ui.Text(c, "Control") })
-		}), 480, 160)
+	on := false
+	rows := map[string]func(c *ui.Context){
+		"field": func(c *ui.Context) { Field(c, "Name", "Help text", "Taken already", func() { ui.Text(c, "Control") }) },
+		"switch": func(c *ui.Context) {
+			FieldWith(c, FieldOpts{Horizontal: true, Switch: &on}, "Name", "Help text", "Taken already", nil)
+		},
+		"row": func(c *ui.Context) {
+			LabelledRow(c, "Name", "Help text", "Taken already", func() ui.Element { return ui.Text(c, "Control") })
+		},
+	}
+	for name, build := range rows {
+		tt := ui.NewTester(themed(build), 480, 160)
 		if tt.HasText("Help text") || !tt.HasText("Taken already") {
-			t.Errorf("horizontal=%v: texts %q", horizontal, tt.Texts())
+			t.Errorf("%s: texts %q", name, tt.Texts())
 		}
 	}
 }
@@ -133,8 +141,26 @@ func TestFieldVerticalOrder(t *testing.T) {
 func TestLabelledRowLabelFocuses(t *testing.T) {
 	var s string
 	tt := ui.NewTester(themed(func(c *ui.Context) {
-		LabelledRow(c, "API Key", "", func() ui.Element { return Input(c, &s, InputOpts{}).Label("key") })
+		LabelledRow(c, "API Key", "", "", func() ui.Element { return Input(c, &s, InputOpts{}).Label("key") })
 	}), 480, 120)
+	if err := tt.Click("API Key"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Type("abc")
+	if s != "abc" {
+		t.Errorf("typed into %q, want abc", s)
+	}
+}
+
+// A LabelledRow with a help text shows it under the label, and a click on the label still focuses the control.
+func TestLabelledRowHelpAndFocus(t *testing.T) {
+	var s string
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		LabelledRow(c, "API Key", "Paste the key here", "", func() ui.Element { return Input(c, &s, InputOpts{}).Label("key") })
+	}), 480, 120)
+	if !tt.HasText("Paste the key here") {
+		t.Fatalf("help not shown: %q", tt.Texts())
+	}
 	if err := tt.Click("API Key"); err != nil {
 		t.Fatal(err)
 	}

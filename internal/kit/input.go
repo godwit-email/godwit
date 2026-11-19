@@ -150,11 +150,12 @@ func TextArea(c *ui.Context, s *string, o InputOpts) ui.Element {
 	return input(c, e, o, true)
 }
 
-// FieldOpts style a FieldWith. Horizontal makes it a settings row: label
-// with help or error on the left, the control on the right. Switch, with
-// Horizontal, makes the control a switch on *Switch (the row takes no
-// control) and the whole row its target: one Tab stop, a click anywhere
-// toggles it, the focus ring runs round the row, and Disabled dims it.
+// FieldOpts style a FieldWith. Horizontal with Switch makes it a switch row:
+// label with help or error on the left, a switch on *Switch at the right
+// (the row takes no control), and the whole row its target: one Tab stop, a
+// click anywhere toggles it, the focus ring runs round the row, and Disabled
+// dims it. Horizontal without Switch does nothing: LabelledRow builds the
+// other settings rows.
 type FieldOpts struct {
 	Horizontal bool
 	Switch     *bool
@@ -165,10 +166,25 @@ func Field(c *ui.Context, label, help, errText string, control func()) ui.Elemen
 	return FieldWith(c, FieldOpts{}, label, help, errText, control)
 }
 
-// FieldWith is Field laid out as o says.
+// FieldWith is Field laid out as o says: a column, or with a Switch a row.
 func FieldWith(c *ui.Context, o FieldOpts, label, help, errText string, control func()) ui.Element {
-	t, th := theme.Of(c), c.Theme()
-	message := func() {
+	th := c.Theme()
+	message := fieldMessage(c, help, errText)
+	if !o.Horizontal || o.Switch == nil {
+		return ui.Column(c).Gap(th.Space(1.5)).Children(func() {
+			ui.Text(c, label).FontWeight(500)
+			control()
+			message()
+		})
+	}
+	return horizontalField(c, o, label, message, nil)
+}
+
+// fieldMessage draws errText in the danger color, or else help in the muted
+// color: what sits under a field's label.
+func fieldMessage(c *ui.Context, help, errText string) func() {
+	t := theme.Of(c)
+	return func() {
 		switch {
 		case errText != "":
 			Text(c, errText, t.Text.Xs).TextColor(t.Danger)
@@ -176,25 +192,15 @@ func FieldWith(c *ui.Context, o FieldOpts, label, help, errText string, control 
 			Text(c, help, t.Text.Xs).TextColor(t.Muted)
 		}
 	}
-	if !o.Horizontal {
-		return ui.Column(c).Gap(th.Space(1.5)).Children(func() {
-			ui.Text(c, label).FontWeight(500)
-			control()
-			message()
-		})
-	}
-	return horizontalField(c, o, label, message, func() ui.Element { control(); return ui.Element{} })
 }
 
-// LabelledRow is FieldWith's horizontal row for the control that control
-// returns, which a click on the label focuses, as a Field's label does.
-func LabelledRow(c *ui.Context, label, errText string, control func() ui.Element) ui.Element {
-	t := theme.Of(c)
-	return horizontalField(c, FieldOpts{Horizontal: true}, label, func() {
-		if errText != "" {
-			Text(c, errText, t.Text.Xs).TextColor(t.Danger)
-		}
-	}, control)
+// LabelledRow is a settings row: label with help (or errText in its place)
+// on the left, and at the right the element control returns, which a click
+// on the label focuses, as a Field's label does. control returns ui.Element{}
+// for a row that ends in a button, a link or plain text, which keeps its own
+// label.
+func LabelledRow(c *ui.Context, label, help, errText string, control func() ui.Element) ui.Element {
+	return horizontalField(c, FieldOpts{Horizontal: true}, label, fieldMessage(c, help, errText), control)
 }
 
 func horizontalField(c *ui.Context, o FieldOpts, label string, message func(), control func() ui.Element) ui.Element {

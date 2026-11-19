@@ -111,8 +111,9 @@ func (p *settingsPage) recognitionModelRow(c *ui.Context) {
 		help += "\n" + recognitionBackendText(*b)
 	}
 	if d != nil {
-		settingRow(c, label, help, func() {
+		settingRow(c, label, help, func() ui.Element {
 			settingButton(c, i18n.T("settings.masking.recognition_model.cancel"), kit.Outline, false).OnClick(d.cancel)
+			return ui.Element{}
 		})
 		return
 	}
@@ -189,7 +190,8 @@ func maskCategories(cats []string) string {
 // with what it finds.
 func maskCategoryRow(c *ui.Context, name string, cat *core.MaskCategory) {
 	label := i18n.T("settings.masking.cat." + name)
-	settingRow(c, label, i18n.T("settings.masking.cat."+name+".help"), func() {
+	settingRow(c, label, i18n.T("settings.masking.cat."+name+".help"), func() ui.Element {
+		var sw ui.Element
 		ui.Row(c).Gap(c.Theme().Space(3)).AlignItems(ui.Center).Children(func() {
 			if cat.On {
 				action := cmp.Or(cat.Action, core.MaskMask)
@@ -202,8 +204,9 @@ func maskCategoryRow(c *ui.Context, name string, cat *core.MaskCategory) {
 					cat.Action = action
 				}
 			}
-			kit.Switch(c, &cat.On).Label(label)
+			sw = kit.Switch(c, &cat.On).Label(label)
 		})
+		return sw
 	})
 }
 

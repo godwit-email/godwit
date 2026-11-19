@@ -917,6 +917,18 @@ func (e *extView) mcpFormView(c *ui.Context, f *mcpForm) {
 	})
 }
 
+// mcpTarget is what s reaches: its URL's host, or the command it starts
+// with its arguments.
+func mcpTarget(s core.MCPServer) string {
+	if s.URL != "" {
+		if u, err := url.Parse(s.URL); err == nil && u.Host != "" {
+			return u.Host
+		}
+		return s.URL
+	}
+	return strings.Join(append([]string{s.Command}, s.Args...), " ")
+}
+
 // serverHead is an MCP server's first row: its name and what it runs, the
 // switch that turns it on (or the grant that must come first), and a chevron
 // that opens or closes its tools.
@@ -924,9 +936,10 @@ func (e *extView) serverHead(c *ui.Context, s core.MCPServer, open bool) {
 	a, t, th := e.a, theme.Of(c), c.Theme()
 	id := s.ID
 	st, _ := mcpStatus(s)
-	desc := s.Transport + " · " + i18n.Plural("settings.ext.mcp.tools", len(s.Tools))
+	// What it connects to or runs stays in view, before the grant above all.
+	desc := s.Transport + " · " + mcpTarget(s) + " · " + i18n.Plural("settings.ext.mcp.tools", len(s.Tools))
 	if !s.Granted {
-		desc = i18n.T("settings.ext.mcp.grant.help")
+		desc = s.Transport + " · " + mcpTarget(s) + " · " + i18n.T("settings.ext.mcp.grant.help")
 	}
 	if s.Error != "" {
 		desc += " · " + st + " · " + s.Error
@@ -975,9 +988,10 @@ func (e *extView) serverRows(c *ui.Context, s core.MCPServer) []func() {
 	th := c.Theme()
 	id := s.ID
 	rows := []func(){func() {
-		settingRow(c, i18n.T("settings.ext.mcp.tools.title"), i18n.T("settings.ext.mcp.trust.help"), func() {
+		settingRow(c, i18n.T("settings.ext.mcp.tools.title"), i18n.T("settings.ext.mcp.trust.help"), func() ui.Element {
 			rowButton(c, i18n.T("settings.ext.mcp.refresh"), kit.Outline, !s.Granted).
 				OnClick(func() { e.write("mcp", func(ctx context.Context) error { return a.svc.RefreshMCPTools(ctx, id) }, nil) })
+			return ui.Element{}
 		})
 	}}
 	if len(s.Tools) == 0 {
@@ -991,12 +1005,13 @@ func (e *extView) serverRows(c *ui.Context, s core.MCPServer) []func() {
 			if tool.ReadOnlyHint {
 				desc = strings.TrimSuffix(i18n.T("settings.ext.mcp.read_only")+" · "+desc, " · ")
 			}
-			settingRow(c.Key(tool.Name), tool.Name, desc, func() {
+			settingRow(c.Key(tool.Name), tool.Name, desc, func() ui.Element {
 				on, name := tool.Trusted, tool.Name
 				if kit.Switch(c, &on).Label(i18n.T("settings.ext.mcp.trust")).Changed() {
 					on = !tool.Trusted
 					e.write("mcp", func(ctx context.Context) error { return a.svc.SetMCPToolTrusted(ctx, id, name, on) }, nil)
 				}
+				return ui.Element{} // the row names the tool, the switch what it does: it keeps its own name
 			})
 		})
 	}

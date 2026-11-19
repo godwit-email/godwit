@@ -194,7 +194,7 @@ func (p *settingsPage) generalView(c *ui.Context) {
 	defer p.syncSettings() // what handlers changed while building
 	st := &p.st
 	sel := func(label, desc string, control func() ui.Element) func() {
-		return func() { settingRow(c, label, desc, func() { control() }) }
+		return func() { settingRow(c, label, desc, control) }
 	}
 	sw := func(on *bool, label, help string) func() {
 		return func() { kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: on}, label, help, "", nil) }
@@ -202,8 +202,8 @@ func (p *settingsPage) generalView(c *ui.Context) {
 	pageHeading(c, i18n.T("settings.general"), i18n.T("settings.general.sub"))
 	settingsSection(c, i18n.T("settings.appearance"), "",
 		func() {
-			settingRow(c, i18n.T("settings.theme"), i18n.T("settings.theme.help"), func() {
-				ui.Row(c).Gap(theme.ThemeTileGap).Children(func() {
+			settingRow(c, i18n.T("settings.theme"), i18n.T("settings.theme.help"), func() ui.Element {
+				return ui.Row(c).Gap(theme.ThemeTileGap).Children(func() {
 					for _, th := range []string{"system", "light", "dark"} {
 						p.themeTile(c, th)
 					}
@@ -307,14 +307,17 @@ func (p *settingsPage) generalView(c *ui.Context) {
 				return
 			}
 			t, th := theme.Of(c), c.Theme()
-			settingRow(c, i18n.T("settings.thread_collapse_threshold"), i18n.T("settings.thread_collapse_threshold.help"), func() {
+			settingRow(c, i18n.T("settings.thread_collapse_threshold"), i18n.T("settings.thread_collapse_threshold.help"), func() ui.Element {
 				n := float64(st.ThreadCollapseThreshold)
+				var slider ui.Element
 				ui.Row(c).Width(theme.UsageSelectMin).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
-					if ui.Slider(c, &n, core.MinThreadCollapse, core.MaxThreadCollapse).Step(1).Grow(1).Shrink(1).Label(i18n.T("settings.thread_collapse_threshold")).Changed() {
+					slider = ui.Slider(c, &n, core.MinThreadCollapse, core.MaxThreadCollapse).Step(1).Grow(1).Shrink(1).Label(i18n.T("settings.thread_collapse_threshold"))
+					if slider.Changed() {
 						st.ThreadCollapseThreshold = int(math.Round(n))
 					}
 					kit.Text(c, strconv.Itoa(st.ThreadCollapseThreshold), t.Text.Xs).Width(th.Space(10)).TextAlign(ui.End).TextColor(t.Muted)
 				})
+				return slider
 			})
 		})
 	p.proxySection(c)
@@ -360,14 +363,14 @@ func (p *settingsPage) proxySection(c *ui.Context) {
 	}
 	input := func(label, msg string, v *string, opts kit.InputOpts) func() {
 		return func() {
-			settingRow(c, label, msg, func() {
-				kit.Input(c, v, opts).Width(theme.SettingsInputWidth).Label(label)
+			settingRow(c, label, msg, func() ui.Element {
+				return kit.Input(c, v, opts).Width(theme.SettingsInputWidth).Label(label)
 			})
 		}
 	}
 	rows := []func(){func() {
-		settingRow(c, i18n.T("settings.proxy.mode"), source, func() {
-			settingSelect(c, i18n.T("settings.proxy.mode"), &d.mode, []kit.Option[string]{
+		settingRow(c, i18n.T("settings.proxy.mode"), source, func() ui.Element {
+			return settingSelect(c, i18n.T("settings.proxy.mode"), &d.mode, []kit.Option[string]{
 				{Value: core.ProxySystem, Label: i18n.T("settings.proxy.system")},
 				{Value: core.ProxyCustom, Label: i18n.T("settings.proxy.custom")},
 				{Value: core.ProxyOff, Label: i18n.T("settings.proxy.off")},
@@ -386,13 +389,15 @@ func (p *settingsPage) proxySection(c *ui.Context) {
 				if st.ProxyPasswordSet {
 					ph = i18n.T("settings.proxy.password.kept")
 				}
-				settingRow(c, i18n.T("settings.proxy.password"), "", func() {
+				settingRow(c, i18n.T("settings.proxy.password"), "", func() ui.Element {
+					var field ui.Element
 					ui.Row(c).Gap(c.Theme().Space(3)).AlignItems(ui.Center).Children(func() {
-						kit.Input(c, &d.pass, kit.InputOpts{Password: true, Placeholder: ph}).Width(theme.SettingsInputWidth).Label(i18n.T("settings.proxy.password"))
+						field = kit.Input(c, &d.pass, kit.InputOpts{Password: true, Placeholder: ph}).Width(theme.SettingsInputWidth).Label(i18n.T("settings.proxy.password"))
 						if st.ProxyPasswordSet && d.pass == "" { // a saved one shows only as the placeholder, so erasing can't reach it
 							rowButton(c, i18n.T("settings.proxy.password.clear"), kit.Outline, false).OnClick(func() { st.ProxyPasswordSet = false })
 						}
 					})
+					return field
 				})
 			})
 	}
@@ -438,7 +443,7 @@ func (p *settingsPage) aiFeaturesView(c *ui.Context) {
 	defer p.syncSettings() // what handlers changed while building
 	st := &p.st
 	sel := func(label, desc string, control func() ui.Element) func() {
-		return func() { settingRow(c, label, desc, func() { control() }) }
+		return func() { settingRow(c, label, desc, control) }
 	}
 	sw := func(on *bool, label, help string) func() {
 		return func() { kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: on}, label, help, "", nil) }
@@ -465,7 +470,7 @@ func (p *settingsPage) aiFeaturesView(c *ui.Context) {
 			return settingSelect(c, i18n.T("settings.translator"), &st.Translator, p.translatorOptions(st.Translator))
 		}),
 		func() {
-			settingRow(c, i18n.T("settings.no_translate"), i18n.T("settings.no_translate.help"), func() { p.noTranslate(c) })
+			settingRow(c, i18n.T("settings.no_translate"), i18n.T("settings.no_translate.help"), func() ui.Element { return p.noTranslate(c) })
 		})
 }
 
@@ -513,8 +518,9 @@ func (p *settingsPage) themeTile(c *ui.Context, th string) {
 	kit.TooltipLabelled(c, b, label)
 }
 
-// noTranslate picks the languages that need no translation.
-func (p *settingsPage) noTranslate(c *ui.Context) {
+// noTranslate picks the languages that need no translation; it returns the
+// select button.
+func (p *settingsPage) noTranslate(c *ui.Context) ui.Element {
 	th := c.Theme()
 	var names []string
 	for _, l := range languages {
@@ -542,6 +548,7 @@ func (p *settingsPage) noTranslate(c *ui.Context) {
 			}
 		})
 	})
+	return anchor
 }
 
 // translatorOptions are the 翻译方式 choices: the model, then each plugin

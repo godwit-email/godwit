@@ -479,20 +479,22 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 		kit.TitledAlert(c, kit.ToneWarning, title, msg, func() { p.authButton(c, acc, prov, true) })
 	}
 
-	row := func(label, desc string, control func()) func() {
+	row := func(label, desc string, control func() ui.Element) func() {
 		return func() { settingRow(c, label, desc, control) }
 	}
 	input := func(label, desc string, v *string, i int) func() {
-		return row(label, desc, func() {
-			if kit.Input(c, v, kit.InputOpts{}).Width(theme.SettingsInputWidth).Label(label).Changed() {
+		return row(label, desc, func() ui.Element {
+			field := kit.Input(c, v, kit.InputOpts{}).Width(theme.SettingsInputWidth).Label(label)
+			if field.Changed() {
 				p.edited(acc.ID, f, i)
 			}
+			return field
 		})
 	}
 	basic := []func(){
 		input(i18n.T("settings.account.name"), i18n.T("settings.account.name.help"), &f.name, fieldName),
 		input(i18n.T("settings.account.alias"), "", &f.alias, fieldAlias),
-		row(i18n.T("settings.account.icon"), i18n.T("settings.account.icon.help"), func() {
+		row(i18n.T("settings.account.icon"), i18n.T("settings.account.icon.help"), func() ui.Element {
 			ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
 				ui.Box(c).Size(theme.MarkMd, theme.MarkMd).Children(func() {
 					a.accountIcon(c, acc, theme.MarkMd)
@@ -507,6 +509,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 					})
 				}
 			})
+			return ui.Element{}
 		}),
 	}
 	if !isArchive(acc) { // never the default
@@ -527,12 +530,13 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	if isArchive(acc) {
 		removeHelp = i18n.T("settings.account.archive.remove.help")
 	}
-	removeRow := row(i18n.T("settings.account.remove.row"), strings.TrimRight(removeHelp, "。."), func() {
+	removeRow := row(i18n.T("settings.account.remove.row"), strings.TrimRight(removeHelp, "。."), func() ui.Element {
 		kit.Button(c, i18n.T("settings.account.remove.button"), kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Outline, Tone: kit.ToneDanger}).Label(i18n.Tf("settings.account.remove.aria", accountAddr(acc))).OnClick(func() { p.openDialog("remove", acc) })
+		return ui.Element{}
 	})
 	if isArchive(acc) { // no servers, sync, sending or mailbox roles: only its storage
 		settingsSection(c, i18n.T("settings.account.archive.storage"), "",
-			row(i18n.T("settings.account.usage"), i18n.T("settings.account.archive.usage.help"), func() { ui.Text(c, usage).TextColor(t.Muted) }))
+			row(i18n.T("settings.account.usage"), i18n.T("settings.account.archive.usage.help"), func() ui.Element { ui.Text(c, usage).TextColor(t.Muted); return ui.Element{} }))
 		settingsSection(c, i18n.T("settings.account.remove"), "", removeRow)
 		return
 	}
@@ -555,13 +559,16 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 		desc = strings.Join(slices.DeleteFunc([]string{desc, i18n.Tf("mail.unread_count", a.unread[acc.ID])}, func(s string) bool { return s == "" }), " · ")
 	}
 	settingsSection(c, i18n.T("settings.account.sync"), "",
-		row(i18n.T("settings.account.sync.status"), desc, func() {
+		row(i18n.T("settings.account.sync.status"), desc, func() ui.Element {
 			rowButton(c, i18n.T("settings.account.sync_now"), kit.Outline, a.syncBusy(acc.ID)).OnClick(func() { a.syncNow(acc.ID) })
+			return ui.Element{}
 		}),
-		row(i18n.T("settings.account.sync.range"), "", func() {
-			if settingSelect(c, i18n.T("settings.account.sync.range"), &f.sync, rangeOptions(f.sync)).Changed() {
+		row(i18n.T("settings.account.sync.range"), "", func() ui.Element {
+			sel := settingSelect(c, i18n.T("settings.account.sync.range"), &f.sync, rangeOptions(f.sync))
+			if sel.Changed() {
 				p.setSync(acc.ID, f)
 			}
+			return sel
 		}),
 		func() {
 			on := acc.LabelKeywords
@@ -569,32 +576,40 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 				p.setLabelKeywords(acc.ID, on)
 			}
 		},
-		row(i18n.T("settings.account.usage"), i18n.T("settings.account.usage.help"), func() {
+		row(i18n.T("settings.account.usage"), i18n.T("settings.account.usage.help"), func() ui.Element {
 			ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, usage).TextColor(t.Muted)
 				rowButton(c, i18n.T("settings.account.clear_cache"), kit.Outline, false).OnClick(func() { p.openDialog("cache", acc) })
 			})
+			return ui.Element{}
 		}))
 	p.mailboxSection(c, acc.ID)
 	endpoint := func(s core.Server) string {
 		return s.Host + ":" + strconv.Itoa(s.Port) + " · " + cmpTr("onboarding.security."+string(s.Security), string(s.Security))
 	}
 	server := func(proto string, s core.Server, desc string) func() {
-		return row(proto, desc, func() { kit.Text(c, endpoint(s), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted) })
+		return row(proto, desc, func() ui.Element {
+			kit.Text(c, endpoint(s), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted)
+			return ui.Element{}
+		})
 	}
-	editServers := func() {
+	editServers := func() ui.Element {
 		rowButton(c, i18n.T("settings.account.edit_servers"), kit.Outline, false).OnClick(func() { p.openDialog("servers", acc) })
+		return ui.Element{}
 	}
 	recv := server("IMAP", acc.Receiving, "")
 	if pr := acc.Receiving.Protocol; pr == auth.JMAP || pr == auth.EWS {
-		recv = row(strings.ToUpper(pr), "", func() { kit.Text(c, sessionURL(acc.Receiving), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted) })
+		recv = row(strings.ToUpper(pr), "", func() ui.Element {
+			kit.Text(c, sessionURL(acc.Receiving), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted)
+			return ui.Element{}
+		})
 	} else if acc.Receiving.Protocol == auth.Graph {
 		recv = server("Microsoft Graph", acc.Receiving, "")
 	}
 	if acc.Receiving.Protocol == auth.GmailAPI {
 		recv = server("Gmail API", acc.Receiving, "")
 	}
-	login := []func(){row(i18n.T("settings.account.login.method"), p.authText(acc, prov), func() { p.authButton(c, acc, prov, false) })}
+	login := []func(){row(i18n.T("settings.account.login.method"), p.authText(acc, prov), func() ui.Element { p.authButton(c, acc, prov, false); return ui.Element{} })}
 	pr := acc.Sending.Protocol
 	sendsByServer := pr != auth.EWS && pr != auth.JMAP && pr != auth.GmailAPI && acc.Receiving.Protocol != auth.Graph // EWS, JMAP, Graph and Gmail API send through the server they receive from
 	_, hasBook := a.linkedBook(acc.ID)
@@ -611,11 +626,15 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 			login = append(login, server("SMTP", acc.Sending, receiveOnlyHelp(acc)))
 		}
 		if ab, ok := a.linkedBook(acc.ID); ok {
-			login = append(login, row("CardDAV", "", func() { kit.Text(c, abHost(ab), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted) }))
+			login = append(login, row("CardDAV", "", func() ui.Element {
+				kit.Text(c, abHost(ab), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted)
+				return ui.Element{}
+			}))
 		}
 		if acc.ReceiveOnly { // OAuth has no servers to change: it tries SMTP again as it is
-			login = append(login, row(i18n.T("settings.account.receive_only"), "", func() {
+			login = append(login, row(i18n.T("settings.account.receive_only"), "", func() ui.Element {
 				rowButton(c, i18n.T("settings.account.receive_only.recheck"), kit.Outline, p.rechecking[acc.ID]).OnClick(func() { p.recheckSending(acc.ID) })
+				return ui.Element{}
 			}))
 		}
 		if rp != auth.Graph && rp != auth.GmailAPI {
@@ -624,11 +643,13 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	}
 	settingsSection(c, i18n.T("settings.account.login"), "", login...)
 	settingsSection(c, i18n.T("settings.account.export"), "",
-		row(i18n.T("settings.account.export.row"), i18n.T("settings.account.export.help"), func() {
+		row(i18n.T("settings.account.export.row"), i18n.T("settings.account.export.help"), func() ui.Element {
 			rowButton(c, i18n.T("settings.account.export.button"), kit.Outline, p.exporting).OnClick(p.exportAccounts)
+			return ui.Element{}
 		}),
-		row(i18n.T("settings.account.import.row"), i18n.T("settings.account.import.help"), func() {
+		row(i18n.T("settings.account.import.row"), i18n.T("settings.account.import.help"), func() ui.Element {
 			rowButton(c, i18n.T("settings.account.import.button"), kit.Outline, p.importing).OnClick(p.importAccounts)
+			return ui.Element{}
 		}),
 		removeRow)
 }
@@ -1418,11 +1439,13 @@ func (p *settingsPage) mailboxSection(c *ui.Context, id int64) {
 		r := mailboxRoles[i]
 		label := i18n.T("mail.folder." + r)
 		return func() {
-			settingRow(c, label, cmpTr("settings.account.mailbox."+r+".help", ""), func() {
-				if settingSelect(c, label, &b.roles[i], roleOptions(b, i)).Changed() {
+			settingRow(c, label, cmpTr("settings.account.mailbox."+r+".help", ""), func() ui.Element {
+				sel := settingSelect(c, label, &b.roles[i], roleOptions(b, i))
+				if sel.Changed() {
 					folder := b.roles[i]
 					p.writeMailbox(id, b, func(ctx context.Context) error { return p.a.svc.SetRoleFolder(ctx, id, r, folder) })
 				}
+				return sel
 			})
 		}
 	}
@@ -1434,11 +1457,13 @@ func (p *settingsPage) mailboxSection(c *ui.Context, id int64) {
 			desc = i18n.T("settings.account.purge.blocked")
 		}
 		return func() {
-			settingRow(c, label, desc, func() {
-				if settingSelect(c, label, &b.purge[i], purgeOptions()).Changed() {
+			settingRow(c, label, desc, func() ui.Element {
+				sel := settingSelect(c, label, &b.purge[i], purgeOptions())
+				if sel.Changed() {
 					days := b.purge[i]
 					p.writeMailbox(id, b, func(ctx context.Context) error { return p.a.svc.SetPurge(ctx, id, r, days) })
 				}
+				return sel
 			})
 		}
 	}

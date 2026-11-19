@@ -205,7 +205,7 @@ func (e *extView) configFields(c *ui.Context, f *pluginForm, fields []plugins.Co
 			kit.FieldWith(cc, kit.FieldOpts{Horizontal: true, Switch: &v.on}, label, "", v.err, nil).Padding(th.Space(2), 0)
 			continue
 		}
-		kit.LabelledRow(cc, label, v.err, func() ui.Element { // a settings row: the label, and the field at its end
+		kit.LabelledRow(cc, label, "", v.err, func() ui.Element { // a settings row: the label, and the field at its end
 			switch {
 			case fd.Type == "secret":
 				ph := ""

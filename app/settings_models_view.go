@@ -191,15 +191,17 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 				if u.judgeSvc == nil && !u.pluginJudge {
 					help += " " + i18n.T("settings.models.threshold.binary")
 				}
-				settingRow(c, i18n.T("settings.models.threshold"), help, func() {
+				settingRow(c, i18n.T("settings.models.threshold"), help, func() ui.Element {
 					threshold := a.settings.JudgeThreshold
+					var slider ui.Element
 					ui.Row(c).Width(theme.UsageSelectMin).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
-						slider := ui.Slider(c, &threshold, core.MinJudgeThreshold, core.MaxJudgeThreshold).Step(0.01).Grow(1).Shrink(1).Label(i18n.T("settings.models.threshold"))
+						slider = ui.Slider(c, &threshold, core.MinJudgeThreshold, core.MaxJudgeThreshold).Step(0.01).Grow(1).Shrink(1).Label(i18n.T("settings.models.threshold"))
 						if slider.Changed() {
 							m.setModel(func(st *core.Settings) { st.JudgeThreshold = threshold })
 						}
 						kit.Text(c, fmt.Sprintf("%.0f%%", threshold*100), t.Text.Xs).Width(th.Space(10)).TextAlign(ui.End).TextColor(t.Muted)
 					})
+					return slider
 				})
 			})
 	})
