@@ -342,7 +342,7 @@
     }
   },
   "mail_draft_notice": "This draft is being edited in its compose window; this is what was last saved. Choose “Continue editing” to switch to that window.",
-  "mail_draft_saved": "Draft saved · {arg1}",
+  "mail_draft_saved": "Draft saved {arg1}",
   "mail_draft_in_outbox": "This message is in the outbox. Cancel sending to edit it.",
   "@mail_draft_saved": {
     "placeholders": {
@@ -361,7 +361,7 @@
   },
   "mail_draft_send_disabled": "Being edited in the compose window; send it there",
   "mail_draft_from_program": "Draft from a program",
-  "mail_draft_from_program_help": "A program (an agent, a script, a plugin or Wit) wrote or changed this draft. Check the recipients and the text before you send it.",
+  "mail_draft_from_program_help": "Written or changed by an AI tool, script, plugin or Wit; check the recipients and text before sending",
   "mail_draft_approve": "Approve and send",
   "mail_draft_too_long": "This draft is too long to show in full here. Open Continue editing to check all of it and send it from there.",
   "mail_empty": "No mail",
@@ -443,6 +443,7 @@
   "mail_older_loading": "Loading older mail…",
   "mail_outbox": "Outbox",
   "mail_purge_desc": "The selected mail will be removed from the server. This cannot be undone.",
+  "mail_purge_confirm": "Delete permanently",
   "mail_purge_title": "Delete permanently?",
   "mail_resize_list": "Resize the list",
   "mail_row_unread": "{arg1, number, ::group-off} unread",
@@ -1359,6 +1360,10 @@
   },
   "settings_account_servers": "Server settings",
   "settings_account_servers_help": "Change the addresses, ports and encryption by hand",
+  "settings_account_server": "Server",
+  "settings_account_servers_host": "Server",
+  "settings_account_servers_port": "Port",
+  "settings_account_servers_security": "Encryption",
   "settings_account_signature": "Signature",
   "settings_account_signature_default": "Default signature",
   "settings_account_signature_default_help": "Added to new mail, replies and forwards",
@@ -1544,6 +1549,8 @@
   "settings_masking_allow_too_many": "At most {arg1} values on the allowlist",
   "settings_masking_preview": "Preview",
   "settings_masking_preview_help": "Paste some text to see how it would be sent. Nothing here is saved.",
+  "settings_masking_preview_source": "Original",
+  "settings_masking_preview_sent": "As sent",
   "settings_app": "App",
   "settings_appearance": "Appearance",
   "settings_body_font_size": "Mail body font size",
@@ -1959,6 +1966,8 @@
   "settings_local_api_client_on_session": "Connected {arg1}. A new session can use Godwit.",
   "settings_local_api_client_opened": "Opened {arg1}. Click Install there to finish.",
   "settings_local_api_client_other": "Connected to another Godwit; click to connect this one",
+  "settings_local_api_client_connected": "Connected",
+  "settings_local_api_client_not_connected": "Not connected",
   "settings_local_api_client_remove": "Remove Godwit in {arg1}'s Settings › Extensions.",
   "settings_local_api_connect": "Apps",
   "settings_local_api_connect_help": "The apps you pick can read your mail and draft replies. For any other app, copy the config and add it there.",
@@ -2255,7 +2264,7 @@
   "settings_notify_preview": "Show a preview in notifications",
   "settings_notify_preview_help": "Off, notifications say only that new mail arrived",
   "settings_privacy": "Privacy & security",
-  "settings_privacy_sub": "Your mail and credentials stay on this computer.",
+  "settings_privacy_sub": "Before anything goes to a cloud model, sensitive details are swapped for placeholders.",
   "settings_px": "{arg1, number, ::group-off} px",
   "@settings_px": {
     "placeholders": {
@@ -2287,6 +2296,7 @@
   "settings_remote_images_mode": "Load remote images",
   "settings_remote_images_mode_help": "Images in Junk never load by themselves",
   "settings_remote_images_sub": "Godwit downloads a message’s images for you, without cookies or a referrer, so senders cannot tell when you read it when the images were fetched as the mail arrived (they still see this computer’s IP address when an image is fetched)",
+  "settings_remote_images_page_sub": "When remote images in mail load, and the image cache.",
   "settings_remote_images_trusted": "Trusted senders only",
   "settings_reply_language": "Reply language",
   "settings_reply_language_help": "Used when Wit and quick replies draft mail. Defaults to the incoming mail''s language; new mail follows the recipient''s earlier mail",
@@ -3049,7 +3059,8 @@
   "reader_sender_blocked": "Sender blocked",
   "reader_sender_unblocked": "Sender unblocked",
   "settings_blocked": "Blocked Senders",
-  "settings_blocked_sub": "Incoming messages from blocked senders are automatically moved to Junk.",
+  "settings_blocked_sub": "Senders you have blocked.",
+  "settings_blocked_foot": "Incoming messages from blocked senders are automatically moved to Junk.",
   "settings_blocked_none": "No blocked senders.",
   "settings_blocked_remove": "Unblock",
   "settings_blocked_remove_label": "Unblock {arg1}",
@@ -3297,6 +3308,7 @@
   "settings_rules_group_files": "Save to This Computer",
   "settings_rules_group_wit": "Wit",
   "settings_rules_hits_count": "Last 7 days: {arg1, number, ::group-off}",
+  "settings_rules_hits_note": "Local actions can be undone; forwards and exports have already happened and can only be viewed.",
   "@settings_rules_hits_count": {
     "placeholders": {
       "arg1": {
@@ -3588,14 +3600,6 @@
   "settings_rules_action_remove": "Remove this action",
   "settings_rules_hits_show": "Show recent hits",
   "settings_rules_hits_hide": "Hide recent hits",
-  "settings_rules_hits_head": "Last 7 days: {arg1, number, ::group-off}. Local actions can be undone; forwards and exports have already happened and can only be viewed.",
-  "@settings_rules_hits_head": {
-    "placeholders": {
-      "arg1": {
-        "type": "int"
-      }
-    }
-  },
   "settings_rules_hits_none": "No mail matched in the last 7 days",
   "settings_rules_hits_undo": "Undo",
   "settings_rules_hits_undone": "Undone",
@@ -4116,12 +4120,12 @@
   "settings_group_ai": "Intelligence & extensions",
   "settings_mcp": "MCP",
   "settings_plugins": "Plugins",
-  "settings_models_desc": "Connect model services and choose which model each AI feature uses.",
-  "settings_ai_sub": "Turn the features that use a model on or off, and set the languages for reading, replying and translating.",
-  "settings_skills_sub": "Skills are just prompts; no code needed.",
+  "settings_models_desc": "Model services, and which model each kind of task uses.",
+  "settings_ai_sub": "The features that use a model, and the languages for reading and replying.",
+  "settings_skills_sub": "Skills are just prompts: use them in the reader and in Wit.",
   "settings_plugins_sub": "Script plugins run in a sandbox with only the permissions you approve; native plugins have all the permissions of Godwit.",
-  "settings_mcp_sub": "MCP servers that Wit can call.",
-  "settings_clients_sub": "Let AI apps such as Claude and ChatGPT use Godwit through the Local API.",
-  "settings_security_sub": "Flag suspicious mail and show which senders are verified.",
+  "settings_mcp_sub": "The MCP servers you connect, and the tools they give Wit.",
+  "settings_clients_sub": "Let local AI apps like Claude and Codex, and your scripts, use Godwit through the Local API or MCP.",
+  "settings_security_sub": "Spot phishing and spoofed senders.",
   "settings_rules_editor": "Rule editor"
 }

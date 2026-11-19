@@ -778,7 +778,7 @@ func TestContextMenuMoveRoleOptions(t *testing.T) {
 	// Closed, the reader's own Delete does not come before the dialog's.
 	h.post(func() { h.app.navigate(Route{Page: PageMail, View: h.app.route.View}) })
 	h.until("the reader closed", func() bool { return h.app.route.ThreadID == 0 && h.app.mail.purgeAsk })
-	h.click(i18n.T("common.delete"))
+	h.click(i18n.T("mail.purge.confirm"))
 	trash := h.folderOf(accs[0], "trash")
 	h.waitMail("trash empty at once", func() bool { return h.countIn(trash) == 0 && len(h.items()) == 0 })
 	// Its undo window over, the push expunges it and the fetch after it sees it gone.
@@ -819,7 +819,7 @@ func TestDeletePermanentlyOptimisticAndUndo(t *testing.T) {
 	h.until("the confirmation", func() bool { return h.app.mail.purgeAsk })
 	h.post(func() { h.app.navigate(Route{Page: PageMail, View: h.app.route.View}) })
 	h.until("the reader closed", func() bool { return h.app.route.ThreadID == 0 && h.app.mail.purgeAsk })
-	h.click(i18n.T("common.delete"))
+	h.click(i18n.T("mail.purge.confirm"))
 
 	// Optimistic: message disappears immediately from the list without sync!
 	h.waitMail("immediately hidden from trash without syncNow", func() bool {

@@ -47,23 +47,28 @@ func (p *mailPage) outboxView(c *ui.Context, title string, items []outboxEntry, 
 		if len(items) == 0 {
 			listEmpty(c, kit.EmptyOpts{Icon: "outbox", Title: i18n.T("mail.empty")})
 		}
-		ui.Column(c).Padding(0, th.Space(2)).Gap(theme.Stroke).Children(func() {
+		ui.Column(c).Padding(0, th.Space(2)).Children(func() {
 			for _, it := range items {
-				ui.Row(c.Key(it.ID)).AlignItems(ui.Start).Gap(th.Space(3)).Padding(th.Space(3), th.Space(2)).Children(func() {
+				ui.Row(c.Key(it.ID)).AlignItems(ui.Start).Gap(th.Space(3)).Padding(th.Space(3), th.Space(2)).
+					BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
 					outboxTile(c, it.OutboxItem, now)
 					ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(0.5)).Children(func() {
 						ui.Text(c, subjectOf(it.OutboxItem)).FontWeight(500).SingleLine()
 						status, color := outboxStatus(it.OutboxItem, now), t.Muted
 						var server string
-						if it.State == "failed" {
+						switch {
+						case it.State == "failed":
 							status, server = failureText(it.OutboxItem)
 							color = t.Danger
-						} else if it.LastError != "" {
+						case it.State == "send_uncertain" || it.State == "archive_uncertain":
+							color = t.WarningText
+						}
+						if it.State != "failed" && it.LastError != "" {
 							status += " · " + it.LastError
 						}
-						kit.Text(c, status+" · "+it.Account, small).TextColor(color)
+						ui.RichText(c, ui.Span{Text: status, Color: color}, ui.Span{Text: " · " + it.Account, Color: t.Muted}).FontSize(small)
 						if server != "" {
-							kit.Text(c, server, small).FontWeight(500).TextColor(t.Muted)
+							kit.Text(c, server, small).Font(theme.Mono).FontWeight(500).TextColor(t.Muted)
 						}
 						if acts := p.outboxActions(it.OutboxItem, now); len(acts) > 0 {
 							ui.Row(c).Wrap().Gap(th.Space(2)).Margin(th.Space(1.5), 0, 0, 0).Children(func() {

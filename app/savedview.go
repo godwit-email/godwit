@@ -598,7 +598,7 @@ func (r *reader) loadWhy() {
 	})
 }
 
-// viewBand is the status under the subject, in a view, with 写催促信
+// viewBand is the status over the subject, in a view, with 写催促信
 // while it waits on someone.
 func (r *reader) viewBand(c *ui.Context) {
 	w := r.why
@@ -623,8 +623,8 @@ func (r *reader) viewBand(c *ui.Context) {
 	}
 	t, th := theme.Of(c), c.Theme()
 	r.column(c).Children(func() {
-		kit.Block(c, ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2), th.Space(3)).MinHeight(th.Space(10)), kit.ToneTint).Children(func() {
-			ui.Icon(c, icons.Get(icon)).Size(theme.IconSm, theme.IconSm).Shrink(0).TextColor(t.Muted)
+		kit.Block(c, ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(4), th.Space(6)), kit.ToneTint).Radius(t.Radius.Xl).Children(func() {
+			ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon).Shrink(0).TextColor(t.Muted)
 			kit.Text(c, text, t.Text.Sm).Grow(1).Shrink(1)
 			if w.Status == core.ReplyStatusWaiting {
 				kit.Button(c, i18n.T("view.follow_up"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Shrink(0).OnClick(func() { r.draft("reply") })

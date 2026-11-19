@@ -74,7 +74,7 @@ func programDraftsHarness(t *testing.T, html string) (*harness, core.Draft) {
 // and 批准并发送 queues it.
 func TestDraftPaneProgramDraftApproves(t *testing.T) {
 	h, d := programDraftsHarness(t, "<p>Yes, Friday works.</p>")
-	h.see("这封草稿由程序（AI 工具、脚本、插件或 Wit）写入或修改过。发送前请核对收件人和内容。")
+	h.see("由 AI 工具、脚本、插件或 Wit 写入或修改，发送前请核对收件人和内容")
 	h.see("carol@example.com")
 	h.see("hidden@example.net")
 	h.click("批准并发送")

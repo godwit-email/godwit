@@ -1165,6 +1165,7 @@ func (r *reader) draw(c *ui.Context, next *session) {
 		r.pane = ui.Scroll(c).Grow(1).TrackScroll(&r.scroll).ScrollbarInsets(0, 0, r.barBottom).Children(func() {
 			ui.Column(c).FillWidth().Padding(th.Space(5), th.Space(7), r.barBottom+th.Space(5)).Children(func() {
 				ui.Column(c).FillWidth().Gap(th.Space(3.5)).Children(func() {
+					r.viewBand(c) // a view's status heads the conversation, over its subject
 					subject := cmp.Or(r.subject, i18n.T("mail.no_subject"))
 					r.column(c).Gap(th.Space(2)).Children(func() {
 						// Plugins' tags follow the subject, so a glance at it is enough.
@@ -1178,7 +1179,6 @@ func (r *reader) draw(c *ui.Context, next *session) {
 						})
 						r.headerRow(c)
 					})
-					r.viewBand(c)
 					if len(r.msgs) > 1 { // a thread's summary is the thread's: under its subject, not in a message
 						if m, ok := r.last(); ok {
 							r.column(c).Children(func() { r.summaryPanel(c, m) })

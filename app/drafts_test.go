@@ -55,7 +55,7 @@ func TestDraftSelectShowsPane(t *testing.T) {
 	h.see("继续编辑")
 	h.see("删除草稿")
 	h.see("body of Draft hello")
-	h.see("草稿已保存 · " + ds[0].UpdatedAt.In(h.clock.Now().Location()).Format("15:04"))
+	h.see("草稿已保存 " + ds[0].UpdatedAt.In(h.clock.Now().Location()).Format("15:04"))
 	h.see("bob@example.com")
 	h.noCompose()
 }
