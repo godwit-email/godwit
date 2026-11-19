@@ -390,7 +390,7 @@ func (p *settingsPage) proxySection(c *ui.Context) {
 					ui.Row(c).Gap(c.Theme().Space(3)).AlignItems(ui.Center).Children(func() {
 						kit.Input(c, &d.pass, kit.InputOpts{Password: true, Placeholder: ph}).Width(theme.SettingsInputWidth).Label(i18n.T("settings.proxy.password"))
 						if st.ProxyPasswordSet && d.pass == "" { // a saved one shows only as the placeholder, so erasing can't reach it
-							settingButton(c, i18n.T("settings.proxy.password.clear"), kit.Outline, false).OnClick(func() { st.ProxyPasswordSet = false })
+							rowButton(c, i18n.T("settings.proxy.password.clear"), kit.Outline, false).OnClick(func() { st.ProxyPasswordSet = false })
 						}
 					})
 				})
@@ -443,7 +443,7 @@ func (p *settingsPage) aiFeaturesView(c *ui.Context) {
 	sw := func(on *bool, label, help string) func() {
 		return func() { kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: on}, label, help, "", nil) }
 	}
-	settingsSection(c, i18n.T("settings.ai"), "",
+	settingsSection(c, "", "",
 		sw(&st.Summary, i18n.T("settings.summary"), i18n.T("settings.summary.help")),
 		sw(&st.QuickReplies, i18n.T("settings.quick_replies"), i18n.T("settings.quick_replies.help")),
 		sw(&st.RuleAI, i18n.T("settings.rule_ai"), i18n.T("settings.rule_ai.help")))

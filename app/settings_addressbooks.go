@@ -215,7 +215,7 @@ func (v *addressBooksView) bookRows(c *ui.Context, ab core.AddressBook) []func()
 	}
 	return append(rows, func() {
 		settingRow(c, i18n.T("settings.addressbooks.sync"), syncDesc, func() {
-			settingButton(c, i18n.T("settings.account.sync_now"), kit.Outline, v.syncing[ab.ID]).
+			rowButton(c, i18n.T("settings.account.sync_now"), kit.Outline, v.syncing[ab.ID]).
 				Label(i18n.Tf("settings.addressbooks.sync.aria", ab.Name)).OnClick(func() { v.syncNow(ab.ID) })
 		})
 	})
@@ -274,7 +274,7 @@ func (v *addressBooksView) page(c *ui.Context, ab core.AddressBook) {
 		})
 	settingsSection(c, i18n.T("settings.account.remove"), "", func() {
 		settingRow(c, i18n.T("settings.addressbooks.remove.row"), strings.TrimRight(i18n.T("settings.addressbooks.remove.desc"), "。."), func() {
-			kit.Button(c, i18n.T("settings.account.remove.button"), kit.ButtonOpts{Variant: kit.Outline, Tone: kit.ToneDanger}).
+			kit.Button(c, i18n.T("settings.account.remove.button"), kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Outline, Tone: kit.ToneDanger}).
 				Label(i18n.Tf("settings.addressbooks.remove.aria", ab.Name)).OnClick(func() { v.openRemove(ab) })
 		})
 	})

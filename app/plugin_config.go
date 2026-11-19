@@ -189,7 +189,7 @@ func (e *extView) configView(c *ui.Context, f *pluginForm, fields []plugins.Conf
 func (e *extView) configFields(c *ui.Context, f *pluginForm, fields []plugins.ConfigField, save bool) {
 	t, th := theme.Of(c), c.Theme()
 	lang := i18n.Language()
-	ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
+	ui.Column(c).Gap(th.Space(0.5)).Children(func() {
 		kit.Text(c, i18n.T("settings.ext.config"), t.Text.Sm).FontWeight(500)
 		kit.Text(c, i18n.T("settings.ext.config.sub"), t.Text.Xs).TextColor(t.Muted)
 	})
@@ -202,33 +202,33 @@ func (e *extView) configFields(c *ui.Context, f *pluginForm, fields []plugins.Co
 		label := fd.Label.For(lang)
 		cc := c.Key(fd.Key)
 		if fd.Type == "boolean" {
-			kit.FieldWith(cc, kit.FieldOpts{Horizontal: true, Switch: &v.on}, label, "", v.err, nil).Padding(0)
+			kit.FieldWith(cc, kit.FieldOpts{Horizontal: true, Switch: &v.on}, label, "", v.err, nil).Padding(th.Space(2), 0)
 			continue
 		}
-		ui.Field(cc, label, func() {
+		kit.LabelledRow(cc, label, v.err, func() ui.Element { // a settings row: the label, and the field at its end
 			switch {
 			case fd.Type == "secret":
 				ph := ""
 				if v.set {
 					ph = i18n.T("settings.secret_kept")
 				}
-				kit.Input(c, &v.s, kit.InputOpts{Password: true, Placeholder: ph, Invalid: v.err != ""})
+				return kit.Input(c, &v.s, kit.InputOpts{Password: true, Placeholder: ph, Invalid: v.err != ""}).Width(theme.SettingsInputWidth).Label(label)
 			case fd.Type == "select" && fd.AllowCustom:
 				var sugg []string
 				for _, o := range fd.Options {
 					sugg = append(sugg, o.Value)
 				}
-				kit.Input(c, &v.s, kit.InputOpts{Invalid: v.err != "", Flat: true, Autocomplete: true, Suggest: sugg}).Label(label)
+				return kit.Input(c, &v.s, kit.InputOpts{Invalid: v.err != "", Flat: true, Autocomplete: true, Suggest: sugg}).Width(theme.SettingsInputWidth).Label(label)
 			case fd.Type == "select":
 				opts := make([]kit.Option[string], len(fd.Options))
 				for i, o := range fd.Options {
 					opts[i] = kit.Option[string]{Value: o.Value, Label: o.Label.For(lang)}
 				}
-				kit.Select(c, &v.s, opts).Label(label)
+				return kit.Select(c, &v.s, opts).Width(theme.SettingsInputWidth).Label(label)
 			default:
-				kit.Input(c, &v.s, kit.InputOpts{Invalid: v.err != ""})
+				return kit.Input(c, &v.s, kit.InputOpts{Invalid: v.err != ""}).Width(theme.SettingsInputWidth).Label(label)
 			}
-		}).Error(v.err)
+		}).Padding(th.Space(2), 0)
 	}
 	if f.err != "" {
 		kit.Alert(c, kit.ToneDanger, f.err, nil)

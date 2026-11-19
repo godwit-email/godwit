@@ -176,6 +176,22 @@ func TestSettingsAccountEdit(t *testing.T) {
 	h.see("已同步 · 刚刚")
 }
 
+// An IMAP and SMTP account has one 服务器 row naming both servers, and its 编辑
+// opens the servers dialog; no row of its own for each server.
+func TestSettingsAccountOneServerRow(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSettings(accountRoute(acc.ID))
+	h.see(i18n.T("settings.account.server"))
+	h.see("IMAP · " + acc.Receiving.Host)
+	h.see("SMTP · " + acc.Sending.Host)
+	if h.tt.HasText(i18n.T("settings.account.servers")) { // 服务器设置 is the receive-only and JMAP page's row
+		t.Fatal("the plain account has the servers row of the others")
+	}
+	h.click("编辑")
+	h.see("IMAP 服务器")
+	h.see(i18n.T("settings.account.servers.security"))
+}
+
 // Instructions longer than core takes are not saved: they stay for the user
 // to shorten, and shortened they save.
 func TestSettingsAccountAIInstructions(t *testing.T) {

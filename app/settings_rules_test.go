@@ -223,6 +223,7 @@ func TestSettingsRulesHistoryUndo(t *testing.T) {
 	h.waitMail("the hit counted", func() bool { return h.tt.HasText("近 7 天 1 封") })
 	h.click("展开最近命中")
 	h.see("Your bill")
+	h.see(i18n.T("settings.rules.hits.note")) // what the hits allow, beside 删除规则 and 编辑规则
 	h.see("标为已读")
 	h.click("撤销")
 	h.see("已撤销")

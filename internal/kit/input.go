@@ -183,19 +183,38 @@ func FieldWith(c *ui.Context, o FieldOpts, label, help, errText string, control 
 			message()
 		})
 	}
+	return horizontalField(c, o, label, message, func() ui.Element { control(); return ui.Element{} })
+}
+
+// LabelledRow is FieldWith's horizontal row for the control that control
+// returns, which a click on the label focuses, as a Field's label does.
+func LabelledRow(c *ui.Context, label, errText string, control func() ui.Element) ui.Element {
+	t := theme.Of(c)
+	return horizontalField(c, FieldOpts{Horizontal: true}, label, func() {
+		if errText != "" {
+			Text(c, errText, t.Text.Xs).TextColor(t.Danger)
+		}
+	}, control)
+}
+
+func horizontalField(c *ui.Context, o FieldOpts, label string, message func(), control func() ui.Element) ui.Element {
+	t, th := theme.Of(c), c.Theme()
 	row := ui.Row(c)
 	if o.Switch != nil {
 		row = ui.SwitchBase(c, o.Switch).Label(label)
 	}
-	return row.FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
+	var name, ctrl ui.Element
+	row = row.FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-			Text(c, label, t.Text.Sm)
+			name = Text(c, label, t.Text.Sm)
 			message()
 		})
 		if o.Switch != nil {
 			switchTrack(c, *o.Switch)
 			return
 		}
-		control()
+		ctrl = control()
 	})
+	ctrl.LabelledBy(name)
+	return row
 }

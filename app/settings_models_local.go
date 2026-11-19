@@ -103,13 +103,13 @@ func (m *modelsView) localButton(c *ui.Context, lm localModel) {
 	st := lm.status
 	switch {
 	case m.downloads[lm.ref] != nil:
-		settingButton(c, i18n.T("settings.models.files.cancel"), kit.Outline, false).OnClick(func() { m.downloads[lm.ref].cancel() })
+		rowButton(c, i18n.T("settings.models.files.cancel"), kit.Outline, false).OnClick(func() { m.downloads[lm.ref].cancel() })
 	case st.State == core.ModelNotDownloaded:
-		settingButton(c, i18n.T("settings.models.files.download"), kit.Default, false).OnClick(func() { m.download(lm.ref) })
+		rowButton(c, i18n.T("settings.models.files.download"), kit.Default, false).OnClick(func() { m.download(lm.ref) })
 	case st.Error != nil && st.Error.Code == "verification_failed":
-		settingButton(c, i18n.T("settings.models.files.redownload"), kit.Default, false).OnClick(func() { m.download(lm.ref) })
+		rowButton(c, i18n.T("settings.models.files.redownload"), kit.Default, false).OnClick(func() { m.download(lm.ref) })
 	case st.State == core.ModelDownloaded || st.State == core.ModelReady:
-		settingButton(c, i18n.T("settings.models.files.remove"), kit.Outline, false).OnClick(func() { m.removeFiles(lm.ref) })
+		rowButton(c, i18n.T("settings.models.files.remove"), kit.Outline, false).OnClick(func() { m.removeFiles(lm.ref) })
 	} // otherwise nothing to do: insufficient memory, unsupported, update required
 }
 

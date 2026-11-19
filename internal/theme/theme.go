@@ -169,6 +169,7 @@ const (
 	HeadingGap            = 6  // a page heading to its subtitle
 	SectionGap            = 10 // a section's title to its card
 	PortWidth             = 90 // port fields
+	ServerPortWidth       = 72 // the port field of an account's servers dialog, over its 端口 column
 	SelectMinWidth        = 120
 	FilterMenuMin         = 200 // a search filter chip's menu
 	LabelMenuWidth        = 240 // the palette's menu

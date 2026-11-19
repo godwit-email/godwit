@@ -27,7 +27,7 @@ func (e *extView) directoryView(c *ui.Context) {
 				kit.Text(c, i18n.T("settings.ext.directory.offline"), t.Text.Sm).FontWeight(500)
 				kit.Text(c, i18n.T("settings.ext.directory.offline.hint"), t.Text.Xs).TextColor(t.Muted)
 			})
-			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(e.refreshRegistry)
+			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Outline}).OnClick(e.refreshRegistry)
 		})
 	case len(e.reg.Entries) == 0:
 		ui.Text(c, i18n.T("settings.ext.registry.empty")).TextColor(t.Muted)
@@ -137,7 +137,7 @@ func (e *extView) directoryCard(c *ui.Context, en core.RegistryEntry) {
 func (e *extView) entryAction(c *ui.Context, en core.RegistryEntry) {
 	t := theme.Of(c)
 	dialog := func(text string) {
-		kit.Button(c, text, kit.ButtonOpts{Variant: kit.Outline, Disabled: e.installing != ""}).Label(i18n.Tf("settings.ext.registry.named", text, en.Name)).OnClick(func() { e.openDialog(en.Name) })
+		kit.Button(c, text, kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Outline, Disabled: e.installing != ""}).Label(i18n.Tf("settings.ext.registry.named", text, en.Name)).OnClick(func() { e.openDialog(en.Name) })
 	}
 	switch {
 	case e.installing == en.Name:
@@ -158,7 +158,7 @@ func (e *extView) entryAction(c *ui.Context, en core.RegistryEntry) {
 // updateButton: a newer reviewed release of what the user already allowed.
 func (e *extView) updateButton(c *ui.Context, en core.RegistryEntry) {
 	text := i18n.Tf("settings.ext.registry.update", en.Version)
-	kit.Button(c, text, kit.ButtonOpts{Variant: kit.Outline, Disabled: e.installing != ""}).Label(i18n.Tf("settings.ext.registry.named", text, en.Name)).
+	kit.Button(c, text, kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Outline, Disabled: e.installing != ""}).Label(i18n.Tf("settings.ext.registry.named", text, en.Name)).
 		OnClick(func() { e.installFromRegistry(en.Name, nil) })
 }
 

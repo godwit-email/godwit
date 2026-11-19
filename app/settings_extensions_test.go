@@ -15,6 +15,9 @@ import (
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/plugins"
+	"github.com/godwit-email/godwit/core/skills"
+	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -238,6 +241,24 @@ func TestSkillsChangedWithMailEventsRefreshesMail(t *testing.T) {
 	}
 }
 
+// TestSkillIconsAreDrawn: every icon a skill may name is one the skills page can draw.
+func TestSkillIconsAreDrawn(t *testing.T) {
+	for _, name := range skills.IconNames() {
+		if icons.Get(name) == nil {
+			t.Errorf("no icon %q", name)
+		}
+	}
+}
+
+// TestExtensionRowIconsExist: the icons the plugin, MCP and add-plugin rows draw are in the set (Get panics on others).
+func TestExtensionRowIconsExist(t *testing.T) {
+	for _, name := range []string{"cpu", "puzzle", "globe", "folder", "chevron-down", "chevron-right"} {
+		if icons.Get(name) == nil {
+			t.Errorf("no icon %q", name)
+		}
+	}
+}
+
 func TestSkillToggle(t *testing.T) {
 	h, _ := withAccount(t)
 	h.openSettings("skills")
@@ -363,7 +384,7 @@ func TestMCPAddAndTrust(t *testing.T) {
 	}
 	h.click("保存")
 	h.see("lookup-server")
-	h.see("需要授权")
+	h.see(i18n.T("settings.ext.mcp.grant.help")) // a server awaiting its grant says so beside the grant
 	h.click("授权并启用")
 	h.see("lookup")
 	h.see("声明只读（仅供参考）")

@@ -128,3 +128,18 @@ func TestFieldVerticalOrder(t *testing.T) {
 		t.Errorf("label %v, control %v, help %v: not in order", label.Y, control.Y, help.Y)
 	}
 }
+
+// A click on a LabelledRow's label focuses its control, as a Field's label does.
+func TestLabelledRowLabelFocuses(t *testing.T) {
+	var s string
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		LabelledRow(c, "API Key", "", func() ui.Element { return Input(c, &s, InputOpts{}).Label("key") })
+	}), 480, 120)
+	if err := tt.Click("API Key"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Type("abc")
+	if s != "abc" {
+		t.Errorf("typed into %q, want abc", s)
+	}
+}

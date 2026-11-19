@@ -497,11 +497,11 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 				ui.Box(c).Size(theme.MarkMd, theme.MarkMd).Children(func() {
 					a.accountIcon(c, acc, theme.MarkMd)
 				})
-				settingButton(c, i18n.T("settings.account.icon.choose"), kit.Outline, false).OnClick(func() {
+				rowButton(c, i18n.T("settings.account.icon.choose"), kit.Outline, false).OnClick(func() {
 					p.openDialog("icon", acc)
 				})
 				if acc.Icon != "" {
-					settingButton(c, i18n.T("settings.account.icon.reset"), kit.Outline, false).OnClick(func() {
+					rowButton(c, i18n.T("settings.account.icon.reset"), kit.Outline, false).OnClick(func() {
 						empty := ""
 						p.patch(acc.ID, core.AccountPatch{Icon: &empty}, nil)
 					})
@@ -528,7 +528,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 		removeHelp = i18n.T("settings.account.archive.remove.help")
 	}
 	removeRow := row(i18n.T("settings.account.remove.row"), strings.TrimRight(removeHelp, "。."), func() {
-		kit.Button(c, i18n.T("settings.account.remove.button"), kit.ButtonOpts{Variant: kit.Outline, Tone: kit.ToneDanger}).Label(i18n.Tf("settings.account.remove.aria", accountAddr(acc))).OnClick(func() { p.openDialog("remove", acc) })
+		kit.Button(c, i18n.T("settings.account.remove.button"), kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Outline, Tone: kit.ToneDanger}).Label(i18n.Tf("settings.account.remove.aria", accountAddr(acc))).OnClick(func() { p.openDialog("remove", acc) })
 	})
 	if isArchive(acc) { // no servers, sync, sending or mailbox roles: only its storage
 		settingsSection(c, i18n.T("settings.account.archive.storage"), "",
@@ -556,7 +556,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	}
 	settingsSection(c, i18n.T("settings.account.sync"), "",
 		row(i18n.T("settings.account.sync.status"), desc, func() {
-			settingButton(c, i18n.T("settings.account.sync_now"), kit.Outline, a.syncBusy(acc.ID)).OnClick(func() { a.syncNow(acc.ID) })
+			rowButton(c, i18n.T("settings.account.sync_now"), kit.Outline, a.syncBusy(acc.ID)).OnClick(func() { a.syncNow(acc.ID) })
 		}),
 		row(i18n.T("settings.account.sync.range"), "", func() {
 			if settingSelect(c, i18n.T("settings.account.sync.range"), &f.sync, rangeOptions(f.sync)).Changed() {
@@ -572,51 +572,63 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 		row(i18n.T("settings.account.usage"), i18n.T("settings.account.usage.help"), func() {
 			ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, usage).TextColor(t.Muted)
-				settingButton(c, i18n.T("settings.account.clear_cache"), kit.Outline, false).OnClick(func() { p.openDialog("cache", acc) })
+				rowButton(c, i18n.T("settings.account.clear_cache"), kit.Outline, false).OnClick(func() { p.openDialog("cache", acc) })
 			})
 		}))
 	p.mailboxSection(c, acc.ID)
-	server := func(proto, host string, port int, sec core.Security, desc string) func() {
-		return row(proto, desc, func() {
-			kit.Text(c, host+":"+strconv.Itoa(port)+" · "+cmpTr("onboarding.security."+string(sec), string(sec)), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted)
-		})
+	endpoint := func(s core.Server) string {
+		return s.Host + ":" + strconv.Itoa(s.Port) + " · " + cmpTr("onboarding.security."+string(s.Security), string(s.Security))
 	}
-	recv := server("IMAP", acc.Receiving.Host, acc.Receiving.Port, acc.Receiving.Security, "")
+	server := func(proto string, s core.Server, desc string) func() {
+		return row(proto, desc, func() { kit.Text(c, endpoint(s), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted) })
+	}
+	editServers := func() {
+		rowButton(c, i18n.T("settings.account.edit_servers"), kit.Outline, false).OnClick(func() { p.openDialog("servers", acc) })
+	}
+	recv := server("IMAP", acc.Receiving, "")
 	if pr := acc.Receiving.Protocol; pr == auth.JMAP || pr == auth.EWS {
 		recv = row(strings.ToUpper(pr), "", func() { kit.Text(c, sessionURL(acc.Receiving), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted) })
 	} else if acc.Receiving.Protocol == auth.Graph {
-		recv = server("Microsoft Graph", acc.Receiving.Host, acc.Receiving.Port, acc.Receiving.Security, "")
+		recv = server("Microsoft Graph", acc.Receiving, "")
 	}
 	if acc.Receiving.Protocol == auth.GmailAPI {
-		recv = server("Gmail API", acc.Receiving.Host, acc.Receiving.Port, acc.Receiving.Security, "")
+		recv = server("Gmail API", acc.Receiving, "")
 	}
-	login := []func(){
-		row(i18n.T("settings.account.login.method"), p.authText(acc, prov), func() { p.authButton(c, acc, prov, false) }),
-		recv,
-	}
-	if pr := acc.Sending.Protocol; pr != auth.EWS && pr != auth.JMAP && pr != auth.GmailAPI && acc.Receiving.Protocol != auth.Graph { // EWS, JMAP, Graph and Gmail API send through the server they receive from
-		login = append(login, server("SMTP", acc.Sending.Host, acc.Sending.Port, acc.Sending.Security, receiveOnlyHelp(acc)))
-	}
-	if ab, ok := a.linkedBook(acc.ID); ok {
-		login = append(login, row("CardDAV", "", func() { kit.Text(c, abHost(ab), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted) }))
-	}
-	if acc.ReceiveOnly { // OAuth has no servers to change: it tries SMTP again as it is
-		login = append(login, row(i18n.T("settings.account.receive_only"), "", func() {
-			settingButton(c, i18n.T("settings.account.receive_only.recheck"), kit.Outline, p.rechecking[acc.ID]).OnClick(func() { p.recheckSending(acc.ID) })
-		}))
-	}
-	if pr := acc.Receiving.Protocol; pr != auth.Graph && pr != auth.GmailAPI {
-		login = append(login, row(i18n.T("settings.account.servers"), i18n.T("settings.account.servers.help"), func() {
-			settingButton(c, i18n.T("settings.account.edit_servers"), kit.Outline, false).OnClick(func() { p.openDialog("servers", acc) })
-		}))
+	login := []func(){row(i18n.T("settings.account.login.method"), p.authText(acc, prov), func() { p.authButton(c, acc, prov, false) })}
+	pr := acc.Sending.Protocol
+	sendsByServer := pr != auth.EWS && pr != auth.JMAP && pr != auth.GmailAPI && acc.Receiving.Protocol != auth.Graph // EWS, JMAP, Graph and Gmail API send through the server they receive from
+	_, hasBook := a.linkedBook(acc.ID)
+	switch rp := acc.Receiving.Protocol; {
+	case sendsByServer && rp != auth.JMAP && rp != auth.EWS && rp != auth.GmailAPI && !acc.ReceiveOnly && !hasBook:
+		recvName := "IMAP"
+		if rp == auth.POP3 {
+			recvName = "POP3"
+		}
+		login = append(login, row(i18n.T("settings.account.server"), recvName+" · "+endpoint(acc.Receiving)+"\nSMTP · "+endpoint(acc.Sending), editServers))
+	default:
+		login = append(login, recv)
+		if sendsByServer {
+			login = append(login, server("SMTP", acc.Sending, receiveOnlyHelp(acc)))
+		}
+		if ab, ok := a.linkedBook(acc.ID); ok {
+			login = append(login, row("CardDAV", "", func() { kit.Text(c, abHost(ab), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted) }))
+		}
+		if acc.ReceiveOnly { // OAuth has no servers to change: it tries SMTP again as it is
+			login = append(login, row(i18n.T("settings.account.receive_only"), "", func() {
+				rowButton(c, i18n.T("settings.account.receive_only.recheck"), kit.Outline, p.rechecking[acc.ID]).OnClick(func() { p.recheckSending(acc.ID) })
+			}))
+		}
+		if rp != auth.Graph && rp != auth.GmailAPI {
+			login = append(login, row(i18n.T("settings.account.servers"), i18n.T("settings.account.servers.help"), editServers))
+		}
 	}
 	settingsSection(c, i18n.T("settings.account.login"), "", login...)
 	settingsSection(c, i18n.T("settings.account.export"), "",
 		row(i18n.T("settings.account.export.row"), i18n.T("settings.account.export.help"), func() {
-			settingButton(c, i18n.T("settings.account.export.button"), kit.Outline, p.exporting).OnClick(p.exportAccounts)
+			rowButton(c, i18n.T("settings.account.export.button"), kit.Outline, p.exporting).OnClick(p.exportAccounts)
 		}),
 		row(i18n.T("settings.account.import.row"), i18n.T("settings.account.import.help"), func() {
-			settingButton(c, i18n.T("settings.account.import.button"), kit.Outline, p.importing).OnClick(p.importAccounts)
+			rowButton(c, i18n.T("settings.account.import.button"), kit.Outline, p.importing).OnClick(p.importAccounts)
 		}),
 		removeRow)
 }
@@ -1027,8 +1039,9 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 		name, update := accountSecretName(acc, prov), a.svc.UpdatePassword
 		title = i18n.Tf("settings.account.login.update", name)
 		body = func() {
-			ui.Field(c, name, func() { secretInput(c, &p.secret, &p.showSecret) }).
-				Description(i18n.T("onboarding.secret.help"))
+			formRow(c, name, func() ui.Element { return secretInput(c, &p.secret, &p.showSecret) }, func() {
+				kit.Text(c, i18n.T("onboarding.secret.help"), theme.Of(c).Text.Xs).TextColor(theme.Of(c).Muted)
+			})
 			secretWhitespaceHint(c, &p.secret)
 		}
 		secret := p.secret
@@ -1175,7 +1188,8 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 			kit.Alert(c, kit.ToneDanger, humanize(p.dlgErr), nil)
 		}
 	}
-	kit.Dialog(c, &p.open, title, kit.DialogOpts{Size: size, Desc: desc, Close: i18n.T("common.close")}, content, func() {
+	confirmOnly := p.dialog == "remove" || p.dialog == "cache" // a question to answer, not a form to close
+	kit.Dialog(c, &p.open, title, kit.DialogOpts{Size: size, Desc: desc, Close: i18n.T("common.close"), Alert: confirmOnly}, content, func() {
 		kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(p.closeDialog)
 		opts.Disabled = p.busy || incomplete
 		kit.Button(c, label, opts).OnClick(confirm)
@@ -1256,31 +1270,45 @@ func (p *settingsPage) uploadAccountIcon() {
 }
 
 func (p *settingsPage) serversForm(c *ui.Context) {
-	th := c.Theme()
+	t, th := theme.Of(c), c.Theme()
 	opts := make([]kit.Option[core.Security], len(securities))
 	for i, s := range securities {
 		opts[i] = kit.Option[core.Security]{Value: s.Value, Label: i18n.T(s.Label)}
 	}
+	row := func(label string, fields func()) {
+		ui.Row(c).Gap(th.Space(4)).AlignItems(ui.Center).Children(func() {
+			kit.Text(c, label, t.Text.Sm).Width(theme.FormLabelWidth).Shrink(0)
+			ui.Row(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(2)).Children(fields)
+		})
+	}
 	server := func(proto string, host, port *string, sec *core.Security) {
-		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Start).Children(func() {
-			ui.Field(c, i18n.T("onboarding."+proto+".host"), func() { kit.Input(c, host, kit.InputOpts{}) }).Grow(1)
-			ui.Field(c, i18n.T("onboarding."+proto+".port"), func() { kit.Input(c, port, kit.InputOpts{}) }).Width(theme.PortWidth)
-			ui.Field(c, i18n.T("onboarding."+proto+".security"), func() { kit.Select(c, sec, opts) })
+		row(strings.ToUpper(proto), func() {
+			kit.Input(c, host, kit.InputOpts{}).Grow(1).Shrink(1).MinWidth(0).Label(i18n.T("onboarding." + proto + ".host"))
+			kit.Input(c, port, kit.InputOpts{}).Width(theme.ServerPortWidth).Shrink(0).Label(i18n.T("onboarding." + proto + ".port"))
+			kit.Select(c, sec, opts).Width(theme.SelectMinWidth).Shrink(0).Label(i18n.T("onboarding." + proto + ".security"))
 		})
 	}
 	sf := &p.servers
 	switch {
 	case sf.ews:
-		ui.Field(c, i18n.T("onboarding.ews.url"), func() { kit.Input(c, &sf.jmapURL, kit.InputOpts{}) })
+		row(i18n.T("onboarding.ews.url"), func() { kit.Input(c, &sf.jmapURL, kit.InputOpts{}).Grow(1).Label(i18n.T("onboarding.ews.url")) })
 	case sf.jmap:
-		ui.Field(c, i18n.T("onboarding.jmap.url"), func() { kit.Input(c, &sf.jmapURL, kit.InputOpts{}) })
+		row(i18n.T("onboarding.jmap.url"), func() { kit.Input(c, &sf.jmapURL, kit.InputOpts{}).Grow(1).Label(i18n.T("onboarding.jmap.url")) })
 	default:
+		ui.Row(c).Gap(th.Space(4)).Children(func() { // the columns' names over the first row's fields
+			ui.Box(c).Width(theme.FormLabelWidth).Shrink(0)
+			ui.Row(c).Grow(1).Shrink(1).Gap(th.Space(2)).Children(func() {
+				kit.Text(c, i18n.T("settings.account.servers.host"), t.Text.Xs).TextColor(t.Muted).Grow(1)
+				kit.Text(c, i18n.T("settings.account.servers.port"), t.Text.Xs).TextColor(t.Muted).Width(theme.ServerPortWidth).Shrink(0)
+				kit.Text(c, i18n.T("settings.account.servers.security"), t.Text.Xs).TextColor(t.Muted).Width(theme.SelectMinWidth).Shrink(0)
+			})
+		})
 		server("imap", &sf.imapHost, &sf.imapPort, &sf.imapSec)
 	}
 	if !sf.ews && !sf.jmap { // EWS and JMAP send through the server they receive from
 		server("smtp", &sf.smtpHost, &sf.smtpPort, &sf.smtpSec)
 	}
-	ui.Field(c, i18n.T("onboarding.username"), func() { kit.Input(c, &sf.username, kit.InputOpts{}) })
+	row(i18n.T("onboarding.username"), func() { kit.Input(c, &sf.username, kit.InputOpts{}).Grow(1).Label(i18n.T("onboarding.username")) })
 }
 
 // mailbox is an account's 邮箱行为 as read: its folders (roles resolved),

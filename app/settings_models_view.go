@@ -3,6 +3,7 @@ package app
 import (
 	"cmp"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -32,7 +33,7 @@ func (m *modelsView) view(c *ui.Context) {
 	if st := m.a.settings; len(m.services) > 0 || len(m.plugins) > 0 || isPluginRef(st.DefaultModel) || isPluginRef(st.SmallModel) || isPluginRef(st.JudgeService) {
 		u := deriveUsage(m.a.settings, m.services, m.plugins, m.pluginStatus)
 		m.usage(c, u)
-		m.list(c, u)
+		m.list(c)
 	}
 	m.localSection(c)
 	if m.form != nil {
@@ -51,17 +52,33 @@ func (m *modelsView) close() {
 func (m *modelsView) svcMark(c *ui.Context, s core.ModelService) {
 	t, th := theme.Of(c), c.Theme()
 	if glyph := icons.BrandIcon(s.Provider); glyph != nil {
-		kit.Tile(c, th.Space(8), th.Space(8), kit.ToneRaised).AlignSelf(ui.Start).Margin(theme.ServiceMarkOffset, 0, 0, 0).Label(s.Name).Children(func() {
-			ui.Icon(c, glyph).Size(theme.IconLg, theme.IconLg).TextColor(t.Foreground)
+		kit.Tile(c, th.Space(8), th.Space(8), kit.ToneTint).Label(s.Name).Children(func() {
+			ui.Icon(c, glyph).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
 		})
 		return
 	}
 	m.loadAvatar(s)
-	kit.AvatarImage(c, s.Name, m.avatars[s.BaseURL]).AlignSelf(ui.Start).Margin(theme.ServiceMarkOffset, 0, 0, 0)
+	kit.AvatarImage(c, s.Name, m.avatars[s.BaseURL])
 }
 
-// list is the services, one card row each.
-func (m *modelsView) list(c *ui.Context, u usage) {
+// svcLine is a service's second line: where it talks to and what it does.
+func svcLine(s core.ModelService) string {
+	parts := []string{svcSubtitle(s)}
+	if u, err := url.Parse(s.BaseURL); err == nil && u.Host != "" && core.ModelProviderLogin(s.Provider) != "oauth" {
+		parts[0] = u.Host
+	}
+	if s.Kind != "" && len(s.Models) > 0 {
+		parts = append(parts, i18n.Plural("settings.models.gen", len(s.Models)))
+	}
+	if s.JudgeFormat != "" && s.JudgeModel != "" {
+		parts = append(parts, i18n.Tf("settings.models.judge_chip", s.JudgeModel))
+	}
+	return strings.Join(parts, " · ")
+}
+
+// list is the services, one card row each: its mark, name and line, how its
+// last test went, and a chevron to its form.
+func (m *modelsView) list(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	var rows []func()
 	for _, s := range m.services {
@@ -72,29 +89,23 @@ func (m *modelsView) list(c *ui.Context, u usage) {
 			}
 			listRow(c.Key(s.ID), 0, false, edit, func() {
 				m.svcMark(c, s)
-				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
+				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 						ui.Text(c, s.Name).SingleLine().Shrink(1)
-						l, label := svcLook(s)
-						statusLine(c, line{label, l})
-					})
-					kit.Text(c, svcSubtitle(s), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted).SingleLine()
-					ui.Row(c).Wrap().Gap(th.Space(1.5)).Children(func() {
-						if s.Kind != "" && len(s.Models) > 0 {
-							capChip(c, i18n.Plural("settings.models.gen", len(s.Models)), u.genSvc != nil && u.genSvc.ID == s.ID)
-						}
-						if s.JudgeFormat != "" && s.JudgeModel != "" {
-							capChip(c, i18n.Tf("settings.models.judge_chip", s.JudgeModel), u.judgeSvc != nil && u.judgeSvc.ID == s.ID)
-						}
 						if s.ManagedBy != "" {
-							capChip(c, i18n.Tf("settings.managed_by", s.ManagedBy), false)
+							kit.BadgeWith(c, i18n.Tf("settings.managed_by", s.ManagedBy), kit.BadgeOpts{Tone: kit.BadgeSurface, Muted: true}).Shrink(0)
 						}
 					})
+					kit.Text(c, svcLine(s), t.Text.Xs).TextColor(t.Muted).SingleLine()
 				})
+				l, label := svcLook(s)
+				statusLine(c, line{label, l})
 				if edit != nil {
 					ui.Icon(c, icons.Get("chevron-right")).Size(theme.Icon, theme.Icon).TextColor(t.Muted).Shrink(0)
+				} else {
+					ui.Box(c).Size(theme.Icon, theme.Icon).Shrink(0)
 				}
-			}).Padding(th.Space(2), th.Space(4)).ContextMenu(func(menu *ui.Menu) {
+			}).AlignItems(ui.Center).Padding(th.Space(2), th.Space(4)).ContextMenu(func(menu *ui.Menu) {
 				if menu.Item(i18n.T("settings.models.test")).Chosen() {
 					m.testRow(s)
 				}
@@ -105,28 +116,11 @@ func (m *modelsView) list(c *ui.Context, u usage) {
 		p := m.plugins[i]
 		rows = append(rows, func() {
 			// The system runs it, with nothing to edit: no chevron, just its menu's test.
-			ui.Row(c.Key("apple-intelligence")).Gap(th.Space(3)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(4)).Children(func() {
-				kit.Tile(c, th.Space(8), th.Space(8), kit.ToneRaised).AlignSelf(ui.Start).Margin(theme.ServiceMarkOffset, 0, 0, 0).Label("Apple Intelligence").Children(func() {
-					ui.Icon(c, icons.Get("sparkles")).Size(theme.IconLg, theme.IconLg).TextColor(t.Foreground)
-				})
-				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
-					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, "Apple Intelligence").SingleLine().Shrink(1)
-						statusLine(c, pluginLook(p, m.pluginStatus))
-					})
-					kit.Text(c, i18n.T("settings.models.apple_intelligence.sub"), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted).SingleLine()
-					ui.Row(c).Wrap().Gap(th.Space(1.5)).Children(func() {
-						st := m.a.settings
-						var genOn, judgeOn bool
-						for _, mod := range p.Models {
-							ref := pluginRef(p.Plugin, mod.ID)
-							judgeOn = judgeOn || mod.Judges() && st.JudgeService == ref
-							genOn = genOn || !mod.Judges() && (st.DefaultModel == ref || st.SmallModel == ref)
-						}
-						capChip(c, i18n.Plural("settings.models.gen", 1), genOn)
-						capChip(c, i18n.Tf("settings.models.judge_chip", "Apple Intelligence"), judgeOn)
-					})
-				})
+			iconRow(c.Key("apple-intelligence"), func() {
+				ui.Icon(c, icons.Get("sparkles")).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
+			}, "Apple Intelligence", strings.Join([]string{i18n.T("settings.models.apple_intelligence.sub"), i18n.T("settings.models.cap.gen"), i18n.T("settings.models.cap.judge")}, " · "), func() {
+				statusLine(c, pluginLook(p, m.pluginStatus))
+				ui.Box(c).Size(theme.Icon, theme.Icon).Shrink(0)
 			}).ContextMenu(func(menu *ui.Menu) {
 				if menu.Item(i18n.T("settings.models.test")).Chosen() {
 					m.testPluginRow(p)
@@ -145,15 +139,6 @@ func statusLine(c *ui.Context, l line) ui.Element {
 		kit.StatusDot(c, dot)
 		kit.Text(c, l.text, t.Text.Xs).TextColor(fg)
 	})
-}
-
-// capChip is a capability chip; the one in use as the default carries a check.
-func capChip(c *ui.Context, text string, check bool) {
-	o := kit.BadgeOpts{Tone: kit.BadgeSurface, Muted: !check}
-	if check {
-		o.Icon, o.IconLabel = "check", i18n.T("settings.models.default_badge")
-	}
-	kit.BadgeWith(c, text, o).Shrink(0)
 }
 
 // usage is the 用途 card: the generate, small-task and judge defaults with
@@ -183,7 +168,7 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 		}
 		settingsCard(c,
 			func() {
-				desc, by := i18n.T("settings.models.use.gen.desc"), a.settings.DefaultModelBy
+				desc, by := strings.TrimRight(i18n.T("settings.models.use.gen.desc"), "。."), a.settings.DefaultModelBy
 				if by != "" { // its file chooses the default: changed there (ADR 0041)
 					desc += " · " + i18n.Tf("settings.managed_by", by)
 				}
@@ -197,7 +182,7 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 				})
 			},
 			func() {
-				usageRow(c, judge, i18n.T("settings.models.use.judge.desc"), &u.judge, func() {
+				usageRow(c, judge, strings.TrimRight(i18n.T("settings.models.use.judge.desc"), "。."), &u.judge, func() {
 					sel(judge, &m.judge, u.judgeOpts, func(st *core.Settings, v string) { st.JudgeService = v }, false)
 				})
 			},
@@ -380,14 +365,13 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 		}
 	})
 	ui.Column(c).Gap(th.Space(2)).Children(func() {
-		ui.Row(c).Justify(ui.SpaceBetween).AlignItems(ui.End).Gap(th.Space(3)).Children(func() {
-			ui.Text(c, i18n.T("settings.models.caps")).FontWeight(600)
-			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-				if core.ModelProviderLogin(f.provider) != "oauth" { // a subscription has no key, and no judge to share it with
-					kit.Text(c, i18n.T("settings.models.caps.note"), t.Text.Xs).TextColor(t.Muted)
-				}
-				m.refreshButton(c, f)
-			})
+		ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Children(func() {
+			caps := i18n.T("settings.models.caps")
+			if core.ModelProviderLogin(f.provider) != "oauth" { // a subscription has no key, and no judge to share it with
+				caps += " · " + i18n.T("settings.models.caps.note")
+			}
+			kit.Text(c, caps, t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
+			m.refreshButton(c, f)
 		})
 		genWarn, judgeWarn := offWarns(f, m.a.settings, m.services)
 		gen, judge := core.ProviderFormats(f.provider)
@@ -666,7 +650,7 @@ func (m *modelsView) modelPicker(c *ui.Context, f *modelForm, p picker) {
 				if n := f.names[name]; n != "" {
 					label, font = n, "" // a display name reads as prose, an ID as code
 				}
-				b := kit.ToggleChipFrame(c.Key(name), on, kit.ChoiceDashed).Label(label) // offered, in dashes, until it is added
+				b := kit.ToggleChipFrame(c.Key(name), on, kit.ChoiceDefault).Label(label) // offered, plain until it is chosen: then tinted in a primary outline
 				r := f.modelTests[p.cap+"\n"+name]
 				b.Children(func() {
 					if r.state != "" { // its test from the menu

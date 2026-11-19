@@ -20,6 +20,7 @@ import (
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/plugins"
+	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 	"github.com/stretchr/testify/assert"
@@ -1537,6 +1538,14 @@ func TestOAuthTileCloseCancels(t *testing.T) {
 func TestServiceCardSubtitle(t *testing.T) {
 	assert.Equal(t, "alice@example.com", svcSubtitle(core.ModelService{Provider: core.ProviderChatGPT, Email: "alice@example.com", BaseURL: "https://api.openai.com/v1"}))
 	assert.Equal(t, "https://api.openai.com/v1", svcSubtitle(core.ModelService{Provider: core.ProviderOpenAI, BaseURL: "https://api.openai.com/v1"}))
+}
+
+// svcLine is a service's host, then what it does: its models and judge.
+func TestServiceCardLine(t *testing.T) {
+	api := core.ModelService{Provider: core.ProviderOpenAI, BaseURL: "https://api.openai.com/v1", Kind: "responses", Models: []string{"a", "b"}, JudgeFormat: "decisions", JudgeModel: "luna"}
+	assert.Equal(t, strings.Join([]string{"api.openai.com", i18n.Plural("settings.models.gen", 2), i18n.Tf("settings.models.judge_chip", "luna")}, " · "), svcLine(api))
+	assert.Equal(t, "127.0.0.1:8080", svcLine(core.ModelService{Provider: core.ProviderOther, BaseURL: "http://127.0.0.1:8080/v1"}))
+	assert.Equal(t, "alice@example.com", svcLine(core.ModelService{Provider: core.ProviderChatGPT, Email: "alice@example.com", BaseURL: "https://chatgpt.com/backend-api"}))
 }
 
 func TestHumanizeChatGPTUsage(t *testing.T) {

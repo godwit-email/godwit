@@ -374,8 +374,8 @@ func (v *rulesView) badges(c *ui.Context, r core.Rule) {
 }
 
 // hitList is the open rule's hits of the last week, newest first, in a box
-// about two and a half rows tall that scrolls past them, then 编辑规则 and
-// 删除规则.
+// about two and a half rows tall that scrolls past them, then what the hits
+// allow beside 删除规则 and 编辑规则.
 func (v *rulesView) hitList(c *ui.Context, r core.Rule) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(0, th.Space(4), th.Space(3), th.Space(4)+th.Space(11.5)).Children(func() {
@@ -387,7 +387,6 @@ func (v *rulesView) hitList(c *ui.Context, r core.Rule) {
 				kit.Text(c, i18n.T("settings.rules.hits.none"), t.Text.Xs).TextColor(t.Muted)
 			})
 		} else {
-			kit.Text(c, i18n.Tf("settings.rules.hits.head", len(v.hits)), t.Text.Xs).TextColor(t.Muted)
 			box().Children(func() {
 				ui.Scroll(c).Shrink(1).Children(func() {
 					now := time.Now()
@@ -400,10 +399,14 @@ func (v *rulesView) hitList(c *ui.Context, r core.Rule) {
 				})
 			})
 		}
-		ui.Row(c).Gap(th.Space(2)).Children(func() {
+		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+			if len(v.hits) > 0 {
+				kit.Text(c, i18n.T("settings.rules.hits.note"), t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
+			} else {
+				ui.Spacer(c)
+			}
+			kit.Button(c, i18n.T("settings.rules.delete"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger, Size: kit.SizeSm}).OnClick(func() { v.deleting = &r })
 			kit.Button(c, i18n.T("settings.rules.edit_rule"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).OnClick(func() { v.openEditor(r) })
-			kit.Button(c, i18n.T("settings.rules.delete"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).TextColor(t.Danger).
-				OnClick(func() { v.deleting = &r })
 		})
 	})
 }

@@ -372,7 +372,9 @@ func pageHeading(c *ui.Context, title, sub string, action ...func()) {
 func settingsSection(c *ui.Context, title, footnote string, rows ...func()) {
 	t := theme.Of(c)
 	ui.Column(c).Gap(theme.SectionGap).Children(func() {
-		sectionTitle(c, title)
+		if title != "" { // the page's own first section is named by the page
+			sectionTitle(c, title)
+		}
 		settingsCard(c, rows...)
 		if footnote != "" {
 			kit.Text(c, footnote, t.Text.Xs).TextColor(t.Muted).PaddingX(c.Theme().Space(4))
@@ -381,8 +383,8 @@ func settingsSection(c *ui.Context, title, footnote string, rows ...func()) {
 }
 
 // sectionTitle is a settings section's title, inset as its card's rows.
-func sectionTitle(c *ui.Context, title string) {
-	kit.Text(c, title, theme.Of(c).Text.Sm).FontWeight(600).PaddingX(c.Theme().Space(4))
+func sectionTitle(c *ui.Context, title string) ui.Element {
+	return kit.Text(c, title, theme.Of(c).Text.Sm).FontWeight(600).PaddingX(c.Theme().Space(4))
 }
 
 // settingsCard is a section's card of rows, with hairlines between them: a
@@ -430,15 +432,44 @@ func settingRow(c *ui.Context, label, desc string, control func()) ui.Element {
 	return kit.FieldWith(c, kit.FieldOpts{Horizontal: true}, label, desc, "", control)
 }
 
+// iconLabel is a 32 tile (mark draws its glyph) before a title and a muted
+// line under it: what the design's list rows say.
+func iconLabel(c *ui.Context, mark func(), title, desc string) {
+	t, th := theme.Of(c), c.Theme()
+	kit.Tile(c, th.Space(8), th.Space(8), kit.ToneTint).Children(mark)
+	ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
+		kit.Text(c, title, t.Text.Sm).SingleLine()
+		if desc != "" {
+			kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted).SingleLine()
+		}
+	})
+}
+
+// iconRow is a card row of an iconLabel and trailing after it.
+func iconRow(c *ui.Context, mark func(), title, desc string, trailing func()) ui.Element {
+	th := c.Theme()
+	return ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
+		iconLabel(c, mark, title, desc)
+		if trailing != nil {
+			trailing()
+		}
+	})
+}
+
 // settingBlock is a card row of free content (padded like a settingRow).
 func settingBlock(c *ui.Context, body func()) {
 	th := c.Theme()
 	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(2), th.Space(4)).Children(body)
 }
 
-// settingButton is a button in a settings row: the default size, 12 padding.
+// settingButton is a button beside a settings page's title or under its rows: the default size.
 func settingButton(c *ui.Context, label string, v kit.Variant, disabled bool) ui.Element {
 	return kit.Button(c, label, kit.ButtonOpts{Variant: v, Disabled: disabled})
+}
+
+// rowButton is a button in a settings row: the small size, as the design's rows have it.
+func rowButton(c *ui.Context, label string, v kit.Variant, disabled bool) ui.Element {
+	return kit.Button(c, label, kit.ButtonOpts{Variant: v, Disabled: disabled, Size: kit.SizeSm})
 }
 
 // settingSelect is a select in a settings row.
@@ -456,7 +487,7 @@ func (p *settingsPage) privacyView(c *ui.Context, sec string) {
 	case "security":
 		pageHeading(c, pageName(sec), i18n.T("settings.security.sub"))
 	case "images":
-		pageHeading(c, pageName(sec), "") // its sub and the avatars note are the section's footnote
+		pageHeading(c, pageName(sec), i18n.T("settings.remote_images.page.sub"))
 	default:
 		pageHeading(c, pageName(sec), i18n.T("settings.blocked.sub"))
 	}
@@ -505,10 +536,11 @@ func (a *App) localAPIPath() string {
 }
 
 // localAPIView is the Local API (本机 API), the 接入 AI 应用 page: its
-// switch and what godwit mcp may send; while it runs, the MCP client config
-// and the socket to copy. What it can reach is the section's footnote.
+// switch and what godwit mcp may send, and the socket to copy while it runs;
+// then the AI apps and the MCP client config. What it can reach is the
+// section's footnote.
 func (p *settingsPage) localAPIView(c *ui.Context) {
-	th, a := c.Theme(), p.a
+	a := p.a
 	p.syncSettings()
 	defer p.syncSettings() // what the switch changed while building
 	copied := func(text string) {
@@ -521,12 +553,7 @@ func (p *settingsPage) localAPIView(c *ui.Context) {
 			return
 		}
 		kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &p.st.LocalAPI}, i18n.T("settings.local_api.on"), i18n.T("settings.local_api.help"), "", nil)
-	}}
-	path := a.localAPIPath()
-	if path != "" {
-		rows = append(rows, func() { p.clientsRow(c, copied) })
-	}
-	rows = append(rows, func() {
+	}, func() {
 		settingRow(c, i18n.T("settings.local_api.send"), i18n.T("settings.local_api.send.help"), func() {
 			level := p.st.MCPSend
 			if level == "" {
@@ -542,21 +569,21 @@ func (p *settingsPage) localAPIView(c *ui.Context) {
 		if p.st.MCPSend == core.MCPSendDirect {
 			settingBlock(c, func() { kit.Alert(c, kit.ToneWarning, i18n.T("settings.local_api.send.risk"), nil) })
 		}
-	})
+	}}
+	path := a.localAPIPath()
 	if path != "" {
 		rows = append(rows, func() {
-			t := theme.Of(c)
-			settingRow(c, i18n.T("settings.local_api.path"), "", func() {
-				ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Shrink(1).Children(func() {
-					kit.Text(c, path, t.Text.Xs).Font(theme.Mono).TextColor(t.Muted).Selectable().Shrink(1)
-					if settingButton(c, i18n.T("settings.local_api.copy_path"), kit.Outline, false).Clicked() {
-						copied(path)
-					}
-				})
+			settingRow(c, i18n.T("settings.local_api.path"), path, func() {
+				if rowButton(c, i18n.T("settings.local_api.copy_path"), kit.Outline, false).Clicked() {
+					copied(path)
+				}
 			})
 		})
 	}
 	settingsSection(c, i18n.T("settings.local_api"), i18n.T("settings.local_api.foot"), rows...)
+	if path != "" {
+		p.clientsSection(c, copied)
+	}
 }
 
 // modelsPage is 模型: the model services and the models the features use.
@@ -579,7 +606,10 @@ func (p *settingsPage) featuresPage(c *ui.Context) {
 
 // mcpPage is MCP: the servers Wit uses.
 func (p *settingsPage) mcpPage(c *ui.Context) {
-	pageHeading(c, pageName("mcp"), i18n.T("settings.mcp.sub"))
+	e := p.ext
+	pageHeading(c, pageName("mcp"), i18n.T("settings.mcp.sub"), func() {
+		kit.Button(c, i18n.T("settings.ext.mcp.add"), kit.ButtonOpts{Icon: "plus"}).OnClick(func() { e.mform = &mcpForm{transport: "stdio"} })
+	})
 	p.ext.mcpView(c)
 	p.ext.confirmView(c)
 }
@@ -592,7 +622,7 @@ func (p *settingsPage) clientsPage(c *ui.Context) {
 }
 
 func (p *settingsPage) securityView(c *ui.Context) {
-	settingsSection(c, i18n.T("settings.security"), "",
+	settingsSection(c, "", "",
 		func() {
 			kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &p.st.SecurityWarnings}, i18n.T("settings.security.warnings"), i18n.T("settings.security.warnings.help"), "", nil)
 		},
@@ -758,7 +788,7 @@ func (p *settingsPage) remoteImagesView(c *ui.Context) {
 	if p.imgSize >= 0 {
 		size = formatBytes(p.imgSize)
 	}
-	settingsSection(c, i18n.T("settings.remote_images"), i18n.T("settings.remote_images.sub")+"\n"+i18n.T("settings.remote_images.avatars"),
+	settingsSection(c, "", i18n.T("settings.remote_images.sub")+"\n"+i18n.T("settings.remote_images.avatars"),
 		func() {
 			settingRow(c, i18n.T("settings.remote_images.mode"), i18n.T("settings.remote_images.mode.help"), func() {
 				mode := p.st.RemoteImages
@@ -777,7 +807,7 @@ func (p *settingsPage) remoteImagesView(c *ui.Context) {
 			settingRow(c, i18n.T("settings.remote_images.cache"), i18n.T("settings.remote_images.cache.help"), func() {
 				ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, size).TextColor(t.Muted)
-					if settingButton(c, i18n.T("settings.remote_images.clear"), kit.Outline, false).Clicked() {
+					if rowButton(c, i18n.T("settings.remote_images.clear"), kit.Outline, false).Clicked() {
 						a.do(func(context.Context) error { return a.svc.ClearImageCache() }, func(err error) {
 							if err != nil {
 								a.toastErr(err)
@@ -806,11 +836,9 @@ func (p *settingsPage) trustedView(c *ui.Context) {
 	var rows []func()
 	for _, addr := range a.trusted {
 		rows = append(rows, func() {
-			settingRow(c, addr, "", func() {
-				if settingButton(c, i18n.T("settings.trusted.remove"), kit.Outline, false).Label(i18n.Tf("settings.trusted.remove.label", addr)).Clicked() {
-					a.do(func(ctx context.Context) error { return a.svc.UntrustImageSender(ctx, addr) }, a.toastErr)
-				}
-			}).Label(addr)
+			senderRow(c, addr, i18n.T("settings.trusted.remove"), i18n.Tf("settings.trusted.remove.label", addr), func() {
+				a.do(func(ctx context.Context) error { return a.svc.UntrustImageSender(ctx, addr) }, a.toastErr)
+			})
 		})
 	}
 	if len(rows) == 0 {
@@ -821,17 +849,26 @@ func (p *settingsPage) trustedView(c *ui.Context) {
 	settingsSection(c, i18n.T("settings.trusted"), i18n.T("settings.trusted.sub"), rows...)
 }
 
+// senderRow is a card row of a sender: its avatar, its address and a button
+// that does what label says to it.
+func senderRow(c *ui.Context, addr, button, label string, do func()) {
+	th := c.Theme()
+	ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Label(addr).Children(func() {
+		kit.Avatar(c, addr)
+		ui.Text(c, addr).Grow(1).Shrink(1).SingleLine()
+		if rowButton(c, button, kit.Outline, false).Label(label).Clicked() {
+			do()
+		}
+	})
+}
+
 // blockedView lists the senders the user blocked, each with an unblock button.
 func (p *settingsPage) blockedView(c *ui.Context) {
 	t, a := theme.Of(c), p.a
 	var rows []func()
 	for _, addr := range a.blocked {
 		rows = append(rows, func() {
-			settingRow(c, addr, "", func() {
-				if settingButton(c, i18n.T("settings.blocked.remove"), kit.Outline, false).Label(i18n.Tf("settings.blocked.remove.label", addr)).Clicked() {
-					a.setBlocked(addr, false, nil)
-				}
-			}).Label(addr)
+			senderRow(c, addr, i18n.T("settings.blocked.remove"), i18n.Tf("settings.blocked.remove.label", addr), func() { a.setBlocked(addr, false, nil) })
 		})
 	}
 	if len(rows) == 0 {
@@ -839,7 +876,7 @@ func (p *settingsPage) blockedView(c *ui.Context) {
 			settingBlock(c, func() { ui.Text(c, i18n.T("settings.blocked.none")).TextColor(t.Muted) })
 		})
 	}
-	settingsSection(c, i18n.T("settings.blocked"), "", rows...)
+	settingsSection(c, "", i18n.T("settings.blocked.foot"), rows...)
 }
 
 // godwitExe is this executable's absolute path.

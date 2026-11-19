@@ -113,7 +113,7 @@ func (e *extView) load() {
 		if _, ok := e.pluginInfo(); !ok {
 			e.plugin = ""
 		}
-		if _, ok := e.server(); !ok && len(ms) > 0 {
+		if _, ok := e.server(); !ok && e.mcp >= 0 && len(ms) > 0 { // -1: the user closed them all
 			e.mcp = ms[0].ID
 		}
 	}))
@@ -287,23 +287,22 @@ func (e *extView) pluginsPage(c *ui.Context) {
 
 var skillTargets = []string{"message", "thread", "selection", "draft"}
 
+// skillsView is the skills in sections: those a gateway manages (one section
+// per gateway), the ones the user wrote, then the built-in ones.
 func (e *extView) skillsView(c *ui.Context) {
-	rows := make([]func(), len(e.skills))
-	for i, s := range e.skills {
-		rows[i] = func() {
+	t := theme.Of(c)
+	row := func(i int) func() {
+		s := e.skills[i]
+		return func() {
 			desc := s.Description
 			if s.Error != "" {
 				desc = i18n.Tf("settings.ext.skill.error", s.Error)
 			} else if desc == "" {
 				desc = skillOn(s)
 			}
-			if s.Builtin {
-				desc += " · " + i18n.T("settings.ext.builtin")
-			}
-			if s.ManagedBy != "" {
-				desc += " · " + i18n.Tf("settings.managed_by", s.ManagedBy)
-			}
-			settingRow(c.Key(s.Name), s.Label(), desc, func() {
+			iconRow(c.Key(s.Name), func() {
+				ui.Icon(c, icons.Get(s.Icon)).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
+			}, s.Label(), desc, func() {
 				on := s.Enabled
 				if kit.Switch(c, &on).Label(i18n.Tf("settings.ext.skill.enable", s.Label())).Changed() {
 					on = !s.Enabled // the switch may have written an older frame's copy
@@ -314,7 +313,28 @@ func (e *extView) skillsView(c *ui.Context) {
 			})
 		}
 	}
-	settingsSection(c, i18n.T("settings.ext.sec.skills"), "", rows...)
+	var titles []string
+	groups := map[string][]func(){}
+	for i, s := range e.skills {
+		title := i18n.T("settings.ext.sec.skills")
+		switch {
+		case s.ManagedBy != "":
+			title = i18n.Tf("settings.managed_by", s.ManagedBy)
+		case s.Builtin:
+			title = i18n.T("settings.ext.builtin")
+		}
+		if groups[title] == nil {
+			titles = append(titles, title)
+		}
+		groups[title] = append(groups[title], row(i))
+	}
+	builtin := i18n.T("settings.ext.builtin")
+	if i := slices.Index(titles, builtin); i >= 0 { // built-in last
+		titles = append(slices.Delete(titles, i, i+1), builtin)
+	}
+	for _, title := range titles {
+		settingsSection(c, title, "", groups[title]...)
+	}
 }
 
 func skillOn(s core.SkillInfo) string {
@@ -438,19 +458,19 @@ func (e *extView) pluginsView(c *ui.Context) {
 	if e.reg.On {
 		add = append(add, func() {
 			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { e.onDirectory = true }}).Label(i18n.T("settings.ext.browse")).FillWidth().Children(func() {
-				settingRow(c, i18n.T("settings.ext.browse"), i18n.T("settings.ext.browse.hint"), func() {
+				iconRow(c, func() { ui.Icon(c, icons.Get("globe")).Size(theme.Icon, theme.Icon).TextColor(t.Foreground) }, i18n.T("settings.ext.browse"), i18n.T("settings.ext.browse.hint"), func() {
 					ui.Icon(c, icons.Get("chevron-right")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
 				})
 			})
 		})
 	}
 	add = append(add, func() {
-		settingRow(c, i18n.T("settings.ext.install"), i18n.T("settings.ext.install.hint"), func() {
+		iconRow(c, func() { ui.Icon(c, icons.Get("folder")).Size(theme.Icon, theme.Icon).TextColor(t.Foreground) }, i18n.T("settings.ext.install"), i18n.T("settings.ext.install.hint"), func() {
 			if e.installing == ":folder" {
 				e.installProgressView(c)
 				return
 			}
-			kit.Button(c, i18n.T("settings.ext.install.choose"), kit.ButtonOpts{Variant: kit.Outline, Disabled: e.installing != ""}).OnClick(e.install)
+			kit.Button(c, i18n.T("settings.ext.install.choose"), kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Outline, Disabled: e.installing != ""}).OnClick(e.install)
 		})
 	})
 	settingsSection(c, i18n.T("settings.ext.sec.add"), i18n.T("settings.ext.no_send"), add...)
@@ -489,7 +509,14 @@ func (e *extView) pluginRow(c *ui.Context, p core.PluginInfo) {
 				default:
 					e.plugin = name
 				}
-			}}).Label(title).Expanded(open).Grow(1).Shrink(1).Children(func() {
+			}}).Label(title).Expanded(open).Grow(1).Shrink(1).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
+				icon := "puzzle"
+				if en, ok := e.entry(name); ok {
+					icon = entryIcon(en)
+				}
+				kit.Tile(c, th.Space(8), th.Space(8), kit.ToneTint).Children(func() {
+					ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
+				})
 				ui.Column(c).Gap(th.Space(0.5)).Shrink(1).Children(func() {
 					ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
 						if p.Native {
@@ -508,8 +535,18 @@ func (e *extView) pluginRow(c *ui.Context, p core.PluginInfo) {
 					}
 				})
 			})
+			chevron := func() {
+				if !p.Builtin { // a built-in one has nothing to open
+					chev := "chevron-right"
+					if open {
+						chev = "chevron-down"
+					}
+					ui.Icon(c, icons.Get(chev)).Size(theme.Icon, theme.Icon).TextColor(t.Muted).Shrink(0)
+				}
+			}
 			if p.NeedsGrant {
 				statusPill(c, i18n.T("settings.ext.status.pending"), true)
+				chevron()
 				return
 			}
 			if e.installing == name {
@@ -521,9 +558,9 @@ func (e *extView) pluginRow(c *ui.Context, p core.PluginInfo) {
 			}
 			if st, ok := e.logins[name]; signsIn(p) && ok && !st.SignedIn {
 				if e.loginFlow == name {
-					kit.Button(c, i18n.T("settings.ext.login.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { e.loginCancel() })
+					kit.Button(c, i18n.T("settings.ext.login.cancel"), kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Outline}).OnClick(func() { e.loginCancel() })
 				} else {
-					kit.Button(c, i18n.T("settings.ext.login"), kit.ButtonOpts{Variant: kit.Outline, Disabled: e.loginFlow != ""}).
+					kit.Button(c, i18n.T("settings.ext.login"), kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Outline, Disabled: e.loginFlow != ""}).
 						OnClick(func() { e.plugin, e.confirm, e.open = name, "login", true })
 				}
 			}
@@ -531,6 +568,7 @@ func (e *extView) pluginRow(c *ui.Context, p core.PluginInfo) {
 			if kit.Switch(c, &on).Label(i18n.Tf("settings.ext.skill.enable", title)).Changed() {
 				e.setPluginEnabled(name, !p.Enabled)
 			}
+			chevron()
 		})
 		if open {
 			e.pluginBody(c, p)
@@ -568,7 +606,7 @@ func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 			ui.Row(c).FillWidth().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 				label := i18n.Tf("settings.ext.signed_in", st.Account)
 				kit.Text(c, label, t.Text.Sm).Grow(1).Shrink(1)
-				kit.Button(c, i18n.T("settings.ext.logout"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() {
+				kit.Button(c, i18n.T("settings.ext.logout"), kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Outline}).OnClick(func() {
 					e.write("plugins", func(ctx context.Context) error { return e.a.svc.PluginLogout(ctx, name) }, nil)
 				})
 			})
@@ -578,16 +616,16 @@ func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
 		}
 		ui.Row(c).Gap(th.Space(2)).Children(func() {
 			if !p.NeedsGrant {
-				kit.Button(c, i18n.T("settings.ext.uninstall"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).
+				kit.Button(c, i18n.T("settings.ext.uninstall"), kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Ghost, Tone: kit.ToneDanger}).
 					OnClick(func() { e.plugin, e.confirm, e.open = name, "plugin", true })
 				return
 			}
-			allow, opts := i18n.T("settings.ext.allow"), kit.ButtonOpts{Disabled: f != nil && f.busy}
+			allow, opts := i18n.T("settings.ext.allow"), kit.ButtonOpts{Size: kit.SizeSm, Disabled: f != nil && f.busy}
 			if p.Native && p.Trust != "listed" { // consent to the risk of an unreviewed file
 				allow, opts.Variant, opts.Tone = i18n.T("settings.ext.native.allow"), kit.Ghost, kit.ToneDanger
 			}
 			kit.Button(c, allow, opts).OnClick(func() { e.allow(name, f, p.Config) })
-			kit.Button(c, i18n.T("settings.ext.not_now"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() {
+			kit.Button(c, i18n.T("settings.ext.not_now"), kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Outline}).OnClick(func() {
 				if e.later == nil {
 					e.later = map[string]bool{}
 				}
@@ -822,36 +860,21 @@ func mcpStatus(s core.MCPServer) (string, bool) {
 }
 
 func (e *extView) mcpView(c *ui.Context) {
-	t, th := theme.Of(c), c.Theme()
-	kit.Button(c, i18n.T("settings.ext.mcp.add"), kit.ButtonOpts{Variant: kit.Outline, Icon: "plus"}).AlignSelf(ui.Start).
-		OnClick(func() { e.mform = &mcpForm{transport: "stdio"} })
+	t := theme.Of(c)
 	if len(e.servers) == 0 && e.mform == nil {
 		ui.Text(c, i18n.T("settings.ext.mcp.empty")).TextColor(t.Muted)
 	}
-	if len(e.servers) > 0 {
-		rows := make([]func(), len(e.servers))
-		for i, s := range e.servers {
-			rows[i] = func() {
-				cc := c.Key(s.ID)
-				ui.Row(cc).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
-					kit.Pressable(cc, kit.PressableOpts{Selected: s.ID == e.mcp && e.mform == nil, OnClick: func() { e.mcp, e.mform = s.ID, nil }}).
-						Grow(1).Shrink(1).Children(func() {
-						ui.Column(cc).Gap(th.Space(0.5)).Children(func() {
-							ui.Text(cc, s.Name)
-							kit.Text(cc, s.Transport+" · "+i18n.Plural("settings.ext.mcp.tools", len(s.Tools)), t.Text.Xs).TextColor(t.Muted)
-						})
-					})
-					st, attention := mcpStatus(s)
-					statusPill(cc, st, attention)
-				})
-			}
+	for _, s := range e.servers {
+		cc := c.Key(s.ID)
+		open := s.ID == e.mcp && e.mform == nil
+		rows := []func(){func() { e.serverHead(cc, s, open) }}
+		if open {
+			rows = append(rows, e.serverRows(cc, s)...)
 		}
-		settingsSection(c, "MCP", "", rows...)
+		settingsSection(cc, "", "", rows...)
 	}
 	if f := e.mform; f != nil {
 		e.mcpFormView(c, f)
-	} else if s, ok := e.server(); ok {
-		e.serverView(c, s)
 	}
 }
 
@@ -894,43 +917,66 @@ func (e *extView) mcpFormView(c *ui.Context, f *mcpForm) {
 	})
 }
 
-func (e *extView) serverView(c *ui.Context, s core.MCPServer) {
-	a := e.a
-	th := c.Theme()
+// serverHead is an MCP server's first row: its name and what it runs, the
+// switch that turns it on (or the grant that must come first), and a chevron
+// that opens or closes its tools.
+func (e *extView) serverHead(c *ui.Context, s core.MCPServer, open bool) {
+	a, t, th := e.a, theme.Of(c), c.Theme()
 	id := s.ID
 	st, _ := mcpStatus(s)
-	rows := []func(){func() {
-		desc := s.Transport + " · " + st
-		if !s.Granted {
-			desc = i18n.T("settings.ext.mcp.grant.help")
-		}
-		if s.ManagedBy != "" {
-			desc += " · " + i18n.Tf("settings.managed_by", s.ManagedBy)
-		}
-		if s.Error != "" {
-			desc += " · " + s.Error
-		}
-		settingRow(c, s.Name, desc, func() {
-			if !s.Granted {
-				kit.Button(c, i18n.T("settings.ext.grant"), kit.ButtonOpts{}).OnClick(func() {
-					e.write("mcp", func(ctx context.Context) error {
-						if err := a.svc.GrantMCPServer(ctx, id); err != nil {
-							return err
-						}
-						return a.svc.SetMCPServerEnabled(ctx, id, true)
-					}, nil)
-				})
-				return
+	desc := s.Transport + " · " + i18n.Plural("settings.ext.mcp.tools", len(s.Tools))
+	if !s.Granted {
+		desc = i18n.T("settings.ext.mcp.grant.help")
+	}
+	if s.Error != "" {
+		desc += " · " + st + " · " + s.Error
+	}
+	if s.ManagedBy != "" {
+		desc += " · " + i18n.Tf("settings.managed_by", s.ManagedBy)
+	}
+	ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
+		kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() {
+			e.mform = nil
+			if e.mcp = id; open {
+				e.mcp = -1
 			}
+		}}).Label(s.Name).Expanded(open).Grow(1).Shrink(1).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
+			iconLabel(c, func() { ui.Icon(c, icons.Get("cpu")).Size(theme.Icon, theme.Icon).TextColor(t.Foreground) }, s.Name, desc)
+		})
+		switch {
+		case !s.Granted:
+			kit.Button(c, i18n.T("settings.ext.grant"), kit.ButtonOpts{Size: kit.SizeSm}).OnClick(func() {
+				e.write("mcp", func(ctx context.Context) error {
+					if err := a.svc.GrantMCPServer(ctx, id); err != nil {
+						return err
+					}
+					return a.svc.SetMCPServerEnabled(ctx, id, true)
+				}, nil)
+			})
+		default:
 			on := s.Enabled
 			if kit.Switch(c, &on).Label(i18n.T("settings.ext.mcp.enable")).Changed() {
 				on = !s.Enabled
 				e.write("mcp", func(ctx context.Context) error { return a.svc.SetMCPServerEnabled(ctx, id, on) }, nil)
 			}
-		})
-	}, func() {
-		settingRow(c, i18n.T("settings.ext.mcp.tools.title"), "", func() {
-			kit.Button(c, i18n.T("settings.ext.mcp.refresh"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Disabled: !s.Granted}).
+		}
+		chev := "chevron-right"
+		if open {
+			chev = "chevron-down"
+		}
+		ui.Icon(c, icons.Get(chev)).Size(theme.Icon, theme.Icon).TextColor(t.Muted).Shrink(0)
+	})
+}
+
+// serverRows are an open MCP server's rows after its first: the tools it
+// gives Wit, each with its trust switch, and its edit and removal.
+func (e *extView) serverRows(c *ui.Context, s core.MCPServer) []func() {
+	a := e.a
+	th := c.Theme()
+	id := s.ID
+	rows := []func(){func() {
+		settingRow(c, i18n.T("settings.ext.mcp.tools.title"), i18n.T("settings.ext.mcp.trust.help"), func() {
+			rowButton(c, i18n.T("settings.ext.mcp.refresh"), kit.Outline, !s.Granted).
 				OnClick(func() { e.write("mcp", func(ctx context.Context) error { return a.svc.RefreshMCPTools(ctx, id) }, nil) })
 		})
 	}}
@@ -945,10 +991,6 @@ func (e *extView) serverView(c *ui.Context, s core.MCPServer) {
 			if tool.ReadOnlyHint {
 				desc = strings.TrimSuffix(i18n.T("settings.ext.mcp.read_only")+" · "+desc, " · ")
 			}
-			if desc != "" {
-				desc += " · "
-			}
-			desc += i18n.T("settings.ext.mcp.trust.help")
 			settingRow(c.Key(tool.Name), tool.Name, desc, func() {
 				on, name := tool.Trusted, tool.Name
 				if kit.Switch(c, &on).Label(i18n.T("settings.ext.mcp.trust")).Changed() {
@@ -958,19 +1000,18 @@ func (e *extView) serverView(c *ui.Context, s core.MCPServer) {
 			})
 		})
 	}
-	rows = append(rows, func() {
-		if s.ManagedBy != "" { // its gateway's file is where it changes (ADR 0041)
-			return
-		}
-		settingBlock(c, func() {
-			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				kit.Button(c, i18n.T("settings.ext.mcp.edit"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { e.editServer(s) })
-				kit.Button(c, i18n.T("settings.ext.mcp.remove"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).
-					OnClick(func() { e.confirm, e.open = "mcp", true })
+	if s.ManagedBy == "" { // a managed one changes in its gateway's file (ADR 0041)
+		rows = append(rows, func() {
+			settingBlock(c, func() {
+				ui.Row(c).Gap(th.Space(2)).Children(func() {
+					rowButton(c, i18n.T("settings.ext.mcp.edit"), kit.Outline, false).OnClick(func() { e.editServer(s) })
+					kit.Button(c, i18n.T("settings.ext.mcp.remove"), kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Ghost, Tone: kit.ToneDanger}).
+						OnClick(func() { e.confirm, e.open = "mcp", true })
+				})
 			})
 		})
-	})
-	settingsSection(c, s.Name, "", rows...)
+	}
+	return rows
 }
 
 // loginPageView asks before a sign-in's page opens, naming its host (AGENTS.md:

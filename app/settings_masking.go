@@ -39,7 +39,7 @@ func (p *settingsPage) maskingView(c *ui.Context) {
 			rows = append(rows, func() { maskCategoryRow(c, name, cat) })
 		}
 	}
-	settingsSection(c, i18n.T("settings.masking"), i18n.T("settings.masking.foot"), rows...)
+	settingsSection(c, "", i18n.T("settings.masking.foot"), rows...)
 	if st.Masking {
 		p.maskCustom(c)
 		p.maskPreview(c)
@@ -291,9 +291,13 @@ func (p *settingsPage) maskPreview(c *ui.Context) {
 	}
 	settingsSection(c, i18n.T("settings.masking.preview"), i18n.T("settings.masking.preview.help"), func() {
 		settingBlock(c, func() {
-			kit.TextArea(c, &d.preview, kit.InputOpts{}).Height(th.Space(20)).Label(i18n.T("settings.masking.preview"))
+			kit.Field(c, i18n.T("settings.masking.preview.source"), "", "", func() {
+				kit.TextArea(c, &d.preview, kit.InputOpts{}).Height(th.Space(20)).Label(i18n.T("settings.masking.preview"))
+			})
 			if d.preview != "" {
-				kit.Text(c, d.shown, t.Text.Xs).Font(theme.Mono).Selectable()
+				kit.Field(c, i18n.T("settings.masking.preview.sent"), "", "", func() {
+					kit.Text(c, d.shown, t.Text.Xs).Font(theme.Mono).Selectable()
+				})
 			}
 		})
 	})

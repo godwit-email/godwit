@@ -84,7 +84,7 @@ func (v *labelsView) view(c *ui.Context, p *settingsPage) {
 					value = i18n.T("settings.labels.model.none")
 				}
 				kit.Text(c, value, theme.Of(c).Text.Sm).TextColor(theme.Of(c).Muted)
-				settingButton(c, i18n.T("settings.labels.model.go"), kit.Outline, false).OnClick(func() { a.navigate(Route{Page: PageSettings, Settings: "models"}) })
+				rowButton(c, i18n.T("settings.labels.model.go"), kit.Outline, false).OnClick(func() { a.navigate(Route{Page: PageSettings, Settings: "models"}) })
 			})
 		})
 	v.rescan(c)

@@ -64,7 +64,7 @@ func TestFixedHeightTextFits(t *testing.T) {
 		theme.Apply(c, theme.FromSettings(core.Settings{Theme: "light", Density: "standard", FontSize: 16, BodyFontSize: 16}, false))
 		box = c.Theme().Space(5)
 		ui.Column(c).Children(func() {
-			capChip(c, "chip", true)
+			kit.Badge(c, "chip")
 			kit.Kbd(c, "Tab")
 		})
 		c.Root()

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -224,7 +225,7 @@ func (p *settingsPage) maskLogPage(c *ui.Context) {
 	flush()
 	if shown > limit {
 		ui.Row(c).Justify(ui.Center).Children(func() {
-			kit.Button(c, i18n.T("settings.masking.log.more"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { f.pages++ })
+			kit.Button(c, i18n.T("settings.masking.log.more"), kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Outline}).OnClick(func() { f.pages++ })
 		})
 	}
 	if shown == 0 {
@@ -266,10 +267,8 @@ func (p *settingsPage) maskRequestRow(c *ui.Context, q maskRequest) {
 				f.open = map[string]bool{}
 			}
 			f.open[q.key] = !open
-		}}).FillWidth().MinHeight(th.Space(11)).Padding(th.Space(2), th.Space(4)).Gap(th.Space(3)).AlignItems(ui.Center).Radius(0).Label(feature)
+		}}).FillWidth().MinHeight(th.Space(12)).Padding(th.Space(2), th.Space(4)).Gap(th.Space(3)).AlignItems(ui.Center).Radius(0).Label(feature)
 		b.Children(func() {
-			kit.Text(c, q.at.In(p.a.clock.Now().Location()).Format("15:04"), t.Text.Xs).Width(th.Space(10)).Shrink(0).TextColor(t.Muted)
-			kit.Text(c, feature, t.Text.Sm).FontWeight(500).Grow(1).Shrink(1)
 			per := map[string]int{}
 			var order []string
 			for _, r := range q.values {
@@ -278,14 +277,27 @@ func (p *settingsPage) maskRequestRow(c *ui.Context, q maskRequest) {
 				}
 				per[r.Category]++
 			}
+			line := []string{q.at.In(p.a.clock.Now().Location()).Format("15:04")}
+			var held []string
 			for _, cat := range order {
-				statusPill(c, maskCategoryName(cat)+" ×"+strconv.Itoa(per[cat]), false)
+				held = append(held, maskCategoryName(cat)+" ×"+strconv.Itoa(per[cat]))
 			}
+			if len(held) > 0 {
+				line = append(line, strings.Join(held, i18n.T("mail.list_sep")))
+			}
+			icon := maskFeatureIcons[q.feature]
+			if icon == "" {
+				icon = "shield"
+			}
+			iconLabel(c, func() { ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon).TextColor(t.Foreground) }, feature, strings.Join(line, " · "))
 			switch {
 			case q.blocked():
-				dangerPill(c, i18n.T("settings.masking.log.flag.blocked"))
+				ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Shrink(0).Children(func() {
+					kit.StatusDot(c, kit.Error)
+					kit.Text(c, i18n.T("settings.masking.log.flag.blocked"), t.Text.Xs)
+				})
 			case q.sent(core.MaskWarn) > 0:
-				statusPill(c, i18n.T("settings.masking.log.flag.warned"), true)
+				kit.Text(c, i18n.T("settings.masking.log.flag.warned"), t.Text.Xs).TextColor(t.Muted).Shrink(0)
 			}
 			turn := float32(0)
 			if open {
@@ -332,10 +344,8 @@ func (p *settingsPage) maskValueRow(c *ui.Context, r core.MaskRecord, blocked bo
 	})
 }
 
-// dangerPill is statusPill in the danger colors: 已拦截.
-func dangerPill(c *ui.Context, text string) {
-	kit.BadgeWith(c, text, kit.BadgeOpts{Tone: kit.BadgeDanger})
-}
+// maskFeatureIcons are the icons of the features' rows; one not named has a shield.
+var maskFeatureIcons = map[string]string{"wit": "sparkles", "compose": "quill-pen", "skill": "file-text", "quick_replies": "sparkles", "translate": "languages", "labels": "tag", "compact": "list", "plugin": "puzzle", "rules": "filter"}
 
 // maskFeatures are the features the masking log names (core's
 // MaskRecord.Feature), in the order the filter offers them.

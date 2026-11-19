@@ -17,6 +17,7 @@ import (
 	"github.com/emersion/go-imap/v2"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
+	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/plugins"
@@ -528,7 +529,7 @@ func TestShots(t *testing.T) {
 		shot(s.harness, "MainProgramDraft")
 		s.shotDrafts()
 		s.post(func() { s.app.mail.draftSel = d.ID })
-		s.see("这封草稿由程序")
+		s.see("由 AI 工具、脚本、插件或 Wit 写入")
 		shot(s.harness, "MainProgramDraftFolder")
 		// open in a compose window too: both notices, as wide as each other
 		s.plat.setComposeOpen(d.ID, true)
@@ -649,6 +650,22 @@ func TestShots(t *testing.T) {
 		m.services = append(m.services, core.ModelService{ID: 99, Name: "ChatGPT", Provider: core.ProviderChatGPT, Email: "you@example.com", BaseURL: "https://api.openai.com/v1",
 			Kind: ai.KindResponses, Models: []string{"gpt-5.2"}, Status: map[string]core.CapStatus{core.CapGen: ok(640)}})
 	}
+	// scrolled shoots a long settings page as the design's frames do: where its state is (the section titled at), then its header, then its last item.
+	scrolled := func(s *shotEnv, at, name string) {
+		scroll := func(dy float32) { s.tt.Scroll(900, 400, 0, dy); s.tt.Frame() }
+		scroll(-100000)
+		r, ok := s.tt.Find(at)
+		if !ok {
+			t.Fatalf("no %q on the page; texts %q", at, s.tt.Texts())
+		}
+		scroll(r.Y - 80)
+		shot(s.harness, name)
+		scroll(-100000)
+		shot(s.harness, name+"Top")
+		scroll(100000)
+		shot(s.harness, name+"End")
+		scroll(-100000)
+	}
 	t.Run("Settings", func(t *testing.T) {
 		s := shotMail(t, noAuto)
 		modelsSetup(s, "normal")
@@ -694,6 +711,50 @@ func TestShots(t *testing.T) {
 		s.advance(3 * time.Hour) // the design's 3 小时前起停止同步
 		shot(s.harness, "SettingsAccountsReauth")
 		s.resize(1440, 900)
+		// The design's sending-refused account: QQ, receive-only.
+		outlook := s.app.fetch
+		s.app.fetch = func(ctx context.Context) (core.Settings, []core.Account, error) {
+			st, accs, err := outlook(ctx)
+			for i, acc := range accs {
+				if acc.ID == s.you.ID {
+					acc.ReceiveOnly = true
+					acc.Receiving.Host, acc.Receiving.Port, acc.Receiving.Security = "imap.qq.com", 993, core.SecurityTLS
+					acc.Sending.Host, acc.Sending.Port, acc.Sending.Security = "smtp.qq.com", 465, core.SecurityTLS
+					accs[i] = acc
+				}
+			}
+			return st, accs, err
+		}
+		s.openSettings(accountRoute(s.you.ID))
+		s.post(s.app.load) // no event comes: the page reads the account again
+		s.until("the receive-only rows", func() bool { return s.tt.HasText("重新检查发信") })
+		scrolled(s, "登录与服务器", "SettingsAccountsReceiveOnly")
+		// Fastmail over JMAP: the one server row is the session's address.
+		s.app.fetch = func(ctx context.Context) (core.Settings, []core.Account, error) {
+			st, accs, err := outlook(ctx)
+			for i, acc := range accs {
+				if acc.ID == s.you.ID {
+					acc.Provider, acc.ReceiveOnly = "fastmail", false
+					acc.Receiving = core.Server{Protocol: auth.JMAP, Host: "api.fastmail.com", Port: 443, Security: core.SecurityTLS}
+					acc.Sending = acc.Receiving
+					accs[i] = acc
+				}
+			}
+			return st, accs, err
+		}
+		s.post(s.app.load)
+		s.until("the JMAP rows", func() bool { return s.tt.HasText("https://api.fastmail.com:443/.well-known/jmap") })
+		scrolled(s, "登录与服务器", "SettingsAccountsJMAP")
+		s.app.fetch = outlook
+		s.openSettings("labels")
+		s.see("回扫已有邮件")
+		s.post(func() { // a rescan under way, as the design has it
+			v := s.app.pages[PageSettings].(*settingsPage).labels
+			v.started, v.total, v.pending = true, 3560, 3036
+		})
+		s.tt.Frame()
+		s.see("正在回扫")
+		scrolled(s, "回扫已有邮件", "SettingsLabelsRescan")
 		s.openSettings("general")
 		s.see("界面密度")
 		shot(s.harness, "SettingsGeneral")
@@ -730,10 +791,8 @@ func TestShots(t *testing.T) {
 			m.downloads = map[string]*modelDownload{"plugin/startlux/4b": {cancel: func() {},
 				status: core.ModelStatus{State: core.ModelDownloading, DownloadedBytes: 1_220_000_000, TotalBytes: 2_710_000_000}}}
 		})
-		s.resize(1440, 1240) // the section is below the fold
 		s.see("本地模型")
-		shot(s.harness, "SettingsModelsLocal")
-		s.resize(1440, 900)
+		scrolled(s, "本地模型", "SettingsModelsLocal")
 		s.post(func() {
 			m := s.app.pages[PageSettings].(*settingsPage).models
 			m.plugins, m.downloads = m.plugins[:len(m.plugins)-1], nil
