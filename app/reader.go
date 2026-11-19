@@ -2340,11 +2340,7 @@ func (r *reader) attachmentConflictDialog(c *ui.Context) {
 				ui.Text(c, name).FontWeight(500).SingleLine()
 			}
 		})
-	}, func() {
-		if kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Ghost}).Clicked() {
-			r.attConflict, r.attConflictDlg = attConflictAsk{}, false
-		}
-		ui.Spacer(c)
+	}, func() { // the design's three choices; Esc and the close button cancel
 		if kit.Button(c, i18n.T("reader.attachments.conflict_skip"), kit.ButtonOpts{Variant: kit.Outline}).Clicked() {
 			r.resolveAttachmentConflict(attConflictSkip)
 		}

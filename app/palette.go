@@ -62,6 +62,8 @@ type palette struct {
 // palItem is a row of the palette: what it shows and what choosing it does.
 type palItem struct {
 	icon, title, sub string
+	whoFirst         bool   // sub, who the mail is with, leads the row
+	where            string // after a mail hit's subject: its folder and account
 	avatar           string // the name its 24 avatar shows, in place of the icon's tile
 	bare             bool   // its icon stands alone, 16, without a tile
 	meta             string // in place of when, as a contact's mail count
@@ -216,9 +218,16 @@ func (p *palette) row(c *ui.Context, i int, it palItem) ui.Element {
 				ui.Icon(c, icons.Get(it.icon)).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
 			})
 		}
-		marked(c, it.title, p.hl).SingleLine().Shrink(1)
-		if it.sub != "" {
-			marked(c, it.sub, p.hl).FontSize(t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(1)
+		lead, second := it.title, it.sub
+		if it.whoFirst { // a mail hit, as the design has it: who it is with, then the subject
+			lead, second = it.sub, it.title
+			if it.where != "" {
+				second += " · " + it.where
+			}
+		}
+		marked(c, lead, p.hl).SingleLine().Shrink(1)
+		if second != "" {
+			marked(c, second, p.hl).FontSize(t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(1)
 		}
 		ui.Spacer(c)
 		if it.unread {
@@ -377,13 +386,13 @@ func (p *palette) mailItems(ms []core.MessageSummary) []palItem {
 	mp := p.a.mail
 	for _, m := range ms {
 		it := messageItem(m)
-		sub := mp.resultWho(it)
+		sub, where := mp.resultWho(it), ""
 		// The folder, but the inbox's, and the account when there are more.
 		if f, ok := mp.folder(m.FolderID); ok && (f.Role != "inbox" || len(p.a.accounts) > 1) {
-			sub += " · " + mp.folderLine(it)
+			where = mp.folderLine(it)
 		}
 		thread, id := m.ThreadID, m.ID
-		out = append(out, palItem{icon: "mail", avatar: cmp.Or(m.FromName, displayName(m.From)), title: cmp.Or(m.Subject, i18n.T("mail.no_subject")), sub: sub, when: m.Date, unread: it.Unread > 0, msg: &m,
+		out = append(out, palItem{icon: "mail", avatar: cmp.Or(m.FromName, displayName(m.From)), title: cmp.Or(m.Subject, i18n.T("mail.no_subject")), sub: sub, whoFirst: true, where: where, when: m.Date, unread: it.Unread > 0, msg: &m,
 			open: func() {
 				p.a.navigate(Route{Page: PageMail, View: core.View{Unified: "inbox"}, ThreadID: thread, MessageID: id})
 			}, acts: p.mailActs(m, it.Unread > 0)})

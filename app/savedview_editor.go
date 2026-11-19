@@ -1,6 +1,7 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -36,8 +37,6 @@ type viewEditor struct {
 	prevKey    string
 	prevStop   func()
 	prevCancel func()
-
-	viewTop, asideTop float32
 }
 
 func newViewEditor(p *mailPage) *viewEditor {
@@ -255,8 +254,8 @@ func (e *viewEditor) save() {
 	})
 }
 
-// view is the page: its heading and buttons, the form, and the preview beside
-// it, which stays in view as the form scrolls.
+// view is the page: its heading, buttons and form, which scroll, and the
+// live preview the panel's height at its end, as the list it previews.
 func (e *viewEditor) view(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	title, sub, primary := i18n.T("view.new"), i18n.T("view.editor.sub.new"), i18n.T("view.editor.create")
@@ -265,11 +264,9 @@ func (e *viewEditor) view(c *ui.Context) {
 	}
 	e.schedulePreview()
 	problem := e.problem()
-	scroll := ui.Scroll(c).Grow(1)
-	e.viewTop = scroll.LayoutBounds().Y
-	scroll.Children(func() {
-		ui.Column(c).FillWidth().Padding(th.Space(8)).Children(func() {
-			ui.Column(c).FillWidth().MaxWidth(theme.ContentMaxWidth).AlignSelf(ui.Center).Gap(th.Space(6)).Children(func() {
+	ui.Row(c).Grow(1).FillWidth().AlignItems(ui.Stretch).Children(func() {
+		ui.Scroll(c).Grow(1).Shrink(1).MinWidth(0).Children(func() {
+			ui.Column(c).FillWidth().MaxWidth(theme.ContentMaxWidth).Padding(th.Space(8)).Gap(th.Space(6)).Children(func() {
 				pageHeading(c, title, sub, func() {
 					ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2)).Children(func() {
 						if problem != "" {
@@ -279,22 +276,11 @@ func (e *viewEditor) view(c *ui.Context) {
 						settingButton(c, primary, kit.Default, problem != "").OnClick(e.save)
 					})
 				})
-				grid := ui.Row(c).FillWidth().Gap(th.Space(6)).AlignItems(ui.Start)
-				top := grid.LayoutBounds().Y
-				grid.Children(func() {
-					form := ui.Column(c).Grow(1).Shrink(1).Basis(0).MinWidth(0).Gap(th.Space(6))
-					formH := form.LayoutBounds().H
-					form.Children(func() { e.form(c) })
-					aside := ui.Column(c).Width(theme.RuleAsideWidth).Shrink(0).Label(i18n.T("view.preview"))
-					off := max(0, min(e.viewTop+th.Space(4)-top, formH-aside.LayoutBounds().H))
-					if off != e.asideTop {
-						e.asideTop = off
-						c.Invalidate()
-					}
-					aside.Margin(e.asideTop, 0, 0, 0).Children(func() { e.preview(c) })
-				})
+				e.form(c)
 			})
 		})
+		kit.Separator(c, true)
+		ui.Column(c).Width(theme.RuleAsideWidth).Shrink(0).Label(i18n.T("view.preview")).Children(func() { e.preview(c) })
 	})
 }
 
@@ -309,12 +295,11 @@ func (e *viewEditor) form(c *ui.Context) {
 			kit.Text(c, e.note, t.Text.Sm).Grow(1).Shrink(1)
 		})
 	}
-	settingsCard(c, func() {
-		settingRow(c, i18n.T("view.editor.name"), "", func() {
-			kit.Input(c, &e.box.Name, kit.InputOpts{Placeholder: i18n.T("view.editor.name.placeholder")}).Label(i18n.T("view.editor.name")).Width(theme.SettingsSelectMin)
+	settingsCard(c, func() { // the icon and the name, in one row as a label's
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).Children(func() {
+			e.iconButton(c)
+			kit.Input(c, &e.box.Name, kit.InputOpts{Placeholder: i18n.T("view.editor.name.placeholder")}).Label(i18n.T("view.editor.name")).Grow(1)
 		})
-	}, func() {
-		settingRow(c, i18n.T("view.editor.icon"), "", func() { e.iconButton(c) })
 	}, func() {
 		settingRow(c, i18n.T("view.editor.account"), "", func() {
 			accts := []kit.Option[int64]{{Value: 0, Label: i18n.T("settings.rules.account.all")}}
@@ -394,7 +379,7 @@ func (e *viewEditor) groupsNote() string {
 // iconButton is the icon chosen, opening the grid of the icons labels use.
 func (e *viewEditor) iconButton(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	b := kit.IconButton(c, labelIcon(e.box.Icon), i18n.T("view.editor.icon"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeLg, Flat: true}).
+	b := kit.IconButton(c, labelIcon(e.box.Icon), i18n.T("view.editor.icon"), kit.ButtonOpts{Variant: kit.Outline, Flat: true}).
 		OnClick(func() { e.iconOpen = !e.iconOpen })
 	if !e.iconOpen {
 		return
@@ -629,63 +614,45 @@ func (e *viewEditor) undoException(thread int64) {
 // preview is 实时预览: what the document shows, as the list will show it.
 func (e *viewEditor) preview(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	kit.Card(c, ui.Column(c), kit.ToneTint).FillWidth().Gap(th.Space(2)).Padding(th.Space(3)).Children(func() {
-		total := 0
+	total := 0
+	if e.prev != nil {
+		for _, g := range e.prev.Groups {
+			total += g.Total
+		}
+	}
+	ui.Row(c).FillWidth().AlignItems(ui.Baseline).Gap(th.Space(2)).Padding(th.Space(4), th.Space(4), th.Space(2), th.Space(4)).Children(func() {
+		kit.Text(c, i18n.T("view.preview"), t.Text.Sm).FontWeight(600).Grow(1)
 		if e.prev != nil {
-			for _, g := range e.prev.Groups {
-				total += g.Total
-			}
+			kit.Text(c, i18n.Tf("view.count", total), t.Text.Xs).TextColor(t.Muted)
 		}
-		ui.Row(c).FillWidth().AlignItems(ui.Baseline).Gap(th.Space(2)).PaddingX(th.Space(1)).Children(func() {
-			kit.Text(c, i18n.T("view.preview"), t.Text.Sm).FontWeight(600).Grow(1)
-			if e.prev != nil {
-				kit.Text(c, i18n.Tf("view.count", total), t.Text.Xs).TextColor(t.Muted)
-			}
+	})
+	note := func(title, desc string) {
+		kit.Block(c, ui.Column(c), kit.ToneOutline).Margin(0, th.Space(3)).Gap(th.Space(1)).Padding(th.Space(4), th.Space(3)).
+			AlignItems(ui.Center).Children(func() {
+			kit.Text(c, title, t.Text.Xs).FontWeight(500).TextAlign(ui.Center)
+			kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted).TextAlign(ui.Center)
 		})
-		note := func(title, desc string) {
-			kit.Block(c, ui.Column(c), kit.ToneOutline).FillWidth().Gap(th.Space(1)).Padding(th.Space(4), th.Space(3)).
-				AlignItems(ui.Center).Children(func() {
-				kit.Text(c, title, t.Text.Xs).FontWeight(500).TextAlign(ui.Center)
-				kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted).TextAlign(ui.Center)
-			})
-		}
-		switch {
-		case e.prev == nil && (e.prevStop != nil || e.prevCancel != nil):
-			note(i18n.T("settings.rules.preview.wait"), "")
-		case e.prev == nil:
-			note(i18n.T("view.preview.none"), i18n.T("view.preview.none.desc"))
-		case total == 0:
-			note(i18n.T("view.empty"), i18n.T("view.preview.empty.desc"))
-		default:
-			now := e.p.a.clock.Now()
-			kit.Block(c, ui.Column(c), kit.ToneOutline).FillWidth().Clip().Children(func() {
+	}
+	switch {
+	case e.prev == nil && (e.prevStop != nil || e.prevCancel != nil):
+		note(i18n.T("settings.rules.preview.wait"), "")
+	case e.prev == nil:
+		note(i18n.T("view.preview.none"), i18n.T("view.preview.none.desc"))
+	case total == 0:
+		note(i18n.T("view.empty"), i18n.T("view.preview.empty.desc"))
+	default: // the list's own group headings and rows
+		ui.Scroll(c).Grow(1).Children(func() {
+			ui.Column(c).FillWidth().Padding(0, th.Space(2), th.Space(2), th.Space(2)).Children(func() {
 				grouped := len(e.box.Doc.Groups) > 0
-				for gi, g := range e.prev.Groups {
+				for _, g := range e.prev.Groups {
 					if grouped {
-						if gi > 0 {
-							kit.Separator(c.Key("sep:"+g.ID), false)
-						}
-						ui.Row(c.Key("head:"+g.ID)).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(1.5), th.Space(3)).Children(func() {
-							name := g.Name
-							if name == "" {
-								name = i18n.T("view.other")
-							}
-							kit.Text(c, name, t.Text.Xs).FontWeight(500).TextColor(t.Muted).Grow(1).Shrink(1).SingleLine()
-							kit.Text(c, strconv.Itoa(g.Total), t.Text.Xs).TextColor(t.Muted).Shrink(0)
-						})
+						viewHeading(c.Key("head:"+g.ID), listEntry{head: cmp.Or(g.Name, i18n.T("view.other")), group: g.ID, count: g.Total})
 					}
 					for _, r := range g.Items {
-						kit.Separator(c.Key(fmt.Sprintf("s:%d", r.ID)), false)
-						ui.Column(c.Key(r.ID)).FillWidth().Gap(th.Space(0.5)).Padding(th.Space(2), th.Space(3)).Children(func() {
-							ui.Row(c).FillWidth().Gap(th.Space(2)).Children(func() {
-								kit.Text(c, strings.Join(r.Participants, ", "), t.Text.Xs).FontWeight(500).SingleLine().Grow(1).Shrink(1)
-								kit.Text(c, listTime(now, r.LastDate), t.Text.Xs).TextColor(t.Muted).Shrink(0)
-							})
-							kit.Text(c, cmpSubject(r.Subject), t.Text.Xs).SingleLine()
-						})
+						e.p.row(c.Key(r.ID), viewItem(r, g.ID))
 					}
 				}
 			})
-		}
-	})
+		})
+	}
 }
