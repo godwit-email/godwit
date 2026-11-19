@@ -76,17 +76,17 @@ func ThemeVars(t theme.Tokens) map[string]string {
 		"--danger-bg": css(t.DangerBg), "--danger-border": css(t.DangerBorder), "--danger-text": css(t.DangerText),
 		"--hover-tint": css(t.HoverTint), "--idle": css(t.Idle),
 		"--shadow-float": floatShadow(t),
-		"--window":       css(t.Window), "--shadow-xs": shadow(theme.ShadowXs),
+		"--window":       css(t.Window), "--shadow-xs": shadow(theme.ShadowXs, t),
 		"--window-material": windowMaterial(t),
 		"--glass-bg":        css(t.GlassBg),
 		"--glass-border":    css(t.GlassBorder),
 		"--glass-hover":     css(t.GlassHover),
 		"--raised":          css(t.Raised),
 		"--scrim":           css(t.Scrim), "--alert-scrim": css(t.AlertScrim),
-		"--shadow-dialog":    shadow(theme.ShadowX2l),
+		"--shadow-dialog":    shadow(theme.ShadowX2l, t),
 		"--material-popover": css(t.MaterialPopover), "--material-dialog": css(t.MaterialDialog), "--material-bar": css(t.MaterialBar),
 		"--material-blur":  px(theme.MaterialBlur),
-		"--shadow-popover": shadow(theme.ShadowPopover),
+		"--shadow-popover": shadow(theme.ShadowPopover, t),
 		"--toast-width":    px(theme.ToastWidth),
 		"--dialog-sm":      px(theme.DialogSmWidth), "--dialog-md": px(theme.SheetWidth), "--dialog-lg": px(theme.DialogWideWidth),
 		"--dialog-centre":  fmt.Sprintf("%gvh", 100*(0.5-theme.DialogLift/2)),
@@ -109,20 +109,22 @@ func windowMaterial(t theme.Tokens) string {
 	return css(t.Window.Alpha(theme.MaterialTint))
 }
 
-// floatShadow is a floating input's box-shadow: ShadowFloat's layers of
-// black in the light appearance; FloatInset's inner edge in the dark.
+// floatShadow is a floating input's box-shadow: ShadowFloat's layers in the
+// light appearance; FloatInset's inner edge in the dark.
 func floatShadow(t theme.Tokens) string {
 	if t.Dark {
 		return fmt.Sprintf("inset 0 0 %dpx %s", theme.FloatInsetBlur, css(t.FloatInset))
 	}
-	return shadow(theme.ShadowFloat)
+	return shadow(theme.ShadowFloat, t)
 }
 
-// shadow writes e as a CSS box-shadow of black layers.
-func shadow(e theme.Elevation) string {
+// shadow writes e as a CSS box-shadow of layers in t's ShadowInk, as
+// kit.Elevate draws it.
+func shadow(e theme.Elevation, t theme.Tokens) string {
+	ink := t.ShadowInk()
 	ls := make([]string, len(e))
 	for i, l := range e {
-		ls[i] = fmt.Sprintf("0 %gpx %gpx %gpx rgb(0 0 0 / %.3f)", l.Y, l.Blur, l.Spread, l.Alpha)
+		ls[i] = fmt.Sprintf("0 %gpx %gpx %gpx rgb(%d %d %d / %.3f)", l.Y, l.Blur, l.Spread, ink.R, ink.G, ink.B, l.Alpha)
 	}
 	return strings.Join(ls, ", ")
 }

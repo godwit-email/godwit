@@ -303,6 +303,16 @@ var labelSteps = map[string][7]p.OKLCH{
 // LabelNames are the label colors' names, in the picker's order.
 var LabelNames = [...]string{"gray", "red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal", "cyan", "sky", "blue", "indigo", "violet", "fuchsia", "pink"}
 
+// ShadowInk is the color of shadows: dark in either appearance, the
+// foreground in the light and the background in the dark. Native (kit.Elevate)
+// and the web (webui's --shadow-*) draw theirs with it.
+func (t Tokens) ShadowInk() ui.Color {
+	if t.Dark {
+		return t.Background
+	}
+	return t.Foreground
+}
+
 // Label is the label color of a name; an unknown name is gray.
 func (t Tokens) Label(name string) LabelColor {
 	for i, n := range LabelNames {

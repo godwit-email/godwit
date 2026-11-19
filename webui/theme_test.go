@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -11,6 +12,11 @@ import (
 func TestThemeVars(t *testing.T) {
 	l := theme.Light()
 	v := ThemeVars(l)
+	ink := func(t theme.Tokens) string { // shadows are in the appearance's ShadowInk, as kit.Elevate's
+		c := t.ShadowInk()
+		return fmt.Sprintf("rgb(%d %d %d / ", c.R, c.G, c.B)
+	}
+	lk := ink(l)
 	want := map[string]string{
 		"--background": css(l.Background), "--foreground": css(l.Foreground),
 		"--card": css(l.Background), "--card-foreground": css(l.Foreground),
@@ -30,18 +36,18 @@ func TestThemeVars(t *testing.T) {
 		"--success-bg": css(l.SuccessBg), "--success-border": css(l.SuccessBorder), "--success-text": css(l.SuccessText),
 		"--danger-bg": css(l.DangerBg), "--danger-border": css(l.DangerBorder), "--danger-text": css(l.DangerText),
 		"--hover-tint": css(l.HoverTint), "--idle": css(l.Idle),
-		"--shadow-float": "0 0px 0px 1px rgb(0 0 0 / 0.039), 0 2px 8px 0px rgb(0 0 0 / 0.039), 0 4px 80px 8px rgb(0 0 0 / 0.024)",
-		"--window":       css(l.Window), "--shadow-xs": "0 1px 2px 0px rgb(0 0 0 / 0.050)",
+		"--shadow-float": "0 0px 0px 1px " + lk + "0.039), 0 2px 8px 0px " + lk + "0.039), 0 4px 80px 8px " + lk + "0.024)",
+		"--window":       css(l.Window), "--shadow-xs": "0 1px 2px 0px " + lk + "0.050)",
 		"--window-material": css(l.Window.Alpha(theme.MaterialTint)),
 		"--glass-bg":        css(l.GlassBg),
 		"--glass-border":    css(l.GlassBorder),
 		"--glass-hover":     css(l.GlassHover),
 		"--raised":          css(l.Raised),
 		"--scrim":           "rgb(0 0 0 / 0.200)", "--alert-scrim": css(l.AlertScrim),
-		"--shadow-dialog":    "0 25px 50px -12px rgb(0 0 0 / 0.250)",
+		"--shadow-dialog":    "0 25px 50px -12px " + lk + "0.250)",
 		"--material-popover": css(l.MaterialPopover), "--material-dialog": css(l.MaterialDialog), "--material-bar": css(l.MaterialBar),
 		"--material-blur": "25px", "--toast-width": "360px",
-		"--shadow-popover": "0 8px 40px 0px rgb(0 0 0 / 0.160), 0 1px 3px 0px rgb(0 0 0 / 0.080)",
+		"--shadow-popover": "0 8px 40px 0px " + lk + "0.160), 0 1px 3px 0px " + lk + "0.080)",
 		"--dialog-sm":      "440px", "--dialog-md": "560px", "--dialog-lg": "640px",
 		"--dialog-centre": "40vh", "--dialog-min-top": "32px",
 	}
@@ -58,8 +64,8 @@ func TestThemeVars(t *testing.T) {
 	if got, want := ThemeVars(theme.Dark())["--shadow-float"], "inset 0 0 1px "+css(theme.Dark().FloatInset); got != want {
 		t.Errorf("dark --shadow-float = %q, want %q", got, want)
 	}
-	if got := ThemeVars(theme.Dark())["--shadow-xs"]; got != v["--shadow-xs"] {
-		t.Errorf("dark --shadow-xs = %q, want the light's %q", got, v["--shadow-xs"])
+	if got, want := ThemeVars(theme.Dark())["--shadow-xs"], "0 1px 2px 0px "+ink(theme.Dark())+"0.050)"; got != want {
+		t.Errorf("dark --shadow-xs = %q, want %q", got, want)
 	}
 	// Text on the red fill stays white in the dark, where PrimaryText is near-black.
 	if got := ThemeVars(theme.Dark())["--destructive-foreground"]; got != v["--destructive-foreground"] {
