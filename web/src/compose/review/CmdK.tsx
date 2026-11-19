@@ -1,6 +1,6 @@
 import { RiSparkling2Line } from "@remixicon/react";
 import { useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/button";
 import { Input } from "@/components/ui/input";
 import type { T } from "@/shared/i18n";
 

@@ -1,5 +1,5 @@
 import { RiCloseLine } from "@remixicon/react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/button";
 import type { Attachment } from "@/mygo";
 import type { T } from "@/shared/i18n";
 import { byteSize } from "./size";

@@ -1,7 +1,7 @@
 import { RiChatQuoteLine, RiExternalLinkLine } from "@remixicon/react";
 import { cn } from "cn";
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/button";
 import type { T } from "@/shared/i18n";
 import { imageURL } from "@/shared/imageURL";
 import { citeDate } from "./Citations";

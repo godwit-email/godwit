@@ -1,7 +1,7 @@
 import { RiCloseLine } from "@remixicon/react";
 import { useEffect, useId, useRef, useState } from "react";
+import { Button } from "@/components/button";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ContactHit } from "@/mygo";
 import type { T } from "@/shared/i18n";

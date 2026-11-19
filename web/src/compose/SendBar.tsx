@@ -1,6 +1,6 @@
 import { RiArrowDownSLine } from "@remixicon/react";
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { currentLocale, type T } from "@/shared/i18n";
 import { SendLaterDialog } from "./SendLaterDialog";

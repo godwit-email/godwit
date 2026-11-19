@@ -18,6 +18,7 @@ import {
   zhCN,
   zhTW,
 } from "react-day-picker/locale";
+import { Button } from "@/components/button";
 import {
   Dialog,
   DialogCancel,
@@ -27,7 +28,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/dialog";
-import { Button } from "@/components/ui/button";
 import { Calendar, CalendarDayButton } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
 import { currentLocale, type T } from "@/shared/i18n";

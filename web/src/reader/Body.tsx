@@ -1,6 +1,6 @@
 import { RiRefreshLine } from "@remixicon/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/button";
 import { ReaderPage as api, events, type ReaderBody, type ReaderGlass, type Theme } from "@/mygo";
 import { useT } from "@/shared/i18n";
 import { forwardShortcuts } from "@/shared/shortcuts";

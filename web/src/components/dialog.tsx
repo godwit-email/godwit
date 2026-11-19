@@ -2,6 +2,7 @@ import { AlertDialog as Primitive } from "@base-ui/react/alert-dialog";
 import { RiCloseLine } from "@remixicon/react";
 import { cn } from "cn";
 import type { ComponentProps } from "react";
+import { Button } from "@/components/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -11,7 +12,6 @@ import {
   AlertDialogPortal,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
 
 // A dialog as the native kit.Dialog draws it (internal/kit/overlay.go), on shadcn's generated
 // alert dialog (ADR 0012: generated files stay as generated, differences live here). Its

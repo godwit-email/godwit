@@ -1,4 +1,5 @@
 import { RiAlertLine } from "@remixicon/react";
+import { Button } from "@/components/button";
 import {
   Dialog,
   DialogContent,
@@ -8,7 +9,6 @@ import {
   DialogTitle,
 } from "@/components/dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import type { SendWarning } from "@/mygo";
 import type { T } from "@/shared/i18n";
 

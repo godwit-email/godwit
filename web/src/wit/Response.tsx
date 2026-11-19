@@ -9,6 +9,7 @@ import {
   type StreamdownProps,
 } from "streamdown";
 import "streamdown/styles.css";
+import { Button } from "@/components/button";
 import {
   Dialog,
   DialogAction,
@@ -19,7 +20,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/dialog";
-import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { T } from "@/shared/i18n";
 

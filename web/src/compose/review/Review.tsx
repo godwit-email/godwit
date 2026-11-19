@@ -1,6 +1,6 @@
 import { RiSparkling2Line } from "@remixicon/react";
 import { type FocusEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/button";
 import type { ReviewBlock, ReviewOp, Review as ReviewT, ReviewToken } from "@/mygo";
 import type { T } from "@/shared/i18n";
 import { sanitize } from "../editor/html";
