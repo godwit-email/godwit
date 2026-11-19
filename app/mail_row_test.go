@@ -23,8 +23,13 @@ func TestMailRowAvatar(t *testing.T) {
 			h.app.labels[i].Count = 0
 		}
 	})
-	h.drain()
-	h.tt.Frame()
+	// The sidebar's label can show before the row's chips load: wait for the row's.
+	h.until("the row's chip alone", func() bool {
+		h.drain()
+		h.tt.Frame()
+		items := h.items()
+		return len(items) > 0 && len(items[0].Labels) > 0 && h.countExact("验证码") == 1
+	})
 	initial, ok := h.tt.Find("B")
 	if !ok {
 		t.Fatalf("no avatar: %q", h.tt.Texts())
