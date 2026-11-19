@@ -136,9 +136,7 @@ test("a program's draft asks for a check before sending (ADR 0043)", async () =>
   await body();
   expect(screen.getByText("来自程序的草稿")).toBeInTheDocument();
   expect(
-    screen.getByText(
-      "由 AI 工具、脚本、插件或 Wit 写入或修改，发送前请核对收件人和内容",
-    ),
+    screen.getByText("由 AI 工具、脚本、插件或 Wit 写入或修改，发送前请核对收件人和内容"),
   ).toBeInTheDocument();
 });
 
