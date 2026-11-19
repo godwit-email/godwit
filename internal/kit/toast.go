@@ -85,7 +85,8 @@ func (p toastPlace) inset(c *ui.Context) (right, bottom float32, measured bool) 
 // toastStack is the stack's own state: open is a keyboard expansion, heights
 // are the toasts' as the last frame laid them out, by ID.
 type toastStack struct {
-	open    bool
+	open    bool // spread by the keyboard (Enter, or the focus coming in)
+	focused bool // the focus was in the stack last frame
 	heights map[string]float32
 }
 
@@ -120,8 +121,11 @@ func ToastHost(c *ui.Context, closeLabel string) {
 			return
 		}
 		st := ui.Local(viewport, "stack", func() toastStack { return toastStack{} })
-		if !viewport.FocusWithin() {
-			st.open = false
+		switch in := viewport.FocusWithin(); {
+		case !in:
+			st.open, st.focused = false, false
+		case !st.focused: // the keyboard came in: spread the stack, as the pointer does
+			st.open, st.focused = true, true
 		}
 		gap := th.Space(2)
 		last := toasts[len(toasts)-1]
@@ -160,7 +164,7 @@ func ToastHost(c *ui.Context, closeLabel string) {
 			root := toast.Root.Row().AlignItems(ui.Center).Gap(gap).Padding(th.Space(2), th.Space(2), th.Space(2), th.Space(3)).
 				TextColor(t.Foreground).FontSize(t.Text.Sm).
 				Transition(ui.ElementTransition{Duration: theme.MotionBase, Enter: &ui.Motion{Y: gap}, Exit: &ui.Motion{}})
-			popupLook(c, root, t.Radius.Xl)
+			toastLook(c, root, t.Radius.Xl)
 			root.ZIndex(-back) // the newest paints over the older ones behind it
 			heights[tst.ID] = root.LayoutBounds().H
 			return root

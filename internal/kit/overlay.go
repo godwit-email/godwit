@@ -177,8 +177,18 @@ func frostedMaterial(tint ui.Color) ui.Material {
 // popupLook gives a popover, menu or select popup the popover material, its
 // edge and drop, rounded by radius.
 func popupLook(c *ui.Context, panel ui.Element, radius float32) {
+	popupFace(c, panel, radius, frostedMaterial(theme.Of(c).MaterialPopover))
+}
+
+// toastLook is popupLook for a toast, which is not modal: the page under it
+// stays live, so its material does not turn web views into stills (WebView).
+func toastLook(c *ui.Context, panel ui.Element, radius float32) {
+	popupFace(c, panel, radius, scrim{theme.MaterialBlur, theme.Of(c).MaterialPopover})
+}
+
+func popupFace(c *ui.Context, panel ui.Element, radius float32, m ui.Material) {
 	t := theme.Of(c)
-	panel.Radius(radius).Clip().Material(frostedMaterial(t.MaterialPopover)).Border(theme.Hairline, t.GlassBorder)
+	panel.Radius(radius).Clip().Material(m).Border(theme.Hairline, t.GlassBorder)
 	Elevate(c, panel, theme.ShadowPopover)
 }
 

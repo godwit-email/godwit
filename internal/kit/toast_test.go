@@ -140,22 +140,40 @@ func TestToastStack(t *testing.T) {
 	}
 }
 
-// TestToastStackKeyboard: with the focus in the stack Enter spreads it and
-// Escape folds it, which closes no toast.
+// TestToastStackKeyboard: the focus coming into the stack spreads it, Escape
+// folds it (closing no toast) and Enter spreads it again.
 func TestToastStackKeyboard(t *testing.T) {
 	s := &toastScene{toasts: []ui.Toast{closeable("old"), closeable("new")}}
 	tt := ui.NewTester(themed(s.view), 800, 600)
 	settle(tt)
 	tt.Key(0, ui.KeyTab)
-	tt.Key(0, ui.KeyEnter)
 	tt.Advance(2 * theme.MotionBase)
 	if !tt.HasText("old") || !tt.HasText("new") {
-		t.Fatalf("Enter left the stack folded: %q", tt.Texts())
+		t.Fatalf("Tab into the stack left it folded: %q", tt.Texts())
 	}
 	tt.Key(0, ui.KeyEscape)
 	tt.Advance(2 * theme.MotionBase)
 	if tt.HasText("old") || !tt.HasText("new") {
 		t.Errorf("Escape left %q, want the stack folded and the newest toast open", tt.Texts())
+	}
+	tt.Key(0, ui.KeyEnter)
+	tt.Advance(2 * theme.MotionBase)
+	if !tt.HasText("old") {
+		t.Errorf("Enter left the stack folded: %q", tt.Texts())
+	}
+}
+
+// TestToastKeepsPageLive: a toast is not modal, so web views under it stay
+// live rather than stills (WebView).
+func TestToastKeepsPageLive(t *testing.T) {
+	s := &toastScene{toasts: []ui.Toast{closeable("Saved")}}
+	tt := ui.NewTester(themed(func(c *ui.Context) { NewFrame(); s.view(c) }), 800, 600)
+	settle(tt)
+	if !tt.HasText("Saved") {
+		t.Fatalf("no toast: %q", tt.Texts())
+	}
+	if frosted {
+		t.Error("a toast froze the page's web views")
 	}
 }
 
