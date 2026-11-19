@@ -116,7 +116,7 @@ export function CommandPicker({
     <div
       role="dialog"
       aria-label={t("wit.cmd.menu")}
-      className="absolute bottom-full left-0 z-3 mb-2 flex max-h-80 w-96 max-w-full flex-col gap-0.5 overflow-y-auto rounded-xl border border-glass-border bg-glass-bg p-1 text-popover-foreground shadow-md backdrop-blur-2xl outline-none"
+      className="absolute bottom-full left-0 z-3 mb-2 flex max-h-80 w-96 max-w-full flex-col gap-0.5 overflow-y-auto p-1 text-popover-foreground outline-none material-popover"
     >
       {shown.length === 0 ? (
         <p className="px-2.5 py-2 text-muted-foreground text-xs">{t("wit.cmd.none")}</p>
@@ -140,7 +140,7 @@ export function CommandPicker({
                 tabIndex={-1}
                 aria-selected={i === active}
                 aria-disabled={c.disabled || undefined}
-                className="flex cursor-default items-center gap-2.5 rounded-md px-2.5 py-1.5 aria-selected:bg-accent aria-disabled:opacity-50"
+                className="flex cursor-default items-center gap-2.5 rounded-lg px-2.5 py-1.5 aria-selected:bg-accent aria-disabled:opacity-50"
                 // the focus stays in the textarea that drives the list
                 onMouseDown={(e) => e.preventDefault()}
                 onMouseEnter={() => setActive(i)}

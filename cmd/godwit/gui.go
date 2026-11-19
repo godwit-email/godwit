@@ -177,6 +177,7 @@ func gui(ctx context.Context, dataDir, open string) int {
 	// The Wit page, embedded in the main window: its callbacks run on the
 	// App's UI thread; its events go to its page only.
 	var witView *mygo.WebView
+	var witOrigin func() (int, int) // where the Wit page's view is in its window
 	toWit := func(what string, emit func(*mygo.Page) error) {
 		if witView == nil {
 			return
@@ -196,11 +197,18 @@ func gui(ctx context.Context, dataDir, open string) int {
 		State: func(st webui.WitPageState) {
 			toWit("witState", func(p *mygo.Page) error { return webui.WitState.EmitPage(p, st) })
 		},
-		OpenMessage:         func(id int64) { onApp(func(a *app.App) { a.OpenMessage(id) }) },
-		OpenModels:          func() { onApp((*app.App).OpenModels) },
-		Navigate:            func(dir int) { onApp(func(a *app.App) { a.Navigate(dir) }) },
-		Search:              func() { onApp((*app.App).Search) },
-		NewConversation:     func() { onApp((*app.App).NewConversation) },
+		OpenMessage:     func(id int64) { onApp(func(a *app.App) { a.OpenMessage(id) }) },
+		OpenModels:      func() { onApp((*app.App).OpenModels) },
+		Navigate:        func(dir int) { onApp(func(a *app.App) { a.Navigate(dir) }) },
+		Search:          func() { onApp((*app.App).Search) },
+		NewConversation: func() { onApp((*app.App).NewConversation) },
+		PopupMenu: func(entries []webui.MenuEntry, x, y int) string {
+			if witView == nil || witOrigin == nil {
+				return ""
+			}
+			ox, oy := witOrigin()
+			return witPopupMenu(witView.Window(), entries, ox+x, oy+y)
+		},
 		ConversationCreated: func(id, v int64) { onApp(func(a *app.App) { a.ConversationCreated(id, v) }) },
 		OnLink:              func(u string) { onApp(func(a *app.App) { a.OpenLink(u) }) },
 		OpenCompose:         func(id int64) { onApp(func(a *app.App) { a.OpenDraft(id) }) }, // a draft Wit made may be in the outbox
@@ -388,7 +396,7 @@ func gui(ctx context.Context, dataDir, open string) int {
 			}); err != nil {
 				log.Printf("the Wit page: %v", err)
 			} else {
-				witView = v
+				witView, witOrigin = v, a.WitOrigin
 				a.SetWitPage(v, wit.SetConversation, wit.SetCreated)
 				a.SetWitAsk(wit.Handoff)
 			}

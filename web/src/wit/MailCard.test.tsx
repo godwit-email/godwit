@@ -16,10 +16,10 @@ describe("MailCard", () => {
 
   it("gives a sender the avatar colour internal/kit Avatar gives them", () => {
     // fnv-1a of the name over the label colours but gray, as Go computes it
-    expect(avatarTone("Lena Fischer")).toContain("bg-sky-100");
-    expect(avatarTone("Bob")).toContain("bg-blue-100");
-    expect(avatarTone("Acme Cloud")).toContain("bg-cyan-100");
-    expect(avatarTone("陈小明")).toContain("bg-lime-100");
+    expect(avatarTone("Lena Fischer")).toBe("sky");
+    expect(avatarTone("Bob")).toBe("blue");
+    expect(avatarTone("Acme Cloud")).toBe("cyan");
+    expect(avatarTone("陈小明")).toBe("lime");
   });
 
   it("shows the mail and its actions", async () => {
@@ -37,7 +37,7 @@ describe("MailCard", () => {
         t={t}
       />,
     );
-    expect(screen.getByText("L")).toHaveClass("bg-sky-100");
+    expect(screen.getByText("L").getAttribute("style")).toContain("--label-sky-fill");
     expect(screen.getByText("Lena Fischer")).toBeInTheDocument();
     expect(screen.getByText("10/21")).toBeInTheDocument();
     expect(screen.getByText("Re: Q4 partnership proposal")).toBeInTheDocument();

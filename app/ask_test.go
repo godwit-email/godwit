@@ -208,3 +208,14 @@ func TestAskSidebarSearch(t *testing.T) {
 	h.click("搜索")
 	h.until("the palette", func() bool { return paletteShown(h) })
 }
+
+// The Wit page's view origin is where the sidebar leaves it once laid out: the
+// page's menus pop up at their own position plus it.
+func TestAskWitOrigin(t *testing.T) {
+	h, _, _ := askHarness(t, true)
+	h.tt.Frame()
+	h.tt.Frame()
+	if x, _ := h.app.WitOrigin(); x <= 0 {
+		t.Fatalf("origin x = %d, want the sidebar's width", x)
+	}
+}

@@ -21,6 +21,8 @@ import { WitTransport } from "@/wit/transport";
 /** The main window shows its material (macOS): the page tints it as the native root does. */
 const material = new URLSearchParams(location.search).has("material");
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+// The preview runs outside the app, with no native menus: its input shows web ones.
+const native = (window as { mygo?: { version?: string } }).mygo?.version !== "preview";
 
 /**
  * The Wit page, embedded in the main window's Wit section: the route's ask conversation (0: a new
@@ -296,6 +298,7 @@ function Conversation({
       onAsked={onAsked}
       t={t}
       model={model}
+      popup={native ? api.popupMenu : undefined}
       onModels={() => void api.openModels().catch(fail)}
       models={{
         ref,

@@ -79,6 +79,9 @@ type WitPageDeps struct {
 	Search      func()
 	// NewConversation shows a new conversation, as the sidebar's 新对话 does.
 	NewConversation func()
+	// PopupMenu shows entries as a native menu at x, y of the page and
+	// returns the ID of the chosen entry, "" for none.
+	PopupMenu func(entries []MenuEntry, x, y int) string
 	// ConversationCreated is told Ask made conversation id, asked under
 	// snapshot version.
 	ConversationCreated func(id, version int64)
