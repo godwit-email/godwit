@@ -881,7 +881,7 @@ function Compose({
               {fromProgram && (
                 <ProgramBanner
                   title={t("mail.draft.from_program")}
-                  help={t("mail.draft.from_program_help")}
+                  help={t("mail.draft.from_program_detail")}
                 />
               )}
               <Fields
@@ -889,6 +889,7 @@ function Compose({
                 ref={fieldsRef}
                 frozen={locked}
                 accounts={state.accounts}
+                menu={api.popupMenu}
                 from={from}
                 onFrom={onFrom}
                 to={f.to}

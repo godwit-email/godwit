@@ -19,8 +19,8 @@ import {
 } from "@remixicon/react";
 import { cn } from "cn";
 import { useState } from "react";
+import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
-import { WitBadge } from "@/components/wit-badge";
 import type { Approval } from "@/mygo";
 import type { T } from "@/shared/i18n";
 import { citeDate } from "./Citations";
@@ -185,9 +185,9 @@ export function RuleCard({
   const firstBadge = (to?: string) =>
     to &&
     first(to) && (
-      <WitBadge look="warning" className="ml-auto shrink-0">
+      <Badge tone="warning" className="ml-auto shrink-0">
         {t("settings.rules.confirm.first")}
-      </WitBadge>
+      </Badge>
     );
   const mail = p.mail ?? [];
   return (
@@ -196,8 +196,8 @@ export function RuleCard({
         <span className="font-medium">{t("wit.approval.wants", t("wit.tool.propose_rule"))}</span>
         <span className="font-mono text-muted-foreground text-xs">{a.tool}</span>
         <span className="ml-auto flex gap-1.5">
-          {a.destinations.length > 0 && <WitBadge>{t("settings.rules.egress")}</WitBadge>}
-          <WitBadge look="warning">{t("wit.approval.pending")}</WitBadge>
+          {a.destinations.length > 0 && <Badge>{t("settings.rules.egress")}</Badge>}
+          <Badge tone="warning">{t("wit.approval.pending")}</Badge>
         </span>
       </div>
       <div className="grid grid-cols-[minmax(4.5rem,auto)_minmax(0,1fr)] gap-x-3 gap-y-2 px-3.5 py-3 text-sm">

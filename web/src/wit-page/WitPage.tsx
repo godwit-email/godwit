@@ -1,7 +1,6 @@
 import { cn } from "cn";
-import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
-import { Toaster } from "@/components/ui/sonner";
+import { type ComponentProps, useEffect, useRef, useState } from "react";
+import { Toaster, toast } from "@/components/toast";
 import {
   type Approval,
   WitPage as api,
@@ -42,8 +41,11 @@ export function WitPage() {
   const [st, setSt] = useState<WitPageState>();
   const [view, setView] = useState<{ history: WitHistory; tr: WitTransport; key: number }>();
   const [handed, setHanded] = useState<{ text: string; hits: MailHit[] }>(); // a question native handed over, with the mail it quotes
-  const [mode, setMode] = useState<Theme["mode"]>();
   const witResume = useResume(view?.tr);
+  const dock = useRef({
+    bar: { current: null as HTMLDivElement | null },
+    input: { current: null as HTMLDivElement | null },
+  });
   const resetResume = useRef(witResume.reset);
   // the shown conversation's model and reasoning effort, as the next question asks on them
   const pick = useRef({ model: "", effort: "" });
@@ -164,10 +166,7 @@ export function WitPage() {
   const theme = st?.theme as Theme | undefined;
   useEffect(() => {
     if (!theme) return;
-    const apply = (t: Theme) => {
-      setMode(t.mode);
-      return applyTheme(t);
-    };
+    const apply = applyTheme;
     let stop = apply(theme);
     const off = events.theme.on((t) => {
       stop();
@@ -193,10 +192,11 @@ export function WitPage() {
           decide={witResume.decide}
           handed={handed}
           onAsked={() => setHanded(undefined)}
+          dock={dock.current}
           t={t}
         />
       )}
-      <Toaster theme={mode ?? (st.theme as Theme).mode} />
+      <Toaster bar={dock.current.bar} input={dock.current.input} closeLabel={t("toast.close")} />
     </main>
   );
 }
@@ -209,6 +209,7 @@ function Conversation({
   decide,
   handed,
   onAsked,
+  dock,
   t,
 }: {
   view: { history: WitHistory; tr: WitTransport };
@@ -218,6 +219,7 @@ function Conversation({
   decide: ReturnType<typeof useResume>["decide"];
   handed?: { text: string; hits: MailHit[] };
   onAsked(): void;
+  dock: ComponentProps<typeof Panel>["dock"];
   t: T;
 }) {
   const fail = (e: unknown) => toast.error(witError(message(e), t));
@@ -296,6 +298,7 @@ function Conversation({
       }
       ask={handed}
       onAsked={onAsked}
+      dock={dock}
       t={t}
       model={model}
       popup={native ? api.popupMenu : undefined}

@@ -36,16 +36,18 @@ import {
   type FormEvent,
   Fragment,
   type ReactNode,
+  type RefObject,
   useEffect,
   useId,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { toast } from "sonner";
+import { Alert as Notice } from "@/components/alert";
+import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
-import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
+import { toast } from "@/components/toast";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import {
   DropdownMenu,
@@ -97,7 +99,6 @@ import {
   TraceLine,
   TraceTitle,
 } from "@/components/ui/trace";
-import { WitBadge } from "@/components/wit-badge";
 import { WitCheckbox } from "@/components/wit-checkbox";
 import { type PopupMenu, separator, WitMenu } from "@/components/wit-menu";
 import type {
@@ -382,7 +383,7 @@ function BatchApprovalCard({
       <div className="flex flex-wrap items-center gap-2 border-b-[0.5px] bg-sidebar px-3.5 py-2.5 leading-5">
         <span className="font-medium">{actionLabel}</span>
         <span className="ml-auto flex gap-1.5">
-          <WitBadge look="warning">{t("wit.approval.pending")}</WitBadge>
+          <Badge tone="warning">{t("wit.approval.pending")}</Badge>
         </span>
       </div>
 
@@ -590,8 +591,8 @@ function ToolCard({
         <span className="font-medium">{t("wit.approval.wants", label)}</span>
         <span className="font-mono text-muted-foreground text-xs">{a.tool}</span>
         <span className="ml-auto flex gap-1.5">
-          {a.tool.startsWith("plugin_") && <WitBadge>{t("wit.approval.plugin")}</WitBadge>}
-          <WitBadge look="warning">{t("wit.approval.pending")}</WitBadge>
+          {a.tool.startsWith("plugin_") && <Badge>{t("wit.approval.plugin")}</Badge>}
+          <Badge tone="warning">{t("wit.approval.pending")}</Badge>
         </span>
       </div>
       <div className="flex flex-col gap-1.5 px-3.5 py-3 text-sm">
@@ -648,10 +649,10 @@ function ToolCard({
             <span className="shrink-0 text-muted-foreground">{t("wit.approval.sends_to")}</span>
             <span className="flex flex-wrap gap-1.5">
               {a.destinations.map((d) => (
-                <WitBadge key={d} look="outline" className="font-mono">
+                <Badge key={d} tone="outline" className="font-mono">
                   <RiGlobalLine className="size-3 text-muted-foreground" />
                   {d}
-                </WitBadge>
+                </Badge>
               ))}
             </span>
           </div>
@@ -797,9 +798,9 @@ function QuestionCard({
         <span className="font-medium">
           {server ? t("wit.question.asks_mcp", server) : t("wit.question.asks")}
         </span>
-        <WitBadge look="warning" className="ml-auto">
+        <Badge tone="warning" className="ml-auto">
           {t("wit.approval.pending")}
-        </WitBadge>
+        </Badge>
       </div>
       {server && (
         // the server's words: plain text, never markup
@@ -829,7 +830,7 @@ function QuestionCard({
         {questions.map((q, i) => (
           <QuestionnaireItem key={q.question} name={`q${i}`} multiple={q.multiSelect}>
             <QuestionnaireTitle className="flex flex-wrap items-center gap-2">
-              {q.header && <Badge variant="secondary">{q.header}</Badge>}
+              {q.header && <Badge>{q.header}</Badge>}
               {q.question}
               {q.multiSelect && (
                 <span className="font-normal text-muted-foreground text-xs">
@@ -1565,7 +1566,7 @@ function Answer({
         <div className="flex flex-wrap gap-1">
           {cited.map((c) => (
             <HoverCard key={c.messageId}>
-              <HoverCardTrigger render={<Badge variant="outline" className="cursor-default" />}>
+              <HoverCardTrigger render={<Badge tone="outline" className="cursor-default" />}>
                 [{nums.get(c.messageId)?.n}]
               </HoverCardTrigger>
               <HoverCardContent className="flex flex-col gap-1">
@@ -1658,6 +1659,7 @@ export function Panel({
   skills,
   onNew,
   popup,
+  dock,
 }: {
   info?: WitInfo;
   history: WitHistory;
@@ -1703,6 +1705,8 @@ export function Panel({
   onNew?(): void;
   /** Shows the input's menus (+, the model, /) as the system's; without it, web menus. */
   popup?: PopupMenu;
+  /** The page's input row and its input, which the page's toasts rise above and line up with. */
+  dock?: { bar: RefObject<HTMLDivElement | null>; input: RefObject<HTMLDivElement | null> };
 }) {
   // A command's question: the skill as its menu names it (翻译成…, or the adjustment).
   const commandLabel = (c: WitCommand) => {
@@ -2565,14 +2569,17 @@ export function Panel({
   // A question core kept unanswered (its run refused or failed): why, and 重试 asks it again.
   const failed = chat.error ? undefined : chat.messages.at(-1)?.metadata?.failed;
   const error = (chat.error || failed) && !running && (
-    <Alert variant="destructive" className="border-(--danger-border) bg-(--danger-bg)">
-      <AlertDescription>{witError(chat.error?.message ?? failed ?? "", t)}</AlertDescription>
-      <AlertAction>
+    <Notice
+      tone="danger"
+      icon={<RiErrorWarningLine />}
+      action={
         <Button variant="outline" tone="danger" size="sm" onClick={() => void chat.regenerate()}>
           {t("common.retry")}
         </Button>
-      </AlertAction>
-    </Alert>
+      }
+    >
+      <p>{witError(chat.error?.message ?? failed ?? "", t)}</p>
+    </Notice>
   );
   // The context meter (once there is usage) leads the input's right-hand controls.
   const meter = usage.input > 0 || usage.history > 0;
@@ -2580,7 +2587,10 @@ export function Panel({
   // disabled control would grey the whole group.
   const idle = locked || !draft.trim() || running;
   const input = (
-    <InputGroup className="relative gap-2 rounded-2xl border-[0.5px] border-glass-border bg-glass-bg px-3 py-2.5 shadow-(--shadow-float) outline-none has-[[data-slot=input-group-control]:focus-visible]:border-glass-border has-[[data-slot=input-group-control]:focus-visible]:ring-0">
+    <InputGroup
+      ref={dock?.input}
+      className="relative gap-2 rounded-2xl border-[0.5px] border-glass-border bg-glass-bg px-3 py-2.5 shadow-(--shadow-float) outline-none has-[[data-slot=input-group-control]:focus-visible]:border-glass-border has-[[data-slot=input-group-control]:focus-visible]:ring-0"
+    >
       {editing && (
         <div className="-mx-3 -mt-2.5 mb-0.5 flex items-center gap-2 rounded-t-2xl bg-muted px-3 py-1.5 text-muted-foreground text-xs">
           <RiEditLine className="size-3.5 shrink-0" />
@@ -2813,7 +2823,7 @@ export function Panel({
           {conversation}
           <div className="relative bg-background">
             {fade}
-            <div className="mx-auto flex w-full max-w-202 flex-col gap-2 px-6 pb-6">
+            <div ref={dock?.bar} className="mx-auto flex w-full max-w-202 flex-col gap-2 px-6 pb-6">
               {error}
               {input}
             </div>
@@ -2838,7 +2848,7 @@ export function Panel({
       {info && !only && info.chips.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 px-4 py-3">
           {info.chips.map((c) => (
-            <Badge key={c} variant="secondary" className="h-auto max-w-full truncate">
+            <Badge key={c} className="max-w-full truncate">
               {c}
             </Badge>
           ))}

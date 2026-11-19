@@ -1,6 +1,5 @@
 import { cn } from "cn";
 import { type KeyboardEvent, type ReactNode, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
 import {
   type Components,
   defaultRehypePlugins,
@@ -8,6 +7,7 @@ import {
   Streamdown,
   type StreamdownProps,
 } from "streamdown";
+import { toast } from "@/components/toast";
 import "streamdown/styles.css";
 import { Button } from "@/components/button";
 import {

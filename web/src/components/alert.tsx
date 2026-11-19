@@ -7,7 +7,7 @@ type Tone = "warning" | "danger" | "info";
 // Alert's colours are the tone's three variables (webui.ThemeVars): the fill, a hairline edge and the text.
 const tones: Record<Tone, string> = {
   warning: "border-(--warning-border) bg-(--warning-bg) text-(--warning-text)",
-  danger: "border-(--danger-border) bg-(--danger-bg) text-destructive",
+  danger: "border-(--danger-border) bg-(--danger-bg) text-(--danger-text)",
   info: "border-(--info-border) bg-(--info-bg) text-(--info-text)",
 };
 

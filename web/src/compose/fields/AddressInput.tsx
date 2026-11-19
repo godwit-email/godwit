@@ -1,7 +1,7 @@
 import { RiCloseLine } from "@remixicon/react";
 import { useEffect, useId, useRef, useState } from "react";
+import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
-import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ContactHit } from "@/mygo";
 import type { T } from "@/shared/i18n";
@@ -95,12 +95,7 @@ export function AddressInput({
             data-testid="chip"
             role="group"
             aria-label={addr}
-            variant={bad ? "destructive" : "secondary"}
-            className={
-              bad
-                ? "h-5 bg-(--danger-bg) px-1.5 font-normal text-(--danger-text) text-xs"
-                : "h-5 bg-(--hover-tint) px-1.5 font-normal text-foreground text-xs"
-            }
+            tone={bad ? "danger" : "neutral"}
           >
             <Tooltip>
               {/* invalid: the entry as typed, so what is wrong shows */}

@@ -114,8 +114,10 @@ const body = () => screen.findByRole("textbox", { name: "正文" });
 
 /** Picks a sending account through the menu the From pill opens. */
 async function pickAccount(email: string) {
+  vi.mocked(api.popupMenu).mockImplementationOnce(
+    async (entries) => entries.find((e) => e.label === email)?.id ?? "",
+  );
   await userEvent.click(screen.getByRole("button", { name: "发件账户" }));
-  await userEvent.click(await screen.findByRole("menuitemradio", { name: email }));
 }
 
 test("loads the draft", async () => {
@@ -136,7 +138,9 @@ test("a program's draft asks for a check before sending (ADR 0043)", async () =>
   await body();
   expect(screen.getByText("来自程序的草稿")).toBeInTheDocument();
   expect(
-    screen.getByText("由 AI 工具、脚本、插件或 Wit 写入或修改，发送前请核对收件人和内容"),
+    screen.getByText(
+      "这封草稿由程序（AI 工具、脚本、插件或 Wit）写入或修改过。发送前请核对收件人和内容。",
+    ),
   ).toBeInTheDocument();
 });
 
@@ -549,8 +553,8 @@ test("send later: warnings keep the time for send anyway", async () => {
   vi.mocked(api.send).mockResolvedValueOnce({ ...noWarnings, warnings: [w], digest: "d" });
   render(<ComposePage />);
   await body();
-  vi.mocked(api.popupMenu).mockImplementationOnce(async (items) =>
-    items.findIndex((l) => l.startsWith("明天")),
+  vi.mocked(api.popupMenu).mockImplementationOnce(
+    async (entries) => entries.find((e) => e.label.startsWith("明天"))?.id ?? "",
   );
   await userEvent.click(screen.getByRole("button", { name: "发送选项" }));
   const at = vi.mocked(api.send).mock.calls[0][2];
@@ -565,18 +569,18 @@ test("send now from the menu after a warned send later sends now, not at its tim
   vi.mocked(api.send).mockResolvedValueOnce({ ...noWarnings, warnings: [w], digest: "d" });
   render(<ComposePage />);
   await body();
-  vi.mocked(api.popupMenu).mockImplementationOnce(async (items) =>
-    items.findIndex((l) => l.startsWith("明天")),
+  vi.mocked(api.popupMenu).mockImplementationOnce(
+    async (entries) => entries.find((e) => e.label.startsWith("明天"))?.id ?? "",
   );
   await userEvent.click(screen.getByRole("button", { name: "发送选项" }));
   expect(screen.getByRole("button", { name: "仍然发送" })).toBeInTheDocument();
-  vi.mocked(api.popupMenu).mockImplementationOnce(async () => 0); // 立即发送
+  vi.mocked(api.popupMenu).mockImplementationOnce(async () => "now"); // 立即发送
   await userEvent.click(screen.getByRole("button", { name: "发送选项" }));
   expect(api.send).toHaveBeenLastCalledWith(7, "", 0);
 });
 
 test("send later…: ⌘↩ in the dialog schedules, it does not send now", async () => {
-  vi.mocked(api.popupMenu).mockImplementationOnce(async (items) => items.length - 1);
+  vi.mocked(api.popupMenu).mockImplementationOnce(async () => "later");
   render(<ComposePage />);
   await body();
   await userEvent.click(screen.getByRole("button", { name: "发送选项" }));
