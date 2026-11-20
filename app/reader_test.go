@@ -1691,10 +1691,10 @@ func TestReaderPrintFocusedMessage(t *testing.T) {
 	print(msgs[0].ID, key)
 }
 
-// The header names who a message went to: "我" with one account; with more,
-// the address that got it, the others (To and Cc) counted; under Cc when the
-// user is only Cc'd; To's first when the user is in neither; the account's
-// address when the message names no one.
+// The header names who a message went to: "我" for the address that got it,
+// with more accounts too, the others (To and Cc) counted; under Cc when the
+// user is only Cc'd; To's first when the user is in neither; "我" when the
+// message names no one.
 func TestReaderRecipients(t *testing.T) {
 	h, accs := mailHarness(t, nil, "me@baran.wang", "work@company.example")
 	h.waitMail("the folders", func() bool { return len(h.app.mail.folders[accs[0].ID]) > 0 })
@@ -1704,12 +1704,12 @@ func TestReaderRecipients(t *testing.T) {
 		to, cc []string
 		want   string
 	}{
-		{to: []string{"Baran <me@baran.wang>"}, want: "发给 me@baran.wang"},
-		{to: []string{"Baran <me@baran.wang>", "Mia <mia@partner.example>"}, cc: []string{"team@partner.example", "ops@partner.example"}, want: "发给 me@baran.wang 等 3 人"},
-		{to: []string{"Lena Park <lena@partner.example>", "mia@partner.example", "joe@partner.example"}, cc: []string{"Work <WORK@company.example>"}, want: "发给 Lena Park 等 2 人 · 抄送 WORK@company.example"},
+		{to: []string{"Baran <me@baran.wang>"}, want: "发给 我"},
+		{to: []string{"Baran <me@baran.wang>", "Mia <mia@partner.example>"}, cc: []string{"team@partner.example", "ops@partner.example"}, want: "发给 我 等 3 人"},
+		{to: []string{"Lena Park <lena@partner.example>", "mia@partner.example", "joe@partner.example"}, cc: []string{"Work <WORK@company.example>"}, want: "发给 Lena Park 等 2 人 · 抄送 我"},
 		{to: []string{"subscribers@rust.example"}, cc: []string{"x@rust.example"}, want: "发给 subscribers@rust.example 等 1 人"},
 		{cc: []string{"Team <team@partner.example>"}, want: "抄送 Team"},
-		{want: "发给 me@baran.wang"},
+		{want: "发给 我"},
 	} {
 		if got := r.recipients(core.MessageSummary{FolderID: inbox, To: c.to, Cc: c.cc}); got != c.want {
 			t.Errorf("to %q cc %q: %q, want %q", c.to, c.cc, got, c.want)

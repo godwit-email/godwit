@@ -1548,7 +1548,7 @@ func senderOf(m core.MessageSummary) (name, addr string) {
 }
 
 // recipients is the header's line of who a message went to: the user's
-// address that got it (its sidebar name, else "me" with one account) and how
+// address that got it (its sidebar name, else "me") and how
 // many others, To and Cc together; when the user is only Cc'd, To's first and
 // the user under Cc; when neither (Bcc, a list), To's first; with no To or Cc,
 // the account.
@@ -1557,14 +1557,8 @@ func (r *reader) recipients(m core.MessageSummary) string {
 	mine := func(addr string) bool {
 		return slices.ContainsFunc(accounts, func(a core.Account) bool { return strings.EqualFold(a.Email, addr) })
 	}
-	me := func(addr string) string {
-		if alias := r.alias(addr); alias != "" {
-			return alias
-		}
-		if len(accounts) <= 1 {
-			return i18n.T("reader.me")
-		}
-		return addr
+	me := func(addr string) string { // which address got it shows in the expanded recipients
+		return cmp.Or(r.alias(addr), i18n.T("reader.me"))
 	}
 	type who struct{ name, addr string }
 	parse := func(list []string) []who {

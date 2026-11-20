@@ -941,7 +941,7 @@ func (r *reader) tagChips(c *ui.Context) {
 				name = i18n.T("codes.card." + tag.Label)
 			}
 			e := kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Secondary, Size: kit.SizeXs}).Shrink(0).Label(name).Children(func() {
-				ui.Icon(c, icons.Get("external-link")).Size(theme.IconSm, theme.IconSm)
+				ui.Icon(c, icons.Get("external-link")).Size(theme.IconXs, theme.IconXs)
 				ui.Text(c, name)
 				ui.Text(c, tag.Text).TextColor(t.Muted) // where it goes, before it opens
 			})

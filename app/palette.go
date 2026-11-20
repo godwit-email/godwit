@@ -63,7 +63,6 @@ type palette struct {
 type palItem struct {
 	icon, title, sub string
 	whoFirst         bool   // sub, who the mail is with, leads the row
-	where            string // after a mail hit's subject: its folder and account
 	avatar           string // the name its 24 avatar shows, in place of the icon's tile
 	bare             bool   // its icon stands alone, 16, without a tile
 	meta             string // in place of when, as a contact's mail count
@@ -221,9 +220,6 @@ func (p *palette) row(c *ui.Context, i int, it palItem) ui.Element {
 		lead, second := it.title, it.sub
 		if it.whoFirst { // a mail hit, as the design has it: who it is with, then the subject
 			lead, second = it.sub, it.title
-			if it.where != "" {
-				second += " · " + it.where
-			}
 		}
 		marked(c, lead, p.hl).SingleLine().Shrink(1)
 		if second != "" {
@@ -386,13 +382,9 @@ func (p *palette) mailItems(ms []core.MessageSummary) []palItem {
 	mp := p.a.mail
 	for _, m := range ms {
 		it := messageItem(m)
-		sub, where := mp.resultWho(it), ""
-		// The folder, but the inbox's, and the account when there are more.
-		if f, ok := mp.folder(m.FolderID); ok && (f.Role != "inbox" || len(p.a.accounts) > 1) {
-			where = mp.folderLine(it)
-		}
+		sub := mp.resultWho(it) // the folder and account show in the preview, as the design's rows
 		thread, id := m.ThreadID, m.ID
-		out = append(out, palItem{icon: "mail", avatar: cmp.Or(m.FromName, displayName(m.From)), title: cmp.Or(m.Subject, i18n.T("mail.no_subject")), sub: sub, whoFirst: true, where: where, when: m.Date, unread: it.Unread > 0, msg: &m,
+		out = append(out, palItem{icon: "mail", avatar: cmp.Or(m.FromName, displayName(m.From)), title: cmp.Or(m.Subject, i18n.T("mail.no_subject")), sub: sub, whoFirst: true, when: m.Date, unread: it.Unread > 0, msg: &m,
 			open: func() {
 				p.a.navigate(Route{Page: PageMail, View: core.View{Unified: "inbox"}, ThreadID: thread, MessageID: id})
 			}, acts: p.mailActs(m, it.Unread > 0)})
