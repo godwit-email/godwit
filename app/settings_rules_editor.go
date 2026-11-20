@@ -101,7 +101,7 @@ func cardHead(c *ui.Context, icon, word string, tile, fg ui.Color, extra func())
 		ui.Box(c).Size(th.Space(6), th.Space(6)).Radius(t.Radius.Md).Background(tile).TextColor(fg).Center().Shrink(0).Children(func() {
 			ui.Icon(c, icons.Get(icon)).Size(theme.IconSm, theme.IconSm)
 		})
-		kit.Text(c, word, t.Text.Sm).FontWeight(600)
+		kit.Text(c, word, t.Text.Sm).FontWeight(500)
 		if extra != nil {
 			extra()
 		}
@@ -704,7 +704,7 @@ func (v *rulesView) aside(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	// 运行方式 first: a choice of the rule's, over the preview that only shows.
 	kit.Card(c, ui.Column(c), kit.ToneCard).FillWidth().Gap(th.Space(2)).Padding(th.Space(3)).Children(func() {
-		kit.Text(c, i18n.T("settings.rules.run"), t.Text.Sm).FontWeight(600).PaddingX(th.Space(1))
+		kit.Text(c, i18n.T("settings.rules.run"), t.Text.Sm).FontWeight(500).PaddingX(th.Space(1))
 		for _, o := range []struct {
 			bg  bool
 			key string
@@ -717,7 +717,7 @@ func (v *rulesView) aside(c *ui.Context) {
 	})
 	kit.Card(c, ui.Column(c), kit.ToneTint).FillWidth().Gap(th.Space(2)).Padding(th.Space(3)).Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Baseline).Gap(th.Space(2)).PaddingX(th.Space(1)).Children(func() {
-			kit.Text(c, i18n.T("settings.rules.preview"), t.Text.Sm).FontWeight(600).Grow(1)
+			kit.Text(c, i18n.T("settings.rules.preview"), t.Text.Sm).FontWeight(500).Grow(1)
 			kit.Text(c, i18n.Tf("settings.rules.preview.recent", core.RulePreviewDays), t.Text.Xs).TextColor(t.Muted)
 		})
 		p := v.prev

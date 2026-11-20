@@ -217,7 +217,7 @@ func (a *App) syncMenu(c *ui.Context, hs []syncHealth) {
 	maxH := winH - c.TitleBar().Height - theme.PopupOffset - 2*th.Space(3) - th.Space(2)
 	ui.Column(c).Width(theme.SyncMenuWidth).MaxHeight(maxH).Gap(th.Space(3)).Children(func() {
 		ui.Row(c).Shrink(0).AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(th.Space(2)).Children(func() {
-			kit.Text(c, i18n.T("shell.sync.title"), small).FontWeight(600).Shrink(0)
+			kit.Text(c, i18n.T("shell.sync.title"), small).FontWeight(500).Shrink(0)
 			kit.Button(c, i18n.T("shell.sync.all"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "refresh-cw"}).
 				FontSize(xs).Height(th.Space(6)).PaddingX(th.Space(2)).Shrink(0).OnClick(act(a.SyncAll))
 		})

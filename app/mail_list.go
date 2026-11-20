@@ -1415,18 +1415,17 @@ func withAvatar(c *ui.Context, who string, lines func()) {
 }
 
 // row is one thread or message: who, when, the subject and the start of the
-// text beside the sender's avatar; unread ones in bold, with a dot in the
-// row's left gutter that says how many are unread to assistive technology.
+// text beside the sender's avatar; unread ones in the foreground, with a dot
+// in the row's left gutter that says how many are unread to assistive technology.
 // toggleStar is its star's action, nil for a row that only shows (star).
 func (p *mailPage) row(c *ui.Context, it mailItem, toggleStar func()) ui.Element {
 	t := theme.Of(c)
 	th, small := c.Theme(), t.Text.Xs
-	// The lead line carries the weight, 600 unread and 500 read; the line
-	// under it reads at 400. Read mail steps both a shade down, so unread
-	// stands out by more than its weight.
-	lead, ink := 500, t.Subdued
+	// The lead line is medium and the line under it regular, read or not:
+	// read mail steps both a shade down, as the design's rows.
+	ink := t.Subdued
 	if it.Unread > 0 {
-		lead, ink = 600, t.Foreground
+		ink = t.Foreground
 	}
 	col := ui.Column(c).Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5))
 	return col.Children(func() {
@@ -1450,9 +1449,9 @@ func (p *mailPage) row(c *ui.Context, it mailItem, toggleStar func()) ui.Element
 			}
 			ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 				if subjectFirst {
-					ui.Text(c, subject).FontWeight(lead).TextColor(ink).SingleLine().Shrink(1)
+					ui.Text(c, subject).FontWeight(500).TextColor(ink).SingleLine().Shrink(1)
 				} else {
-					who(lead)
+					who(500)
 				}
 				ui.Spacer(c)
 				p.star(c, it, col.Hovered(), toggleStar)

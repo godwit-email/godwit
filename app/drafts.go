@@ -204,7 +204,7 @@ func (p *mailPage) draftBar(c *ui.Context, d core.Draft, info draftInfo) {
 				kit.Text(c, i18n.T("mail.draft.notice"), t.Text.Xs).TextColor(t.Muted)
 			}
 			if cut {
-				kit.Text(c, i18n.T("mail.draft.too_long"), t.Text.Xs).FontWeight(600)
+				kit.Text(c, i18n.T("mail.draft.too_long"), t.Text.Xs).FontWeight(500)
 			}
 		})
 		kit.Button(c, i18n.T("mail.draft.edit"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Icon: "square-pen"}).Shrink(0).OnClick(func() { p.a.OpenDraft(d.ID) })

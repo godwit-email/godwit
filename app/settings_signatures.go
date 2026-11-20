@@ -113,7 +113,7 @@ func (p *settingsPage) signaturesView(c *ui.Context) {
 						for i, l := range lines {
 							line := kit.Text(c, l, t.Text.Xs).SingleLine()
 							if i == 0 {
-								line.FontWeight(600)
+								line.FontWeight(500)
 							} else {
 								line.TextColor(t.Muted)
 							}

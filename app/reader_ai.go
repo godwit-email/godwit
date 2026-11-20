@@ -589,7 +589,7 @@ func (r *reader) digest(c *ui.Context, d core.ThreadDigest) {
 	if d.Todo != nil {
 		kit.Separator(c, false)
 		ui.Column(c).Gap(th.Space(1)).Children(func() {
-			kit.Text(c, i18n.T("reader.ai.todo"), t.Text.Xs).FontWeight(600)
+			kit.Text(c, i18n.T("reader.ai.todo"), t.Text.Xs).FontWeight(500)
 			r.digestLine(c, d.Todo)
 		})
 	}
@@ -819,7 +819,7 @@ func (r *reader) panel(c *ui.Context, title, meta string, close func(), body fun
 	kit.Elevate(c, p, theme.ShadowSm).Children(func() {
 		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, icons.Get("sparkles")).Size(theme.IconSm, theme.IconSm).TextColor(t.Foreground)
-			ui.Text(c, title).FontWeight(600).Shrink(1)
+			ui.Text(c, title).FontWeight(500).Shrink(1)
 			kit.Text(c, meta, t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
 			if close != nil {
 				kit.IconButton(c, "x", i18n.T("reader.ai.close_result"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(close)

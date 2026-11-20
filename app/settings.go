@@ -388,7 +388,7 @@ func settingsSection(c *ui.Context, title, footnote string, rows ...func()) {
 
 // sectionTitle is a settings section's title, inset as its card's rows.
 func sectionTitle(c *ui.Context, title string) ui.Element {
-	return kit.Text(c, title, theme.Of(c).Text.Sm).FontWeight(600).PaddingX(c.Theme().Space(4))
+	return kit.Text(c, title, theme.Of(c).Text.Sm).FontWeight(500).PaddingX(c.Theme().Space(4))
 }
 
 // settingsCard is a section's card of rows, with hairlines between them: a

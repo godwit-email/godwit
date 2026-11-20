@@ -387,7 +387,7 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 			// the list's width and the gap to the reader, as the panels below
 			ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2)).Width(a.listWidth()+th.Space(2)).MinWidth(0).Shrink(titleShrink).
 				Padding(0, 0, 0, th.Space(4)).Children(func() {
-				ui.Text(c, title).FontWeight(600).SingleLine().MaxWidth(theme.TitleNameMax).Shrink(1)
+				ui.Text(c, title).FontWeight(500).SingleLine().MaxWidth(theme.TitleNameMax).Shrink(1)
 				if sub != "" {
 					kit.Text(c, sub, t.Text.Xs).TextColor(t.Muted).SingleLine().MaxWidth(theme.TitleSubMax).Shrink(1)
 				}

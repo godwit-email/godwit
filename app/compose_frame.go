@@ -81,7 +81,7 @@ func (a *App) ComposeView(f *ComposeFrame) func(*ui.Context) {
 		ui.Column(c).Fill().Children(func() {
 			ui.Row(c).Height(barH).FillWidth().Shrink(0).AlignItems(ui.Center).Gap(th.Space(2)).Background(a.windowFill(t)).
 				Padding(0, th.Space(4), 0, c.TitleBar().Left+th.Space(5)).DragWindow().Children(func() {
-				kit.Text(c, title, t.Text.Sm).FontWeight(600).SingleLine().Shrink(1)
+				kit.Text(c, title, t.Text.Sm).FontWeight(500).SingleLine().Shrink(1)
 				kit.Text(c, status, t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(0)
 			})
 			view := kit.WebView(c, f.view).Grow(1).FillWidth()

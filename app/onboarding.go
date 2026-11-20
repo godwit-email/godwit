@@ -791,7 +791,7 @@ func mark(c *ui.Context, p auth.Provider, size float32) {
 		fs = t.Text.Sm
 	}
 	ui.Box(c).Size(size, size).Center().Children(func() {
-		kit.Text(c, text, fs).FontWeight(600).LineHeight(theme.LineTight).TextColor(t.Subdued)
+		kit.Text(c, text, fs).FontWeight(500).LineHeight(theme.LineTight).TextColor(t.Subdued)
 	})
 }
 

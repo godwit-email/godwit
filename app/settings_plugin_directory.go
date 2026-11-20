@@ -403,7 +403,7 @@ func readmeView(c *ui.Context, blocks []readmeBlock) {
 			cc := c.Key(i)
 			switch b.kind {
 			case "h":
-				kit.Text(cc, b.text, t.Text.Sm).FontWeight(600).Margin(th.Space(2), 0, 0, 0)
+				kit.Text(cc, b.text, t.Text.Sm).FontWeight(500).Margin(th.Space(2), 0, 0, 0)
 			case "li":
 				ui.Row(cc).FillWidth().Gap(th.Space(2)).Children(func() {
 					kit.Text(cc, b.mark, t.Text.Sm).TextColor(t.Muted).Shrink(0)

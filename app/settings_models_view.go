@@ -442,7 +442,7 @@ func capCard(c *ui.Context, title, desc, unsupported, switchLabel string, suppor
 	card.Children(func() {
 		ui.Row(c).AlignItems(ui.Start).Gap(th.Space(3)).Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-				ui.Text(c, title).FontWeight(600)
+				ui.Text(c, title).FontWeight(500)
 				kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted)
 			})
 			if supported {
@@ -455,9 +455,7 @@ func capCard(c *ui.Context, title, desc, unsupported, switchLabel string, suppor
 			body()
 		}
 		if warn != "" {
-			kit.Block(c, ui.Box(c).Padding(th.Space(2), th.Space(2.5)).Label(warn), kit.ToneWarning).Children(func() {
-				kit.Text(c, warn, t.Text.Xs)
-			})
+			kit.Alert(c, kit.ToneWarning, warn, nil)
 		}
 	})
 }

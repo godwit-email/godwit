@@ -621,7 +621,7 @@ func (e *viewEditor) preview(c *ui.Context) {
 		}
 	}
 	ui.Row(c).FillWidth().AlignItems(ui.Baseline).Gap(th.Space(2)).Padding(th.Space(4), th.Space(4), th.Space(2), th.Space(4)).Children(func() {
-		kit.Text(c, i18n.T("view.preview"), t.Text.Sm).FontWeight(600).Grow(1)
+		kit.Text(c, i18n.T("view.preview"), t.Text.Sm).FontWeight(500).Grow(1)
 		if e.prev != nil {
 			kit.Text(c, i18n.Tf("view.count", total), t.Text.Xs).TextColor(t.Muted)
 		}

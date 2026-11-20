@@ -2359,7 +2359,7 @@ func unsubscribeDialog(c *ui.Context, open *bool, u core.Unsubscribe, send func(
 	t := theme.Of(c)
 	opts := kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("reader.unsubscribe.desc"), Close: i18n.T("common.close")}
 	kit.Dialog(c, open, i18n.T("reader.unsubscribe.title"), opts, func() {
-		ui.Text(c, u.Host).FontWeight(600)
+		ui.Text(c, u.Host).FontWeight(500)
 		if u.List != "" {
 			kit.Text(c, i18n.Tf("reader.unsubscribe.list", u.List), t.Text.Xs).TextColor(t.Muted)
 		}
@@ -2541,7 +2541,7 @@ func (r *reader) securityBadge(c *ui.Context, msgID int64, sec gomail.SecurityRe
 	kit.HoverCard(c, mark, theme.SecurityCardWidth, func() {
 		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, icons.Fill(iconName)).Size(theme.Icon, theme.Icon).TextColor(color)
-			kit.Text(c, label, t.Text.Sm).FontWeight(600).TextColor(color)
+			kit.Text(c, label, t.Text.Sm).FontWeight(500).TextColor(color)
 		})
 		kit.Text(c, r.secExplanation(sec), t.Text.Xs).TextColor(t.Foreground)
 		kit.Separator(c, false)
