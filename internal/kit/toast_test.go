@@ -167,12 +167,13 @@ func TestToastStackKeyboard(t *testing.T) {
 // live rather than stills (WebView).
 func TestToastKeepsPageLive(t *testing.T) {
 	s := &toastScene{toasts: []ui.Toast{closeable("Saved")}}
-	tt := ui.NewTester(themed(func(c *ui.Context) { NewFrame(); s.view(c) }), 800, 600)
+	var f *frost
+	tt := ui.NewTester(themed(func(c *ui.Context) { NewFrame(c); f = frostOf(c); s.view(c) }), 800, 600)
 	settle(tt)
 	if !tt.HasText("Saved") {
 		t.Fatalf("no toast: %q", tt.Texts())
 	}
-	if frosted {
+	if f.now {
 		t.Error("a toast froze the page's web views")
 	}
 }

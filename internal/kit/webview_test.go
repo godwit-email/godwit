@@ -29,19 +29,22 @@ func (f *fakePage) CapturePage() ([]byte, error) {
 // is taken once, and the web view comes back when the dialog closes.
 func TestWebViewShotUnderGlass(t *testing.T) {
 	Glass = true
-	NewFrame() // forget earlier tests' frosted frames
-	NewFrame()
-	t.Cleanup(func() { Glass = false; NewFrame(); NewFrame() })
+	t.Cleanup(func() { Glass = false })
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, image.NewGray(image.Rect(0, 0, 1, 1))); err != nil {
 		t.Fatal(err)
 	}
 	page := &fakePage{png: buf.Bytes()}
 	open := false
+	other := &fakePage{png: buf.Bytes()} // another window's page, under no dialog
 	tt := ui.NewTester(themed(func(c *ui.Context) {
-		NewFrame()
+		NewFrame(c)
 		ui.Column(c).Fill().Children(func() { WebView(c, page).Grow(1) })
 		Dialog(c, &open, "T", DialogOpts{Close: "Close"}, nil, nil)
+	}), 400, 300)
+	ot := ui.NewTester(themed(func(c *ui.Context) {
+		NewFrame(c)
+		ui.Column(c).Fill().Children(func() { WebView(c, other).Grow(1) })
 	}), 400, 300)
 	if tt.WebViewAt(200, 290) == nil {
 		t.Fatal("no web view before the dialog")
@@ -54,6 +57,10 @@ func TestWebViewShotUnderGlass(t *testing.T) {
 	}
 	if tt.WebViewAt(200, 290) != nil {
 		t.Fatalf("the web view still shows under the frosted dialog (%d screenshots)", page.shots.Load())
+	}
+	ot.Frame()
+	if ot.WebViewAt(200, 290) == nil || other.shots.Load() != 0 {
+		t.Errorf("one window's dialog stilled another window's page (%d screenshots)", other.shots.Load())
 	}
 	tt.Advance(2 * theme.MotionBase)
 	if n := page.shots.Load(); n != 1 {

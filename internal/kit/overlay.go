@@ -55,7 +55,7 @@ func Dialog(c *ui.Context, open *bool, title string, o DialogOpts, body, footer 
 			aboveCentre(c, backdrop, panel)
 		}
 		panel.Opacity(k).Margin(rise(k), 0, 0, 0).Width(width).MaxHeight(maxH).Radius(t.Radius.X2l).Clip().Border(theme.Hairline, t.GlassBorder)
-		glassPanel(panel, t)
+		glassPanel(c, panel)
 		Elevate(c, panel, theme.ShadowX2l)
 		header := ui.Row(c).Shrink(0).AlignItems(ui.Start).Gap(th.Space(4)).Padding(th.Space(4))
 		if body != nil {
@@ -125,9 +125,10 @@ var BackdropBlur = true
 var Glass bool
 
 // glassPanel fills a dialog's panel: the dialog material under Glass, else opaque.
-func glassPanel(panel ui.Element, t theme.Tokens) {
+func glassPanel(c *ui.Context, panel ui.Element) {
+	t := theme.Of(c)
 	if Glass {
-		panel.Material(frostedMaterial(t.MaterialDialog))
+		panel.Material(frostedMaterial(c, t.MaterialDialog))
 	} else {
 		panel.Background(t.Raised)
 	}
@@ -169,15 +170,15 @@ func fillRounded(p *ui.Painter, box ui.Rect, c ui.Color, radii [4]float32) {
 // frostedMaterial is one of the design's materials: what is behind blurred
 // by theme.MaterialBlur, then tinted with tint (a theme.Tokens Material*).
 // Call it while building the panel.
-func frostedMaterial(tint ui.Color) ui.Material {
-	frosted = true // web views under it show a screenshot it can blur (WebView)
+func frostedMaterial(c *ui.Context, tint ui.Color) ui.Material {
+	frostOf(c).now = true // the window's web views under it show a screenshot it can blur (WebView)
 	return scrim{theme.MaterialBlur, tint}
 }
 
 // popupLook gives a popover, menu or select popup the popover material, its
 // edge and drop, rounded by radius.
 func popupLook(c *ui.Context, panel ui.Element, radius float32) {
-	popupFace(c, panel, radius, frostedMaterial(theme.Of(c).MaterialPopover))
+	popupFace(c, panel, radius, frostedMaterial(c, theme.Of(c).MaterialPopover))
 }
 
 // toastLook is popupLook for a toast, which is not modal: the page under it

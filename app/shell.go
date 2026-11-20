@@ -253,11 +253,8 @@ func (a *App) View(c *ui.Context) {
 	theme.Apply(c, theme.FromSettings(a.settings, c.Theme().Dark))
 	t, th := theme.Of(c), c.Theme()
 	root := t.Window
-	if a.vibrancy && a.route.Page != PageOnboarding {
-		root = ui.Transparent // the material shows where the window's own color would
-		if !t.Dark {
-			root = t.Window.Alpha(theme.MaterialTint) // lighter, as the design's material, the blur still showing
-		}
+	if a.route.Page != PageOnboarding {
+		root = a.windowFill(t)
 	}
 	kit.ToastNow(c, a.clock.Now())
 	for _, ts := range a.toasts {
@@ -276,7 +273,7 @@ func (a *App) View(c *ui.Context) {
 	}
 	a.toasts, a.closeToasts = nil, nil
 	kit.DialogShown() // forget another window's
-	kit.NewFrame()
+	kit.NewFrame(c)
 
 	if c.Shortcut(ui.Cmd, ui.KeyBracketLeft) {
 		a.back()

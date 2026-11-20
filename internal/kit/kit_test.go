@@ -1575,15 +1575,16 @@ func TestKbdKeys(t *testing.T) {
 
 func TestFrostedMaterialAndTokens(t *testing.T) {
 	l := theme.Light()
-	frosted = false
-	mat := frostedMaterial(l.MaterialPopover).(scrim)
+	var mat scrim
+	var f *frost
+	ui.NewTester(themed(func(c *ui.Context) { f = frostOf(c); mat = frostedMaterial(c, l.MaterialPopover).(scrim) }), 100, 100)
 	if mat.blur != theme.MaterialBlur {
 		t.Errorf("material blur = %v, want %v", mat.blur, theme.MaterialBlur)
 	}
 	if mat.tint != l.MaterialPopover {
 		t.Errorf("material tint = %v, want %v", mat.tint, l.MaterialPopover)
 	}
-	if !frosted {
+	if !f.now {
 		t.Error("a frosted material does not tell WebView")
 	}
 	if bar := Bar(l.MaterialBar).(scrim); bar.blur != theme.MaterialBlur || bar.tint != l.MaterialBar {

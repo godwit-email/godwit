@@ -59,7 +59,7 @@ func Palette(c *ui.Context, open *bool, query *string, o PaletteOpts, head, body
 		backdrop.Background(t.Scrim.Alpha(k)).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0).Transition(leave(c))
 		panel.Label(o.Label).Opacity(k).Margin(rise(k), 0, 0, 0).Width(theme.DialogWideWidth).MaxHeight(theme.SheetMaxHeight).
 			Radius(t.Radius.X2l).Clip().Border(theme.Hairline, t.GlassBorder)
-		glassPanel(panel, t)
+		glassPanel(c, panel)
 		Elevate(c, panel, theme.ShadowX2l)
 		var in ui.Element
 		if o.Send != "" {
