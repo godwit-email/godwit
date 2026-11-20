@@ -564,6 +564,8 @@ func TestOnboardingClientFile(t *testing.T) {
 	h.see(drop)
 	dropOn := func(path string) {
 		h.t.Helper()
+		h.tt.Advance(2 * theme.MotionBase) // the centred sheet moves as it grows, measured a frame late: let it settle
+		h.tt.Frame()
 		r, _ := h.tt.Find(drop)
 		if r.Y < 0 || r.Y+r.H > 820-8 { // the sheet grew with the Mail / Address book choice: bring the row into the window, as click does
 			h.tt.Scroll(900, 400, 0, r.Y-400)
