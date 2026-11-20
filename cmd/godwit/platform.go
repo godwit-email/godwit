@@ -742,18 +742,66 @@ func (c composeWindow) EmitClosing(gen int) {
 	}
 }
 
+// composeFrames are the open compose windows' native layers, by window ID.
+type composeFrames struct {
+	mu sync.Mutex
+	m  map[int]*app.ComposeFrame
+}
+
+func (fs *composeFrames) get(win int) *app.ComposeFrame {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	return fs.m[win]
+}
+
+func (fs *composeFrames) set(win int, f *app.ComposeFrame) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	if fs.m == nil {
+		fs.m = map[int]*app.ComposeFrame{}
+	}
+	if f == nil {
+		delete(fs.m, win)
+	} else {
+		fs.m[win] = f
+	}
+}
+
 // newComposeWindow opens a compose window, placed by cas, whose closing goes through ws:
 // closing is always prevented and asked of ws, and the page never leaves
-// its entry nor opens windows.
-func newComposeWindow(ws *webui.Windows, cas *cascade) webui.Window {
-	w := mygo.NewWindow(composeWindowOptions(runtime.GOOS))
+// its entry nor opens windows. Native draws the window: its title bar, the
+// page's web view under it and the toasts over it (app.ComposeFrame, by view);
+// frames keeps the frame while the window is open.
+func newComposeWindow(ws *webui.Windows, cas *cascade, frames *composeFrames, view func(*app.ComposeFrame) func(*ui.Context)) webui.Window {
+	opts := composeWindowOptions(runtime.GOOS)
+	entry := opts.URL
+	var draw func(*ui.Context)
+	opts.URL, opts.Content = "", ui.View(func(c *ui.Context) {
+		if draw != nil {
+			draw(c)
+		}
+	})
+	w := mygo.NewWindow(opts)
 	cas.place(w)
-	lockPage(w.Page())
+	if v, err := w.NewWebView(mygo.WebViewOptions{Transparent: true}); err != nil {
+		log.Printf("the compose page: %v", err) // the window shows its title bar alone
+	} else {
+		f := app.NewComposeFrame(v, w.Invalidate)
+		frames.set(w.ID(), f)
+		draw = view(f)
+		lockPage(v.Page())
+		if err := v.Page().LoadURL(entry); err != nil {
+			log.Printf("the compose page: %v", err)
+		}
+		v.Focus()
+		w.Invalidate()
+	}
 	w.OnClose(func(e *mygo.CloseEvent) {
 		e.PreventDefault()
 		ws.RequestClose(w.ID())
 	})
 	w.OnClosed(func() {
+		frames.set(w.ID(), nil)
 		cas.closed(w)
 		ws.Closed(w.ID())
 	})

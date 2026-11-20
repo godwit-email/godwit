@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
 )
@@ -93,6 +94,10 @@ type WitPageDeps struct {
 	// EditRule opens the rules editor on a rule Wit proposed in conversation
 	// conv as approval, for the question ask (在编辑器里修改).
 	EditRule func(r core.Rule, conv, approval int64, ask string)
+	// Toast and ToastBar hand the page's toasts, and where its composer is,
+	// to native, which draws them over the page.
+	Toast    func(kind, text string)
+	ToastBar func(bar, field ui.Rect)
 }
 
 // Wit keeps the Wit page's state: the route's conversation as a versioned

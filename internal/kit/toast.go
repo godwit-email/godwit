@@ -23,9 +23,10 @@ type ToastData struct{ Deadline time.Time }
 
 // toastPlace is what the page registered this frame to place the toasts by.
 type toastPlace struct {
-	panel, bar, field ui.Element
-	hasPanel, hasBar  bool
-	now               time.Time
+	panel            ui.Element
+	bar, field       ui.Rect // in the window, as last laid out
+	hasPanel, hasBar bool
+	now              time.Time
 }
 
 type toastPlaceKey struct{}
@@ -48,7 +49,11 @@ func ToastNow(c *ui.Context, now time.Time) { toastPlaceOf(c).now = now }
 // ToastBar registers a bar along the panel's foot, and field, its input: the
 // toasts rise above bar and line up with field's right edge. Call it every
 // frame the bar shows; a frame without it puts them back in the panel's corner.
-func ToastBar(c *ui.Context, bar, field ui.Element) {
+func ToastBar(c *ui.Context, bar, field ui.Element) { ToastBarRect(c, bar.Bounds(), field.Bounds()) }
+
+// ToastBarRect is ToastBar for a bar drawn by a page in a web view: bar and
+// field are where it is in the window.
+func ToastBarRect(c *ui.Context, bar, field ui.Rect) {
 	p := toastPlaceOf(c)
 	p.bar, p.field, p.hasBar = bar, field, true
 }
@@ -75,7 +80,7 @@ func (p toastPlace) inset(c *ui.Context) (right, bottom float32, measured bool) 
 		}
 	}
 	if p.hasBar {
-		if bar, field := p.bar.Bounds(), p.field.Bounds(); bar.W > 0 && field.W > 0 {
+		if bar, field := p.bar, p.field; bar.W > 0 && field.W > 0 {
 			edgeX, edgeY = field.X+field.W, bar.Y-th.Space(2)
 		}
 	}

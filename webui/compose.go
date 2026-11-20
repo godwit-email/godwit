@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/internal/i18n"
@@ -186,6 +187,11 @@ type PageDeps struct {
 	// message id in its reader.
 	OpenModels  func()
 	OpenMessage func(id int64)
+	// Toast, ToastBar and TitleBar hand window winID's toasts, where its send
+	// bar is, and its title bar's text to native, which draws them.
+	Toast    func(winID int, kind, text string)
+	ToastBar func(winID int, bar, field ui.Rect)
+	TitleBar func(winID int, title, status string)
 }
 
 // ComposePage is what compose pages call (mygo.Bind); every method acts on

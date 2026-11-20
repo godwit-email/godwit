@@ -24,6 +24,9 @@ type askPage struct {
 	list    latest                 // the conversations; only the newest read applies
 	version int64                  // the Wit page's snapshot as of the last navigation here
 	origin  atomic.Pointer[[2]int] // where the Wit page's view is in the window, as last laid out
+	// bar and field are the Wit page's composer and its input, in the page's
+	// coordinates: the toasts it asks for (App.WitToast) rise above them.
+	bar, field ui.Rect
 }
 
 func newAskPage(a *App) *askPage { return &askPage{a: a} }
@@ -136,8 +139,24 @@ func (p *askPage) Content(c *ui.Context) {
 		view := kit.WebView(c, v).Grow(1) // transparent: the page draws its own panels
 		if b := view.Bounds(); b.W > 0 {
 			p.origin.Store(&[2]int{int(b.X), int(b.Y)})
+			if p.bar.W > 0 && p.field.W > 0 {
+				kit.ToastBarRect(c, ui.Rect{X: b.X + p.bar.X, Y: b.Y + p.bar.Y, W: p.bar.W, H: p.bar.H},
+					ui.Rect{X: b.X + p.field.X, Y: b.Y + p.field.Y, W: p.field.W, H: p.field.H})
+			}
 		}
 	}
+}
+
+// WitToast shows text, which the Wit page asks for, as a toast of kind
+// (kit.ToastSuccess, ToastWarning, ToastError or "") over the page (UI thread).
+func (a *App) WitToast(kind, text string) { a.toastAs(kind, text) }
+
+// WitToastBar is where the Wit page's composer and its input are, in the
+// page's coordinates (UI thread): its toasts rise above them. Empty ones put
+// them back in the panel's corner.
+func (a *App) WitToastBar(bar, field ui.Rect) {
+	p := a.pages[PageWit].(*askPage)
+	p.bar, p.field = bar, field
 }
 
 func (p *askPage) noModel(c *ui.Context) {

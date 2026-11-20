@@ -159,6 +159,7 @@ func gui(ctx context.Context, dataDir, open string) int {
 			a.OnUI(func() { f(a) }) // dropped once the App closed
 		}
 	}
+	var frames composeFrames // the compose windows' native layers
 	mygo.Bind(webui.NewComposePage(pages, webui.PageDeps{
 		WinOf: func(ctx context.Context) (int, bool) {
 			if w := mygo.CallerWindow(ctx); w != nil {
@@ -168,7 +169,30 @@ func gui(ctx context.Context, dataDir, open string) int {
 		},
 		PickFiles: pickFiles,
 		PopupMenu: func(winID int, entries []webui.MenuEntry, x, y int) string {
-			return witPopupMenu(mygo.WindowByID(winID), entries, x, y)
+			f := frames.get(winID)
+			if f == nil {
+				return ""
+			}
+			ox, oy := f.Origin() // the page sits under the native title bar
+			return witPopupMenu(mygo.WindowByID(winID), entries, ox+x, oy+y)
+		},
+		Toast: func(winID int, kind, text string) {
+			if f := frames.get(winID); f != nil {
+				f.Toast(kind, text)
+			}
+		},
+		ToastBar: func(winID int, bar, field ui.Rect) {
+			if f := frames.get(winID); f != nil {
+				f.SetToastBar(bar, field)
+			}
+		},
+		TitleBar: func(winID int, title, status string) {
+			if f := frames.get(winID); f != nil {
+				f.SetTitleBar(title, status)
+			}
+			if w := mygo.WindowByID(winID); w != nil {
+				w.SetTitle(title) // the Dock's, the Window menu's and the taskbar's: a page in a view titles nothing
+			}
 		},
 		Emit:        emit,
 		OpenURL:     mygo.Shell.OpenExternal,
@@ -217,6 +241,8 @@ func gui(ctx context.Context, dataDir, open string) int {
 		EditRule: func(r core.Rule, conv, approval int64, ask string) {
 			onApp(func(a *app.App) { a.EditRule(r, conv, approval, ask) })
 		},
+		Toast:    func(kind, text string) { onApp(func(a *app.App) { a.WitToast(kind, text) }) },
+		ToastBar: func(bar, field ui.Rect) { onApp(func(a *app.App) { a.WitToastBar(bar, field) }) },
 	})
 	mygo.Bind(webui.NewWitPage(wit))
 	// The reader pages, one per expanded message in the main window, each
@@ -278,7 +304,14 @@ func gui(ctx context.Context, dataDir, open string) int {
 	}
 	mygo.Bind(webui.NewSignaturePage(sig))
 	var cas cascade
-	windows = webui.NewWindows(pages, func(int64) webui.Window { return newComposeWindow(windows, &cas) }, askUnsaved)
+	composeView := func(f *app.ComposeFrame) func(*ui.Context) {
+		return func(c *ui.Context) {
+			if a != nil { // a compose window opens from the App, which is there by then
+				a.ComposeView(f)(c)
+			}
+		}
+	}
+	windows = webui.NewWindows(pages, func(int64) webui.Window { return newComposeWindow(windows, &cas, &frames, composeView) }, askUnsaved)
 	mygo.App.WhenReady(func() {
 		lang := "en"
 		if preferred := mygo.App.PreferredLanguages(); len(preferred) > 0 {
