@@ -1454,3 +1454,62 @@ func TestMailListAvatarAlignsWithHeader(t *testing.T) {
 		t.Fatalf("unread dot X = %.1f, want %.1f (corner badge on avatar at %.1f)", dot.X, avatarX-5, avatarX)
 	}
 }
+
+// TestContextMenuBlankListMarkAllRead verifies that a right-click on the
+// list's own space, past its rows, and on the day's heading above them, offers
+// 全部已读 for the view shown: enabled while the view counts unread mail,
+// disabled once it has none.
+func TestContextMenuBlankListMarkAllRead(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	base := h.clock.Now()
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "first", "body", at(base, 1)))
+	h.put(accs[0], "INBOX", coretest.Msg("charlie@example.com", "alice@example.com", "second", "body", at(base, 2)))
+	h.syncNow(accs[0])
+	h.waitMail("two unread mails", func() bool { return len(h.items()) == 2 && h.app.mail.inboxUnread() == 2 })
+
+	markRead := i18n.T("mail.mark_all_read")
+	blank := func() {
+		t.Helper()
+		first, ok := h.tt.Find("first")
+		if !ok {
+			t.Fatalf("the first row shows: %q", h.tt.Texts())
+		}
+		last, ok := h.tt.Find("second") // the last row: the list's own space starts under it
+		if !ok {
+			t.Fatalf("the second row shows: %q", h.tt.Texts())
+		}
+		h.tt.RightClickAt(first.X+20, last.Y+(last.Y-first.Y)+10) // a row's own height under the last one
+	}
+
+	blank()
+	if menu := h.tt.Menu(); !slices.Contains(menu, markRead) {
+		t.Fatalf("menu %v has no %q", menu, markRead)
+	}
+	if err := h.tt.ChooseMenuItem(markRead); err != nil {
+		t.Fatal(err)
+	}
+	h.until("all marked read", func() bool { return h.app.mail.inboxUnread() == 0 })
+
+	// Nothing unread: the item stays, disabled.
+	blank()
+	if err := h.tt.ChooseMenuItem(markRead); err == nil || !strings.Contains(err.Error(), "disabled") {
+		t.Fatalf("choosing with nothing unread: %v", err)
+	}
+
+	// The heading above the rows takes it too: 今天 in the inbox.
+	byText := func(s string) []mailItem {
+		return slices.DeleteFunc(slices.Clone(h.items()), func(it mailItem) bool { return it.Subject != s })
+	}
+	h.post(func() { h.app.mail.batch("toggle_read", byText("first")) })
+	h.waitMail("unread again", func() bool { return h.app.mail.inboxUnread() == 1 })
+	if err := h.tt.RightClick(i18n.T("mail.group.today")); err != nil {
+		t.Fatal(err)
+	}
+	if menu := h.tt.Menu(); !slices.Contains(menu, markRead) {
+		t.Fatalf("heading menu %v has no %q", menu, markRead)
+	}
+	if err := h.tt.ChooseMenuItem(markRead); err != nil {
+		t.Fatal(err)
+	}
+	h.until("all marked read from the heading", func() bool { return h.app.mail.inboxUnread() == 0 })
+}

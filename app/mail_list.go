@@ -656,6 +656,54 @@ func (p *mailPage) inboxUnread() int {
 	return n
 }
 
+// viewUnread is the unread mail a view counts: what 全部已读 would mark read.
+// ok is false for a view that does not count mail that way: the outbox, a
+// search's results, and a folder of drafts or sent mail.
+func (p *mailPage) viewUnread(v core.View) (n int, ok bool) {
+	if id, saved := savedViewOf(v); saved {
+		if b, found := p.savedView(id); found {
+			return b.Unread, true
+		}
+		return 0, true
+	}
+	if v.LabelID != 0 {
+		if v.AccountID != 0 {
+			return p.accountLabelUnread(v.AccountID, v.LabelID), true
+		}
+		if l, found := p.a.label(v.LabelID); found {
+			return l.Unread, true
+		}
+		return 0, true
+	}
+	switch {
+	case v.Unified == "inbox":
+		return p.inboxUnread(), true
+	case v.Unified == "starred":
+		return p.starredUnreadTotal, true
+	case strings.HasPrefix(v.Unified, "starred:"):
+		if accID, err := strconv.ParseInt(strings.TrimPrefix(v.Unified, "starred:"), 10, 64); err == nil {
+			return p.starredUnread[accID], true
+		}
+	case v.Unified == "" && v.FolderID != 0:
+		if f, found := p.folder(v.FolderID); found && f.Role != "drafts" && f.Role != "sent" {
+			return f.Unread, true
+		}
+	}
+	return 0, false
+}
+
+// viewReadMenu is the view's 全部已读 entry, in the menu of the space that is
+// no mail row: the list's own, and the day's heading above the rows.
+func (p *mailPage) viewReadMenu(m *ui.Menu) {
+	n, ok := p.viewUnread(p.view)
+	if !ok {
+		return
+	}
+	if m.Item(i18n.T("mail.mark_all_read")).Icon(menuIcon("check")).Disabled(n == 0).Chosen() {
+		p.markViewAsRead(p.view)
+	}
+}
+
 func unreadSub(n int) string {
 	if n == 0 {
 		return ""
@@ -833,7 +881,7 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 			kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 				OnClick(p.a.openPalette)
 		}
-	})
+	}).ContextMenu(func(m *ui.Menu) { p.viewReadMenu(m) }) // the day's heading: the list's space above its rows
 }
 
 func (p *mailPage) isDraftsView() bool {
@@ -1098,6 +1146,9 @@ func (p *mailPage) listView(c *ui.Context) {
 			}
 		})
 	}).Grow(1).Padding(0, padR, 0, th.Space(2)).Gap(theme.Stroke) // rows a hairline apart: two chosen ones stay two
+	if !p.searched { // the list's own space, past its rows: the action the sidebar gives the view too
+		l.ContextMenu(func(m *ui.Menu) { p.viewReadMenu(m) })
+	}
 	if p.devPath != "" { // written off the UI thread; the clipboard needs a frame
 		c.WriteClipboard(p.devPath)
 		p.a.toast(p.devPath)
