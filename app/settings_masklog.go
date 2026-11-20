@@ -145,7 +145,7 @@ func (p *settingsPage) maskLogPage(c *ui.Context) {
 	f := &p.logFilter
 	reqs := maskRequests(p.maskLog)
 	pageHeading(c, i18n.T("settings.masking.log"), i18n.T("settings.masking.log.foot"), func() {
-		settingButton(c, i18n.T("settings.masking.log.clear"), kit.Outline, len(reqs) == 0).OnClick(func() { f.clearing = true })
+		kit.Button(c, i18n.T("settings.masking.log.clear"), kit.ButtonOpts{Variant: kit.Outline, Icon: "trash-2", Disabled: len(reqs) == 0}).OnClick(func() { f.clearing = true })
 	})
 
 	blocked, warned, masked := 0, 0, 0
@@ -164,7 +164,7 @@ func (p *settingsPage) maskLogPage(c *ui.Context) {
 		}{{maskAll, "all", len(reqs), t.Foreground}, {core.MaskBlock, "blocked", blocked, t.DangerText}, {core.MaskWarn, "warned", warned, t.WarningText}, {core.MaskMask, "masked", masked, t.Foreground}} {
 			label := i18n.T("settings.masking.log." + tile.key)
 			kit.ChoiceCard(c, kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { f.result = tile.result }}).
-				Grow(1).Shrink(1).Basis(0).Padding(th.Space(3)).Radius(t.Radius.Xl).Label(label), kit.ChoiceCardOpts{Selected: f.result == tile.result, Look: kit.ChoiceOnCard}, func() {
+				Grow(1).Shrink(1).Basis(0).Padding(th.Space(4)).Radius(t.Radius.Xl).Label(label), kit.ChoiceCardOpts{Selected: f.result == tile.result, Look: kit.ChoiceOnCard}, func() {
 				ui.Column(c).Gap(th.Space(0.5)).Children(func() {
 					kit.Text(c, label, t.Text.Xs).TextColor(t.Muted)
 					color := tile.color
@@ -277,27 +277,27 @@ func (p *settingsPage) maskRequestRow(c *ui.Context, q maskRequest) {
 				}
 				per[r.Category]++
 			}
-			line := []string{q.at.In(p.a.clock.Now().Location()).Format("15:04")}
+			sub := []string{q.at.In(p.a.clock.Now().Location()).Format("15:04")}
 			var held []string
 			for _, cat := range order {
 				held = append(held, maskCategoryName(cat)+" ×"+strconv.Itoa(per[cat]))
 			}
 			if len(held) > 0 {
-				line = append(line, strings.Join(held, i18n.T("mail.list_sep")))
+				sub = append(sub, strings.Join(held, i18n.T("mail.list_sep")))
 			}
 			icon := maskFeatureIcons[q.feature]
 			if icon == "" {
 				icon = "shield"
 			}
-			iconLabel(c, func() { ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon).TextColor(t.Foreground) }, feature, strings.Join(line, " · "))
+			iconLabel(c, func() { ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon).TextColor(t.Foreground) }, feature, strings.Join(sub, " · "))
 			switch {
 			case q.blocked():
 				ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Shrink(0).Children(func() {
 					kit.StatusDot(c, kit.Error)
-					kit.Text(c, i18n.T("settings.masking.log.flag.blocked"), t.Text.Xs)
+					kit.Text(c, i18n.T("settings.masking.log.flag.blocked"), t.Text.Xs).TextColor(t.Muted)
 				})
 			case q.sent(core.MaskWarn) > 0:
-				kit.Text(c, i18n.T("settings.masking.log.flag.warned"), t.Text.Xs).TextColor(t.Muted).Shrink(0)
+				statusLine(c, line{i18n.T("settings.masking.log.flag.warned"), lookUntested})
 			}
 			turn := float32(0)
 			if open {
@@ -308,7 +308,7 @@ func (p *settingsPage) maskRequestRow(c *ui.Context, q maskRequest) {
 		if !open {
 			return
 		}
-		ui.Column(c).FillWidth().Gap(th.Space(1.5)).Padding(0, th.Space(4), th.Space(3), th.Space(17)).Children(func() {
+		ui.Column(c).FillWidth().Padding(0, th.Space(4), th.Space(2), th.Space(15)).Children(func() { // under the row's text
 			for _, r := range q.values {
 				p.maskValueRow(c, r, q.blocked())
 			}
@@ -335,8 +335,9 @@ func (p *settingsPage) maskValueRow(c *ui.Context, r core.MaskRecord, blocked bo
 	case r.Action == core.MaskWarn:
 		color = t.WarningText
 	}
-	kit.Block(c, ui.Row(c), kit.ToneRaised).FillWidth().MinHeight(th.Space(8)).Padding(th.Space(1), th.Space(2.5)).Gap(th.Space(2.5)).AlignItems(ui.Center).Children(func() {
-		kit.Text(c, maskCategoryName(r.Category), t.Text.Sm).FontWeight(500).Shrink(0)
+	row := ui.Row(c).FillWidth().MinHeight(th.Space(9)).Padding(th.Space(1), 0).Gap(th.Space(2)).AlignItems(ui.Center)
+	row.BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
+		kit.Text(c, maskCategoryName(r.Category), t.Text.Sm).Shrink(0)
 		kit.Text(c, r.Kind, t.Text.Xs).Font(theme.Mono).TextColor(t.Muted).Shrink(0)
 		kit.Text(c, shape, t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
 		kit.Text(c, i18n.T("settings.masking.log.source."+r.Source), t.Text.Xs).TextColor(t.Muted).Shrink(0)

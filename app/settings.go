@@ -386,6 +386,11 @@ func settingsSection(c *ui.Context, title, footnote string, rows ...func()) {
 	})
 }
 
+// emptyCard is a page's empty state in a hairline frame, as the design draws it.
+func emptyCard(c *ui.Context, o kit.EmptyOpts) {
+	kit.Card(c, ui.Column(c).FillWidth(), kit.ToneOutline).Children(func() { kit.Empty(c, o) })
+}
+
 // sectionTitle is a settings section's title, inset as its card's rows.
 func sectionTitle(c *ui.Context, title string) ui.Element {
 	return kit.Text(c, title, theme.Of(c).Text.Sm).FontWeight(500).PaddingX(c.Theme().Space(4))
@@ -441,9 +446,15 @@ func settingRow(c *ui.Context, label, desc string, control func() ui.Element) ui
 // iconLabel is a 32 tile (mark draws its glyph) before a title and a muted
 // line under it: what the design's list rows say.
 func iconLabel(c *ui.Context, mark func(), title, desc string) {
+	iconLabelGap(c, 0.5, mark, title, desc)
+}
+
+// iconLabelGap is iconLabel with gap (in Space units) between title and line:
+// the services' rows have 4, the others 2.
+func iconLabelGap(c *ui.Context, gap float32, mark func(), title, desc string) {
 	t, th := theme.Of(c), c.Theme()
 	kit.Tile(c, th.Space(8), th.Space(8), kit.ToneTint).Children(mark)
-	ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
+	ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(gap)).Children(func() {
 		kit.Text(c, title, t.Text.Sm).SingleLine()
 		if desc != "" {
 			kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted).SingleLine()
@@ -453,9 +464,13 @@ func iconLabel(c *ui.Context, mark func(), title, desc string) {
 
 // iconRow is a card row of an iconLabel and trailing after it.
 func iconRow(c *ui.Context, mark func(), title, desc string, trailing func()) ui.Element {
+	return iconRowGap(c, 0.5, mark, title, desc, trailing)
+}
+
+func iconRowGap(c *ui.Context, gap float32, mark func(), title, desc string, trailing func()) ui.Element {
 	th := c.Theme()
 	return ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
-		iconLabel(c, mark, title, desc)
+		iconLabelGap(c, gap, mark, title, desc)
 		if trailing != nil {
 			trailing()
 		}
@@ -480,7 +495,7 @@ func rowButton(c *ui.Context, label string, v kit.Variant, disabled bool) ui.Ele
 
 // settingSelect is a select in a settings row.
 func settingSelect[T comparable](c *ui.Context, label string, sel *T, opts []kit.Option[T]) ui.Element {
-	return kit.SelectWith(c, kit.SelectOpts{MinWidth: theme.SettingsSelectMin, MaxWidth: theme.SettingsSelectMax, Flat: true}, sel, opts).Label(label)
+	return kit.SelectWith(c, kit.SelectOpts{MinWidth: theme.SettingsControlWidth, MaxWidth: theme.SettingsSelectMax, Flat: true}, sel, opts).Label(label)
 }
 
 // privacyView is a page of 隐私与安全: masking with its log (the keychain's
@@ -597,11 +612,9 @@ func (p *settingsPage) localAPIView(c *ui.Context) {
 // modelsPage is 模型: the model services and the models the features use.
 func (p *settingsPage) modelsPage(c *ui.Context) {
 	m := p.models
-	var add []func()
-	if !m.empty() {
-		add = append(add, func() { kit.Button(c, i18n.T("settings.models.add"), kit.ButtonOpts{Icon: "plus"}).OnClick(m.add) })
-	}
-	pageHeading(c, pageName("models"), i18n.T("settings.models.desc"), add...)
+	pageHeading(c, pageName("models"), i18n.T("settings.models.desc"), func() {
+		kit.Button(c, i18n.T("settings.models.add"), kit.ButtonOpts{Icon: "plus"}).OnClick(m.add)
+	})
 	m.view(c)
 }
 

@@ -186,7 +186,7 @@ func (v *rulesView) view(c *ui.Context) {
 		}
 	})
 	if len(v.rules) == 0 {
-		kit.Empty(c, kit.EmptyOpts{Icon: "filter", Title: i18n.T("settings.rules.empty"), Desc: i18n.T("settings.rules.empty.desc"), Dashed: true,
+		emptyCard(c, kit.EmptyOpts{Icon: "filter", Title: i18n.T("settings.rules.empty"), Desc: i18n.T("settings.rules.empty.desc"),
 			Actions: func() {
 				kit.EmptyAction(c, i18n.T("settings.rules.new"), kit.ButtonOpts{}).OnClick(v.create)
 				kit.EmptyAction(c, i18n.T("settings.rules.empty.wit"), kit.ButtonOpts{Variant: kit.Outline, Icon: "sparkles"}).OnClick(a.NewConversation)

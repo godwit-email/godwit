@@ -133,7 +133,7 @@ func (p *settingsPage) clientsSection(c *ui.Context, copied func(string)) {
 	ui.Column(c).Gap(theme.SectionGap).Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
 			sectionTitle(c, i18n.T("settings.local_api.connect")).Grow(1)
-			rowButton(c, i18n.T("settings.local_api.copy"), kit.Outline, false).OnClick(func() { copied(a.mcpConfig()) })
+			kit.Button(c, i18n.T("settings.local_api.copy"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Icon: "copy"}).OnClick(func() { copied(a.mcpConfig()) })
 		})
 		settingsCard(c, rows...)
 		kit.Text(c, i18n.T("settings.local_api.connect.help"), t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(4))

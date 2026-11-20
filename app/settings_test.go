@@ -1048,7 +1048,7 @@ func (h *harness) fillRow(label, value string) {
 		h.tt.Frame()
 		r, _ = h.tt.Find(label)
 	}
-	h.tt.ClickAt(r.X+r.W+theme.SettingsInputWidth/2, r.Y+r.H/2)
+	h.tt.ClickAt(r.X+r.W+theme.SettingsControlWidth/2, r.Y+r.H/2)
 	h.tt.Command("selectAll")
 	h.typeText(value)
 }

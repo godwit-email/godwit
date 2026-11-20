@@ -7,39 +7,23 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
-// TestThemeThumbTooltip: the theme name shows only as a tooltip on hover.
-func TestThemeThumbTooltip(t *testing.T) {
+// TestThemeThumbLabel: the theme name is always shown under its thumbnail.
+func TestThemeThumbLabel(t *testing.T) {
 	h, _ := withAccount(t)
 	h.openSettings("general")
-	count := func() (n int) { // the label counts once; the tip is a second text
-		for _, x := range h.tt.Texts() {
-			if x == "深色" {
-				n++
-			}
-		}
-		return
-	}
-	if count() > 1 {
-		t.Fatal("the theme name shows without hover")
-	}
+	h.see("深色")
 	r, ok := h.tt.Find("深色")
 	if !ok {
 		t.Fatal("no dark thumbnail")
 	}
 	if math.Abs(float64(r.W-76)) > 0.01 || math.Abs(float64(r.H-48)) > 0.01 { // float layout: the card's title line is fractional
 		t.Errorf("thumbnail %vx%v, want 76x48", r.W, r.H)
-	}
-	h.tt.Move(r.X+r.W/2, r.Y+r.H/2)
-	h.tt.Advance(900 * time.Millisecond)
-	if count() < 2 {
-		t.Errorf("no tooltip after hover: %q", h.tt.Texts())
 	}
 }
 

@@ -1253,7 +1253,7 @@
   "settings_account_clear_cache_title": "Clear the attachment cache?",
   "settings_account_client_secret_help": "Leave blank to keep the saved secret. If it has changed, paste the new one.",
   "settings_account_client_title": "Sign in again with your OAuth client",
-  "settings_account_default": "Default",
+  "settings_account_default": "Default sending account",
   "settings_account_detail_auth_rejected": "The server refused the sign-in",
   "settings_account_detail_client_rejected": "The provider refused the OAuth client",
   "settings_account_detail_credentials_missing": "No credentials in the keychain",
@@ -1567,7 +1567,7 @@
   "settings_ext_builtin": "Built-in",
   "settings_ext_config": "Settings",
   "settings_ext_config_required": "Required",
-  "settings_ext_config_sub": "· form generated from the plugin''s config declaration",
+  "settings_ext_config_sub": "Form generated from the plugin''s config declaration",
   "settings_ext_dialog_allow_install": "Allow and install",
   "settings_ext_dialog_flow": "Where data goes",
   "settings_ext_dialog_foot_native": "A native plugin is someone else''s code, and Godwit can''t restrict it.",
@@ -2114,7 +2114,6 @@
   "settings_models_files_redownload": "Download again",
   "settings_models_files_remove": "Remove files",
   "settings_models_files_verifying": "{arg1} · {arg2} · Checking files",
-  "settings_models_foot": "Capabilities marked ✓ are the ones used by default.",
   "settings_models_gen_formats": "Generate format",
   "settings_models_gen_switch": "Turn on generate",
   "settings_models_gen_unsupported": "{arg1} has no generate API.",
@@ -2266,7 +2265,7 @@
   "settings_notify_preview": "Show a preview in notifications",
   "settings_notify_preview_help": "Off, notifications say only that new mail arrived",
   "settings_privacy": "Privacy & security",
-  "settings_privacy_sub": "Choose what happens to sensitive details before they go to a cloud model.",
+  "settings_privacy_sub": "Replace sensitive details with placeholders before they go to a cloud model.",
   "settings_px": "{arg1, number, ::group-off} px",
   "@settings_px": {
     "placeholders": {
@@ -3281,6 +3280,7 @@
   "contacts_stat_sent": "Sent",
   "contacts_stat_last": "Last Exchanged",
   "contacts_exchanged": "{arg1, number, ::group-off} exchanged",
+  "contacts_group_none": "No mail yet",
   "contacts_replied": "Replied",
   "reader_view_contact": "View Contact",
   "mail_menu_labels": "Labels",
@@ -4128,6 +4128,5 @@
   "settings_plugins_sub": "Script plugins run in a sandbox with only the permissions you approve; native plugins have all the permissions of Godwit.",
   "settings_mcp_sub": "The MCP servers you connect, and the tools they give Wit.",
   "settings_clients_sub": "Let local AI apps like Claude and Codex, and your scripts, use Godwit through the Local API or MCP.",
-  "settings_security_sub": "Spot phishing and spoofed senders.",
-  "settings_rules_editor": "Rule editor"
+  "settings_security_sub": "Spot phishing and spoofed senders."
 }

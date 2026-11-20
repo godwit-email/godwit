@@ -310,7 +310,7 @@ func (p *settingsPage) generalView(c *ui.Context) {
 			settingRow(c, i18n.T("settings.thread_collapse_threshold"), i18n.T("settings.thread_collapse_threshold.help"), func() ui.Element {
 				n := float64(st.ThreadCollapseThreshold)
 				var slider ui.Element
-				ui.Row(c).Width(theme.UsageSelectMin).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
+				ui.Row(c).Width(theme.SettingsControlWidth).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
 					slider = ui.Slider(c, &n, core.MinThreadCollapse, core.MaxThreadCollapse).Step(1).Grow(1).Shrink(1).Label(i18n.T("settings.thread_collapse_threshold"))
 					if slider.Changed() {
 						st.ThreadCollapseThreshold = int(math.Round(n))
@@ -364,7 +364,7 @@ func (p *settingsPage) proxySection(c *ui.Context) {
 	input := func(label, msg string, v *string, opts kit.InputOpts) func() {
 		return func() {
 			settingRow(c, label, msg, func() ui.Element {
-				return kit.Input(c, v, opts).Width(theme.SettingsInputWidth).Label(label)
+				return kit.Input(c, v, opts).Width(theme.SettingsControlWidth).Label(label)
 			})
 		}
 	}
@@ -392,7 +392,7 @@ func (p *settingsPage) proxySection(c *ui.Context) {
 				settingRow(c, i18n.T("settings.proxy.password"), "", func() ui.Element {
 					var field ui.Element
 					ui.Row(c).Gap(c.Theme().Space(3)).AlignItems(ui.Center).Children(func() {
-						field = kit.Input(c, &d.pass, kit.InputOpts{Password: true, Placeholder: ph}).Width(theme.SettingsInputWidth).Label(i18n.T("settings.proxy.password"))
+						field = kit.Input(c, &d.pass, kit.InputOpts{Password: true, Placeholder: ph}).Width(theme.SettingsControlWidth).Label(i18n.T("settings.proxy.password"))
 						if st.ProxyPasswordSet && d.pass == "" { // a saved one shows only as the placeholder, so erasing can't reach it
 							rowButton(c, i18n.T("settings.proxy.password.clear"), kit.Outline, false).OnClick(func() { st.ProxyPasswordSet = false })
 						}
@@ -476,8 +476,21 @@ func (p *settingsPage) aiFeaturesView(c *ui.Context) {
 
 // themeTile is a small picture of the window in a theme: rail, sidebar and
 // content; "system" is the light window on its left half and the dark one on
-// its right. The name is only its tooltip and label.
+// its right. Its name sits under it, in the foreground once chosen.
 func (p *settingsPage) themeTile(c *ui.Context, th string) {
+	t := theme.Of(c)
+	label := i18n.T("settings.theme." + th)
+	color := t.Muted
+	if p.st.Theme == th {
+		color = t.Foreground
+	}
+	ui.Column(c).AlignItems(ui.Center).Gap(c.Theme().Space(1.5)).Children(func() {
+		p.themePicture(c, th, label)
+		kit.Text(c, label, t.Text.Xs).TextColor(color)
+	})
+}
+
+func (p *settingsPage) themePicture(c *ui.Context, th, label string) {
 	t := theme.Of(c)
 	on := p.st.Theme == th
 	light, dark := theme.Light(), theme.Dark()
@@ -496,7 +509,6 @@ func (p *settingsPage) themeTile(c *ui.Context, th string) {
 		}
 		return e.LinearGradient(ui.LinearGradient{From: l, To: d, Angle: 90, Start: f, End: f})
 	}
-	label := i18n.T("settings.theme." + th)
 	b := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.st.Theme = th }}).Label(label).Role(ui.RoleRadio).Checked(on).
 		Size(theme.ThemeTileWidth, theme.ThemeTileHeight).Radius(t.Radius.Md).Clip().Border(theme.Stroke, t.Border)
 	fill(b, 0, theme.ThemeTileWidth, light.Window, dark.Window)
@@ -515,7 +527,6 @@ func (p *settingsPage) themeTile(c *ui.Context, th string) {
 			}
 		})
 	})
-	kit.TooltipLabelled(c, b, label)
 }
 
 // noTranslate picks the languages that need no translation; it returns the
@@ -532,7 +543,7 @@ func (p *settingsPage) noTranslate(c *ui.Context) ui.Element {
 	if label == "" {
 		label = i18n.T("settings.no_translate.none")
 	}
-	anchor := kit.SelectButton(c, label, kit.SelectOpts{Flat: true, MinWidth: theme.SettingsSelectMin, MaxWidth: theme.SettingsSelectMax}).
+	anchor := kit.SelectButton(c, label, kit.SelectOpts{Flat: true, MinWidth: theme.SettingsControlWidth, MaxWidth: theme.SettingsSelectMax}).
 		Label(i18n.T("settings.no_translate")).OnClick(func() { p.noTrans = !p.noTrans })
 	kit.Popover(c, anchor, &p.noTrans, func() {
 		ui.Column(c).Gap(th.Space(2)).Children(func() {

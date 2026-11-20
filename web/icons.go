@@ -168,6 +168,7 @@ var RemixIcons = map[string]string{
 	"refresh-cw":                     "node_modules/remixicon/icons/System/refresh-line.svg",
 	"reply":                          "node_modules/remixicon/icons/Business/reply-line.svg",
 	"reply-all":                      "node_modules/remixicon/icons/Business/reply-all-line.svg",
+	"router":                         "node_modules/remixicon/icons/Device/router-line.svg",
 	"save":                           "node_modules/remixicon/icons/Device/save-line.svg",
 	"search":                         "node_modules/remixicon/icons/System/search-line.svg",
 	"send":                           "node_modules/remixicon/icons/Business/send-plane-line.svg",
@@ -211,6 +212,9 @@ var RemixIcons = map[string]string{
 // (MIT), by Godwit ID. Each value is the path under remix.
 var BrandIcons = map[string]string{
 	"chatgpt":     "node_modules/@lobehub/icons-static-svg/icons/openai.svg",
+	"openai":      "node_modules/@lobehub/icons-static-svg/icons/openai.svg",
+	"anthropic":   "node_modules/@lobehub/icons-static-svg/icons/anthropic.svg",
+	"apple":       "node_modules/@lobehub/icons-static-svg/icons/apple.svg", // Apple Intelligence's
 	"grok":        "node_modules/@lobehub/icons-static-svg/icons/grok.svg",
 	"claude":      "node_modules/@lobehub/icons-static-svg/icons/claude-color.svg",
 	"claude-code": "node_modules/@lobehub/icons-static-svg/icons/claudecode-color.svg",
@@ -228,6 +232,8 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/remixicon/License
 //go:embed node_modules/@lobehub/icons-static-svg/icons/openai.svg
 //go:embed node_modules/@lobehub/icons-static-svg/icons/grok.svg
+//go:embed node_modules/@lobehub/icons-static-svg/icons/anthropic.svg
+//go:embed node_modules/@lobehub/icons-static-svg/icons/apple.svg
 //go:embed node_modules/@lobehub/icons-static-svg/icons/claude-color.svg
 //go:embed node_modules/@lobehub/icons-static-svg/icons/claudecode-color.svg
 //go:embed node_modules/@lobehub/icons-static-svg/icons/claude.svg
@@ -286,6 +292,7 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/Device/computer-line.svg
 //go:embed node_modules/remixicon/icons/Device/cpu-fill.svg
 //go:embed node_modules/remixicon/icons/Device/cpu-line.svg
+//go:embed node_modules/remixicon/icons/Device/router-line.svg
 //go:embed node_modules/remixicon/icons/Device/save-line.svg
 //go:embed node_modules/remixicon/icons/Document/bill-line.svg
 //go:embed node_modules/remixicon/icons/Document/book-2-line.svg

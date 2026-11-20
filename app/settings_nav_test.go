@@ -121,7 +121,7 @@ func TestSettingsBreadcrumb(t *testing.T) {
 	h.openSettings("rules")
 	h.click(i18n.T("settings.rules.new"))
 	h.until("the editor", func() bool { return p.rules.editing })
-	crumb(p, "规则", "规则编辑器")
+	crumb(p, "规则", "新建规则")
 	up(p, "rules")
 }
 

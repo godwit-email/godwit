@@ -3,6 +3,7 @@ package app
 import (
 	"cmp"
 	"fmt"
+	"net"
 	"net/url"
 	"slices"
 	"strings"
@@ -25,8 +26,8 @@ func (m *modelsView) empty() bool {
 // view is the 模型 page, under its heading (modelsPage).
 func (m *modelsView) view(c *ui.Context) {
 	if m.empty() {
-		kit.Empty(c, kit.EmptyOpts{Icon: "cpu", Title: i18n.T("settings.models.empty.title"), Desc: i18n.T("settings.models.empty.desc"), Dashed: true, Actions: func() {
-			kit.EmptyAction(c, i18n.T("settings.models.add"), kit.ButtonOpts{}).OnClick(m.add)
+		emptyCard(c, kit.EmptyOpts{Icon: "cpu", Title: i18n.T("settings.models.empty.title"), Desc: i18n.T("settings.models.empty.desc"), Actions: func() {
+			kit.EmptyAction(c, i18n.T("settings.models.add"), kit.ButtonOpts{Icon: "plus"}).OnClick(m.add)
 			kit.EmptyAction(c, i18n.T("settings.models.local"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(m.addLocal)
 		}})
 	}
@@ -48,16 +49,23 @@ func (m *modelsView) close() {
 }
 
 // svcMark is a service's avatar: its provider's glyph, else the favicon of
-// the site it talks to, else its initial, as a sender's in mail.
+// the site it talks to, else its initial, as a sender's in mail; a gateway on
+// this Mac without a favicon is a router, as the design's 本地网关.
 func (m *modelsView) svcMark(c *ui.Context, s core.ModelService) {
 	t, th := theme.Of(c), c.Theme()
-	if glyph := icons.BrandIcon(s.Provider); glyph != nil {
+	glyph := icons.BrandIcon(s.Provider)
+	if glyph == nil {
+		m.loadAvatar(s)
+		if u, err := url.Parse(s.BaseURL); m.avatars[s.BaseURL] == nil && err == nil && (u.Hostname() == "localhost" || net.ParseIP(u.Hostname()).IsLoopback()) {
+			glyph = icons.Get("router")
+		}
+	}
+	if glyph != nil {
 		kit.Tile(c, th.Space(8), th.Space(8), kit.ToneTint).Label(s.Name).Children(func() {
 			ui.Icon(c, glyph).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
 		})
 		return
 	}
-	m.loadAvatar(s)
 	kit.AvatarImage(c, s.Name, m.avatars[s.BaseURL])
 }
 
@@ -89,7 +97,7 @@ func (m *modelsView) list(c *ui.Context) {
 			}
 			listRow(c.Key(s.ID), 0, false, edit, func() {
 				m.svcMark(c, s)
-				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
+				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
 					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 						ui.Text(c, s.Name).SingleLine().Shrink(1)
 						if s.ManagedBy != "" {
@@ -116,8 +124,8 @@ func (m *modelsView) list(c *ui.Context) {
 		p := m.plugins[i]
 		rows = append(rows, func() {
 			// The system runs it, with nothing to edit: no chevron, just its menu's test.
-			iconRow(c.Key("apple-intelligence"), func() {
-				ui.Icon(c, icons.Get("sparkles")).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
+			iconRowGap(c.Key("apple-intelligence"), 1, func() {
+				ui.Icon(c, icons.BrandIcon("apple")).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
 			}, "Apple Intelligence", strings.Join([]string{i18n.T("settings.models.apple_intelligence.sub"), i18n.T("settings.models.cap.gen"), i18n.T("settings.models.cap.judge")}, " · "), func() {
 				statusLine(c, pluginLook(p, m.pluginStatus))
 				ui.Box(c).Size(theme.Icon, theme.Icon).Shrink(0)
@@ -128,7 +136,7 @@ func (m *modelsView) list(c *ui.Context) {
 			})
 		})
 	}
-	settingsSection(c, i18n.T("settings.models.services"), i18n.T("settings.models.foot"), rows...)
+	settingsSection(c, i18n.T("settings.models.services"), "", rows...)
 }
 
 // statusLine is a dot and a text in the look's colors.
@@ -151,7 +159,7 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 		m.defModel, m.smallModel, m.judge = a.settings.DefaultModel, a.settings.SmallModel, a.settings.JudgeService
 	}() // what the next frame shows
 	sel := func(label string, v *string, opts []kit.Option[string], set func(*core.Settings, string), managed bool) {
-		s := kit.SelectWith(c, kit.SelectOpts{Flat: true}, v, opts).Width(theme.UsageSelectMin).Label(label).Disabled(u.disabled || managed)
+		s := kit.SelectWith(c, kit.SelectOpts{Flat: true}, v, opts).Width(theme.SettingsControlWidth).Label(label).Disabled(u.disabled || managed)
 		if s.Changed() {
 			val := *v
 			m.setModel(func(st *core.Settings) { set(st, val) })
@@ -194,7 +202,7 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 				settingRow(c, i18n.T("settings.models.threshold"), help, func() ui.Element {
 					threshold := a.settings.JudgeThreshold
 					var slider ui.Element
-					ui.Row(c).Width(theme.UsageSelectMin).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
+					ui.Row(c).Width(theme.SettingsControlWidth).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
 						slider = ui.Slider(c, &threshold, core.MinJudgeThreshold, core.MaxJudgeThreshold).Step(0.01).Grow(1).Shrink(1).Label(i18n.T("settings.models.threshold"))
 						if slider.Changed() {
 							m.setModel(func(st *core.Settings) { st.JudgeThreshold = threshold })
@@ -213,15 +221,15 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 	}
 }
 
-// usageRow is a row of the 用途 card: label, description and status line
-// on the left, the select on the right.
+// usageRow is a row of the 用途 card: label, description and, when its last
+// test found something, a status line on the left, the select on the right.
 func usageRow(c *ui.Context, label, desc string, l *line, control func()) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 			kit.Text(c, label, t.Text.Sm)
 			kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted)
-			if l != nil {
+			if l != nil && l.look != lookOK && l.look != lookNone { // a passed test is the services' row to show
 				statusLine(c, *l).Margin(th.Space(1), 0, 0, 0)
 			}
 		})
@@ -366,7 +374,8 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 			m.keyField(c, f)
 		}
 	})
-	ui.Column(c).Gap(th.Space(2)).Children(func() {
+	kit.Separator(c, false)
+	ui.Column(c).Gap(th.Space(4)).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Children(func() {
 			caps := i18n.T("settings.models.caps")
 			if core.ModelProviderLogin(f.provider) != "oauth" { // a subscription has no key, and no judge to share it with
@@ -430,33 +439,30 @@ func (m *modelsView) accountRow(c *ui.Context, f *modelForm) {
 	})
 }
 
-// capCard is a capability: its switch (or 不支持), and while on, body; warn
-// says what turning it off does to the defaults.
+// capCard is a capability as a form row: its name in the label column, then
+// its switch (or 不支持) beside what it does, and while on, body; warn says
+// what turning it off does to the defaults.
 func capCard(c *ui.Context, title, desc, unsupported, switchLabel string, supported bool, on *bool, warn string, body func()) {
 	t, th := theme.Of(c), c.Theme()
-	card := kit.Card(c, ui.Column(c), kit.ToneOutline).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4))
-	if !supported {
-		card.Background(t.Sidebar)
-		desc = unsupported
-	}
-	card.Children(func() {
-		ui.Row(c).AlignItems(ui.Start).Gap(th.Space(3)).Children(func() {
-			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-				ui.Text(c, title).FontWeight(500)
-				kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted)
+	ui.Row(c).AlignItems(ui.Start).Gap(th.Space(4)).Children(func() {
+		ui.Text(c, title).Width(theme.FormLabelWidth).Shrink(0).Margin(th.Space(1), 0, 0, 0)
+		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(1.5)).Children(func() {
+			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+				if supported {
+					kit.Switch(c, on).Label(switchLabel).Shrink(0)
+				} else {
+					kit.BadgeWith(c, i18n.T("settings.models.unsupported"), kit.BadgeOpts{Muted: true}).Shrink(0)
+					desc = unsupported
+				}
+				kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
 			})
-			if supported {
-				kit.Switch(c, on).Label(switchLabel)
-			} else {
-				kit.BadgeWith(c, i18n.T("settings.models.unsupported"), kit.BadgeOpts{Muted: true}).Shrink(0)
+			if supported && *on {
+				body()
+			}
+			if warn != "" {
+				kit.Alert(c, kit.ToneWarning, warn, nil)
 			}
 		})
-		if supported && *on {
-			body()
-		}
-		if warn != "" {
-			kit.Alert(c, kit.ToneWarning, warn, nil)
-		}
 	})
 }
 
@@ -500,7 +506,7 @@ func (m *modelsView) capStatus(c *ui.Context, r capTest) {
 	dot, fg, text := kit.Idle, t.Muted, i18n.T("settings.models.testing")
 	switch r.state {
 	case "ok":
-		dot, fg, text = kit.OK, t.SuccessText, r.text
+		dot, text = kit.OK, r.text
 	case "fail":
 		dot, fg, text = kit.Error, t.DangerText, cmp.Or(r.text, i18n.T("settings.models.fail.error"))
 	}
@@ -630,7 +636,7 @@ func (m *modelsView) modelPicker(c *ui.Context, f *modelForm, p picker) {
 		ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
 			kit.Input(c, p.manual, kit.InputOpts{Mono: true, Placeholder: i18n.T("settings.models.manual"), Flat: true, Size: kit.SizeSm}).Label(i18n.T("settings.models.manual")).
 				Width(theme.ModelIDInputWidth).OnSubmit(p.add)
-			kit.IconButton(c, "plus", i18n.T("settings.models.manual.add"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Flat: true}).OnClick(p.add)
+			kit.IconButton(c, "plus", i18n.T("settings.models.manual.add"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(p.add)
 		})
 	}
 	if many { // the filter, its toggle and the hand-typed ID stay above the scrolling chips

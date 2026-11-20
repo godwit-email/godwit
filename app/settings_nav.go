@@ -99,7 +99,7 @@ func (p *settingsPage) Breadcrumb() (parent, current string, ok bool) {
 	case sec == "plugins" && p.ext.onDirectory && p.ext.reg.On:
 		return pageName("plugins"), i18n.T("settings.ext.directory"), true
 	case sec == "rules" && p.rules.editing:
-		return pageName("rules"), i18n.T("settings.rules.editor"), true
+		return pageName("rules"), p.rules.editorTitle(), true
 	}
 	if sig, ok := p.shownSignature(sec); ok {
 		return pageName("signatures"), sig.Name, true

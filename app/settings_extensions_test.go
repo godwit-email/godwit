@@ -645,7 +645,9 @@ func TestNativePluginRiskAndGrant(t *testing.T) {
 	h.click("选择文件夹")
 	h.called("OpenDirectory")
 	h.until("installed", func() bool { _, ok := h.plugin("dlx"); return ok })
-	h.until("the 原生 pill", func() bool { _, ok := h.tt.Find("原生"); return ok }) // exactly: the page's subtitle mentions 原生插件
+	h.until("the 原生 kind", func() bool {
+		return slices.ContainsFunc(h.tt.Texts(), func(s string) bool { return strings.HasPrefix(s, "原生 · ") })
+	}) // its line: the page's subtitle mentions 原生插件
 	h.see("待授权")
 	h.see("以 Godwit 的全部权限运行")
 	h.see("这个文件不在 Godwit 审核过的插件目录里")

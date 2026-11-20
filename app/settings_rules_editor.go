@@ -155,12 +155,20 @@ func (v *rulesView) ready() bool {
 // lines (名称, 当, 如果, then each action) beside a side panel that stays in
 // view: the existing mail it matches, 运行方式 and notes. 规则 is the way back
 // (Breadcrumb).
+// editorTitle is the editor's heading and breadcrumb: the rule's name, or 新建规则.
+func (v *rulesView) editorTitle() string {
+	if v.edit.ID != 0 {
+		return ruleName(v.edit.Doc)
+	}
+	return i18n.T("settings.rules.new")
+}
+
 func (v *rulesView) editor(c *ui.Context) {
 	th := c.Theme()
 	d := &v.edit.Doc
-	title, sub := i18n.T("settings.rules.new"), i18n.T("settings.rules.editor.sub")
+	title, sub := v.editorTitle(), i18n.T("settings.rules.editor.sub")
 	if v.edit.ID != 0 {
-		title, sub = ruleName(*d), v.summary(*d)
+		sub = v.summary(*d)
 	}
 	pageHeading(c, title, sub, func() {
 		ui.Row(c).Gap(th.Space(2)).Children(func() {

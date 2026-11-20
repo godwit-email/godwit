@@ -620,8 +620,8 @@ func TestModelsEmptyState(t *testing.T) {
 	h.until("models loaded", func() bool { return m.loaded })
 	h.see("还没有接入模型服务")
 	h.see("连接本地网关")
-	if n := h.countTexts("添加服务"); n != 2 { // one button (label and text): the empty state's; the header's is hidden
-		t.Fatalf("%d 添加服务 texts, want one button's", n)
+	if n := h.countTexts("添加服务"); n != 4 { // two buttons (label and text each): the header's and the empty state's
+		t.Fatalf("%d 添加服务 texts, want two buttons'", n)
 	}
 	h.click("连接本地网关")
 	h.see("添加模型服务")

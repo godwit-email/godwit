@@ -90,6 +90,19 @@ func flowLabel(flow string) string {
 	return ""
 }
 
+// flowLine is where the plugin's data goes: amber to a third party, green kept here.
+func flowLine(c *ui.Context, en core.RegistryEntry) {
+	l := flowLabel(en.DataFlow)
+	if l == "" {
+		return
+	}
+	if en.DataFlow == plugins.DataFlowThirdParty {
+		statusLine(c, line{l, lookUntested})
+		return
+	}
+	statusLine(c, line{l, lookOK})
+}
+
 func entryIconBox(c *ui.Context, en core.RegistryEntry, tone kit.Tone) {
 	t, th := theme.Of(c), c.Theme()
 	kit.Tile(c, th.Space(10), th.Space(10), tone).TextColor(t.Muted).Children(func() {
@@ -116,13 +129,7 @@ func (e *extView) directoryCard(c *ui.Context, en core.RegistryEntry) {
 					kit.Tooltip(c, kit.Text(c, s, t.Text.Xs).TextColor(t.Muted).MaxLines(2).Shrink(1), s)
 				}
 				ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Wrap().Children(func() {
-					if l := flowLabel(en.DataFlow); l != "" {
-						if en.DataFlow == plugins.DataFlowThirdParty {
-							statusPill(c, l, false)
-						} else {
-							kit.Text(c, l, t.Text.Xs).TextColor(t.Muted)
-						}
-					}
+					flowLine(c, en)
 					if m := strings.TrimPrefix(strings.TrimSuffix(entryKind(en)+" · "+cmp.Or(en.Version, en.Installed), " · "), " · "); m != "" {
 						kit.Text(c, m, t.Text.Xs).TextColor(t.Muted)
 					}
@@ -292,9 +299,7 @@ func dataFlowCard(c *ui.Context, en core.RegistryEntry) {
 	kit.Block(c, ui.Column(c), kit.ToneCard).FillWidth().Gap(th.Space(1)).Padding(th.Space(3), th.Space(4)).Children(func() {
 		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 			kit.Text(c, i18n.T("settings.ext.dialog.flow"), t.Text.Sm).FontWeight(500)
-			if l := flowLabel(en.DataFlow); l != "" {
-				statusPill(c, l, false)
-			}
+			flowLine(c, en)
 		})
 		if s := en.Summary.For(i18n.Language()); s != "" {
 			kit.Text(c, s, t.Text.Sm)

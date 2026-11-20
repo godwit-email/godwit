@@ -393,7 +393,7 @@ func permissionList(c *ui.Context, pm plugins.Permissions, capabilities []string
 				r.TextColor(t.Muted)
 			}
 			r.Children(func() {
-				kit.BadgeWith(c, tag, kit.BadgeOpts{Mono: true})
+				kit.BadgeWith(c, tag, kit.BadgeOpts{Mono: true}).Shrink(0)
 				kit.Text(c, text, t.Text.Sm).Shrink(1)
 			})
 		}
@@ -496,7 +496,7 @@ func (e *extView) pluginRow(c *ui.Context, p core.PluginInfo) {
 		title = p.Title.For(i18n.Language())
 	}
 	ui.Column(c).FillWidth().Children(func() {
-		ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
+		ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
 			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() {
 				switch {
 				case p.NeedsGrant:
@@ -518,34 +518,37 @@ func (e *extView) pluginRow(c *ui.Context, p core.PluginInfo) {
 					ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
 				})
 				ui.Column(c).Gap(th.Space(0.5)).Shrink(1).Children(func() {
-					ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
-						if p.Native {
-							statusPill(c, i18n.T("settings.ext.native"), false)
-						}
-						if p.Builtin {
-							statusPill(c, i18n.T("settings.ext.builtin"), false)
-						}
-						kit.Text(c, title, t.Text.Sm)
-						if p.NeedsGrant {
-							kit.Text(c, p.Version, t.Text.Xs).TextColor(t.Muted)
-						}
-					})
-					if d := p.Description.For(i18n.Language()); d != "" { // untrusted length: one line, all of it in the tooltip
+					kit.Text(c, title, t.Text.Sm).FontWeight(500)
+					var parts []string // what the plugin is, then what it does
+					if p.Builtin {
+						parts = append(parts, i18n.T("settings.ext.builtin"))
+					}
+					if p.Native {
+						parts = append(parts, i18n.T("settings.ext.native"))
+					}
+					if p.NeedsGrant && p.Version != "" {
+						parts = append(parts, p.Version)
+					}
+					if d := p.Description.For(i18n.Language()); d != "" {
+						parts = append(parts, d)
+					}
+					if d := strings.Join(parts, " · "); d != "" { // untrusted length: one line, all of it in the tooltip
 						kit.Tooltip(c, kit.Text(c, d, t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(1), d)
 					}
 				})
 			})
-			chevron := func() {
-				if !p.Builtin { // a built-in one has nothing to open
-					chev := "chevron-right"
-					if open {
-						chev = "chevron-down"
+			chevron := func() { // a built-in one has nothing to open: its place stays, as the switches line up
+				ui.Row(c).Size(th.Space(6), th.Space(6)).Shrink(0).Justify(ui.Center).AlignItems(ui.Center).Children(func() {
+					if !p.Builtin {
+						chev := ui.Icon(c, icons.Get("chevron-down")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
+						if open {
+							chev.Rotate(180)
+						}
 					}
-					ui.Icon(c, icons.Get(chev)).Size(theme.Icon, theme.Icon).TextColor(t.Muted).Shrink(0)
-				}
+				})
 			}
 			if p.NeedsGrant {
-				statusPill(c, i18n.T("settings.ext.status.pending"), true)
+				statusLine(c, line{i18n.T("settings.ext.status.pending"), lookUntested})
 				chevron()
 				return
 			}
@@ -577,61 +580,68 @@ func (e *extView) pluginRow(c *ui.Context, p core.PluginInfo) {
 }
 
 func (e *extView) pluginBody(c *ui.Context, p core.PluginInfo) {
+	th := c.Theme()
+	f := e.cfgs[p.Name]
+	ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(1), th.Space(4), th.Space(4)).Children(func() {
+		ui.Box(c).Width(th.Space(8)).Shrink(0) // under the row's icon: the details start at its text
+		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(4)).Children(func() { e.pluginDetails(c, p, f) })
+	})
+}
+
+func (e *extView) pluginDetails(c *ui.Context, p core.PluginInfo, f *pluginForm) {
 	t, th := theme.Of(c), c.Theme()
 	name := p.Name
-	f := e.cfgs[name]
-	ui.Column(c).FillWidth().Gap(th.Space(4)).Padding(th.Space(1), th.Space(4), th.Space(4)).Children(func() {
-		if p.Error != "" {
-			kit.Alert(c, kit.ToneDanger, p.Error, nil)
-		} else if p.DisabledReason == "trust_revoked" && !p.Enabled {
-			kit.Alert(c, kit.ToneWarning, i18n.T("settings.ext.revoked"), nil)
-		} else if p.DisabledReason != "" && !p.Enabled {
-			kit.Alert(c, kit.ToneWarning, p.DisabledReason, nil)
-		}
-		if en, ok := e.entry(name); ok && en.DataFlow != "" {
-			dataFlowCard(c, en)
-		}
-		if p.Native {
-			nativeCard(c, p)
-		} else {
-			kit.Block(c, ui.Column(c), kit.ToneRaised).FillWidth().Gap(th.Space(2)).Padding(th.Space(3), th.Space(4)).Children(func() {
-				kit.Text(c, i18n.T("settings.ext.perms"), t.Text.Sm).FontWeight(500)
-				if p.Trust == "listed" {
-					kit.Text(c, i18n.T("settings.ext.native.trust.listed"), t.Text.Xs).TextColor(t.Muted)
-				}
-				permissionList(c, p.Permissions, p.Capabilities)
-			})
-		}
-		if st, ok := e.logins[name]; signsIn(p) && ok && st.SignedIn {
-			ui.Row(c).FillWidth().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-				label := i18n.Tf("settings.ext.signed_in", st.Account)
-				kit.Text(c, label, t.Text.Sm).Grow(1).Shrink(1)
-				kit.Button(c, i18n.T("settings.ext.logout"), kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Outline}).OnClick(func() {
-					e.write("plugins", func(ctx context.Context) error { return e.a.svc.PluginLogout(ctx, name) }, nil)
-				})
-			})
-		}
-		if f != nil && len(p.Config) > 0 {
-			e.configView(c, f, p.Config, !p.NeedsGrant)
-		}
-		ui.Row(c).Gap(th.Space(2)).Children(func() {
-			if !p.NeedsGrant {
-				kit.Button(c, i18n.T("settings.ext.uninstall"), kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Ghost, Tone: kit.ToneDanger}).
-					OnClick(func() { e.plugin, e.confirm, e.open = name, "plugin", true })
-				return
+	if p.Error != "" {
+		kit.Alert(c, kit.ToneDanger, p.Error, nil)
+	} else if p.DisabledReason == "trust_revoked" && !p.Enabled {
+		kit.Alert(c, kit.ToneWarning, i18n.T("settings.ext.revoked"), nil)
+	} else if p.DisabledReason != "" && !p.Enabled {
+		kit.Alert(c, kit.ToneWarning, p.DisabledReason, nil)
+	}
+	if en, ok := e.entry(name); ok && en.DataFlow != "" {
+		dataFlowCard(c, en)
+	}
+	if p.Native {
+		nativeCard(c, p)
+	} else {
+		ui.Column(c).FillWidth().Gap(th.Space(2)).Children(func() {
+			kit.Text(c, i18n.T("settings.ext.perms"), t.Text.Sm)
+			if p.Trust == "listed" {
+				kit.Text(c, i18n.T("settings.ext.native.trust.listed"), t.Text.Xs).TextColor(t.Muted)
 			}
-			allow, opts := i18n.T("settings.ext.allow"), kit.ButtonOpts{Size: kit.SizeSm, Disabled: f != nil && f.busy}
-			if p.Native && p.Trust != "listed" { // consent to the risk of an unreviewed file
-				allow, opts.Variant, opts.Tone = i18n.T("settings.ext.native.allow"), kit.Ghost, kit.ToneDanger
-			}
-			kit.Button(c, allow, opts).OnClick(func() { e.allow(name, f, p.Config) })
-			kit.Button(c, i18n.T("settings.ext.not_now"), kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Outline}).OnClick(func() {
-				if e.later == nil {
-					e.later = map[string]bool{}
-				}
-				e.later[name] = true
+			permissionList(c, p.Permissions, p.Capabilities)
+		})
+	}
+	if st, ok := e.logins[name]; signsIn(p) && ok && st.SignedIn {
+		ui.Row(c).FillWidth().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+			label := i18n.Tf("settings.ext.signed_in", st.Account)
+			kit.Text(c, label, t.Text.Sm).Grow(1).Shrink(1)
+			kit.Button(c, i18n.T("settings.ext.logout"), kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Outline}).OnClick(func() {
+				e.write("plugins", func(ctx context.Context) error { return e.a.svc.PluginLogout(ctx, name) }, nil)
 			})
 		})
+	}
+	if f != nil && len(p.Config) > 0 {
+		kit.Separator(c, false)
+		e.configView(c, f, p.Config, !p.NeedsGrant)
+	}
+	ui.Row(c).FillWidth().Gap(th.Space(2)).Justify(ui.End).Children(func() {
+		if !p.NeedsGrant {
+			kit.Button(c, i18n.T("settings.ext.uninstall"), kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Ghost, Tone: kit.ToneDanger}).
+				OnClick(func() { e.plugin, e.confirm, e.open = name, "plugin", true })
+			return
+		}
+		kit.Button(c, i18n.T("settings.ext.not_now"), kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Outline}).OnClick(func() {
+			if e.later == nil {
+				e.later = map[string]bool{}
+			}
+			e.later[name] = true
+		})
+		allow, opts := i18n.T("settings.ext.allow"), kit.ButtonOpts{Size: kit.SizeSm, Disabled: f != nil && f.busy}
+		if p.Native && p.Trust != "listed" { // consent to the risk of an unreviewed file
+			allow, opts.Variant, opts.Tone = i18n.T("settings.ext.native.allow"), kit.Ghost, kit.ToneDanger
+		}
+		kit.Button(c, allow, opts).OnClick(func() { e.allow(name, f, p.Config) })
 	})
 }
 
@@ -716,15 +726,6 @@ func (e *extView) setPluginEnabled(name string, on bool) {
 		e.plugins[i].Enabled = on
 	}
 	e.write("plugins", func(ctx context.Context) error { return e.a.svc.SetPluginEnabled(ctx, name, on) }, nil)
-}
-
-// statusPill is a small status label; attention shows it amber.
-func statusPill(c *ui.Context, text string, attention bool) {
-	tone := kit.BadgeSurface
-	if attention {
-		tone = kit.BadgeWarning
-	}
-	kit.BadgeWith(c, text, kit.BadgeOpts{Tone: tone})
 }
 
 // loadCfg reads a plugin's settings form once; a form already read or being read stays.

@@ -90,7 +90,7 @@ func (p *settingsPage) signaturesView(c *ui.Context) {
 	}
 	pageHeading(c, i18n.T("settings.signatures"), i18n.T("settings.signatures.sub"), add...)
 	if len(sigs) == 0 {
-		kit.Empty(c, kit.EmptyOpts{Icon: "quill-pen", Title: i18n.T("settings.signatures.empty.title"), Desc: i18n.T("settings.signatures.empty.desc"), Dashed: true, Actions: func() {
+		emptyCard(c, kit.EmptyOpts{Icon: "quill-pen", Title: i18n.T("settings.signatures.empty.title"), Desc: i18n.T("settings.signatures.empty.desc"), Actions: func() {
 			kit.EmptyAction(c, i18n.T("settings.signatures.new"), kit.ButtonOpts{}).OnClick(p.newSignature)
 		}})
 		return
@@ -165,7 +165,7 @@ func (p *settingsPage) signatureView(c *ui.Context, sig core.Signature) {
 	bad := !validSignatureName(f.name)
 	settingsSection(c, i18n.T("settings.account.basic"), "", func() {
 		settingRow(c, i18n.T("settings.signature.name"), i18n.T("settings.signature.name.help"), func() ui.Element {
-			field := kit.Input(c, &f.name, kit.InputOpts{Invalid: bad}).Width(theme.SettingsInputWidth).Label(i18n.T("settings.signature.name"))
+			field := kit.Input(c, &f.name, kit.InputOpts{Invalid: bad}).Width(theme.SettingsControlWidth).Label(i18n.T("settings.signature.name"))
 			if field.Changed() {
 				p.editSignatureName()
 			}
