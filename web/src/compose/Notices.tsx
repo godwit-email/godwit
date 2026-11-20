@@ -1,4 +1,3 @@
-import { RiAlertLine, RiErrorWarningLine } from "@remixicon/react";
 import { Alert } from "@/components/alert";
 import { Button } from "@/components/button";
 import {
@@ -41,14 +40,14 @@ export function Notices({
   return (
     <div className="flex flex-col gap-2">
       {blocked && (
-        <Alert tone="danger" icon={<RiErrorWarningLine />}>
+        <Alert tone="danger">
           <p className="font-medium">{blocked.message}</p>
           <From w={blocked} t={t} />
         </Alert>
       )}
       {warnings.length > 0 && (
         // what the plugins found, one notice; Send itself reads 仍然发送 (SendBar's anyway)
-        <Alert tone="warning" icon={<RiAlertLine />}>
+        <Alert tone="warning">
           {warnings.map((w) => (
             <div key={`${w.plugin}:${w.message}`}>
               <p className="font-medium">{t("compose.warn", w.message)}</p>

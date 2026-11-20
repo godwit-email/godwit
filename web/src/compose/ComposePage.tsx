@@ -1,9 +1,4 @@
-import {
-  RiArrowRightSLine,
-  RiAttachment2,
-  RiErrorWarningLine,
-  RiRefreshLine,
-} from "@remixicon/react";
+import { RiArrowRightSLine, RiAttachment2, RiRefreshLine } from "@remixicon/react";
 import { cn } from "cn";
 import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
@@ -900,7 +895,6 @@ function Compose({
                 {reloadErr && (
                   <Alert
                     tone="danger"
-                    icon={<RiErrorWarningLine />}
                     className="mx-4 mt-2"
                     action={
                       <Button

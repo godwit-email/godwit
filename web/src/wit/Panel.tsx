@@ -2571,7 +2571,6 @@ export function Panel({
   const error = (chat.error || failed) && !running && (
     <Notice
       tone="danger"
-      icon={<RiErrorWarningLine />}
       action={
         <Button variant="outline" tone="danger" size="sm" onClick={() => void chat.regenerate()}>
           {t("common.retry")}

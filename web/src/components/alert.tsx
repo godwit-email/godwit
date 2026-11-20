@@ -1,3 +1,4 @@
+import { RiErrorWarningLine, RiInformationLine } from "@remixicon/react";
 import { cn } from "cn";
 import type { ReactNode } from "react";
 import { Alert as Base } from "@/components/ui/alert";
@@ -13,23 +14,22 @@ const tones: Record<Tone, string> = {
 
 /**
  * The design's Alert: a notice to read before acting (a refused send, a plugin's warning, a draft
- * a program wrote). An icon of 16 level with the first line, the lines of text in a column, and
- * at most one action at the end, centred. Its children are the lines; wrap each title in
- * `font-medium`.
+ * a program wrote). Its tone's mark of 16 level with the first line however tall the action is,
+ * the lines of text in a column, and at most one action at the end, centred. Its children are the
+ * lines; wrap each title in `font-medium`.
  */
 export function Alert({
   tone,
-  icon,
   action,
   className,
   children,
 }: {
   tone: Tone;
-  icon?: ReactNode;
   action?: ReactNode;
   className?: string;
   children: ReactNode;
 }) {
+  const Mark = tone === "info" ? RiInformationLine : RiErrorWarningLine;
   return (
     <Base
       className={cn(
@@ -38,10 +38,10 @@ export function Alert({
         className,
       )}
     >
-      {icon && (
-        <span className="flex h-full shrink-0 items-start pt-0.5 [&_svg]:size-4">{icon}</span>
-      )}
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">{children}</div>
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        <Mark className="mt-0.5 size-4 shrink-0" aria-hidden />
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">{children}</div>
+      </div>
       {action && <div className="shrink-0">{action}</div>}
     </Base>
   );
