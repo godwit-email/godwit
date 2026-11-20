@@ -351,7 +351,8 @@ func decodeIcon(ct string, data []byte) ui.ImageSource {
 }
 
 // accountIcon is an account's icon: its uploaded image, the label icon or
-// provider logo it chose, or else its own provider's mark.
+// provider logo it chose, or else its own provider's mark (a local
+// archive's, an archive box).
 func (a *App) accountIcon(c *ui.Context, acc core.Account, size float32) {
 	if strings.HasPrefix(acc.Icon, "image:") {
 		if img := a.accountImage(acc); img != nil {
@@ -374,6 +375,10 @@ func (a *App) accountIcon(c *ui.Context, acc core.Account, size float32) {
 		ui.Box(c).Size(size, size).Shrink(0).Center().Children(func() {
 			ui.Icon(c, icons.Get("label-"+name)).Size(iconSize, iconSize).TextColor(t.Foreground)
 		})
+		return
+	}
+	if isArchive(acc) { // a local archive has no mail provider: an archive box
+		iconMark(c, "archive", size)
 		return
 	}
 	mark(c, accountProvider(a, acc), size)

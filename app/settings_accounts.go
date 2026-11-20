@@ -420,16 +420,6 @@ func formatBytes(n int64) string {
 	return strconv.FormatFloat(v, 'f', 1, 64) + " " + string("KMGT"[unit]) + "B"
 }
 
-// settingsAccountMark is acc's mark in Settings: a local archive with no icon
-// of its own shows an archive box in place of a mail provider's mark.
-func settingsAccountMark(c *ui.Context, a *App, acc core.Account, size float32) {
-	if isArchive(acc) && acc.Icon == "" {
-		iconMark(c, "archive", size)
-		return
-	}
-	a.accountIcon(c, acc, size)
-}
-
 func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	a := p.a
 	t, th := theme.Of(c), c.Theme()
@@ -507,7 +497,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 		row(i18n.T("settings.account.icon"), i18n.T("settings.account.icon.help"), func() ui.Element {
 			ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
 				ui.Box(c).Size(theme.MarkMd, theme.MarkMd).Children(func() {
-					settingsAccountMark(c, a, acc, theme.MarkMd)
+					a.accountIcon(c, acc, theme.MarkMd)
 				})
 				rowButton(c, i18n.T("settings.account.icon.choose"), kit.Outline, false).OnClick(func() {
 					p.openDialog("icon", acc)

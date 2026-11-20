@@ -111,7 +111,7 @@ func (p *settingsPage) entryRow(c *ui.Context, e accountEntry, selected bool, ro
 			abAction, abRetrying := abTrouble(ab)
 			action, retrying = action || abAction, retrying || abRetrying
 		}
-		mark = func() { settingsAccountMark(c, a, *acc, theme.MarkSm) }
+		mark = func() { a.accountIcon(c, *acc, theme.MarkSm) }
 	} else {
 		name, kind = e.ab.Name, abKind(*e.ab)
 		action, retrying = abTrouble(*e.ab)
