@@ -1323,8 +1323,8 @@ describe("Panel", () => {
     expect(
       screen
         .getByText("来源 [2] 中包含疑似指令。它只被当作邮件内容处理，没有执行。")
-        .closest("[role=status]"),
-    ).toHaveClass("bg-(--warning-bg)", "text-(--warning-text)", "rounded-lg");
+        .closest("[role=alert]"),
+    ).toHaveClass("bg-(--warning-bg)", "text-(--warning-text)", "rounded-xl");
     expect(
       screen.getByText("来源 [2] 中包含疑似指令。它只被当作邮件内容处理，没有执行。"),
     ).toBeInTheDocument();

@@ -1,6 +1,5 @@
 import { RiArrowDownSLine } from "@remixicon/react";
 import { type ReactNode, type Ref, useId, useImperativeHandle, useRef, useState } from "react";
-import { Button } from "@/components/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type PopupMenu, popupUnder } from "@/components/wit-menu";
@@ -132,9 +131,14 @@ export function Fields({
         "compose.to",
         "compose.to.input",
         !showCc && (
-          <Button variant="link" disabled={frozen} onClick={() => setCcOpen(true)}>
+          <button
+            type="button"
+            disabled={frozen}
+            className="shrink-0 text-muted-foreground text-sm transition-colors hover:text-foreground disabled:pointer-events-none disabled:text-(--idle)"
+            onClick={() => setCcOpen(true)}
+          >
             {t("compose.cc_bcc")}
-          </Button>
+          </button>
         ),
       )}
       {showCc && (
@@ -154,7 +158,7 @@ export function Fields({
         t("compose.subject"),
         <Input
           id={`${id}subject`}
-          className="h-5.5 flex-1 rounded-none border-0 bg-transparent px-0.5 py-0 text-sm shadow-none focus-visible:ring-0 md:text-sm dark:bg-transparent"
+          className="h-5.25 flex-1 rounded-none border-0 bg-transparent px-0.5 py-0 text-sm shadow-none focus-visible:ring-0 md:text-sm dark:bg-transparent"
           placeholder={t("compose.subject.input")}
           value={subject}
           readOnly={frozen}

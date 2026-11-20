@@ -221,7 +221,7 @@ func TestContactsSidebarRefreshAndZeroMail(t *testing.T) {
 
 	// "通讯录" shows enabled address-book contacts and excludes mail-only Bob.
 	h.click("通讯录")
-	h.see("通讯录 · 1")
+	h.see("1 位")
 	h.click("zero@example.com")
 	h.until("Zero Person chosen and Bob gone from list and detail", func() bool {
 		return h.app.contacts().detailOf == "zero@example.com" && !h.app.contacts().read.loading && !h.tt.HasText("bob@example.com")
@@ -311,14 +311,14 @@ func TestContactsMultiAddressAndActions(t *testing.T) {
 
 	// Filter matches subtitle (ORG / TITLE) and secondary email address.
 	h.fill("按名字或地址筛选", "CTO")
-	h.see("全部联系人 · 1")
+	h.see("1 位")
 	if h.tt.HasText("other@example.com") {
 		t.Fatal("other@example.com matched CTO filter")
 	}
 	h.fill("按名字或地址筛选", "bob@work.com")
-	h.see("全部联系人 · 1")
+	h.see("1 位")
 	h.fill("按名字或地址筛选", "")
-	h.see("全部联系人 · 2")
+	h.see("2 位")
 
 	// Top 写邮件 opens popup menu with PREF address first.
 	h.click("写邮件")
@@ -374,7 +374,7 @@ func TestContactsMultiAddressAndActions(t *testing.T) {
 	h.tt.Key(0, ui.KeyEscape)
 	h.drain()
 	h.click("已屏蔽")
-	h.see("已屏蔽 · 1")
+	h.see("1 位")
 
 	// Whole-card block blocks every remaining address; whole-card unblock clears all of them.
 	h.click("屏蔽发件人")
@@ -385,7 +385,7 @@ func TestContactsMultiAddressAndActions(t *testing.T) {
 	h.until("all addresses unblocked", func() bool {
 		return !slices.Contains(h.app.blocked, "bob@home.com") && !slices.Contains(h.app.blocked, "bob@work.com")
 	})
-	h.see("已屏蔽 · 0")
+	h.see("0 位")
 }
 
 func TestContactsFilterHistoricalAndSecondaryMergedTerms(t *testing.T) {
@@ -412,11 +412,11 @@ func TestContactsFilterHistoricalAndSecondaryMergedTerms(t *testing.T) {
 	h.deliverOne(acc, coretest.Msg("Other <other@example.com>", acc.Email, "Other", "Hello"))
 
 	h.click("联系人")
-	h.see("全部联系人 · 2")
+	h.see("2 位")
 
 	for _, query := range []string{"Robert Legacy", "Bobby Studio", "Night Owl Labs", "Founder"} {
 		h.fill("按名字或地址筛选", query)
-		h.see("全部联系人 · 1")
+		h.see("1 位")
 		h.see("Bob Work")
 		if h.tt.HasText("other@example.com") {
 			t.Fatalf("unexpected match for query %q", query)

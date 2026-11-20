@@ -811,13 +811,14 @@ function Compose({
       {quote && (
         <div className="mt-2 text-xs text-muted-foreground">
           <Button
-            variant="link"
+            variant="ghost"
             size="sm"
+            className="-ml-2 gap-1.5 px-2 font-normal text-muted-foreground text-xs"
             aria-expanded={showQuote}
             onClick={() => setShowQuote(!showQuote)}
           >
             <RiArrowRightSLine
-              className={`-ml-1.5 size-4 transition-transform ${showQuote ? "rotate-90" : ""}`}
+              className={`size-3.5 transition-transform ${showQuote ? "rotate-90" : ""}`}
             />
             {t("compose.quote.show")}
           </Button>

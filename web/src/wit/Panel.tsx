@@ -1,7 +1,6 @@
 import { useChat } from "@ai-sdk/react";
 import {
   RiAddLine,
-  RiAlertLine,
   RiArrowDownLine,
   RiArrowDownSLine,
   RiArrowUpLine,
@@ -47,7 +46,6 @@ import { Alert as Notice } from "@/components/alert";
 import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
 import { toast } from "@/components/toast";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import {
   DropdownMenu,
@@ -171,7 +169,7 @@ function ContextUsage({ usage, t }: { usage: WitUsage; t: T }) {
       key: "conversation",
       label: t("wit.ctx.conversation"),
       value: Math.max(0, used - summary),
-      tone: "bg-(--info-text)",
+      tone: "bg-(--label-blue-dot)",
     },
     ...(summary > 0
       ? [
@@ -179,7 +177,7 @@ function ContextUsage({ usage, t }: { usage: WitUsage; t: T }) {
             key: "summary",
             label: t("wit.ctx.summary"),
             value: summary,
-            tone: "bg-(--warning-text)",
+            tone: "bg-(--label-amber-dot)",
           },
         ]
       : []),
@@ -198,7 +196,7 @@ function ContextUsage({ usage, t }: { usage: WitUsage; t: T }) {
       <ul className="flex flex-col gap-1">
         {rows.map((r) => (
           <li key={r.key} className="flex items-center gap-2">
-            <span className={cn("size-2.5 shrink-0 rounded-[3px]", r.tone)} aria-hidden="true" />
+            <span className={cn("size-2.5 shrink-0 rounded-[2px]", r.tone)} aria-hidden="true" />
             <span className="flex-1">{r.label}</span>
             <span className="text-muted-foreground tabular-nums">{r.value}%</span>
           </li>
@@ -380,7 +378,7 @@ function BatchApprovalCard({
 
   return (
     <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)">
-      <div className="flex flex-wrap items-center gap-2 border-b-[0.5px] bg-sidebar px-3.5 py-2.5 leading-5">
+      <div className="flex flex-wrap items-center gap-2 border-b-[0.5px] bg-sidebar px-3.5 py-2.5 leading-5.25">
         <span className="font-medium">{actionLabel}</span>
         <span className="ml-auto flex gap-1.5">
           <Badge tone="warning">{t("wit.approval.pending")}</Badge>
@@ -430,7 +428,7 @@ function BatchApprovalCard({
                   className="mt-0.5"
                 />
                 <div id={`${allId}-${it.id}`} className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center justify-between gap-2 leading-4.5">
                     <span className="truncate font-medium text-foreground">
                       {it.from || t("wit.batch.no_sender")}
                     </span>
@@ -450,7 +448,7 @@ function BatchApprovalCard({
                       </button>
                     )}
                   </div>
-                  <div className="truncate text-xs text-muted-foreground">
+                  <div className="truncate text-muted-foreground text-xs leading-4.5">
                     {it.subject || t("mail.no_subject")}
                   </div>
                 </div>
@@ -1448,17 +1446,12 @@ function Answer({
           return k?.suspect ? [{ id: c.messageId, ...k }] : [];
         })
         .map((c) => (
-          <Alert
-            key={c.id}
-            role="status"
-            className="gap-x-2.5 gap-y-0 rounded-lg border-0 bg-(--warning-bg) px-3 py-2.5 text-(--warning-text) text-sm"
-          >
-            <RiAlertLine />
-            <AlertDescription className="text-sm text-current leading-relaxed">
-              {/* the quote is mail text: a plain string, never markup */}
+          <Notice key={c.id} tone="warning">
+            {/* the quote is mail text: a plain string, never markup */}
+            <span>
               {c.quote ? t("wit.suspect_quote", `[${c.n}]`, c.quote) : t("wit.suspect", `[${c.n}]`)}
-            </AlertDescription>
-          </Alert>
+            </span>
+          </Notice>
         ))}
       {m.parts.map((p, i) => {
         const w = folds.find((w) => w.includes(i));
@@ -2515,16 +2508,14 @@ export function Panel({
               </MessageScrollerItem>
             ))}
             {page && chat.messages.length === 0 && !running && !locked && (
-              <div className="flex flex-col items-center gap-3 pt-25 text-center">
+              <div className="flex flex-col items-center gap-3 pt-30 text-center">
                 <span className="flex size-12 items-center justify-center rounded-2xl border border-glass-border bg-glass-bg shadow-(--shadow-xs)">
                   <RiSparkling2Line className="size-6" />
                 </span>
                 <h1 className="font-semibold text-xl">{t("wit.empty.title")}</h1>
-                <p className="max-w-110 text-muted-foreground text-xs leading-relaxed">
-                  {t("wit.empty.note")}
-                </p>
+                <p className="max-w-110 text-muted-foreground text-xs">{t("wit.empty.note")}</p>
                 <p className="mt-3 text-muted-foreground text-xs">{t("wit.suggest")}</p>
-                <div className="flex max-w-150 flex-wrap justify-center gap-2">
+                <div className="flex flex-wrap justify-center gap-2">
                   {[1, 2, 3, 4].map((n) => {
                     const q = t(`wit.suggest.${n}`);
                     return (
@@ -2745,7 +2736,10 @@ export function Panel({
               <InputGroupButton
                 variant="ghost"
                 size="sm"
-                className={cn(!meter && "ml-auto", "h-7 min-w-0 gap-1 px-2.5 font-medium text-xs")}
+                className={cn(
+                  !meter && "ml-auto",
+                  "h-7 min-w-0 gap-1 px-2.5 font-medium text-foreground text-xs",
+                )}
                 title={t("wit.model.pick")}
               >
                 <span className="truncate">{chosen}</span>
@@ -2771,7 +2765,10 @@ export function Panel({
             <InputGroupButton
               variant="ghost"
               size="sm"
-              className={cn(!meter && "ml-auto", "h-7 gap-1 px-2.5 font-medium text-xs")}
+              className={cn(
+                !meter && "ml-auto",
+                "h-7 gap-1 px-2.5 font-medium text-foreground text-xs",
+              )}
               title={t("wit.model")}
               onClick={onModels}
             >
@@ -2782,7 +2779,7 @@ export function Panel({
         )}
         {running ? (
           <InputGroupButton
-            className={cn(!model && !meter && "ml-auto")}
+            className={cn(!model && !meter && "ml-auto", "text-foreground")}
             variant="outline"
             size="icon-sm"
             aria-label={t("wit.stop")}

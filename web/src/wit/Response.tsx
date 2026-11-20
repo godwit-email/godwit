@@ -342,7 +342,10 @@ export function Response({
   return (
     <>
       <Streamdown
-        className={cn("space-y-2.5 text-sm", size === "page" && "leading-[1.75]")}
+        className={cn(
+          "space-y-2.5 text-sm [&_li+li]:mt-1 [&_li]:py-0",
+          size === "page" && "leading-[1.75]",
+        )}
         mode={streaming ? "streaming" : "static"}
         skipHtml
         remarkPlugins={/<mail\s+id=/.test(text) ? remarkPlugins : legacyPlugins}
