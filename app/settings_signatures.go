@@ -427,7 +427,7 @@ func (p *settingsPage) accountSignatureView(c *ui.Context, acc core.Account) {
 		before, after, _ := strings.Cut(i18n.Tf("settings.account.signature.foot", where), where)
 		ui.RichText(c).FontSize(t.Text.Xs).TextColor(t.Muted).PaddingX(c.Theme().Space(4)).Children(func() {
 			ui.Text(c, before)
-			if ui.Link(c, where, "").TextColor(t.Foreground).Underline().Clicked() {
+			if ui.Link(c, where, "").TextColor(t.Muted).FontWeight(400).Clicked() {
 				a.navigate(Route{Page: PageSettings, Settings: "signatures"})
 			}
 			ui.Text(c, after)

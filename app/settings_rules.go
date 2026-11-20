@@ -380,19 +380,19 @@ func (v *rulesView) hitList(c *ui.Context, r core.Rule) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(0, th.Space(4), th.Space(3), th.Space(4)+th.Space(11.5)).Children(func() {
 		box := func() ui.Element {
-			return kit.Block(c, ui.Column(c), kit.ToneOutline).FillWidth().MaxHeight(th.Space(42)).Clip()
+			return kit.Block(c, ui.Column(c), kit.ToneOutline).FillWidth().MaxHeight(th.Space(64)).Clip()
 		}
 		if len(v.hits) == 0 {
 			box().Padding(th.Space(4), th.Space(3)).AlignItems(ui.Center).Children(func() {
 				kit.Text(c, i18n.T("settings.rules.hits.none"), t.Text.Xs).TextColor(t.Muted)
 			})
 		} else {
-			box().Children(func() {
+			box().Padding(th.Space(3)).Children(func() {
 				ui.Scroll(c).Shrink(1).Children(func() {
-					now := time.Now()
+					now := v.a.clock.Now()
 					for i, h := range v.hits {
 						if i > 0 {
-							kit.Separator(c, false)
+							kit.Separator(c, false).MarginX(th.Space(4))
 						}
 						v.hit(c.Key(h.RunID), r, h, now)
 					}
@@ -411,46 +411,45 @@ func (v *rulesView) hitList(c *ui.Context, r core.Rule) {
 	})
 }
 
-// hit is a run: when, the message, each action's result, and undo or retry.
+// hit is a run: the message, each action's result in a line (a failure and
+// what it kept from running in red), when, and undo or retry.
 func (v *rulesView) hit(c *ui.Context, r core.Rule, h core.RuleHit, now time.Time) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(2.5), th.Space(3)).Children(func() {
-		kit.Text(c, listTime(now, h.At), t.Text.Xs).TextColor(t.Muted).Width(th.Space(22)).Shrink(0)
-		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1.5)).Children(func() {
+	ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(2), th.Space(3)).AlignItems(ui.Center).Children(func() {
+		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
+			if h.MessageID == 0 {
+				kit.Text(c, i18n.T("settings.rules.hits.gone"), t.Text.Sm).TextColor(t.Muted)
+				return
+			}
 			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				if h.MessageID == 0 {
-					kit.Text(c, i18n.T("settings.rules.hits.gone"), t.Text.Sm).TextColor(t.Muted)
-					return
-				}
 				kit.Text(c, displayName(h.From), t.Text.Sm).FontWeight(500).Shrink(0)
 				kit.Text(c, h.Subject, t.Text.Sm).SingleLine().Shrink(1)
 			})
-			ui.Row(c).Wrap().Gap(th.Space(1.5)).Children(func() {
+			ui.Row(c).Gap(th.Space(1.5)).Shrink(1).Children(func() {
 				for i, res := range h.Actions {
-					fill, fg, icon := t.Hover, t.Muted, actionIcon(res.Kind)
-					switch res.State {
-					case core.RuleActionDone:
-						fill, fg = t.SuccessBg, t.SuccessText
-					case core.RuleActionFailed:
-						fill, fg, icon = t.DangerBg, t.DangerText, "triangle-alert"
+					fg := t.Muted
+					if res.State == core.RuleActionFailed || res.State == core.RuleActionNotRun {
+						fg = t.DangerText
 					}
-					ruleTag(c.Key(i), v.result(r, i, res), fill, fg, icon)
+					if i > 0 {
+						kit.Text(c.Key(-i), "·", t.Text.Xs).TextColor(fg).Shrink(0)
+					}
+					kit.Text(c.Key(i), v.result(r, i, res), t.Text.Xs).TextColor(fg).SingleLine().Shrink(0)
 				}
 			})
 		})
+		if h.State == core.RuleRunFailed && h.MessageID != 0 {
+			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs}).Shrink(0).OnClick(func() { v.retry(h.RunID) })
+		}
+		kit.Text(c, listTime(now, h.At), t.Text.Xs).TextColor(t.Muted).Shrink(0)
 		if h.State == core.RuleRunUndone {
 			kit.Text(c, i18n.T("settings.rules.hits.undone"), t.Text.Xs).TextColor(t.Muted).Shrink(0)
 			return
 		}
-		if slices.ContainsFunc(h.Actions, func(x core.RuleActionResult) bool {
+		if h.MessageID != 0 && h.State != core.RuleRunFailed && slices.ContainsFunc(h.Actions, func(x core.RuleActionResult) bool {
 			return x.State == core.RuleActionDone && core.RuleUndoable(x.Kind)
 		}) {
-			kit.Button(c, i18n.T("settings.rules.hits.undo"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Icon: "undo-2"}).Shrink(0).
-				OnClick(func() { v.undo(h.RunID) })
-		}
-		if h.State == core.RuleRunFailed && h.MessageID != 0 {
-			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Shrink(0).
-				OnClick(func() { v.retry(h.RunID) })
+			kit.IconButton(c, "undo-2", i18n.T("settings.rules.hits.undo"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).Shrink(0).OnClick(func() { v.undo(h.RunID) })
 		}
 	})
 }

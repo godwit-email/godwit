@@ -20,36 +20,38 @@ import (
 func (e *extView) directoryView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	pageHeading(c, i18n.T("settings.ext.directory"), i18n.T("settings.ext.directory.sub"))
-	switch {
-	case len(e.reg.Entries) == 0 && e.reg.Stale != "":
-		kit.Block(c, ui.Row(c), kit.ToneCard).FillWidth().Gap(th.Space(6)).Padding(th.Space(3), th.Space(4)).AlignItems(ui.Center).Children(func() {
-			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-				kit.Text(c, i18n.T("settings.ext.directory.offline"), t.Text.Sm).FontWeight(500)
-				kit.Text(c, i18n.T("settings.ext.directory.offline.hint"), t.Text.Xs).TextColor(t.Muted)
-			})
-			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Outline}).OnClick(e.refreshRegistry)
-		})
-	case len(e.reg.Entries) == 0:
-		ui.Text(c, i18n.T("settings.ext.registry.empty")).TextColor(t.Muted)
-	default:
-		ui.Column(c).FillWidth().Gap(th.Space(3)).Children(func() {
-			for i := 0; i < len(e.reg.Entries); i += 2 {
-				ui.Row(c.Key(i)).FillWidth().Gap(th.Space(3)).AlignItems(ui.Stretch).Children(func() {
-					for _, en := range e.reg.Entries[i:min(i+2, len(e.reg.Entries))] {
-						e.directoryCard(c.Key("registry:"+en.Name), en)
-					}
-					if i+1 == len(e.reg.Entries) { // a lone last card keeps its column's width; the card's padding counts toward its basis, so the filler's must too
-						ui.Box(c).Grow(1).Shrink(1).Basis(0).MinWidth(0).Padding(th.Space(3))
-					}
+	ui.Column(c).Gap(th.Space(3)).Children(func() { // the footnote hangs 12 under what it follows
+		switch {
+		case len(e.reg.Entries) == 0 && e.reg.Stale != "":
+			kit.Block(c, ui.Row(c), kit.ToneCard).FillWidth().Gap(th.Space(6)).Padding(th.Space(3), th.Space(4)).AlignItems(ui.Center).Children(func() {
+				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
+					kit.Text(c, i18n.T("settings.ext.directory.offline"), t.Text.Sm).FontWeight(500)
+					kit.Text(c, i18n.T("settings.ext.directory.offline.hint"), t.Text.Xs).TextColor(t.Muted)
 				})
-			}
-		})
-	}
-	foot := i18n.T("settings.ext.no_send")
-	if e.reg.Stale != "" && len(e.reg.Entries) > 0 {
-		foot = i18n.T("settings.ext.registry.stale") + " " + foot
-	}
-	kit.Text(c, foot, t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(4))
+				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Outline}).OnClick(e.refreshRegistry)
+			})
+		case len(e.reg.Entries) == 0:
+			ui.Text(c, i18n.T("settings.ext.registry.empty")).TextColor(t.Muted)
+		default:
+			ui.Column(c).FillWidth().Gap(th.Space(3)).Children(func() {
+				for i := 0; i < len(e.reg.Entries); i += 2 {
+					ui.Row(c.Key(i)).FillWidth().Gap(th.Space(3)).AlignItems(ui.Stretch).Children(func() {
+						for _, en := range e.reg.Entries[i:min(i+2, len(e.reg.Entries))] {
+							e.directoryCard(c.Key("registry:"+en.Name), en)
+						}
+						if i+1 == len(e.reg.Entries) { // a lone last card keeps its column's width; the card's padding counts toward its basis, so the filler's must too
+							ui.Box(c).Grow(1).Shrink(1).Basis(0).MinWidth(0).Padding(th.Space(3))
+						}
+					})
+				}
+			})
+		}
+		foot := i18n.T("settings.ext.no_send")
+		if e.reg.Stale != "" && len(e.reg.Entries) > 0 {
+			foot = i18n.T("settings.ext.registry.stale") + " " + foot
+		}
+		kit.Text(c, foot, t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(4))
+	})
 	e.installDialog(c)
 }
 
@@ -105,8 +107,8 @@ func flowLine(c *ui.Context, en core.RegistryEntry) {
 
 func entryIconBox(c *ui.Context, en core.RegistryEntry, tone kit.Tone) {
 	t, th := theme.Of(c), c.Theme()
-	kit.Tile(c, th.Space(10), th.Space(10), tone).TextColor(t.Muted).Children(func() {
-		ui.Icon(c, icons.Get(entryIcon(en))).Size(theme.IconLg, theme.IconLg)
+	kit.Tile(c, th.Space(8), th.Space(8), tone).TextColor(t.Foreground).Children(func() {
+		ui.Icon(c, icons.Get(entryIcon(en))).Size(theme.Icon, theme.Icon)
 	})
 }
 
@@ -128,7 +130,7 @@ func (e *extView) directoryCard(c *ui.Context, en core.RegistryEntry) {
 				if s := en.Summary.For(i18n.Language()); s != "" {
 					kit.Tooltip(c, kit.Text(c, s, t.Text.Xs).TextColor(t.Muted).MaxLines(2).Shrink(1), s)
 				}
-				ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Wrap().Children(func() {
+				ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Wrap().Children(func() {
 					flowLine(c, en)
 					if m := strings.TrimPrefix(strings.TrimSuffix(entryKind(en)+" · "+cmp.Or(en.Version, en.Installed), " · "), " · "); m != "" {
 						kit.Text(c, m, t.Text.Xs).TextColor(t.Muted)

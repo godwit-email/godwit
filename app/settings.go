@@ -993,8 +993,8 @@ func (p *settingsPage) aboutView(c *ui.Context) {
 func (p *settingsPage) starButton(c *ui.Context) {
 	t, th, a := theme.Of(c), c.Theme(), p.a
 	label := i18n.T("settings.about.star")
-	b := kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Label(label).Gap(th.Space(1.5)).Children(func() {
-		ui.Icon(c, icons.Get("star")).Size(theme.IconSm, theme.IconSm).TextColor(t.Foreground)
+	b := kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Label(label).Gap(th.Space(1)).Children(func() {
+		ui.Icon(c, icons.Get("star")).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
 		ui.Text(c, label).Role(ui.RoleNone) // the button's Label names it
 		if !p.gh {
 			ui.Icon(c, icons.Get("arrow-up-right")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)

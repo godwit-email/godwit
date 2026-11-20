@@ -243,7 +243,7 @@ func (v *rulesView) flow(c *ui.Context) {
 	a := v.a
 	t, th := theme.Of(c), c.Theme()
 	d := &v.edit.Doc
-	kit.Card(c, ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)), kit.ToneTint).Children(func() {
+	kit.Card(c, ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(4)), kit.ToneTint).Children(func() {
 		kit.Text(c, i18n.T("settings.rules.name"), t.Text.Sm).FontWeight(500).Shrink(0)
 		kit.Input(c, &d.Name, kit.InputOpts{Placeholder: i18n.T("settings.rules.name.placeholder")}).Label(i18n.T("settings.rules.name")).Grow(1).Shrink(1)
 	})
@@ -514,7 +514,7 @@ func condEditor(c *ui.Context, conds *[]core.RuleCondition, match *string, menu 
 						})
 						_, railW := condRailWidth(c)
 						ui.Row(c).FillWidth().AlignItems(ui.Center).Padding(0, 0, 0, railW).Children(func() {
-							kit.Button(c, i18n.T("settings.rules.condition.add"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "plus", Disabled: atLimit}).TextColor(t.Muted).
+							kit.Button(c, i18n.T("settings.rules.condition.add"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "plus", Disabled: atLimit}).
 								OnClick(func() {
 									add := core.RuleCondition{Field: core.FieldSubject, Op: core.OpContains}
 									if f := cg.Group[len(cg.Group)-1].Field; textField(f) {
@@ -536,15 +536,15 @@ func condEditor(c *ui.Context, conds *[]core.RuleCondition, match *string, menu 
 	})
 	_, railW := condRailWidth(c)
 	kit.Button(c, i18n.T("settings.rules.cond_group.add"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "plus", Disabled: noGroupRoom}).
-		AlignSelf(ui.Start).Margin(0, 0, 0, railW).TextColor(t.Muted).OnClick(func() { addCondGroup(conds, match) })
+		AlignSelf(ui.Start).Margin(0, 0, 0, railW).OnClick(func() { addCondGroup(conds, match) })
 }
 
 // addCondMenu is 添加 and its menu: 添加条件, or 添加一组条件.
 func addCondMenu(c *ui.Context, conds *[]core.RuleCondition, match *string, menu *bool, disabled, noGroupRoom bool) {
 	t := theme.Of(c)
 	label := i18n.T("settings.rules.add")
-	add := kit.Button(c, label, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "plus", Trailing: "chevron-down", Disabled: disabled}).
-		AlignSelf(ui.Start).TextColor(t.Muted).OnClick(func() { *menu = !*menu })
+	add := kit.Button(c, label, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "plus", Disabled: disabled}).
+		AlignSelf(ui.Start).OnClick(func() { *menu = !*menu })
 	if !*menu {
 		return
 	}
@@ -575,7 +575,7 @@ func addCondMenu(c *ui.Context, conds *[]core.RuleCondition, match *string, menu
 
 // triggerSelect is a select on the 当 card, as wide as its choice.
 func triggerSelect[T comparable](c *ui.Context, label string, sel *T, opts []kit.Option[T]) ui.Element {
-	return kit.SelectWith(c, kit.SelectOpts{Flat: true, MaxWidth: theme.SettingsSelectMax}, sel, opts).Label(label)
+	return kit.SelectWith(c, kit.SelectOpts{Flat: true, MinWidth: theme.RuleActionWidth, MaxWidth: theme.SettingsSelectMax}, sel, opts).Label(label)
 }
 
 // ruleSelect is a select in a rule card's row: w wide (a longer language

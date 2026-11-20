@@ -187,7 +187,7 @@ func (v *labelsView) dialog(c *ui.Context) {
 	case long:
 		nameErr = i18n.Tf("settings.labels.name.long", core.MaxLabelName)
 	}
-	kit.Dialog(c, &v.dlg, title, kit.DialogOpts{Desc: i18n.T("settings.labels.dialog.sub"), Close: i18n.T("common.close")}, func() {
+	kit.Dialog(c, &v.dlg, title, kit.DialogOpts{Desc: i18n.T("settings.labels.dialog.sub"), Close: i18n.T("common.close"), Top: true}, func() {
 		preview := cmpName(v.name)
 		kit.Block(c, ui.Row(c), kit.ToneCard).Gap(th.Space(6)).Padding(th.Space(3)).Children(func() {
 			for _, auto := range []bool{false, true} {

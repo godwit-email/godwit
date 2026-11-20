@@ -156,42 +156,44 @@ func (p *settingsPage) maskLogPage(c *ui.Context) {
 		warned += q.sent(core.MaskWarn)
 		masked += q.sent(core.MaskMask)
 	}
-	ui.Row(c).FillWidth().Gap(th.Space(2)).Children(func() {
-		for _, tile := range []struct {
-			result, key string
-			n           int
-			color       ui.Color
-		}{{maskAll, "all", len(reqs), t.Foreground}, {core.MaskBlock, "blocked", blocked, t.DangerText}, {core.MaskWarn, "warned", warned, t.WarningText}, {core.MaskMask, "masked", masked, t.Foreground}} {
-			label := i18n.T("settings.masking.log." + tile.key)
-			kit.ChoiceCard(c, kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { f.result = tile.result }}).
-				Grow(1).Shrink(1).Basis(0).Padding(th.Space(4)).Radius(t.Radius.Xl).Label(label), kit.ChoiceCardOpts{Selected: f.result == tile.result, Look: kit.ChoiceOnCard}, func() {
-				ui.Column(c).Gap(th.Space(0.5)).Children(func() {
-					kit.Text(c, label, t.Text.Xs).TextColor(t.Muted)
-					color := tile.color
-					if tile.n == 0 {
-						color = t.Muted
-					}
-					kit.Text(c, strconv.Itoa(tile.n), t.Text.Xl).FontWeight(600).TextColor(color)
-					kit.Text(c, i18n.T("settings.masking.log."+tile.key+".help"), t.Text.Xs).TextColor(t.Muted)
+	ui.Column(c).FillWidth().Gap(th.Space(3)).Children(func() { // the tiles and the filters under them, one group
+		ui.Row(c).FillWidth().Gap(th.Space(2)).Children(func() {
+			for _, tile := range []struct {
+				result, key string
+				n           int
+				color       ui.Color
+			}{{maskAll, "all", len(reqs), t.Foreground}, {core.MaskBlock, "blocked", blocked, t.DangerText}, {core.MaskWarn, "warned", warned, t.WarningText}, {core.MaskMask, "masked", masked, t.Foreground}} {
+				label := i18n.T("settings.masking.log." + tile.key)
+				kit.ChoiceCard(c, kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { f.result = tile.result }}).
+					Grow(1).Shrink(1).Basis(0).Padding(th.Space(4)).Radius(t.Radius.Xl).Label(label), kit.ChoiceCardOpts{Selected: f.result == tile.result, Look: kit.ChoiceOnCard}, func() {
+					ui.Column(c).Gap(th.Space(0.5)).Children(func() {
+						kit.Text(c, label, t.Text.Xs).TextColor(t.Muted)
+						color := tile.color
+						if tile.n == 0 {
+							color = t.Muted
+						}
+						kit.Text(c, strconv.Itoa(tile.n), t.Text.Xl).FontWeight(600).TextColor(color)
+						kit.Text(c, i18n.T("settings.masking.log."+tile.key+".help"), t.Text.Xs).TextColor(t.Muted)
+					})
 				})
-			})
-		}
-	})
+			}
+		})
 
-	cats := []kit.Option[string]{{Value: "", Label: i18n.T("settings.masking.log.cat.all")}}
-	for name := range (&core.MaskCategories{}).All() {
-		cats = append(cats, kit.Option[string]{Value: name, Label: maskCategoryName(name)})
-	}
-	cats = append(cats, kit.Option[string]{Value: maskOwn, Label: maskCategoryName("")})
-	features := []kit.Option[string]{{Value: "", Label: i18n.T("settings.masking.log.feature.all")}}
-	for _, name := range maskFeatures {
-		if slices.ContainsFunc(reqs, func(q maskRequest) bool { return q.feature == name }) {
-			features = append(features, kit.Option[string]{Value: name, Label: maskFeatureName(name)})
+		cats := []kit.Option[string]{{Value: "", Label: i18n.T("settings.masking.log.cat.all")}}
+		for name := range (&core.MaskCategories{}).All() {
+			cats = append(cats, kit.Option[string]{Value: name, Label: maskCategoryName(name)})
 		}
-	}
-	ui.Row(c).Gap(th.Space(2)).Children(func() {
-		settingSelect(c, i18n.T("settings.masking.log.cat.all"), &f.cat, cats)
-		settingSelect(c, i18n.T("settings.masking.log.feature.all"), &f.feature, features)
+		cats = append(cats, kit.Option[string]{Value: maskOwn, Label: maskCategoryName("")})
+		features := []kit.Option[string]{{Value: "", Label: i18n.T("settings.masking.log.feature.all")}}
+		for _, name := range maskFeatures {
+			if slices.ContainsFunc(reqs, func(q maskRequest) bool { return q.feature == name }) {
+				features = append(features, kit.Option[string]{Value: name, Label: maskFeatureName(name)})
+			}
+		}
+		ui.Row(c).Gap(th.Space(2)).Children(func() {
+			settingSelect(c, i18n.T("settings.masking.log.cat.all"), &f.cat, cats)
+			settingSelect(c, i18n.T("settings.masking.log.feature.all"), &f.feature, features)
+		})
 	})
 
 	now := a.clock.Now()

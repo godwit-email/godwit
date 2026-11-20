@@ -974,11 +974,10 @@ func (e *extView) serverHead(c *ui.Context, s core.MCPServer, open bool) {
 				e.write("mcp", func(ctx context.Context) error { return a.svc.SetMCPServerEnabled(ctx, id, on) }, nil)
 			}
 		}
-		chev := "chevron-right"
+		chev := ui.Icon(c, icons.Get("chevron-down")).Size(theme.Icon, theme.Icon).TextColor(t.Muted).Shrink(0)
 		if open {
-			chev = "chevron-down"
+			chev.Rotate(180)
 		}
-		ui.Icon(c, icons.Get(chev)).Size(theme.Icon, theme.Icon).TextColor(t.Muted).Shrink(0)
 	})
 }
 

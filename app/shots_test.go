@@ -958,12 +958,24 @@ func TestShots(t *testing.T) {
 		}}}
 		h := newHarnessWith(t, []coretest.Option{coretest.WithRegistry(rs.Src)}, func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") })
 		h.until("initial load", func() bool { return h.app.loaded })
+		h.resize(1440, 900)
 		h.openSettings("plugins")
 		h.see("浏览插件目录")
 		shot(h, "SettingsExtensionsPlugins")
 		h.click("浏览插件目录")
 		h.see("Zen Free")
 		shot(h, "SettingsPluginDirectory")
+		ext := h.app.pages[PageSettings].(*settingsPage).ext
+		entries := ext.reg.Entries
+		ext.installing, ext.installProgress = "dlx", core.PluginInstallProgress{Stage: "download", Done: 64, Total: 100}
+		shot(h, "SettingsPluginDirectoryInstalling")
+		ext.installing, ext.reg.Stale = "", "offline"
+		shot(h, "SettingsPluginDirectoryStale")
+		ext.reg.Entries = nil
+		shot(h, "SettingsPluginDirectoryOffline")
+		ext.reg.Stale = ""
+		shot(h, "SettingsPluginDirectoryEmpty")
+		ext.reg.Entries = entries
 		h.click("安装 zen-free")
 		h.see("以下说明来自插件的 GitHub 主页，不在审核范围内。")
 		shot(h, "SettingsPluginInstallDialog")
@@ -1028,6 +1040,299 @@ func TestShots(t *testing.T) {
 		})
 		s.see("被拦截的请求")
 		shot(s.harness, "SettingsMaskLog")
+	})
+	t.Run("SettingsStates", func(t *testing.T) {
+		page := func(s *shotEnv) *settingsPage { return s.app.pages[PageSettings].(*settingsPage) }
+		ctx := context.Background()
+		// shotNow shoots at once: the shot's wait for refreshes would read the page's lists again over what the fixture set on them.
+		shotNow := func(h *harness, name string) {
+			h.t.Helper()
+			h.drain()
+			h.tt.Frame()
+			write(h, dir, name)
+			if dark != "" {
+				h.tt.SetDark(true)
+				write(h, dark, name)
+				h.tt.SetDark(false)
+				h.tt.Frame()
+			}
+		}
+		t.Run("SettingsGeneralProxy", func(t *testing.T) {
+			s := shotMail(t, func(st *core.Settings) {
+				noAuto(st)
+				st.ProxyMode, st.ProxyURL, st.ProxyBypass = core.ProxyCustom, "socks5://127.0.0.1:1080", []string{"localhost", "127.0.0.1", "*.corp.example"}
+			})
+			s.openSettings("general")
+			s.see("网络代理")
+			for range 3 { // the page's height is only known as it is laid out
+				s.tt.Frame()
+				s.tt.Scroll(900, 400, 0, 100000)
+			}
+			s.tt.Frame()
+			shot(s.harness, "SettingsGeneralProxy")
+		})
+		t.Run("SettingsLabelsEdit", func(t *testing.T) {
+			s := shotDesignMail(t, noAuto)
+			s.openSettings("labels")
+			s.see("Q4 项目")
+			p := page(s)
+			s.post(func() {
+				i := slices.IndexFunc(s.app.labels, func(l core.Label) bool { return l.Name == "Q4 项目" })
+				l := s.app.labels[i]
+				l.Description = "和 Q4 项目有关的排期、评审和交付，Lena Fischer 和 Mark Chen 常发"
+				p.labels.open(l)
+			})
+			shot(s.harness, "SettingsLabelsEdit")
+		})
+		rulesPage := func(t *testing.T) (*shotEnv, []core.Rule) {
+			s := shotMail(t, noAuto)
+			var out []core.Rule
+			for _, r := range []core.Rule{
+				{Enabled: true, Background: true, Doc: core.RuleDoc{Name: "账单归档", Conditions: []core.RuleCondition{{Field: core.FieldSubject, Op: core.OpContains, Value: "invoice"}, {Field: core.FieldAttachments, Op: core.OpIs, Value: core.RuleYes}},
+					Actions: []core.RuleAction{{Kind: core.ActionLabel, Label: "bill"}, {Kind: core.ActionPDF, Dir: "/Users/you/账单", Naming: core.NamingPresets[0]}, {Kind: core.ActionArchive}}}},
+				{Enabled: true, Doc: core.RuleDoc{Name: "订阅邮件不进收件箱", Trigger: core.TriggerLabel, TriggerArg: "newsletter", Actions: []core.RuleAction{{Kind: core.ActionRead}, {Kind: core.ActionArchive}}}},
+				{Enabled: false, Doc: core.RuleDoc{Name: "发票转给会计", Conditions: []core.RuleCondition{{Field: core.FieldFrom, Op: core.OpContains, Value: "acme.example"}, {Field: core.FieldSubject, Op: core.OpContains, Value: "invoice"}},
+					Actions: []core.RuleAction{{Kind: core.ActionForward, To: "accountant@company.example"}}}},
+			} {
+				r.Doc.Version, r.Doc.Match = core.RuleVersion, core.MatchAll
+				if r.Doc.Trigger == "" {
+					r.Doc.Trigger = core.TriggerReceive
+				}
+				id, err := s.env.Svc.SaveRule(ctx, r)
+				if err != nil {
+					t.Fatal(err)
+				}
+				r.ID = id
+				out = append(out, r)
+			}
+			s.openSettings("rules")
+			s.see("订阅邮件不进收件箱")
+			now := s.clock.Now()
+			act := func(kind, state, failure string, a core.RuleAction) core.RuleActionResult {
+				return core.RuleActionResult{Kind: kind, State: state, Failure: failure, Action: a}
+			}
+			ok := []core.RuleActionResult{
+				act(core.ActionLabel, core.RuleActionDone, "", core.RuleAction{Kind: core.ActionLabel, Label: "账单"}),
+				act(core.ActionPDF, core.RuleActionDone, "", core.RuleAction{Kind: core.ActionPDF, Dir: "/Users/you/账单", Naming: core.NamingPresets[0]}),
+				act(core.ActionArchive, core.RuleActionDone, "", core.RuleAction{Kind: core.ActionArchive}),
+			}
+			s.post(func() {
+				v := page(s).rules
+				v.counts = map[int64]int{out[0].ID: 4, out[1].ID: 12}
+				v.open = out[0].ID
+				v.hits = []core.RuleHit{
+					{RunID: 1, MessageID: 1, From: "Acme Cloud", Subject: "Invoice #1261 for October", At: now.Add(-48 * time.Minute), State: core.RuleRunDone, Actions: ok},
+					{RunID: 2, MessageID: 2, From: "Northwind Airlines", Subject: "Invoice for booking NW-58213", At: now.Add(-26 * time.Hour), State: core.RuleRunDone, Actions: ok},
+					{RunID: 3, MessageID: 3, From: "财务部", Subject: "10 月 invoice 已开具，请查收", At: now.Add(-72 * time.Hour), State: core.RuleRunFailed, Actions: []core.RuleActionResult{ok[0],
+						act(core.ActionPDF, core.RuleActionFailed, core.RuleFailWrite, core.RuleAction{Kind: core.ActionPDF, Dir: "/Users/you/账单", Naming: core.NamingPresets[0]}), act(core.ActionArchive, core.RuleActionNotRun, "", core.RuleAction{Kind: core.ActionArchive})}},
+					{RunID: 4, MessageID: 0, From: "Acme Cloud", Subject: "Invoice #1198", At: now.Add(-120 * time.Hour), State: core.RuleRunDone, Actions: ok},
+				}
+			})
+			s.tt.Frame()
+			return s, out
+		}
+		t.Run("SettingsRulesList", func(t *testing.T) {
+			s, _ := rulesPage(t)
+			shotNow(s.harness, "SettingsRulesList")
+		})
+		t.Run("SettingsRulesDelete", func(t *testing.T) {
+			s, rules := rulesPage(t)
+			s.post(func() { v := page(s).rules; v.deleting, v.deleteOpen = &rules[0], true })
+			shotNow(s.harness, "SettingsRulesDelete")
+		})
+		editor := func(t *testing.T, name string, doc core.RuleDoc) {
+			s := shotMail(t, noAuto)
+			s.openSettings("rules")
+			s.see("新建规则")
+			doc.Version, doc.Name, doc.Trigger, doc.Match = core.RuleVersion, name, core.TriggerReceive, core.MatchAll
+			s.post(func() { page(s).rules.openEditor(core.Rule{Enabled: true, Doc: doc}) })
+			s.see("现有邮件里")
+			s.advance(5 * time.Second) // the preview's debounce
+			s.until("the preview", func() bool { return !s.tt.HasText("正在查找符合的邮件…") })
+			shot(s.harness, "SettingsRulesEditor"+strings.ReplaceAll(name, " ", ""))
+		}
+		t.Run("SettingsRulesEditorFilled", func(t *testing.T) {
+			editor(t, "Acme 账单", core.RuleDoc{Conditions: []core.RuleCondition{{Field: core.FieldFrom, Op: core.OpContains, Value: "acme.example"}, {Field: core.FieldSubject, Op: core.OpContains, Value: "receipt"}},
+				Actions: []core.RuleAction{{Kind: core.ActionLabel, Label: "bill"}, {Kind: core.ActionArchive}}})
+		})
+		t.Run("SettingsRulesEditorGroups", func(t *testing.T) {
+			editor(t, "Acme 账单分组", core.RuleDoc{Conditions: []core.RuleCondition{
+				{Match: core.MatchAny, Group: []core.RuleCondition{{Field: core.FieldFrom, Op: core.OpContains, Value: "acme.example"}, {Field: core.FieldFrom, Op: core.OpContains, Value: "acme-billing.example"}}},
+				{Match: core.MatchAny, Group: []core.RuleCondition{{Field: core.FieldSubject, Op: core.OpContains, Value: "invoice"}, {Field: core.FieldSubject, Op: core.OpContains, Value: "发票"}}}},
+				Actions: []core.RuleAction{{Kind: core.ActionLabel, Label: "bill"}, {Kind: core.ActionArchive}}})
+		})
+		t.Run("SettingsRulesEditorFile", func(t *testing.T) {
+			editor(t, "合同附件存到本机", core.RuleDoc{Conditions: []core.RuleCondition{{Field: core.FieldSubject, Op: core.OpContains, Value: "合同"}},
+				Actions: []core.RuleAction{{Kind: core.ActionAttachments, Dir: "/Users/you/Documents/合同", Subfolder: true, Naming: "{date} - {subject}_备份"}}})
+		})
+		t.Run("SettingsSignatureLinkBad", func(t *testing.T) {
+			s := shotMail(t, noAuto)
+			var ids []int64
+			for _, sig := range []struct{ name, html string }{
+				{"工作", "<p><b>王晨</b></p><p>产品经理 · Company Inc.</p><p><a href=\"https://www.company.example\">www.company.example</a></p>"},
+				{"个人", "<p>祝好，</p><p>王晨</p>"},
+			} {
+				created, err := s.env.Svc.CreateSignature(ctx, sig.name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := s.env.Svc.UpdateSignature(ctx, created.ID, core.SignaturePatch{HTML: &sig.html}); err != nil {
+					t.Fatal(err)
+				}
+				ids = append(ids, created.ID)
+			}
+			for acc, id := range map[int64]int64{s.work.ID: ids[0], s.you.ID: ids[1]} {
+				if _, err := s.env.Svc.UpdateAccount(ctx, acc, core.AccountPatch{SignatureID: &id}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			s.app.load()
+			s.until("the signatures", func() bool { return len(s.app.signatures) == 2 })
+			s.openSettings("signatures")
+			s.see("个人")
+			shot(s.harness, "SettingsSignatures")
+			s.openSettings(signatureRoute(ids[0]))
+			s.see("默认用于")
+			shot(s.harness, "SettingsSignatureDetail")
+			s.post(func() {
+				s.app.SignatureLink("https://www.company.example", func(string, bool) {})
+				l := page(s).sigLink
+				l.url, l.bad, l.focused = "www.company.example", true, true
+			})
+			shot(s.harness, "SettingsSignatureLinkBad")
+		})
+		t.Run("SettingsPluginsNative", func(t *testing.T) {
+			s := shotMail(t, noAuto)
+			shotInstall(t, s.harness, "deepl-translate", `{"name":"deepl-translate","version":"0.1.0","description":"用 DeepL 翻译邮件，不经过大模型","main":"index.ts","permissions":{"mail":["read"],"net":["api.deepl.com"]}}`, `export default function (_ctx: any) {}`, false)
+			shotPlugin(t, s.harness, "flight-cards", "NW", `{ title: "航班", fields: [] }`)
+			shotPlugin(t, s.harness, "attachment-check", "-", `{ title: "附件", fields: [] }`)
+			s.openSettings("plugins")
+			s.see("flight-cards")
+			native := func(name, desc, reason string, enabled, grant bool) core.PluginInfo {
+				return core.PluginInfo{Name: name, Version: "0.3.0", Description: plugins.Text{Default: desc}, Native: true, Enabled: enabled, NeedsGrant: grant, DisabledReason: reason,
+					Trust: map[bool]string{true: "", false: "user"}[grant], LibraryHash: "9f86d081884c7d659a2feaa0c55ad0150a08"}
+			}
+			ext := page(s).ext
+			s.post(func() {
+				ext.plugins = append(ext.plugins, native("antigravity", "通过 Antigravity 使用 Gemini 模型", "", false, true), native("startlux", "本地判断模型", "", true, false))
+				ext.plugin = ""
+				ext.later = map[string]bool{"antigravity": false, "deepl-translate": true}
+			})
+			shotNow(s.harness, "SettingsPluginsNative")
+			s.post(func() {
+				i := slices.IndexFunc(ext.plugins, func(p core.PluginInfo) bool { return p.Name == "startlux" })
+				ext.plugins[i].Enabled, ext.plugins[i].DisabledReason = false, "trust_revoked"
+				ext.plugin = "startlux"
+				ext.later["antigravity"] = true
+				native := &ext.plugins[i]
+				native.Trust = ""
+			})
+			shotNow(s.harness, "SettingsPluginsRevoked")
+			s.post(func() {
+				ext.plugin, ext.loginPage, ext.loginPageOpen = "", "https://accounts.google.com/o/oauth2/auth", true
+			})
+			shotNow(s.harness, "SettingsPluginsLogin")
+		})
+		t.Run("SettingsMagpie", func(t *testing.T) {
+			s := shotMail(t, noAuto)
+			modelsSetup(s, "normal")
+			s.openSettings("models")
+			s.see("Anthropic")
+			modelsStatus(s, "normal")
+			m := page(s).models
+			s.post(func() {
+				m.services = append(m.services[:3:3], core.ModelService{ID: 98, Name: "magpie", Slug: "magpie", Provider: core.ProviderOther, Kind: ai.KindOpenAI, BaseURL: "http://127.0.0.1:47811/v1", ManagedBy: "magpie",
+					Models: []string{"claude-sonnet-4.5", "gpt-5", "gemini-2.5"}, JudgeFormat: "decisions", JudgeModel: "magpie-judge",
+					Status: map[string]core.CapStatus{core.CapGen: {State: "ok", LatencyMs: 96}}})
+				s.app.settings.DefaultModel, s.app.settings.DefaultModelBy = "magpie/claude-sonnet-4.5", "magpie"
+			})
+			s.tt.Frame()
+			shotNow(s.harness, "SettingsModelsManaged")
+			s.openSettings("mcp")
+			ext := page(s).ext
+			tools := []core.MCPTool{{Name: "List issues in the workspace", ReadOnlyHint: true, Trusted: true}, {Name: "Get an issue by its ID", ReadOnlyHint: true, Trusted: true}, {Name: "Search Linear's documentation", ReadOnlyHint: true},
+				{Name: "Create a new issue"}, {Name: "Update an existing issue"}, {Name: "Comment on an issue"}}
+			linear := core.MCPServer{ID: 1, Name: "Linear", Transport: "HTTP", URL: "https://mcp.linear.app/mcp", Enabled: true, Granted: true, Tools: tools}
+			s.post(func() { ext.servers, ext.mcp = []core.MCPServer{linear}, 1 })
+			s.tt.Frame()
+			shotNow(s.harness, "SettingsMCPLinear")
+			s.post(func() {
+				ext.servers = []core.MCPServer{linear, {ID: 2, Name: "magpie", Transport: "HTTP", URL: "http://127.0.0.1:47811/mcp", ManagedBy: "magpie"}}
+				ext.mcp = 2
+			})
+			s.tt.Frame()
+			shotNow(s.harness, "SettingsMCPManaged")
+			s.openSettings("skills")
+			s.post(func() {
+				ext.skills = append([]core.SkillInfo{{Name: "research-brief", Icon: "sparkles", ManagedBy: "magpie", Enabled: true, Description: "Turn a thread into a short research brief with sources"},
+					{Name: "meeting-notes", Icon: "sparkles", ManagedBy: "magpie", Description: "Pull decisions and action items out of a meeting thread"}}, ext.skills...)
+			})
+			s.tt.Frame()
+			shotNow(s.harness, "SettingsSkillsManaged")
+		})
+		t.Run("SettingsAIAppsDirect", func(t *testing.T) {
+			s := shotMail(t, noAuto)
+			s.openSettings("clients")
+			s.post(func() { s.app.settings.LocalAPI, s.app.settings.MCPSend = true, core.MCPSendDirect })
+			s.tt.Frame()
+			shotNow(s.harness, "SettingsAIAppsDirect")
+		})
+		t.Run("SettingsAbout", func(t *testing.T) {
+			s := shotMail(t, noAuto)
+			s.plat.mu.Lock()
+			s.plat.latest = "1.40.0"
+			s.plat.mu.Unlock()
+			s.openSettings("about")
+			s.see("升级到 1.40.0")
+			shot(s.harness, "SettingsAboutUpdate")
+		})
+		recognition := func(t *testing.T, name string, serve http.HandlerFunc) {
+			h := recognitionModelHarness(t, serve)
+			h.resize(1440, 900)
+			h.openSettings("masking")
+			h.see(i18n.T("settings.masking.recognition_model.missing"))
+			h.click(i18n.T("settings.masking.recognition_model"))
+			shot(h, name)
+		}
+		t.Run("SettingsMaskingDownloading", func(t *testing.T) {
+			recognition(t, "SettingsMaskingDownloading", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Length", "330781")
+				w.Write(make([]byte, 1000))
+				w.(http.Flusher).Flush()
+				<-r.Context().Done()
+			})
+		})
+		t.Run("SettingsMaskingFailed", func(t *testing.T) {
+			recognition(t, "SettingsMaskingFailed", func(w http.ResponseWriter, r *http.Request) { w.Write(make([]byte, 330781)) })
+		})
+		t.Run("SettingsMaskLogStates", func(t *testing.T) {
+			s := shotMail(t, noAuto)
+			s.openSettings("masklog")
+			s.see("脱敏记录")
+			shotNow(s.harness, "SettingsMaskLogCleared")
+			s.post(func() { // the design's sample, as SettingsMaskLog has it: two requests, one blocked
+				at := s.clock.Now().Add(-time.Hour)
+				p := page(s)
+				p.maskLog = []core.MaskRecord{
+					{At: at, Request: 2, Feature: "skill", Kind: "EMAIL", Category: "emails", First: "h", Len: 16, Action: core.MaskMask, Source: core.MaskSourceRule},
+					{At: at, Request: 2, Feature: "skill", Kind: "ID_CARD", Category: "ids", First: "3", Len: 18, Action: core.MaskBlock, Source: core.MaskSourceRule},
+					{At: at.Add(-time.Hour), Request: 1, Feature: "wit", Kind: "NAME", Category: "names", Len: 2, Action: core.MaskMask, Source: core.MaskSourceRecognizer},
+				}
+				p.logFilter.result, p.logFilter.open = core.MaskBlock, map[string]bool{"2": true}
+			})
+			shotNow(s.harness, "SettingsMaskLogBlocked")
+		})
+		t.Run("SettingsPages", func(t *testing.T) {
+			s := shotMail(t, noAuto)
+			for _, v := range []struct{ sec, see, name string }{
+				{"security", "发件人安全", "SettingsSecurity"}, {"labs", "JMAP 账户", "SettingsLabs"}, {"about", "检查更新", "SettingsAbout"},
+				{"skills", "Format", "SettingsSkills"}, {"mcp", "添加服务器", "SettingsMCP"}, {"features", "邮件总结", "SettingsFeatures"},
+			} {
+				s.openSettings(v.sec)
+				s.see(v.see)
+				shot(s.harness, v.name)
+			}
+		})
 	})
 	t.Run("Toasts", func(t *testing.T) {
 		s := shotMail(t, noQuick)
