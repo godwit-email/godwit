@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -564,16 +565,22 @@ func TestOnboardingClientFile(t *testing.T) {
 	h.see(drop)
 	dropOn := func(path string) {
 		h.t.Helper()
-		h.tt.Advance(2 * theme.MotionBase) // the centred sheet moves as it grows, measured a frame late: let it settle
-		h.tt.Frame()
-		r, _ := h.tt.Find(drop)
-		if r.Y < 0 || r.Y+r.H > 820-8 { // the sheet grew with the Mail / Address book choice: bring the row into the window, as click does
-			h.tt.Scroll(900, 400, 0, r.Y-400)
+		// As click: out of the window or clipped to nothing by the sheet's scroller, scroll it to the middle;
+		// retry while the centred sheet still moves under the point.
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			r, _ := h.tt.Find(drop)
+			if r.Y < 0 || r.Y+r.H > 820-8 || r.H == 0 {
+				h.tt.Scroll(900, 400, 0, r.Y-400)
+			} else if h.tt.DropFiles(r.X+r.W/2, r.Y+r.H/2, path) {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("the drop row took no file (row %v)", r)
+			}
+			h.drain()
 			h.tt.Frame()
-			r, _ = h.tt.Find(drop)
-		}
-		if !h.tt.DropFiles(r.X+r.W/2, r.Y+r.H/2, path) {
-			t.Fatal("the drop row took no file")
+			h.tt.Advance(time.Second / 60)
 		}
 		h.drain()
 		h.tt.Frame()
