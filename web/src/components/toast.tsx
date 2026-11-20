@@ -1,160 +1,94 @@
-import {
-  RiCheckboxCircleLine,
-  RiCloseCircleLine,
-  RiCloseLine,
-  RiErrorWarningLine,
-} from "@remixicon/react";
-import {
-  type CSSProperties,
-  type ReactNode,
-  type RefObject,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
-import { type ExternalToast, Toaster as Sonner, toast as sonner } from "sonner";
+import { type RefObject, useEffect, useRef } from "react";
+import type { Rect } from "@/mygo";
 
-// Godwit's toast, as the native kit's (internal/kit/toast.go) over sonner: the popover material and
-// its hairline, 360 wide in the panel's bottom right corner, at most three stacked, the older ones
-// narrower behind the newest until the pointer or the focus spreads them. Only the leading icon
-// tells a success, warning or error. The look is in styles.css (.godwit-toaster). Anything that
-// calls sonner's own toast (the Wit panel) shows here too.
+// Toasts are native's (internal/kit/toast.go draws them over the page, as the main window's): a page
+// only says what to show and where its bar is. Its NativeToasts says which bridge to send them by.
 
-/** How long a toast stays, in ms; one with an action stays longer, to be reached. */
-const PLAIN_MS = 4000;
-const ACTION_MS = 8000;
-/** The room from the panel's corner, and from a bar's top: theme.Space(4) and Space(2). */
-const CORNER = 16;
-const ABOVE_BAR = 8;
-/** The gap between spread toasts, which is also how much of each older one peeks behind the newest. */
-const GAP = 8;
-const SHOWN = 3;
-
-function decorate(o?: ExternalToast): ExternalToast | undefined {
-  if (!o) return o;
-  const out = { ...o };
-  if (out.duration === undefined && o.action) out.duration = ACTION_MS;
-  if (out.duration === Infinity && out.closeButton === undefined) out.closeButton = true;
-  return out;
+/** A page's bridge to native's toasts: its ComposePage or WitPage. */
+export interface ToastBridge {
+  toast(kind: string, text: string): Promise<void>;
+  toastBar(bar: Rect, field: Rect): Promise<void>;
 }
 
-type Message = ReactNode | (() => ReactNode);
+let bridge: ToastBridge | undefined;
 
-/**
- * Shows a toast. A message is required; `description` adds a muted second line, `action` one
- * button (kept 8 s instead of 4), and `duration: Infinity` keeps it until closed, with a close
- * button.
- */
-export const toast = Object.assign(
-  (message: Message, o?: ExternalToast) => sonner(message, decorate(o)),
-  {
-    success: (message: Message, o?: ExternalToast) => sonner.success(message, decorate(o)),
-    warning: (message: Message, o?: ExternalToast) => sonner.warning(message, decorate(o)),
-    error: (message: Message, o?: ExternalToast) => sonner.error(message, decorate(o)),
-    dismiss: (id?: number | string) => sonner.dismiss(id),
-  },
-);
+const send = (kind: string) => (text: string) => {
+  void bridge?.toast(kind, text).catch(() => {}); // a toast lost is no reason to fail what failed
+};
 
-/** Where the stack sits: its distance from the viewport's right and bottom. */
-type Inset = { right: number; bottom: number };
+/** Shows text as a toast, drawn by native; its kind's icon tells a success, warning or error. */
+export const toast = Object.assign(send(""), {
+  success: send("success"),
+  warning: send("warning"),
+  error: send("error"),
+});
 
-/**
- * The stack's inset: the corner's, or, over a bar, 8 above its top and level with its input's
- * right edge, measured as the layout changes (a window resize, a bar that wraps).
- */
-function useInset(
-  bar?: RefObject<HTMLElement | null>,
-  input?: RefObject<HTMLElement | null>,
-): Inset {
-  const [inset, setInset] = useState<Inset>({ right: CORNER, bottom: CORNER });
-  useLayoutEffect(() => {
-    if (!bar) return;
-    const measure = () => {
-      const b = bar.current?.getBoundingClientRect();
-      const i = (input ?? bar).current?.getBoundingClientRect();
-      const root = document.documentElement;
-      const next =
-        b && i && b.width > 0 && i.width > 0
-          ? { right: root.clientWidth - i.right, bottom: root.clientHeight - b.top + ABOVE_BAR }
-          : { right: CORNER, bottom: CORNER };
-      setInset((cur) => (cur.right === next.right && cur.bottom === next.bottom ? cur : next));
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    for (const el of [bar.current, input?.current, document.documentElement]) {
-      if (el) ro.observe(el);
-    }
-    window.addEventListener("resize", measure);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", measure);
-    };
-  }, [bar, input]);
-  return inset;
+const none: Rect = { X: 0, Y: 0, W: 0, H: 0 };
+
+function rect(el: Element | null | undefined): Rect {
+  if (!el) return none;
+  const r = el.getBoundingClientRect();
+  return { X: r.left, Y: r.top, W: r.width, H: r.height };
 }
 
 /**
- * The toast host: once per page. `bar` is a bar along the panel's foot (the compose window's send
- * bar) and `input` the field whose right edge the toasts line up with (the bar if absent): the
- * stack rises 8 above the bar. Without a bar it sits 16 in from the window's corner. `closeLabel`
- * is the close button's label, from the page's own `t`: a second locale subscription here would
- * split the page's.
+ * Sends the page's toasts by api, and tells native where `bar` (a bar along the page's foot) and
+ * `input` (the field its toasts line up with; the bar if absent) are as the layout changes, so the
+ * toasts rise 8 above the bar. Once per page.
  */
-export function Toaster({
+export function NativeToasts({
+  api,
   bar,
   input,
-  closeLabel,
 }: {
+  api: ToastBridge;
   bar?: RefObject<HTMLElement | null>;
   input?: RefObject<HTMLElement | null>;
-  closeLabel: string;
 }) {
-  const { right, bottom } = useInset(bar, input);
-  const host = useRef<HTMLDivElement>(null);
-
-  // Sonner spreads the stack for the pointer alone; the keyboard focus and Enter say the same to it.
-  // shortcut: a synthetic pointer event stands in for sonner's internal state, which no prop reaches; drop it when sonner exposes one.
   useEffect(() => {
-    const el = host.current;
-    if (!el) return;
-    const list = () => el.querySelector("[data-sonner-toaster]");
-    const inList = (n: EventTarget | null) => n instanceof Node && !!list()?.contains(n);
-    const spread = (on: boolean) =>
-      list()?.dispatchEvent(new MouseEvent(on ? "mouseover" : "mouseout", { bubbles: true }));
-    const focusin = (e: FocusEvent) => inList(e.target) && !inList(e.relatedTarget) && spread(true);
-    const focusout = (e: FocusEvent) =>
-      inList(e.target) && !inList(e.relatedTarget) && spread(false);
-    const enter = (e: KeyboardEvent) =>
-      e.key === "Enter" && e.target instanceof HTMLLIElement && spread(true);
-    el.addEventListener("focusin", focusin);
-    el.addEventListener("focusout", focusout);
-    el.addEventListener("keydown", enter);
+    bridge = api;
     return () => {
-      el.removeEventListener("focusin", focusin);
-      el.removeEventListener("focusout", focusout);
-      el.removeEventListener("keydown", enter);
+      if (bridge === api) bridge = undefined;
+    };
+  }, [api]);
+  const seen = useRef<{
+    api?: ToastBridge;
+    els: (Element | null)[];
+    ro?: ResizeObserver;
+    last: string;
+  }>({ els: [], last: "" });
+  const report = () => {
+    const s = seen.current;
+    const b = rect(bar?.current);
+    const f = rect(input?.current ?? bar?.current);
+    const key = JSON.stringify([b, f]);
+    if (key === s.last && api === s.api) return;
+    s.last = key;
+    s.api = api;
+    void api.toastBar(b, f).catch(() => {});
+  };
+  const live = useRef(report);
+  live.current = report;
+  // After every commit, every ref attached (an ancestor's too): the bar may have mounted since (the
+  // Wit panel's, once its conversation loads).
+  useEffect(() => {
+    const s = seen.current;
+    const els = [bar?.current ?? null, input?.current ?? null];
+    if (!s.ro || els[0] !== s.els[0] || els[1] !== s.els[1]) {
+      s.ro?.disconnect();
+      s.ro = new ResizeObserver(() => live.current());
+      for (const el of [...els, document.documentElement]) if (el) s.ro.observe(el);
+      s.els = els;
+    }
+    live.current();
+  });
+  useEffect(() => {
+    const onResize = () => live.current();
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      seen.current.ro?.disconnect();
     };
   }, []);
-
-  return (
-    <div ref={host} className="contents">
-      <Sonner
-        className="godwit-toaster"
-        position="bottom-right"
-        visibleToasts={SHOWN}
-        gap={GAP}
-        duration={PLAIN_MS}
-        offset={{ right, bottom }}
-        style={{ "--width": "var(--toast-width)" } as CSSProperties}
-        toastOptions={{ closeButtonAriaLabel: closeLabel }}
-        icons={{
-          success: <RiCheckboxCircleLine data-tone="success" />,
-          warning: <RiErrorWarningLine data-tone="warning" />,
-          error: <RiCloseCircleLine data-tone="error" />,
-          close: <RiCloseLine />,
-        }}
-      />
-    </div>
-  );
+  return null;
 }

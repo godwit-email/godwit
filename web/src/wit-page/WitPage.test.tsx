@@ -23,6 +23,8 @@ const h = vi.hoisted(() => {
 });
 vi.mock("@/mygo", () => ({
   WitPage: {
+    toast: vi.fn(async () => {}),
+    toastBar: vi.fn(async () => {}),
     load: vi.fn(),
     follow: vi.fn(),
     ask: vi.fn(),
@@ -46,9 +48,9 @@ vi.mock("@/mygo", () => ({
     theme: { on: () => () => {} },
   },
 }));
-vi.mock("sonner", async (orig) => ({
-  ...(await orig<typeof import("sonner")>()),
-  toast: Object.assign(vi.fn(), { error: vi.fn() }),
+vi.mock("@/components/toast", async (orig) => ({
+  ...(await orig<typeof import("@/components/toast")>()),
+  toast: Object.assign(vi.fn(), { error: vi.fn(), warning: vi.fn(), success: vi.fn() }),
 }));
 
 import { WitPage as api } from "@/mygo";

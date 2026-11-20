@@ -5,12 +5,11 @@ import {
   RiRefreshLine,
 } from "@remixicon/react";
 import { cn } from "cn";
-import { currentWindow } from "mygo-runtime";
 import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
 import { Alert } from "@/components/alert";
 import { Button } from "@/components/button";
-import { Toaster, toast } from "@/components/toast";
+import { NativeToasts, toast } from "@/components/toast";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -43,7 +42,6 @@ import { CmdK } from "./review/CmdK";
 import { BODY, Review, reviewSummary, Static } from "./review/Review";
 import { SendBar } from "./SendBar";
 import { createSaver, type Saver } from "./saver";
-import { TitleBar } from "./TitleBar";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -178,7 +176,6 @@ function Failed({ error, retry }: { error: string; retry: () => void }) {
   const t = useT();
   return (
     <main className={cn("flex h-screen flex-col", material ? "bg-window-material" : "bg-window")}>
-      <header className="compose-titlebar shrink-0" />
       <div className="flex items-center gap-2 px-5 py-3 text-muted-foreground text-xs">
         <span>{errorText(error, t)}</span>
         <Button variant="ghost" size="icon-sm" aria-label={t("common.retry")} onClick={retry}>
@@ -357,9 +354,6 @@ function Compose({
       if (saver.current === n) saver.current = undefined;
     };
   }, [state, saver, gate]);
-  useEffect(() => {
-    currentWindow.setTitle(f.subject.trim() || t("compose.new"));
-  }, [f.subject, t]);
 
   // Wit, when a model is configured. The page tracks what locks the body: a run streaming in the
   // panel or a ⌘K run, an edit waiting (reviewed in place of the body), a reload in flight.
@@ -409,7 +403,7 @@ function Compose({
   lockToast.current = (key) => {
     if (toasted.current) return;
     toasted.current = true;
-    (key === "wit.compose.locked" ? toast.warning : toast)(t(key), { id: "locked" });
+    (key === "wit.compose.locked" ? toast.warning : toast)(t(key)); // native's toast ID is its text: one at a time
   };
 
   // The body as stored, adopted: the editor takes it as one undoable step; the saver reads it as saved.
@@ -802,6 +796,12 @@ function Compose({
     </Button>
   );
   const title = f.subject.trim() || t("compose.new");
+  const statusText =
+    status === "saved" ? t("compose.status.saved", savedAt) : t(`compose.status.${status}`);
+  // The title bar is native's (it also names the window): the subject and the save status.
+  useEffect(() => {
+    void api.titleBar(title, statusText).catch(() => {});
+  }, [title, statusText]);
   // After the body's text: the signature, then the quoted mail behind its toggle.
   const tail = (
     <>
@@ -861,12 +861,6 @@ function Compose({
         void send();
       }}
     >
-      <TitleBar
-        title={title}
-        status={
-          status === "saved" ? t("compose.status.saved", savedAt) : t(`compose.status.${status}`)
-        }
-      />
       {/* A row of cards on the window's material: the compose column, the Wit panel beside it,
           the gap between them a grip that sets the panel's width. */}
       <ResizablePanelGroup
@@ -1140,7 +1134,7 @@ function Compose({
           </ResizablePanel>
         )}
       </ResizablePanelGroup>
-      <Toaster bar={dock.bar} input={dock.send} closeLabel={t("toast.close")} />
+      <NativeToasts api={api} bar={dock.bar} input={dock.send} />
     </main>
   );
 }

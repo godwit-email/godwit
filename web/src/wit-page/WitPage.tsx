@@ -1,6 +1,6 @@
 import { cn } from "cn";
 import { type ComponentProps, useEffect, useRef, useState } from "react";
-import { Toaster, toast } from "@/components/toast";
+import { NativeToasts, toast } from "@/components/toast";
 import {
   type Approval,
   WitPage as api,
@@ -196,7 +196,7 @@ export function WitPage() {
           t={t}
         />
       )}
-      <Toaster bar={dock.current.bar} input={dock.current.input} closeLabel={t("toast.close")} />
+      <NativeToasts api={api} bar={dock.current.bar} input={dock.current.input} />
     </main>
   );
 }

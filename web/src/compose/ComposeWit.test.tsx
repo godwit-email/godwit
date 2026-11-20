@@ -29,6 +29,9 @@ vi.mock("@/mygo", () => ({
     setModel: vi.fn(),
     openCited: vi.fn(),
     checkCited: vi.fn(),
+    titleBar: vi.fn(),
+    toast: vi.fn(),
+    toastBar: vi.fn(),
   },
   events: {
     closing: { on: () => () => {} },
@@ -41,13 +44,9 @@ vi.mock("@/mygo", () => ({
     },
   },
 }));
-vi.mock("mygo-runtime", async (original) => ({
-  ...(await original<typeof import("mygo-runtime")>()),
-  currentWindow: { setTitle: vi.fn() },
-}));
-vi.mock("sonner", async (orig) => ({
-  ...(await orig<typeof import("sonner")>()),
-  toast: Object.assign(vi.fn(), { error: vi.fn(), warning: vi.fn() }),
+vi.mock("@/components/toast", async (orig) => ({
+  ...(await orig<typeof import("@/components/toast")>()),
+  toast: Object.assign(vi.fn(), { error: vi.fn(), warning: vi.fn(), success: vi.fn() }),
 }));
 // The body as a textarea that reads `initial` at mount; ⌘K on a selection gives its plain text
 // (the textarea's value) and the selection, as the Plate editor does (its own tests cover toText).
@@ -100,7 +99,7 @@ vi.mock("./editor/Editor", async () => {
   };
 });
 
-import { toast } from "sonner";
+import { toast } from "@/components/toast";
 import { ComposePage as api } from "@/mygo";
 
 const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -260,6 +259,7 @@ beforeEach(() => {
   vi.mocked(api.review).mockResolvedValue(inline);
   vi.mocked(api.stop).mockResolvedValue();
   vi.mocked(api.setModel).mockResolvedValue();
+  for (const f of [api.titleBar, api.toast, api.toastBar]) vi.mocked(f).mockResolvedValue();
 });
 
 const body = () => screen.findByRole("textbox", { name: "正文" });
