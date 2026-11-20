@@ -172,7 +172,7 @@ func (v *addressBooksView) accountSection(c *ui.Context, acc core.Account) {
 	}
 	rows := []func(){func() {
 		on := linked || v.linking[acc.ID]
-		if kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &on}, i18n.Tf("settings.addressbooks.link", brand), desc, "", nil).Disabled(v.linking[acc.ID]).Changed() {
+		if kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &on, Disabled: v.linking[acc.ID]}, i18n.Tf("settings.addressbooks.link", brand), desc, "", nil).Changed() {
 			if on {
 				v.link(acc)
 			} else {

@@ -153,12 +153,13 @@ func TextArea(c *ui.Context, s *string, o InputOpts) ui.Element {
 // FieldOpts style a FieldWith. Horizontal with Switch makes it a switch row:
 // label with help or error on the left, a switch on *Switch at the right
 // (the row takes no control), and the whole row its target: one Tab stop, a
-// click anywhere toggles it, the focus ring runs round the row, and Disabled
-// dims it. Horizontal without Switch does nothing: LabelledRow builds the
-// other settings rows.
+// click anywhere toggles it, the focus ring runs round the row. Disabled
+// disables it and dims the switch only, the label and help staying readable
+// as the design's. Horizontal without Switch does nothing: LabelledRow builds
+// the other settings rows.
 type FieldOpts struct {
-	Horizontal bool
-	Switch     *bool
+	Horizontal, Disabled bool
+	Switch               *bool
 }
 
 // Field is a labelled form control with help text, or an error in its place.
@@ -207,7 +208,7 @@ func horizontalField(c *ui.Context, o FieldOpts, label string, message func(), c
 	t, th := theme.Of(c), c.Theme()
 	row := ui.Row(c)
 	if o.Switch != nil {
-		row = ui.SwitchBase(c, o.Switch).Label(label)
+		row = ui.SwitchBase(c, o.Switch).Label(label).Disabled(o.Disabled).DimDisabled(false)
 	}
 	var name, ctrl ui.Element
 	row = row.FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
@@ -216,7 +217,7 @@ func horizontalField(c *ui.Context, o FieldOpts, label string, message func(), c
 			message()
 		})
 		if o.Switch != nil {
-			switchTrack(c, *o.Switch)
+			ui.Box(c).Shrink(0).Disabled(o.Disabled).Children(func() { switchTrack(c, *o.Switch) })
 			return
 		}
 		ctrl = control()

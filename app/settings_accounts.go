@@ -525,7 +525,7 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	if !isArchive(acc) { // never the default
 		basic = append(basic, func() {
 			on := acc.IsDefault
-			if kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &on}, i18n.T("settings.account.make_default"), i18n.T("settings.account.make_default.help"), "", nil).Disabled(acc.IsDefault || acc.ReceiveOnly).Changed() && !acc.IsDefault && !acc.ReceiveOnly {
+			if kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &on, Disabled: acc.IsDefault || acc.ReceiveOnly}, i18n.T("settings.account.make_default"), i18n.T("settings.account.make_default.help"), "", nil).Changed() && !acc.IsDefault && !acc.ReceiveOnly {
 				p.makeDefault(acc.ID)
 			}
 		})

@@ -9,7 +9,7 @@ import (
 
 func fieldRow(c *ui.Context, on *bool, disabled bool) {
 	ui.Column(c).FillWidth().Padding(10).Children(func() {
-		FieldWith(c, FieldOpts{Horizontal: true, Switch: on}, "Notify", "Tell me about new mail", "", nil).Disabled(disabled)
+		FieldWith(c, FieldOpts{Horizontal: true, Switch: on, Disabled: disabled}, "Notify", "Tell me about new mail", "", nil)
 	})
 }
 
@@ -81,7 +81,7 @@ func TestFieldHorizontalFocusRing(t *testing.T) {
 	}
 }
 
-// A disabled row does not toggle and is dimmed.
+// A disabled row does not toggle, and its switch is dimmed.
 func TestFieldHorizontalDisabled(t *testing.T) {
 	on := false
 	enabled := ui.NewTester(themed(func(c *ui.Context) { fieldRow(c, new(bool), false) }), 480, 120)
