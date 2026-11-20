@@ -29,6 +29,15 @@ func plaintext(t *testing.T) {
 // fill replaces the text of the field labelled label with value.
 func (h *harness) fill(label, value string) {
 	h.t.Helper()
+	if r, ok := h.tt.Find(label); ok && r.H == 0 { // a field the add-account sheet's scrolling body has not shown is clipped to nothing: scroll it to the middle
+		for range 20 {
+			h.tt.Scroll(720, 450, 0, r.Y-450)
+			h.tt.Frame()
+			if r, _ = h.tt.Find(label); r.H > 0 {
+				break
+			}
+		}
+	}
 	h.click(label)
 	h.tt.Command("selectAll")
 	h.typeText(value)
@@ -46,6 +55,7 @@ func (h *harness) manualServers() {
 	ih, ip, sh, sp, user, _ := h.env.StartServers(h.t)
 	if _, open := h.tt.Find("IMAP 服务器"); !open {
 		h.click("手动设置服务器")
+		h.tt.Advance(2 * theme.MotionBase) // the sheet is centred: it settles as the form opens
 	}
 	h.fill("IMAP 服务器", ih)
 	h.fill("IMAP 端口", strconv.Itoa(ip))
@@ -814,13 +824,15 @@ func TestOnboardingDoneBadgeUsesSuccessTokens(t *testing.T) {
 		t.Fatal("no done title")
 	}
 	img, want := h.tt.Image(), theme.Light().SuccessBg.SRGB()
-	x, found := int(title.X)+theme.DoneBadge/2, false
-	for y := int(title.Y) - 60; y < int(title.Y) && !found; y++ {
-		got := img.RGBAAt(x, y)
-		found = max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)) <= 4
+	found := false
+	for x := int(title.X) - theme.DoneBadge - 12; x < int(title.X) && !found; x++ { // the badge is left of the title
+		for y := int(title.Y) - 12; y < int(title.Y)+30 && !found; y++ {
+			got := img.RGBAAt(x, y)
+			found = max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)) <= 4
+		}
 	}
 	if !found {
-		t.Fatal("no SuccessBg badge above the done title")
+		t.Fatal("no SuccessBg badge left of the done title")
 	}
 }
 

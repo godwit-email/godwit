@@ -420,6 +420,16 @@ func formatBytes(n int64) string {
 	return strconv.FormatFloat(v, 'f', 1, 64) + " " + string("KMGT"[unit]) + "B"
 }
 
+// settingsAccountMark is acc's mark in Settings: a local archive with no icon
+// of its own shows an archive box in place of a mail provider's mark.
+func settingsAccountMark(c *ui.Context, a *App, acc core.Account, size float32) {
+	if isArchive(acc) && acc.Icon == "" {
+		iconMark(c, "archive", size)
+		return
+	}
+	a.accountIcon(c, acc, size)
+}
+
 func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	a := p.a
 	t, th := theme.Of(c), c.Theme()
@@ -482,9 +492,9 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 	row := func(label, desc string, control func() ui.Element) func() {
 		return func() { settingRow(c, label, desc, control) }
 	}
-	input := func(label, desc string, v *string, i int) func() {
+	input := func(label, desc string, v *string, i int, placeholder string) func() {
 		return row(label, desc, func() ui.Element {
-			field := kit.Input(c, v, kit.InputOpts{}).Width(theme.SettingsInputWidth).Label(label)
+			field := kit.Input(c, v, kit.InputOpts{Placeholder: placeholder}).Width(theme.SettingsControlWidth).Label(label)
 			if field.Changed() {
 				p.edited(acc.ID, f, i)
 			}
@@ -492,12 +502,12 @@ func (p *settingsPage) accountView(c *ui.Context, acc core.Account) {
 		})
 	}
 	basic := []func(){
-		input(i18n.T("settings.account.name"), i18n.T("settings.account.name.help"), &f.name, fieldName),
-		input(i18n.T("settings.account.alias"), "", &f.alias, fieldAlias),
+		input(i18n.T("settings.account.name"), i18n.T("settings.account.name.help"), &f.name, fieldName, ""),
+		input(i18n.T("settings.account.alias"), "", &f.alias, fieldAlias, accountAddr(acc)), // the sidebar shows the address until a name is set
 		row(i18n.T("settings.account.icon"), i18n.T("settings.account.icon.help"), func() ui.Element {
 			ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
 				ui.Box(c).Size(theme.MarkMd, theme.MarkMd).Children(func() {
-					a.accountIcon(c, acc, theme.MarkMd)
+					settingsAccountMark(c, a, acc, theme.MarkMd)
 				})
 				rowButton(c, i18n.T("settings.account.icon.choose"), kit.Outline, false).OnClick(func() {
 					p.openDialog("icon", acc)
@@ -1099,6 +1109,7 @@ func (p *settingsPage) dialogView(c *ui.Context) {
 		}
 	case "servers":
 		title, size = i18n.T("settings.account.servers"), kit.DialogMd
+		desc = i18n.T("settings.account.servers.help")
 		body = func() { p.serversForm(c) }
 		sf, update := p.servers, p.update
 		confirm = func() {

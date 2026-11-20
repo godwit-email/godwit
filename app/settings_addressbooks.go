@@ -111,7 +111,7 @@ func (p *settingsPage) entryRow(c *ui.Context, e accountEntry, selected bool, ro
 			abAction, abRetrying := abTrouble(ab)
 			action, retrying = action || abAction, retrying || abRetrying
 		}
-		mark = func() { a.accountIcon(c, *acc, theme.MarkSm) }
+		mark = func() { settingsAccountMark(c, a, *acc, theme.MarkSm) }
 	} else {
 		name, kind = e.ab.Name, abKind(*e.ab)
 		action, retrying = abTrouble(*e.ab)
@@ -249,7 +249,7 @@ func (v *addressBooksView) page(c *ui.Context, ab core.AddressBook) {
 	})
 	settingsSection(c, i18n.T("settings.account.basic"), "", func() {
 		settingRow(c, i18n.T("settings.account.alias"), "", func() ui.Element {
-			field := kit.Input(c, &v.rename, kit.InputOpts{}).Width(theme.SettingsInputWidth).Label(i18n.T("settings.account.alias"))
+			field := kit.Input(c, &v.rename, kit.InputOpts{}).Width(theme.SettingsControlWidth).Label(i18n.T("settings.account.alias"))
 			if field.Changed() {
 				if name, id := strings.TrimSpace(v.rename), ab.ID; name != "" {
 					a.writes.Chain("addressbooks", func(ctx context.Context) error { return a.svc.RenameAddressBook(ctx, id, name) }, func(err error) {
@@ -815,7 +815,7 @@ func presetMark(c *ui.Context, preset string, size float32) {
 // iconMark is icon on a mark's tile, for an entry with no logo of its own.
 func iconMark(c *ui.Context, icon string, size float32) {
 	t := theme.Of(c)
-	r := min(t.Radius.Lg, size/4)
+	r := t.Radius.Md
 	if size <= theme.MarkSm {
 		r = t.Radius.Sm
 	}
@@ -823,7 +823,12 @@ func iconMark(c *ui.Context, icon string, size float32) {
 	if size <= theme.MarkSm {
 		iconSz = theme.IconSm
 	}
-	ui.Box(c).Size(size, size).Shrink(0).Radius(r).Background(t.Hover).Border(theme.Hairline, t.Border).Center().Children(func() {
+	fill, border := t.Hover, float32(theme.Hairline)
+	if size > theme.MarkMd { // the window's larger tile: the hover tint, no outline
+		r, fill, border = t.Radius.Lg, t.HoverTint, 0
+	}
+	tile := ui.Box(c).Size(size, size).Shrink(0).Radius(r).Background(fill).Border(border, t.Border).Center()
+	tile.Children(func() {
 		ui.Icon(c, icons.Get(icon)).Size(iconSz, iconSz).TextColor(t.Foreground)
 	})
 }

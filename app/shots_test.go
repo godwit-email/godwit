@@ -704,8 +704,22 @@ func TestShots(t *testing.T) {
 	t.Run("Settings", func(t *testing.T) {
 		s := shotMail(t, noAuto)
 		modelsSetup(s, "normal")
+		// The design's account has the 个人签名 signature as its default and a Wit instruction.
+		sig, err := s.env.Svc.CreateSignature(context.Background(), "个人签名")
+		if err != nil {
+			t.Fatal(err)
+		}
+		html, ai := "you\nyou@example.com", "姓名：you\n提示：回复同事时简短直接，给财务部的邮件附上报销单号。"
+		if _, err := s.env.Svc.UpdateSignature(context.Background(), sig.ID, core.SignaturePatch{HTML: &html}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.env.Svc.UpdateAccount(context.Background(), s.you.ID, core.AccountPatch{SignatureID: &sig.ID, AIInstructions: &ai}); err != nil {
+			t.Fatal(err)
+		}
+		s.post(s.app.load)
 		s.openSettings(accountRoute(s.you.ID))
 		s.see("签名")
+		s.see("预览")
 		shot(s.harness, "SettingsAccounts")
 		// The whole account page, as SettingsAccountsReauth draws it (邮箱行为 below the fold).
 		for _, n := range []string{"Drafts", "Junk Email"} {
@@ -779,6 +793,16 @@ func TestShots(t *testing.T) {
 		}
 		s.post(s.app.load)
 		s.until("the JMAP rows", func() bool { return s.tt.HasText("https://api.fastmail.com:443/.well-known/jmap") })
+		// The design's Fastmail account has its address book linked.
+		s.post(func() {
+			s.app.loads.Stop()
+			s.app.addressBooks = []core.AddressBook{{
+				ID: 7, Preset: core.PresetFastmail, Name: "Fastmail", URL: "https://carddav.fastmail.com", AuthType: "password", Username: "me@fastmail.com",
+				Status: "ok", LastSyncedAt: s.clock.Now().Add(-5 * time.Minute), Account: s.you.ID,
+				Collections: []core.AddressBookCollection{{ID: 1, AddressBookID: 7, Name: "Contacts", Enabled: true, CardCount: 212}},
+			}}
+		})
+		s.tt.Frame()
 		scrolled(s, "登录与服务器", "SettingsAccountsJMAP")
 		s.app.fetch = outlook
 		s.openSettings("labels")
@@ -1019,6 +1043,68 @@ func TestShots(t *testing.T) {
 		s.tt.Advance(2 * theme.MotionBase)
 		shot(s.harness, "ToastsExpanded")
 	})
+	t.Run("SettingsAccountDialogs", func(t *testing.T) {
+		s := shotMail(t, noAuto)
+		s.openSettings(accountRoute(s.you.ID))
+		s.see("签名")
+		page := func() *settingsPage { return s.app.pages[PageSettings].(*settingsPage) }
+		open := func(kind, name string, setup func(*settingsPage)) {
+			s.post(func() {
+				acc, _ := s.app.accountByID(s.you.ID)
+				p := page()
+				p.openDialog(kind, acc)
+				if setup != nil {
+					setup(p)
+				}
+			})
+			s.tt.Advance(2 * theme.MotionBase)
+			shot(s.harness, name)
+			s.post(page().closeDialog)
+			s.tt.Advance(2 * theme.MotionBase)
+		}
+		open("password", "SettingsAccountPassword", func(p *settingsPage) { p.secret = "abcdefghijklmnop" })
+		open("servers", "SettingsAccountServers", nil)
+		open("cache", "SettingsAccountCache", nil)
+		open("remove", "SettingsAccountRemove", nil)
+		s.post(func() {
+			p := page()
+			p.importPath, p.importOpen = "accounts.json", true
+			p.importPreview = core.AccountImportPreview{Accounts: []core.AccountImportEntry{
+				{Email: "lisa@163.com", Name: "Lisa Wang", Signature: "工作", ReceivingProtocol: "imap", ReceivingHost: "imap.163.com", ReceivingPort: 993,
+					SendingProtocol: "smtp", SendingHost: "smtp.163.com", SendingPort: 465, Username: "lisa@163.com"},
+				{Email: "ops@company.example", Name: "运维值班", ReceiveOnly: true, AIInstructions: true, Username: "ops", ReceivingProtocol: "imap",
+					ReceivingHost: "mail.company.example", ReceivingPort: 993, SendingProtocol: "smtp", SendingHost: "mail.company.example", SendingPort: 587},
+				{Email: "you@example.com", Existing: true, Username: "you@example.com", ReceivingProtocol: "imap", ReceivingHost: "imap.qq.com", ReceivingPort: 993,
+					SendingProtocol: "smtp", SendingHost: "smtp.qq.com", SendingPort: 465},
+			}}
+		})
+		s.tt.Advance(2 * theme.MotionBase)
+		shot(s.harness, "SettingsAccountImport")
+	})
+	t.Run("SettingsAccountKinds", func(t *testing.T) {
+		s := shotMail(t, noAuto)
+		arch, err := s.env.Svc.AddLocalArchive(context.Background(), "归档 2023")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.post(s.app.load)
+		s.until("the archive", func() bool { _, ok := s.app.accountByID(arch.ID); return ok })
+		s.openSettings(accountRoute(arch.ID))
+		s.tt.Frame()
+		shot(s.harness, "SettingsAccountArchive")
+		s.post(func() {
+			s.app.loads.Stop()
+			s.app.addressBooks = []core.AddressBook{{
+				ID: 9, Preset: core.PresetCustom, Name: "Nextcloud", URL: "https://cloud.example.org/remote.php/dav", AuthType: "password", Username: "me",
+				Status: "ok", LastSyncedAt: s.clock.Now().Add(-5 * time.Minute),
+				Collections: []core.AddressBookCollection{{ID: 2, AddressBookID: 9, Href: "/contacts/", Name: "联系人", Enabled: true, CardCount: 248},
+					{ID: 3, AddressBookID: 9, Href: "/colleagues/", Name: "同事", Enabled: true, CardCount: 36}},
+			}}
+			s.app.navigate(Route{Page: PageSettings, Settings: addressBookRoute(9)})
+		})
+		s.tt.Frame()
+		shot(s.harness, "SettingsAddressBook")
+	})
 	t.Run("AddAccountSheet", func(t *testing.T) {
 		s := shotMail(t, noAuto)
 		s.openSettings(accountRoute(s.you.ID))
@@ -1040,6 +1126,8 @@ func TestShots(t *testing.T) {
 		s.see("识别为 QQ 邮箱")
 		s.click("继续")
 		s.see("授权码")
+		s.fill("授权码", "abcdefghijklmnop")
+		shot(s.harness, "AddAccountPassword")
 		s.manualServers()
 		s.fill("授权码", "secret") // the test servers' password
 		shot(s.harness, "AddAccountManual")
