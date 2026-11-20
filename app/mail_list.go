@@ -724,7 +724,7 @@ func (p *mailPage) Content(c *ui.Context) {
 	}
 	_, isDrafts := draftsOf(p.folders, p.view)
 	a.listW = a.listWidth()
-	changed, _ := kit.Resizer(c, &a.listW, th.Space(2), false, i18n.T("mail.resize_list"), nil, func() {
+	changed, _ := kit.Resizer(c, &a.listW, th.Space(2), i18n.T("mail.resize_list"), nil, func() {
 		kit.Panel(c, r).Grow(1).Children(func() {
 			switch {
 			case p.view.Unified == "outbox":

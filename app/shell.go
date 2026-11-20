@@ -496,7 +496,7 @@ func (a *App) body(c *ui.Context) {
 			return
 		}
 		before := visible
-		changed, dragging := kit.Resizer(c, &visible, theme.GripWidth, true, i18n.T("shell.resize"), nil, sidebar, content)
+		changed, dragging := kit.Resizer(c, &visible, th.Space(2), i18n.T("shell.resize"), nil, sidebar, content)
 		a.sidebarW = width + (visible - before)
 		a.collapsePull(width, dragging)
 		a.sidebarW = min(max(a.sidebarW, theme.SidebarMinWidth), theme.SidebarMaxWidth)
@@ -512,7 +512,7 @@ func (a *App) body(c *ui.Context) {
 func (a *App) edgeGrip(c *ui.Context, width float32, sidebar, content func()) {
 	pulled := width
 	open := func() { a.sidebarHidden = false }
-	changed, dragging := kit.Resizer(c, &pulled, c.Theme().Space(2), false, i18n.T("shell.resize"), open, sidebar, content)
+	changed, dragging := kit.Resizer(c, &pulled, c.Theme().Space(2), i18n.T("shell.resize"), open, sidebar, content)
 	pulled -= width
 	if changed && !dragging && pulled > 0 {
 		a.sidebarHidden = false

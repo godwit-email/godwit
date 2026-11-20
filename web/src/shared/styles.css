@@ -116,7 +116,8 @@
   border-radius: var(--radius-sm);
   font-weight: 400;
 }
-[data-slot$="-title"] {
+/* a Wit step's line (trace-title) reads at the body weight, as the design's */
+[data-slot$="-title"]:not([data-slot="trace-title"]) {
   font-weight: 600;
 }
 
