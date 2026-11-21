@@ -12,6 +12,14 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
+// asMac poses as macOS for the test: its single-row title bar holds the page's
+// actions, where Windows and Linux move them to the context bar below (splitChrome).
+func asMac(t *testing.T) {
+	old := goos
+	goos = "darwin"
+	t.Cleanup(func() { goos = old })
+}
+
 // titleActionLabels are the title bar's actions on the open message, as an inbox shows them.
 func titleActionLabels() []string {
 	return []string{i18n.T("reader.reply"), i18n.T("reader.reply_all"), i18n.T("reader.forward"),
@@ -22,6 +30,7 @@ func titleActionLabels() []string {
 // title bar while a message is open, and gone with none: an empty list, or
 // the scheduled list, which shows no reader. The sidebar's own 归档 row is not one.
 func TestTitleActionsNeedAnOpenMessage(t *testing.T) {
+	asMac(t)
 	shown := func(h *harness, want bool) {
 		t.Helper()
 		for _, label := range titleActionLabels() {
@@ -50,6 +59,7 @@ func TestTitleActionsNeedAnOpenMessage(t *testing.T) {
 // TestTitleBarAt960x600: in the least window, with the sidebar open or folded,
 // the search field and the actions fit it, and the actions can be pressed.
 func TestTitleBarAt960x600(t *testing.T) {
+	asMac(t)
 	for _, folded := range []bool{false, true} {
 		t.Run(fmt.Sprintf("folded=%v", folded), func(t *testing.T) {
 			h, accs := mailHarness(t, nil, "alice@example.com")
@@ -161,6 +171,7 @@ func (p crumbPage) BreadcrumbUp()                      { *p.ups++ }
 // title and the search, its parent taking the page up; a page that has none
 // shows nothing.
 func TestBreadcrumb(t *testing.T) {
+	asMac(t)
 	for _, ok := range []bool{true, false} {
 		t.Run(fmt.Sprintf("ok=%v", ok), func(t *testing.T) {
 			ups := 0

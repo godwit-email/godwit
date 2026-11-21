@@ -105,16 +105,16 @@ type session struct {
 	historyOpen  map[int64]bool      // folded messages shown though the history is collapsed: ones the reader folded
 	revealID     int64               // a message to scroll to once it is laid out (a digest's source); 0 for none
 	bodies       map[int64]*msgBody
-	scroll      ui.ScrollState // the messages' scrolling: the wheel and touchpad over a body's page scroll it (ScrollToContainer)
-	headerH     float32        // the expanded top header's height (at scroll 0): the scroll keeps a compensating spacer so collapsing never jitters
-	subjText    string         // subject string last shaped for subjW / subjLine1
-	subjSize    float32        // title font size last shaped (refreshes if settings font size changes)
-	subjBarW    float32        // header width when subjLine1/subjRest were last split (resets on resize)
-	subjW       float32        // the 20 px semibold subject's natural single-line width
-	subjLine1   string         // first wrapped line of the 20 px subject (non-empty only when wrapped)
-	subjRest    string         // remaining text after subjLine1 (trimmed of leading newlines)
-	subjLine1W  float32        // natural advance of subjLine1 (including trailing space) so the inline tail joins seamlessly
-	barTop      float32        // the collapsing top header's current height (headerH down to 44)
+	scroll       ui.ScrollState // the messages' scrolling: the wheel and touchpad over a body's page scroll it (ScrollToContainer)
+	headerH      float32        // the expanded top header's height (at scroll 0): the scroll keeps a compensating spacer so collapsing never jitters
+	subjText     string         // subject string last shaped for subjW / subjLine1
+	subjSize     float32        // title font size last shaped (refreshes if settings font size changes)
+	subjBarW     float32        // header width when subjLine1/subjRest were last split (resets on resize)
+	subjW        float32        // the 20 px semibold subject's natural single-line width
+	subjLine1    string         // first wrapped line of the 20 px subject (non-empty only when wrapped)
+	subjRest     string         // remaining text after subjLine1 (trimmed of leading newlines)
+	subjLine1W   float32        // natural advance of subjLine1 (including trailing space) so the inline tail joins seamlessly
+	barTop       float32        // the collapsing top header's current height (headerH down to 44)
 	replyCard    ui.Rect        // the floating reply card's bounds in the window, for BodyGlass
 	replyRadius  float32        // the floating reply card's corner radius (Radius.X2l)
 

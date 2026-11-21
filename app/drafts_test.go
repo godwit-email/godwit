@@ -184,7 +184,7 @@ func TestDraftPaneLabelsNoClip(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s: no box", label)
 		}
-		if lab.H > one.H {
+		if lab.H > one.H+0.5 { // a wrap adds a whole line; float rounding differs by platform
 			t.Errorf("%s label wraps: height %v, one line %v", label, lab.H, one.H)
 		}
 	}

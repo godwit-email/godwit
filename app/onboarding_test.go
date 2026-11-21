@@ -16,6 +16,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/auth"
+	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -70,7 +71,7 @@ func TestOnboardingPasswordFlow(t *testing.T) {
 	h := newHarness(t)
 	h.firstRun()
 	h.see("先把邮箱接进来")
-	h.see("密码只存在系统钥匙串")
+	h.see(i18n.T("onboarding.promise.keychain"))
 	h.click("其他邮箱")
 	h.fill("邮箱地址", "new@example.com")
 	h.manualServers()

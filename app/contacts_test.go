@@ -428,6 +428,7 @@ func TestContactsFilterHistoricalAndSecondaryMergedTerms(t *testing.T) {
 // and block actions are icon buttons in the title bar, not in the page, and
 // none shows while no contact is chosen.
 func TestContactsActionsAreInTheTitleBar(t *testing.T) {
+	asMac(t)
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	h.deliverOne(accs[0], coretest.Msg("Bob <bob@example.com>", accs[0].Email, "Lunch?", "Noon?"))
 	labels := []string{i18n.T("palette.action.compose"), i18n.T("reader.block_sender")}

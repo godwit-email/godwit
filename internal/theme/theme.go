@@ -130,38 +130,38 @@ const (
 	SidebarMaxWidth = 480
 	// SidebarCollapsePull is how far past SidebarMinWidth a drag goes on
 	// before it folds the sidebar away.
-	SidebarCollapsePull  = 80
-	ListWidth            = 340 // the mail list column, until the user drags it
-	ListMinWidth         = 280 // the narrowest and widest a drag makes it
-	ListMaxWidth         = 560
+	SidebarCollapsePull   = 80
+	ListWidth             = 340 // the mail list column, until the user drags it
+	ListMinWidth          = 280 // the narrowest and widest a drag makes it
+	ListMaxWidth          = 560
 	TopBarHeight          = 44  // the top bar's least height
 	ContextBarHeight      = 40  // the non-macOS Mica context bar below the title bar
 	TitleSearchWidth      = 360 // the top bar's search field, which shrinks in a narrow window
 	SplitTitleSearchWidth = 400 // the centered search field in the split Windows/Linux title bar
-	TitleNameMax         = 200 // the top bar's title, then its subtitle: longer ones end in …
-	TitleSubMax          = 112
-	SyncAccountMax       = 80   // the account's name in the sync status row
-	DialogSmWidth        = 440  // confirmations
-	BackdropBlur         = 4    // a frosted panel blurs what is behind it 4× this much
-	MaterialBlur         = 25   // DIPs of Gaussian blur behind the design's materials (its blur/material 50 is a CSS blur radius twice this); shortcut: matched by eye on macOS only, recheck on Windows
-	DialogLift           = 0.2  // a dialog's backdrop pads its bottom by this share of its height: the panel centred at 40%
-	DialogMinTop         = 32   // yet a dialog stays at least this far below the window's top
-	DialogTop            = 64   // a Top dialog's distance from the window's top
-	SheetWidth           = 560  // DialogMd: forms, the add-account dialog
-	DialogWideWidth      = 640  // DialogLg
-	DialogWideMax        = 788  // DialogLg's tallest
-	SheetMaxHeight       = 760  // DialogSm's and DialogMd's tallest
-	AsideWidth           = 440  // onboarding's left panel
-	FormMaxWidth         = 520  // onboarding's form column
-	ContentMaxWidth      = 1040 // settings pages
-	RuleAsideWidth       = 340  // the rule editor's side panel
-	RuleFieldWidth       = 108  // a rule condition's field select
-	RuleOpWidth          = 96   // a rule condition's comparison select
-	RuleActionWidth      = 200  // a rule action's kind select
-	SettingsMaxWidth     = 760  // a settings page's column
-	SettingsControlWidth = 240  // a settings row's input or select (a select may grow to SettingsSelectMax)
-	SettingsSelectMax    = 280
-	ViewGroupNameWidth   = 200 // a view group's name in the view editor
+	TitleNameMax          = 200 // the top bar's title, then its subtitle: longer ones end in …
+	TitleSubMax           = 112
+	SyncAccountMax        = 80   // the account's name in the sync status row
+	DialogSmWidth         = 440  // confirmations
+	BackdropBlur          = 4    // a frosted panel blurs what is behind it 4× this much
+	MaterialBlur          = 25   // DIPs of Gaussian blur behind the design's materials (its blur/material 50 is a CSS blur radius twice this); shortcut: matched by eye on macOS only, recheck on Windows
+	DialogLift            = 0.2  // a dialog's backdrop pads its bottom by this share of its height: the panel centred at 40%
+	DialogMinTop          = 32   // yet a dialog stays at least this far below the window's top
+	DialogTop             = 64   // a Top dialog's distance from the window's top
+	SheetWidth            = 560  // DialogMd: forms, the add-account dialog
+	DialogWideWidth       = 640  // DialogLg
+	DialogWideMax         = 788  // DialogLg's tallest
+	SheetMaxHeight        = 760  // DialogSm's and DialogMd's tallest
+	AsideWidth            = 440  // onboarding's left panel
+	FormMaxWidth          = 520  // onboarding's form column
+	ContentMaxWidth       = 1040 // settings pages
+	RuleAsideWidth        = 340  // the rule editor's side panel
+	RuleFieldWidth        = 108  // a rule condition's field select
+	RuleOpWidth           = 96   // a rule condition's comparison select
+	RuleActionWidth       = 200  // a rule action's kind select
+	SettingsMaxWidth      = 760  // a settings page's column
+	SettingsControlWidth  = 240  // a settings row's input or select (a select may grow to SettingsSelectMax)
+	SettingsSelectMax     = 280
+	ViewGroupNameWidth    = 200 // a view group's name in the view editor
 	// SignatureEditorHeight is a signature's editor, the same in both modes so
 	// switching keeps the card's size: the page's toolbar over its editor, or
 	// the native toolbar over MyGo's code editor; either scrolls inside.

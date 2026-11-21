@@ -511,7 +511,7 @@ func (a *App) contextBar(c *ui.Context) {
 				colW += gap
 			}
 			ui.Row(c).Width(colW).FillHeight().Shrink(0).Clip().AlignItems(ui.Center).Children(func() {
-				ui.Row(c).Width(width + gap).Shrink(0).AlignItems(ui.Center).Translate(visible-width, 0).
+				ui.Row(c).Width(width+gap).Shrink(0).AlignItems(ui.Center).Translate(visible-width, 0).
 					Padding(0, sidebarInset(c), 0, th.Space(3)).Disabled(a.sidebarHidden).Children(func() {
 					switch a.route.Page {
 					case PageMail, PageContacts, PageWit:
@@ -673,7 +673,7 @@ func (a *App) body(c *ui.Context) {
 		// Keep the sidebar's layout at its full width while it slides out of the clipped pane.
 		// Include gap on the right so sidebarScroll reaches the content panel's border;
 		// sidebarInset keeps every sidebar item clear of both the gap and the scroll bar.
-		ui.Column(c).Width(width + gap).FillHeight().Shrink(0).Translate(visible-width, 0).Disabled(a.sidebarHidden).
+		ui.Column(c).Width(width+gap).FillHeight().Shrink(0).Translate(visible-width, 0).Disabled(a.sidebarHidden).
 			Padding(top, 0, th.Space(3), th.Space(3)).Gap(th.Space(0.5)).Children(func() {
 			ui.Column(c).Grow(1).MinHeight(0).Gap(th.Space(0.5)).Children(func() { p.Sidebar(c) })
 			ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2), sidebarInset(c), 0, 0).Children(func() { a.sidebarFoot(c) })

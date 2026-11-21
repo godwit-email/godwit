@@ -133,7 +133,7 @@ func TestSettingsSearchFilter(t *testing.T) {
 			t.Errorf("%s: %+v", q, m)
 		}
 	}
-	for q, sec := range map[string]string{"mcp": "mcp", "skill": "skills", "判断": "models", "插入图片": "signatures", "沙箱": "plugins", "钥匙串": "masking", "扩展": "plugins", "智能": "models"} {
+	for q, sec := range map[string]string{"mcp": "mcp", "skill": "skills", "判断": "models", "插入图片": "signatures", "沙箱": "plugins", i18n.T("settings.keychain"): "masking", "扩展": "plugins", "智能": "models"} {
 		if m := p.matching(q); !slices.Contains(m.apps, sec) {
 			t.Errorf("%s: %+v, want %s", q, m, sec)
 		}

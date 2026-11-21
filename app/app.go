@@ -227,17 +227,17 @@ type App struct {
 	taskModels    map[string]bool        // the reader's tasks ("summarize", "translate", "" quick replies) core has a model for, and "labels"
 	tasks         latest                 // refreshTasks' reads; only the newest answer counts
 
-	settingsOK       core.Settings                                                      // the last settings the Service confirmed; a failed save reverts to them
-	settingsGen      uint64                                                             // bumped per settings save; only the newest one's result counts
+	settingsOK           core.Settings                                                      // the last settings the Service confirmed; a failed save reverts to them
+	settingsGen          uint64                                                             // bumped per settings save; only the newest one's result counts
 	settingsVer          uint64                                                             // bumped per local settings change
 	settingsSavedVer     uint64                                                             // the settingsVer whose save the Service confirmed (or reverted to)
 	avatarPolicyVer      uint64                                                             // bumped per local settings change affecting remote avatars (RemoteImages, Proxy)
 	avatarPolicySavedVer uint64                                                             // the avatarPolicyVer whose save the Service confirmed (or reverted to)
-	saveSettings     func(ctx context.Context, st core.Settings) (core.Settings, error) // tests swap it
-	mcpEnv           func() (mcpclients.Env, error)                                     // where 接入 AI 应用 looks for the AI apps; tests swap it
-	setLanguage      func(string)
-	sysLang          string // Deps.SystemLanguage
-	accountsGen      uint64 // the loads.Gen that read a.accounts
+	saveSettings         func(ctx context.Context, st core.Settings) (core.Settings, error) // tests swap it
+	mcpEnv               func() (mcpclients.Env, error)                                     // where 接入 AI 应用 looks for the AI apps; tests swap it
+	setLanguage          func(string)
+	sysLang              string // Deps.SystemLanguage
+	accountsGen          uint64 // the loads.Gen that read a.accounts
 
 	externalAlways bool // Deps.ExternalAlways
 

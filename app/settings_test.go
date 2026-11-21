@@ -624,7 +624,7 @@ func TestSettingsLoginItemOffInSystem(t *testing.T) {
 func TestSettingsPrivacyAndAbout(t *testing.T) {
 	h, _ := withAccount(t)
 	h.openSettings("masking")
-	h.see("系统钥匙串可用")
+	h.see(i18n.T("settings.keychain.ok"))
 	h.openSettings("about")
 	h.see("版本 " + Version)
 	h.called("NewBirdView") // failed here: the logo stands in
@@ -1115,8 +1115,9 @@ func TestReauthBannerElapsed(t *testing.T) {
 func TestDeleteAccountOutline(t *testing.T) {
 	h, acc := withAccount(t)
 	h.openSettings(accountRoute(acc.ID))
-	h.see("清除本机的邮件缓存、草稿和钥匙串里的凭据。服务器上的邮件不受影响")
-	if h.tt.HasText("清除本机的邮件缓存、草稿和钥匙串里的凭据。服务器上的邮件不受影响。") {
+	help := i18n.T("settings.account.remove.help")
+	h.see(strings.TrimSuffix(help, "。"))
+	if h.tt.HasText(help) {
 		t.Fatal("row desc keeps the trailing 。")
 	}
 	h.clickRemove()
