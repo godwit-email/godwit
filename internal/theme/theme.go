@@ -134,8 +134,10 @@ const (
 	ListWidth            = 340 // the mail list column, until the user drags it
 	ListMinWidth         = 280 // the narrowest and widest a drag makes it
 	ListMaxWidth         = 560
-	TopBarHeight         = 44  // the top bar's least height
-	TitleSearchWidth     = 360 // the top bar's search field, which shrinks in a narrow window
+	TopBarHeight          = 44  // the top bar's least height
+	ContextBarHeight      = 40  // the non-macOS Mica context bar below the title bar
+	TitleSearchWidth      = 360 // the top bar's search field, which shrinks in a narrow window
+	SplitTitleSearchWidth = 400 // the centered search field in the split Windows/Linux title bar
 	TitleNameMax         = 200 // the top bar's title, then its subtitle: longer ones end in …
 	TitleSubMax          = 112
 	SyncAccountMax       = 80   // the account's name in the sync status row
@@ -153,7 +155,6 @@ const (
 	FormMaxWidth         = 520  // onboarding's form column
 	ContentMaxWidth      = 1040 // settings pages
 	RuleAsideWidth       = 340  // the rule editor's side panel
-	RuleConnector        = 20   // the line between the rule editor's cards
 	RuleFieldWidth       = 108  // a rule condition's field select
 	RuleOpWidth          = 96   // a rule condition's comparison select
 	RuleActionWidth      = 200  // a rule action's kind select
@@ -219,7 +220,7 @@ const (
 	ServiceMarkOffset                                = 4              // optical alignment with a service name's first line
 	LabelChip, LabelChipX, LabelChipXIcon            = 20, 16, 10     // a mail label chip, its × and the ×'s glyph
 	Control                                          = 16             // check boxes and radio buttons
-	RadioDot, StatusDot                              = 8, 6           // a chosen radio's dot; status dots
+	RadioDot, StatusDot, ThinkingDot                 = 8, 6, 5        // a chosen radio's dot; status dots; AI thinking pulse dots
 	StatusBadge, StatusBadgeRing                     = 9, 1.5         // a status dot on a mark's corner: the 6 dot in a ring of the background
 	SwitchWidth, SwitchHeight, SwitchThumb           = 32, 18, 14     // a switch's track and thumb
 	SwitchInset                                      = (SwitchHeight - SwitchThumb) / 2
@@ -477,4 +478,6 @@ const (
 	MotionOffset = 4
 
 	SkeletonPulse = 1500 * time.Millisecond // one dim-and-return of a Skeleton
+	ThinkingPulse = 1200 * time.Millisecond // one wave cycle across AI thinking dots and sparkles
+	CursorBlink   = 900 * time.Millisecond  // one dim-and-return of the streaming AI typing cursor
 )

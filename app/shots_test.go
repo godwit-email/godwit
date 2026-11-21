@@ -490,10 +490,24 @@ func TestShots(t *testing.T) {
 		s.llm.Script(coretest.Turn{Text: []string{"- 目前的结论已按模块汇总\nTODO: " + todo + "\n"}})
 		s.click("11 月联合发布：计划与分工")
 		s.see(todo)
-		s.see("展开历史邮件（3 封）")
+		s.see("3 封较早的邮件")
 		s.post(func() { s.app.mail.reader.toggleSummary() }) // the design shows the thread without it
 		s.until("the summary hidden", func() bool { s.tt.Frame(); return !s.tt.HasText(todo) })
 		shot(s.harness, "MainLongThread")
+		// Scrolled past the header: slim sticky bar pinned at the top (666:2751).
+		r := s.app.mail.reader
+		last, _ := r.last()
+		s.seeBody(last.ID)
+		s.post(func() {
+			if b := r.bodies[last.ID]; b != nil && b.view != nil {
+				s.app.BodyHeight(b.view, last.ID, 1200)
+			}
+		})
+		s.tt.Frame()
+		s.tt.Advance(2 * theme.MotionBase)
+		s.post(func() { r.scroll.Y = r.headerH + 220 })
+		s.until("sticky header collapsed", func() bool { s.tt.Frame(); return r.barTop <= 45 })
+		shot(s.harness, "MainScrolled")
 	})
 	t.Run("MainAttachments", func(t *testing.T) { // a message with several attachments, one chosen (215:2091)
 		s := shotDesignMail(t, noQuick)
@@ -819,12 +833,9 @@ func TestShots(t *testing.T) {
 		shot(s.harness, "SettingsGeneral")
 		s.openSettings("rules")
 		s.click("新建规则")
-		s.click("添加")
 		s.click("添加条件")
 		shot(s.harness, "SettingsRulesEditor")
-		s.click("添加")
-		shot(s.harness, "SettingsRulesAddMenu")
-		s.click("添加一组条件")
+		s.click("添加条件组")
 		shot(s.harness, "SettingsRulesOr")
 		s.openSettings("models")
 		s.see("OpenAI")

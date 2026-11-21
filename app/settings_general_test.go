@@ -88,7 +88,7 @@ func TestThemeThumbsFit(t *testing.T) {
 func TestSettingsGeneralCopy(t *testing.T) {
 	h, _ := withAccount(t)
 	h.openSettings("general")
-	for _, s := range []string{"主题", "跟随系统时随 macOS 的外观切换", "登录后在后台启动 Godwit"} {
+	for _, s := range []string{"主题", "跟随系统时随系统外观切换", "登录后在后台启动 Godwit"} {
 		h.see(s)
 	}
 	if _, ok := h.tt.Find("总结、翻译和 Wit 的回答用这种语言"); ok {

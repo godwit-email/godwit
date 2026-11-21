@@ -15,6 +15,39 @@ func TestPseudoLocale(t *testing.T) {
 	}
 }
 
+func TestLocalizePlatformKeychainAndThemeHelp(t *testing.T) {
+	oldOS := goos
+	t.Cleanup(func() {
+		goos = oldOS
+		SetLanguage("zh-Hans")
+	})
+
+	SetLanguage("zh-Hans")
+	if got := T("settings.theme.help"); strings.Contains(got, "macOS") {
+		t.Errorf("zh-Hans theme help still names macOS: %q", got)
+	}
+	SetLanguage("en")
+	if got := T("settings.theme.help"); strings.Contains(got, "macOS") {
+		t.Errorf("en theme help still names macOS: %q", got)
+	}
+
+	for _, tc := range []struct {
+		osName, lang, key, want string
+	}{
+		{"darwin", "zh-Hans", "onboarding.promise.keychain", "密码只存在系统钥匙串"},
+		{"windows", "zh-Hans", "onboarding.promise.keychain", "密码只存在系统凭据管理器"},
+		{"linux", "zh-Hans", "onboarding.promise.keychain", "密码只存在系统密钥环"},
+		{"windows", "en", "onboarding.promise.keychain", "Passwords live only in the Windows Credential Manager"},
+		{"linux", "en", "onboarding.promise.keychain", "Passwords live only in the system keyring"},
+	} {
+		goos = tc.osName
+		SetLanguage(tc.lang)
+		if got := T(tc.key); got != tc.want {
+			t.Errorf("%s/%s %s = %q, want %q", tc.osName, tc.lang, tc.key, got, tc.want)
+		}
+	}
+}
+
 func TestReorderedArgumentsAndPercent(t *testing.T) {
 	t.Cleanup(func() { SetLanguage("zh-CN") })
 	SetLanguage("en")

@@ -60,7 +60,7 @@ func (p *palette) card(m core.MessageSummary) *palCard {
 	}
 	p.cards[m.ID] = pc
 	a, id, atts := p.a, m.ID, m.HasAttachments
-	settled := a.settingsVer == a.settingsSavedVer
+	settled := a.avatarPolicyVer == a.avatarPolicySavedVer
 	var img ui.ImageSource
 	var names []string
 	a.do(func(ctx context.Context) error {

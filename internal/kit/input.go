@@ -16,6 +16,7 @@ type InputOpts struct {
 	Size                    Size
 	Password, Mono, Invalid bool
 	Flat                    bool     // no shadow
+	Bare                    bool     // unframed text field (no border, fill, shadow or ring), for a floating composer
 	Glass                   bool     // frosted glass appearance with hairline border (no blur)
 	Tint                    bool     // the hover tint for the fill, as on the window material (not with Glass)
 	Autocomplete            bool     // an Autocomplete, framed as a slotted input: Suggest are its options, none at times
@@ -114,6 +115,9 @@ func Input(c *ui.Context, s *string, o InputOpts) ui.Element {
 			return ui.Autocomplete(c, s, o.Suggest)
 		}
 		return ui.TextInputBase(c, s)
+	}
+	if o.Bare {
+		return input(c, field().Height(h).Padding(0), o, false)
 	}
 	if o.Leading == nil && o.Trailing == nil && !o.Autocomplete {
 		return input(c, field().Height(h), o, true)

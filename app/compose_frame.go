@@ -80,7 +80,10 @@ func (a *App) ComposeView(f *ComposeFrame) func(*ui.Context) {
 		barH, _ := chromeMetrics(c.TitleBar().Height, t)
 		ui.Column(c).Fill().Children(func() {
 			ui.Row(c).Height(barH).FillWidth().Shrink(0).AlignItems(ui.Center).Gap(th.Space(2)).Background(a.windowFill(t)).
-				Padding(0, th.Space(4), 0, c.TitleBar().Left+th.Space(5)).DragWindow().Children(func() {
+				Padding(0, c.TitleBar().Right+th.Space(4), 0, c.TitleBar().Left+th.Space(5)).DragWindow().Children(func() {
+				if splitChrome() {
+					ui.Icon(c, logo).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
+				}
 				kit.Text(c, title, t.Text.Sm).FontWeight(500).SingleLine().Shrink(1)
 				kit.Text(c, status, t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(0)
 			})

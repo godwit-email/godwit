@@ -103,7 +103,11 @@ func (p *settingsPage) searchField(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	var box ui.Element
 	in := kit.Input(c, &p.query, kit.InputOpts{Placeholder: i18n.T("settings.search"), Flat: true, Leading: func() { kit.InputIcon(c, "search") }, Box: &box}).Label(i18n.T("settings.search"))
-	box.FillWidth().Margin(0, 0, th.Space(1.5), theme.RingWidth).Background(t.HoverTint)
+	bottom := th.Space(1.5)
+	if splitChrome() {
+		bottom = 0
+	}
+	box.FillWidth().Margin(0, 0, bottom, theme.RingWidth).Background(t.HoverTint)
 	if in.Submitted() {
 		m := p.matching(p.query)
 		switch {

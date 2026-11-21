@@ -144,7 +144,9 @@ func (p *settingsPage) Sidebar(c *ui.Context) {
 	cur, _ := p.section()
 	cur = settingsParent(cur)
 	sidebarScroll(c, func() {
-		p.searchField(c)
+		if !splitChrome() {
+			p.searchField(c)
+		}
 		hit := p.matching(p.query)
 		if hit.accounts {
 			p.accountsGroup(c, hit, cur)

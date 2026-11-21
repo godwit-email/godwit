@@ -35,7 +35,7 @@ func (p *mailPage) draftsView(c *ui.Context) {
 	kit.List(c, p.draftList, len(drafts), func(i int) {
 		d := drafts[i]
 		b := kit.Pressable(c, kit.PressableOpts{Selected: d.ID == p.draftSel, OnClick: func() { p.draftSel = d.ID }}).
-			Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5))
+			Padding(th.Space(2.5), th.Space(2))
 		b.Children(func() { p.draftRow(c, d) }).ContextMenu(func(m *ui.Menu) {
 			if m.Item(i18n.T("mail.draft.delete")).Chosen() {
 				p.deleteDraft(d.ID)
@@ -95,7 +95,11 @@ func (p *mailPage) accountEmail(id int64) string {
 func (p *mailPage) draftRow(c *ui.Context, d core.Draft) {
 	t, th := theme.Of(c), c.Theme()
 	to := recipients(d.To)
-	withAvatar(c, to, func() {
+	var img ui.ImageSource
+	if len(d.To) > 0 {
+		img = p.addrAvatar(d.To[0], 0)
+	}
+	withAvatar(c, to, img, func() {
 		ui.Row(c).Gap(th.Space(1.5)).Children(func() {
 			ui.Text(c, cmp.Or(to, i18n.T("mail.no_recipient"))).FontWeight(500).SingleLine().Grow(1).Shrink(1) // the lead line, as a list row's
 			kit.Text(c, listTime(p.a.clock.Now(), d.UpdatedAt), t.Text.Xs).TextColor(t.Muted)

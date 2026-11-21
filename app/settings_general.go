@@ -18,6 +18,18 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
+// avatarSettingsChanged reports whether a settings change can affect whether
+// or how remote sender avatars load (remote-image policy or proxy).
+func avatarSettingsChanged(old, st core.Settings) bool {
+	return st.RemoteImages != old.RemoteImages ||
+		st.ProxyMode != old.ProxyMode ||
+		st.ProxyURL != old.ProxyURL ||
+		!slices.Equal(st.ProxyBypass, old.ProxyBypass) ||
+		st.ProxyUser != old.ProxyUser ||
+		st.ProxyPassword != old.ProxyPassword ||
+		st.ProxyPasswordSet != old.ProxyPasswordSet
+}
+
 // changeSettings shows st at once and saves it as a full snapshot; a save
 // still waiting is replaced. A failure of the newest save reverts to the
 // last confirmed settings.
@@ -27,6 +39,10 @@ func (a *App) changeSettings(st core.Settings) {
 	a.settingsGen++
 	a.settingsVer++
 	ver := a.settingsVer
+	if avatarSettingsChanged(old, st) {
+		a.avatarPolicyVer++
+	}
+	pVer := a.avatarPolicyVer
 	a.settingsEffects(old, st)
 	save := a.saveSettings
 	var saved core.Settings
@@ -35,8 +51,13 @@ func (a *App) changeSettings(st core.Settings) {
 		return err
 	}, func(gen uint64, err error) {
 		a.refreshTasks() // saved or not, ask again: it may name other models
+		settledPolicy := false
 		if err == nil {
 			a.settingsOK, a.settingsSavedVer = saved, ver
+			if pVer > a.avatarPolicySavedVer {
+				a.avatarPolicySavedVer = pVer
+				settledPolicy = true
+			}
 		}
 		if gen != a.settingsGen {
 			return
@@ -46,13 +67,22 @@ func (a *App) changeSettings(st core.Settings) {
 			a.settings = a.settingsOK
 			a.settingsVer++
 			a.settingsSavedVer = a.settingsVer
+			needSettle := a.avatarPolicyVer != a.avatarPolicySavedVer || avatarSettingsChanged(cur, a.settings)
+			if needSettle {
+				a.avatarPolicyVer++
+				a.avatarPolicySavedVer = a.avatarPolicyVer
+			}
 			a.settingsEffects(cur, a.settings)
-			a.mail.reader.avatarsChanged(settingsSettled)
+			if needSettle {
+				a.mail.reader.avatarsChanged(settingsSettled)
+			}
 			a.toastErr(err)
 			return
 		}
 		a.settings = saved
-		a.mail.reader.avatarsChanged(settingsSettled)
+		if settledPolicy {
+			a.mail.reader.avatarsChanged(settingsSettled)
+		}
 	})
 }
 
@@ -60,6 +90,10 @@ func (a *App) changeSettings(st core.Settings) {
 func (a *App) settingsEffects(old, st core.Settings) {
 	if st.RemoteImages != old.RemoteImages {
 		a.mail.reader.avatarsChanged(trustChanged)
+		a.contacts().avatars = nil
+	} else if avatarSettingsChanged(old, st) {
+		a.mail.reader.avatarsChanged(settingsChanged)
+		a.contacts().avatars = nil
 	}
 	if st.Theme != old.Theme {
 		a.plat.SetThemeSource(st.Theme)

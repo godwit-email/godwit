@@ -133,21 +133,51 @@ async function start(b: ReaderBody) {
   return loaded();
 }
 
-test("what the bars cover blurs, from the top and the bottom, as Go tells it", async () => {
+test("what the bars cover blurs via translate3d refs and fades briefly on fast flings", async () => {
+  const empty = { x: 0, y: 0, w: 0, h: 0, r: 0 };
   await start(body(1, "<p>hi</p>"));
   const band = (at: string) => document.querySelector<HTMLElement>(`[data-glass="${at}"]`);
-  expect(band("top")).toBeNull();
-  expect(band("bottom")).toBeNull();
-  act(() => {
-    for (const f of h.glass) f({ top: 0, bottom: 120 });
-  });
-  expect(band("top")).toBeNull();
-  expect(band("bottom")?.style.height).toBe("120px");
-  act(() => {
-    for (const f of h.glass) f({ top: 40, bottom: 0 });
-  });
-  expect(band("top")?.style.height).toBe("40px");
-  expect(band("bottom")).toBeNull();
+  expect(band("top")?.style.display).toBe("none");
+  expect(band("bottom")?.style.display).toBe("none");
+
+  const emit = (g: ReaderGlass) => {
+    for (const f of h.glass) f(g);
+  };
+
+  // Initial appearance stays fully visible (no flash on thread open).
+  emit({ top: empty, bottom: { x: -12, y: 520, w: 720, h: 74, r: 16 } });
+  expect(band("top")?.style.display).toBe("none");
+  expect(band("bottom")?.style.display).toBe("block");
+  expect(band("bottom")?.style.transform).toBe("translate3d(-12px, 520px, 0px)");
+  expect(band("bottom")?.style.width).toBe("720px");
+  expect(band("bottom")?.style.height).toBe("74px");
+  expect(band("bottom")?.style.borderRadius).toBe("16px");
+  expect(band("bottom")?.style.opacity).toBe("1");
+
+  // Fast fling hides the lagging fallback blur, then restores it once settled.
+  vi.useFakeTimers();
+  try {
+    emit({
+      top: { x: 0, y: 120, w: 696, h: 44, r: 0 },
+      bottom: { x: -12, y: 640, w: 720, h: 74, r: 16 },
+    });
+    expect(band("top")?.style.display).toBe("block");
+    expect(band("top")?.style.transform).toBe("translate3d(0px, 120px, 0px)");
+    expect(band("top")?.style.height).toBe("44px");
+    expect(band("bottom")?.style.transform).toBe("translate3d(-12px, 640px, 0px)");
+    expect(band("bottom")?.style.opacity).toBe("0");
+
+    vi.advanceTimersByTime(100);
+    expect(band("bottom")?.style.opacity).toBe("1");
+    expect(band("top")?.style.opacity).toBe("1");
+  } finally {
+    vi.useRealTimers();
+  }
+
+  // Clearing hides both bands cleanly.
+  emit({ top: { x: 0, y: 200, w: 696, h: 44, r: 0 }, bottom: empty });
+  expect(band("top")?.style.display).toBe("block");
+  expect(band("bottom")?.style.display).toBe("none");
 });
 
 test("the iframe is sandboxed (scripts allowed for WebKit's listeners; the CSP forbids them), borderless and unscrolled", async () => {

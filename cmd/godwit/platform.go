@@ -470,9 +470,13 @@ func loadAfterSetup(setup func(), load func() error, undo func()) error {
 // AllowImages lets message's reader pages load its remote images.
 func (p *platform) AllowImages(message int64) { p.reader.Allow(message) }
 
-func (p *platform) BodyGlass(view ui.NativeWebView, top, bottom int) {
+func (p *platform) BodyGlass(view ui.NativeWebView, top, bottom app.BodyGlassRect) {
 	if v, ok := view.(*mygo.WebView); ok {
-		if err := webui.ReaderGlassed.EmitPage(v.Page(), webui.ReaderGlass{Top: top, Bottom: bottom}); err != nil {
+		g := webui.ReaderGlass{
+			Top:    webui.ReaderGlassRect{X: top.X, Y: top.Y, W: top.W, H: top.H, R: top.R},
+			Bottom: webui.ReaderGlassRect{X: bottom.X, Y: bottom.Y, W: bottom.W, H: bottom.H, R: bottom.R},
+		}
+		if err := webui.ReaderGlassed.EmitPage(v.Page(), g); err != nil {
 			log.Printf("the glass to a reader page: %v", err)
 		}
 	}
@@ -643,18 +647,22 @@ func trayIcon(box trayBox) ([]byte, error) {
 }
 
 // composeWindowOptions is a compose window on goos: the compose page of the
-// frontend, the dev server's under `go tool mygo dev`, else web/dist's. On
-// macOS its title bar is hidden, the traffic lights centered in the page's
-// top bar as the main window's are; Title still names it in the Window menu.
+// frontend, the dev server's under `go tool mygo dev`, else web/dist's. It
+// matches the main window's custom title bar chrome on every platform so
+// Windows and Linux do not stack a native title bar and menu strip above
+// ComposeView's own header bar; Title still names it in the Window menu.
 func composeWindowOptions(goos string) mygo.WindowOptions {
 	o := mygo.WindowOptions{URL: "/compose.html", Width: 860, Height: 720, MinWidth: 640, MinHeight: 480,
-		StateKey: "compose", Title: i18n.T("compose.new")}
-	if goos == "darwin" {
+		StateKey: "compose", Title: i18n.T("compose.new"), TitleBarStyle: mygo.TitleBarHiddenInset}
+	switch goos {
+	case "darwin":
 		// The main window's material; ?material tells the page to tint it rather than cover it.
 		o.URL, o.Vibrancy = "/compose.html?material", mygo.VibrancySidebar
 		o.Transparent = true
 		o.TitleBarStyle = mygo.TitleBarHidden
 		o.TrafficLightPosition = &mygo.Point{X: trafficLightInset, Y: (theme.TopBarHeight - trafficLightSize) / 2}
+	case "windows":
+		o.URL, o.Vibrancy, o.TitleBarHeight = "/compose.html?material", mygo.VibrancyMica, 40
 	}
 	return o
 }

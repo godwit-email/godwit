@@ -25,6 +25,10 @@ func List(c *ui.Context, s *ui.ListState, n int, row func(i int)) ui.Element {
 	if !ok {
 		t, th := theme.Of(c), *base
 		th.Accent, th.AccentText = tint(t, 1.75), t.Foreground
+		// Without an explicit InactiveAccent, mygo's fallback mixes AccentText
+		// (near-black) toward white, turning this 7% selection gray into a
+		// muddy dark gray when the window loses focus. Keep it a softer tint.
+		th.InactiveAccent = tint(t, 1.25)
 		th.SurfaceHover = tint(t, 1)
 		q, _ = soft.LoadOrStore(base, &th)
 	}

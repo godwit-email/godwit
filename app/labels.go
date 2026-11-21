@@ -131,7 +131,7 @@ func labelSubmenu(m *ui.Menu, t theme.Tokens, labels []core.Label, state func(id
 // It returns the header, none while no label is on mail (sectionShown).
 func (p *mailPage) labelNav(c *ui.Context) ui.Element {
 	a := p.a
-	t, th := theme.Of(c), c.Theme()
+	t := theme.Of(c)
 	if !p.sectionShown("labels") {
 		return ui.Element{}
 	}
@@ -159,7 +159,6 @@ func (p *mailPage) labelNav(c *ui.Context) ui.Element {
 				})
 			}
 		}})
-	ui.Box(c).Height(th.Space(2))
 	return head
 }
 

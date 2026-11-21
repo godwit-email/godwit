@@ -345,7 +345,7 @@ test("tabbing out of ⌘K closes it", async () => {
   fireEvent.keyDown(b, { key: "k", metaKey: true });
   const input = screen.getByRole("textbox", { name: "修改选中的内容" });
   fireEvent.blur(input, { relatedTarget: b });
-  expect(screen.queryByText("⌘K · 只修改选中的这一段")).toBeNull();
+  expect(screen.queryByText(/^(⌘K|Ctrl\+K) · 只修改选中的这一段$/)).toBeNull();
 });
 
 test("accept all → decide(id, true)", async () => {
@@ -454,7 +454,7 @@ test("opening ⌘K clears the applied note", async () => {
   const b = (await body()) as HTMLTextAreaElement;
   b.setSelectionRange(0, 3);
   fireEvent.keyDown(b, { key: "k", metaKey: true });
-  expect(screen.getByText("⌘K · 只修改选中的这一段")).toBeInTheDocument();
+  expect(screen.getByText(/^(⌘K|Ctrl\+K) · 只修改选中的这一段$/)).toBeInTheDocument();
   expect(screen.queryByText("已应用到正文")).toBeNull();
 });
 
@@ -622,7 +622,7 @@ test("⌘K saves first, then rewrites the selection of the text saved", async ()
   await userEvent.type(b, "Hello world");
   b.setSelectionRange(6, 11);
   fireEvent.keyDown(b, { key: "k", metaKey: true });
-  expect(screen.getByText("⌘K · 只修改选中的这一段")).toBeInTheDocument();
+  expect(screen.getByText(/^(⌘K|Ctrl\+K) · 只修改选中的这一段$/)).toBeInTheDocument();
   await userEvent.type(screen.getByRole("textbox", { name: "修改选中的内容" }), "更正式{Enter}");
   await waitFor(() => expect(api.rewrite).toHaveBeenCalled());
   const [rev, txt, start, end, instr] = vi.mocked(api.rewrite).mock.calls[0];

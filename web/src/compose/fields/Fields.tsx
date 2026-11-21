@@ -86,14 +86,17 @@ export function Fields({
   }));
 
   const row = (k: string, label: string, control: ReactNode) => (
-    <div key={k} className="mx-4 flex items-center gap-3 border-b-[0.5px] py-2 text-sm">
+    <div
+      key={k}
+      className="col-span-2 grid grid-cols-subgrid items-center gap-x-3 border-b-[0.5px] py-2 text-sm"
+    >
       <Label
         htmlFor={`${id}${k}`}
-        className="w-12 shrink-0 font-normal text-sm text-muted-foreground leading-5"
+        className="whitespace-nowrap font-normal text-sm text-muted-foreground leading-5"
       >
         {label}
       </Label>
-      {control}
+      <div className="flex min-w-0 items-center gap-3">{control}</div>
     </div>
   );
   const address = (k: AddressKey, label: string, placeholder: string, extra?: ReactNode) =>
@@ -125,7 +128,7 @@ export function Fields({
   const bad = invalid([...to, ...cc, ...bcc, ...lists.replyTo]);
 
   return (
-    <div className="flex flex-col">
+    <div className="mx-4 grid grid-cols-[minmax(4em,auto)_1fr] text-sm">
       {address(
         "to",
         "compose.to",
@@ -149,7 +152,7 @@ export function Fields({
         </>
       )}
       {bad.length > 0 && (
-        <p className="mx-4 border-b-[0.5px] py-2 text-xs text-destructive">
+        <p className="col-span-2 border-b-[0.5px] py-2 text-xs text-destructive">
           {t("compose.invalid", bad.join(", "))}
         </p>
       )}

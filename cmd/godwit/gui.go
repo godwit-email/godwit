@@ -478,31 +478,62 @@ func gui(ctx context.Context, dataDir, open string) int {
 
 			compose := func(*mygo.MenuItem, *mygo.Window) { a.Compose() }
 			updateMenu := func() {
-				// The Mail menu stands in for File, which on macOS holds Close (⌘W).
-				mailMenu := []*mygo.MenuItem{{Label: i18n.T("mail.compose"), Accelerator: "CmdOrCtrl+N", Click: compose},
-					mygo.Separator(), {Role: mygo.RoleClose}}
-				appMenu := []*mygo.MenuItem{
-					{Role: mygo.RoleAbout},
-					mygo.Separator(),
-					{Label: i18n.T("shell.nav.settings") + "…", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow(); a.OpenSettings() }},
-					mygo.Separator(),
-					{Role: mygo.RoleServices},
-					mygo.Separator(),
-					{Role: mygo.RoleHide},
-					{Role: mygo.RoleHideOthers},
-					{Role: mygo.RoleUnhide},
-					mygo.Separator(),
-					{Role: mygo.RoleQuit},
+				openSettings := func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow(); a.OpenSettings() }
+				if runtime.GOOS == "darwin" {
+					// The Mail menu stands in for File, which on macOS holds Close (⌘W).
+					mailMenu := []*mygo.MenuItem{{Label: i18n.T("mail.compose"), Accelerator: "CmdOrCtrl+N", Click: compose},
+						mygo.Separator(), {Role: mygo.RoleClose}}
+					appMenu := []*mygo.MenuItem{
+						{Role: mygo.RoleAbout},
+						mygo.Separator(),
+						{Label: i18n.T("shell.nav.settings") + "…", Accelerator: "CmdOrCtrl+,", Click: openSettings},
+						mygo.Separator(),
+						{Role: mygo.RoleServices},
+						mygo.Separator(),
+						{Role: mygo.RoleHide},
+						{Role: mygo.RoleHideOthers},
+						{Role: mygo.RoleUnhide},
+						mygo.Separator(),
+						{Role: mygo.RoleQuit},
+					}
+					if !packaged() { // the Store updates the MSIX
+						appMenu = slices.Insert(appMenu, 3, updater.MenuItem())
+					}
+					mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
+						{Label: "Godwit", Submenu: appMenu}, // the first menu is the app's, named by the bundle
+						{Label: i18n.T("shell.nav.mail"), Submenu: mailMenu},
+						{Role: mygo.RoleEditMenu},
+						{Role: mygo.RoleWindowMenu},
+					}))
+				} else {
+					// Windows and Linux (invoked via Alt / F10): standard File / Edit / View / Godwit menu.
+					fileMenu := []*mygo.MenuItem{
+						{Label: i18n.T("mail.compose"), Accelerator: "CmdOrCtrl+N", Click: compose},
+						{Label: i18n.T("shell.sync.all"), Click: func(*mygo.MenuItem, *mygo.Window) { a.SyncAll() }},
+						mygo.Separator(),
+						{Label: i18n.T("shell.nav.settings") + "…", Accelerator: "CmdOrCtrl+,", Click: openSettings},
+						mygo.Separator(),
+						{Role: mygo.RoleClose},
+						{Role: mygo.RoleQuit},
+					}
+					viewMenu := []*mygo.MenuItem{
+						{Label: i18n.T("shell.sidebar.collapse"), Click: func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow(); a.ToggleSidebar() }},
+						mygo.Separator(),
+						{Role: mygo.RoleToggleFullScreen},
+					}
+					aboutMenu := []*mygo.MenuItem{
+						{Label: i18n.T("settings.about"), Click: func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow(); a.OpenAbout() }},
+					}
+					if !packaged() {
+						aboutMenu = append([]*mygo.MenuItem{updater.MenuItem(), mygo.Separator()}, aboutMenu...)
+					}
+					mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
+						{Role: mygo.RoleFileMenu, Submenu: fileMenu},
+						{Role: mygo.RoleEditMenu},
+						{Role: mygo.RoleViewMenu, Submenu: viewMenu},
+						{Label: "Godwit", Submenu: aboutMenu},
+					}))
 				}
-				if !packaged() { // the Store updates the MSIX
-					appMenu = slices.Insert(appMenu, 3, updater.MenuItem())
-				}
-				mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
-					{Label: "Godwit", Submenu: appMenu}, // the first menu is the app's, named by the bundle
-					{Label: i18n.T("shell.nav.mail"), Submenu: mailMenu},
-					{Role: mygo.RoleEditMenu},
-					{Role: mygo.RoleWindowMenu},
-				}))
 				mygo.App.Dock.SetMenu(mygo.NewMenu([]*mygo.MenuItem{ // no-op off macOS
 					{Label: i18n.T("tray.sync_all"), Click: func(*mygo.MenuItem, *mygo.Window) { a.SyncAll() }},
 					{Label: i18n.T("mail.compose"), Click: compose},

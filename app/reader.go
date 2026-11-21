@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
@@ -104,7 +105,18 @@ type session struct {
 	historyOpen  map[int64]bool      // folded messages shown though the history is collapsed: ones the reader folded
 	revealID     int64               // a message to scroll to once it is laid out (a digest's source); 0 for none
 	bodies       map[int64]*msgBody
-	scroll       ui.ScrollState // the messages' scrolling: the wheel and touchpad over a body's page scroll it (ScrollToContainer)
+	scroll      ui.ScrollState // the messages' scrolling: the wheel and touchpad over a body's page scroll it (ScrollToContainer)
+	headerH     float32        // the expanded top header's height (at scroll 0): the scroll keeps a compensating spacer so collapsing never jitters
+	subjText    string         // subject string last shaped for subjW / subjLine1
+	subjSize    float32        // title font size last shaped (refreshes if settings font size changes)
+	subjBarW    float32        // header width when subjLine1/subjRest were last split (resets on resize)
+	subjW       float32        // the 20 px semibold subject's natural single-line width
+	subjLine1   string         // first wrapped line of the 20 px subject (non-empty only when wrapped)
+	subjRest    string         // remaining text after subjLine1 (trimmed of leading newlines)
+	subjLine1W  float32        // natural advance of subjLine1 (including trailing space) so the inline tail joins seamlessly
+	barTop      float32        // the collapsing top header's current height (headerH down to 44)
+	replyCard    ui.Rect        // the floating reply card's bounds in the window, for BodyGlass
+	replyRadius  float32        // the floating reply card's corner radius (Radius.X2l)
 
 	aiCtx          context.Context    // its AI work; nil until some starts, cancelled as it goes (stopAI)
 	aiStop         context.CancelFunc // cancels aiCtx
@@ -155,7 +167,8 @@ type msgBody struct {
 	view        ui.NativeWebView // the body's page; nil while folded, not read yet, or when it could not be made
 	close       func()           // closes view: unbinds and destroys it
 	height      int              // the page's last reported height, CSS px; 0 until it reports
-	glass       [2]int           // what the bars cover of the page, as last told it (BodyGlass); -1 to tell it again
+	glass       bodyGlass        // what the frosted header and floating reply card cover of the page, as last told it (BodyGlass)
+	glassSet    bool             // whether glass has been sent since the page last reported its height
 	translation *aiRun           // the translated text currently displayed by the page
 
 	// The remote images: allow is the user's 加载图片, which every page
@@ -1162,46 +1175,275 @@ func (r *reader) draw(c *ui.Context, next *session) {
 				r.column(c).Padding(0, th.Space(3)).Children(func() { next.unseenBody(c) }) // inside a message's paper
 			}
 		})
-		r.pane = ui.Scroll(c).Grow(1).TrackScroll(&r.scroll).ScrollbarInsets(0, 0, r.barBottom).Children(func() {
-			ui.Column(c).FillWidth().Padding(th.Space(5), th.Space(7), r.barBottom+th.Space(5)).Children(func() {
-				ui.Column(c).FillWidth().Gap(th.Space(3.5)).Children(func() {
-					r.viewBand(c) // a view's status heads the conversation, over its subject
-					subject := cmp.Or(r.subject, i18n.T("mail.no_subject"))
-					r.column(c).Gap(th.Space(2)).Children(func() {
-						// Plugins' tags follow the subject, so a glance at it is enough.
-						ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(th.Space(1.5)).Children(func() {
-							tx := kit.Text(c, subject, t.Text.Xl).FontWeight(600).Shrink(1).Selectable() // copied as often as read
-							if !r.hasTags() {
-								// shortcut: MyGo measures large semibold text too narrow in a row, so it wraps early; with no tag to follow it, take the row. Drop it once MyGo measures it right.
-								tx.Grow(1)
-							}
-							r.tagChips(c)
-						})
-						r.headerRow(c)
-					})
-					if len(r.msgs) > 1 { // a thread's summary is the thread's: under its subject, not in a message
+		hasSum := r.hasThreadSummary()
+		p := r.headerCollapse(c)
+		slimH := th.Space(11)
+		curH := r.headerH
+		if p > 0 && r.headerH > slimH {
+			curH = r.headerH + (slimH-r.headerH)*p
+		}
+		r.barTop = curH
+		r.pane = ui.Scroll(c).Grow(1).TrackScroll(&r.scroll).ScrollbarInsets(r.barTop, 0, r.barBottom).Children(func() {
+			ui.Column(c).FillWidth().Children(func() {
+				head := r.readerHeader(c, p, curH).Sticky().Top(0)
+				if p == 0 {
+					r.headerH = r.measured(c, head, r.headerH)
+					r.barTop = r.headerH
+				}
+				// Compensate for the shrunk sticky header so total scroll height
+				// stays constant across p ∈ [0, 1] with zero clamp oscillation.
+				ui.Box(c).FillWidth().Height(max(0, r.headerH-curH))
+				ui.Column(c).FillWidth().Children(func() {
+					if hasSum {
 						if m, ok := r.last(); ok {
-							r.column(c).Children(func() { r.summaryPanel(c, m) })
+							// Thread summary scrolls with the content below the header's
+							// full-width hairline as a 720px ToneCard flush with message cards.
+							ui.Column(c).FillWidth().Padding(th.Space(4), th.Space(7), 0).Children(func() {
+								r.column(c).Children(func() {
+									r.summaryPanel(c, m)
+								})
+							})
 						}
 					}
+				})
+				ui.Column(c).FillWidth().Padding(th.Space(4), th.Space(7), r.barBottom+th.Space(8)).Gap(th.Space(2)).Children(func() {
+					r.viewBand(c) // a view's status heads the conversation below the header hairline
 					ui.Column(c).FillWidth().Gap(th.Space(2)).Children(func() { r.renderMessages(c) })
 					r.viewWhyLine(c)
 				})
 			})
 		}).LayoutBounds()
-		r.barBottom = r.measured(c, r.replyBar(c).Absolute().Left(0).Right(0).Bottom(0), r.barBottom)
+		r.barBottom = r.measured(c, r.replyBar(c).Absolute().Left(0).Right(0).Bottom(0).ZIndex(2), r.barBottom)
 	})
 }
 
-// glass tells b's page how much of it the bars cover, box being where it
-// shows this frame: the page blurs there itself, as the bars' blur cannot
-// see a web view.
+// hasThreadSummary reports whether the thread-level AI summary currently renders
+// under the header (multi-message threads with an active summary).
+func (r *reader) hasThreadSummary() bool {
+	if len(r.msgs) <= 1 {
+		return false
+	}
+	m, ok := r.last()
+	if !ok {
+		return false
+	}
+	st := r.ai[m.ID]
+	return st != nil && st.summary != nil && r.summaryShown(st)
+}
+
+// headerCollapse returns the continuous scroll-linked collapse progress in [0, 1]
+// as the user scrolls from 0 down to headerH - slimH.
+func (r *reader) headerCollapse(c *ui.Context) float32 {
+	slimH := c.Theme().Space(11)
+	if r.headerH <= slimH || r.scroll.Y <= 0 {
+		return 0
+	}
+	return min(1, r.scroll.Y/(r.headerH-slimH))
+}
+
+// utf16ToByte converts a UTF-16 code-unit offset (from ui.TextLayout.Lines) to a byte index in s.
+func utf16ToByte(s string, u16 int) int {
+	off := 0
+	for i, r := range s {
+		if off >= u16 {
+			return i
+		}
+		off += utf16.RuneLen(r)
+	}
+	return len(s)
+}
+
+// readerHeader is the scroll-linked collapsing header pinned at the reading
+// pane's top: at p=0 it shows the full 20 px subject (wrapping naturally across
+// lines when long), tags and label/AI row; as p goes 0→1 with scrolling, the
+// first line smoothly GPU-scales 20→14 px (zero text re-shaping, zero blank
+// frames, zero double-vision), any wrapped continuation fades out below and
+// rejoins inline at the end of line 1 as horizontal room opens up, and the
+// thread count fades in beside it in a 44 px frosted slim bar.
+func (r *reader) readerHeader(c *ui.Context, p, curH float32) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	slimH := th.Space(11)
+	subject := cmp.Or(r.subject, i18n.T("mail.no_subject"))
+	padTopFull := th.Space(6.5)
+	padTopSlim := max(0, (slimH-t.Text.Sm*theme.LineUI)/2)
+	padBotFull := th.Space(3.5)
+	// Keep padding and child layout constant across p ∈ [0, 1] and animate the
+	// header via height clip + GPU Transform/Opacity so scrolling never re-shapes
+	// glyphs, snaps font weight, or triggers layout jitter.
+	bar := ui.Column(c).FillWidth().
+		Padding(padTopFull, th.Space(7), padBotFull).
+		BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border)
+	if p > 0 && r.headerH > slimH {
+		pr := panelRadius(c)
+		bar.Radius(pr, pr, 0, 0).Material(kit.Bar(t.Background.Mix(t.MaterialBar, p))).Height(curH).Clip()
+	} else {
+		bar.Background(t.Background)
+	}
+	barW := bar.LayoutBounds().W
+	if barW <= 0 {
+		barW = r.pane.W
+	}
+	colW := min(max(0, barW-2*th.Space(7)), r.p.a.readerMaxWidth())
+	availW := max(0, colW-2*th.Space(3))
+	titleFont := ui.Font{Family: th.Font, Size: t.Text.Xl, Weight: 600, LineHeight: theme.LineUI}
+	if r.subjText != subject || r.subjSize != t.Text.Xl || (barW > 0 && math.Abs(float64(barW-r.subjBarW)) > 1) {
+		r.subjText, r.subjSize, r.subjBarW = subject, t.Text.Xl, barW
+		r.subjW, _ = ui.ShapeText(subject, titleFont, 0).Size()
+		r.subjLine1, r.subjRest, r.subjLine1W = "", "", 0
+		if availW > 0 {
+			lines := ui.ShapeText(subject, titleFont, availW).Lines()
+			if len(lines) > 1 {
+				split := utf16ToByte(subject, lines[0].End)
+				if split > 0 && split < len(subject) {
+					r.subjLine1 = subject[:split]
+					r.subjRest = strings.TrimLeft(subject[split:], "\r\n")
+					r.subjLine1W = lines[0].Rect.W
+				}
+			}
+		}
+	}
+	multi := r.subjLine1 != "" && r.subjRest != ""
+	minScale := t.Text.Sm / t.Text.Xl // 14 / 20 = 0.7
+	s := 1 + (minScale-1)*p
+	dy := (padTopSlim - padTopFull) * p
+	lineH := t.Text.Xl * theme.LineUI
+	tagFade := max(0, 1-p/0.5)
+	tagAlpha := tagFade * tagFade
+	showTags := r.hasTags() && tagAlpha > 0
+	countAlpha := float32(0)
+	var countText string
+	var countW float32
+	if len(r.msgs) > 1 {
+		countText = i18n.Tf("reader.thread.count", len(r.msgs))
+		countW, _ = ui.ShapeText(countText, ui.Font{Family: th.Font, Size: t.Text.Xs}, 0).Size()
+		if p > 0.55 {
+			u := min(1, (p-0.55)/0.45)
+			countAlpha = u * u * (3 - 2*u)
+		}
+	}
+	slimAvail := availW
+	if countW > 0 {
+		slimAvail = max(0, availW-countW-th.Space(2.5))
+	}
+	metaFade := max(0, 1-p/0.55)
+	metaAlpha := metaFade * metaFade
+	return bar.Children(func() {
+		r.column(c).Padding(0, th.Space(3)).Gap(th.Space(2)).Children(func() {
+			row := ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(1.5))
+			if showTags || (multi && p == 0) {
+				row.Wrap()
+			}
+			row.Children(func() {
+				if multi && p > 0 {
+					// Multi-line collapse: line 1 stays 100% opaque and GPU-scales smoothly
+					// 20→14 px just like single-line titles; lines 2+ fade out cleanly below
+					// while the inline continuation joins right at the end of line 1 as space opens.
+					ui.Column(c).FillWidth().Children(func() {
+						kit.Text(c, r.subjLine1, t.Text.Xl).FontWeight(600).SingleLine().Selectable().
+							TransformOrigin(0, 0).Transform(ui.Scaling(s, s).Then(ui.Translation(0, dy)))
+						restFade := max(0, 1-p/0.45)
+						if restAlpha := restFade * restFade; restAlpha > 0 {
+							kit.Text(c, r.subjRest, t.Text.Xl).FontWeight(600).FillWidth().
+								Opacity(restAlpha).Translate(0, dy*0.45).IgnoreInput(true)
+						}
+					})
+					if p > 0.35 {
+						tailX := r.subjLine1W * s
+						if tailAvail := slimAvail - tailX; tailAvail > th.Space(2) {
+							u := min(1, (p-0.35)/0.45)
+							tailAlpha := u * u * (3 - 2*u)
+							// Same 20 px weight 600 scaled by s: identical weight, size & baseline as line 1.
+							kit.Text(c, r.subjRest, t.Text.Xl).FontWeight(600).SingleLine().
+								Absolute().Left(tailX).Top(0).Width(tailAvail/s).
+								Opacity(tailAlpha).
+								TransformOrigin(0, 0).Transform(ui.Scaling(s, s).Then(ui.Translation(0, dy))).
+								IgnoreInput(true)
+						}
+					}
+					if p > 0.70 && slimAvail > 0 && r.subjW*minScale > slimAvail {
+						tipHit := ui.Box(c).Absolute().Left(0).Top(0).Width(slimAvail).Height(lineH).
+							Translate(0, dy)
+						kit.Tooltip(c, tipHit, subject)
+					}
+				} else {
+					// Expanded view (p==0) or single-line subject: never SingleLine() at p==0 so
+					// long titles wrap naturally; single-line titles GPU-scale smoothly for p>0.
+					tx := kit.Text(c, subject, t.Text.Xl).FontWeight(600).Shrink(1).Selectable()
+					if !showTags {
+						// shortcut: MyGo measures large semibold text too narrow in a row, so it wraps early; with nothing following it, take the row.
+						tx.Grow(1)
+					}
+					if p > 0 {
+						tx.TransformOrigin(0, 0).Transform(ui.Scaling(s, s).Then(ui.Translation(0, dy)))
+					}
+				}
+				if showTags {
+					ui.Row(c).Wrap().Gap(th.Space(1.5)).AlignItems(ui.Center).Opacity(tagAlpha).Translate(0, dy*0.6).IgnoreInput(p > 0.2).Children(func() {
+						r.tagChips(c)
+					})
+				}
+				if countAlpha > 0 {
+					countLeft := min(r.subjW*s, slimAvail) + th.Space(2.5)
+					countDY := dy - lineH*(1-s)/2
+					ui.Row(c).Absolute().Left(countLeft).Top(0).Height(lineH).AlignItems(ui.Center).
+						Opacity(countAlpha).Translate(0, countDY).Children(func() {
+						kit.Text(c, countText, t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(0)
+					})
+				}
+			})
+			if metaAlpha > 0 {
+				ui.Column(c).FillWidth().Opacity(metaAlpha).Translate(0, dy*0.5).IgnoreInput(p > 0.2).Children(func() {
+					r.headerRow(c)
+				})
+			}
+		})
+	})
+}
+
+type bodyGlass struct {
+	top, bottom BodyGlassRect
+}
+
+// glass tells b's page what the frosted header and floating reply card visibly
+// cover of it, box being where it shows this frame: used as the fallback when
+// system native glass (NSGlassEffectView) is unavailable.
 func (r *reader) glass(b *msgBody, box ui.Rect) {
-	cover := func(px float32) int { return int(math.Ceil(float64(max(0, min(px, box.H))))) }
-	g := [2]int{cover(r.pane.Y - box.Y), cover(box.Y + box.H - (r.pane.Y + r.pane.H - r.barBottom))}
-	if g != b.glass && b.view != nil {
-		b.glass = g
-		r.p.a.plat.BodyGlass(b.view, g[0], g[1])
+	var top BodyGlassRect
+	if r.scroll.Y > 0 && r.barTop > 0 {
+		y0 := max(float32(0), r.pane.Y-box.Y)
+		y1 := min(box.H, r.pane.Y+r.barTop-box.Y)
+		if y1 > y0 {
+			top = BodyGlassRect{
+				X: 0,
+				Y: int(math.Floor(float64(y0))),
+				W: int(math.Ceil(float64(box.W))),
+				H: int(math.Ceil(float64(y1 - y0))),
+			}
+		}
+	}
+	var bot BodyGlassRect
+	if card := r.replyCard; card.W > 0 && card.H > 0 && card.Y < box.Y+box.H && card.Y+card.H > box.Y {
+		bot = BodyGlassRect{
+			X: int(math.Floor(float64(card.X - box.X))),
+			Y: int(math.Floor(float64(card.Y - box.Y))),
+			W: int(math.Ceil(float64(card.W))),
+			H: int(math.Ceil(float64(card.H))),
+			R: int(math.Round(float64(r.replyRadius))),
+		}
+	}
+	g := bodyGlass{top: top, bottom: bot}
+	if (!b.glassSet || g != b.glass) && b.view != nil {
+		b.glass, b.glassSet = g, true
+		r.p.a.plat.BodyGlass(b.view, g.top, g.bottom)
+	}
+}
+
+// clearGlass drops any WebView-side blur overlays when native glass (or Reduce
+// Transparency) takes over, avoiding unnecessary IPC during scrolling.
+func (r *reader) clearGlass(b *msgBody) {
+	if b.glassSet && b.glass != (bodyGlass{}) && b.view != nil {
+		b.glass = bodyGlass{}
+		r.p.a.plat.BodyGlass(b.view, BodyGlassRect{}, BodyGlassRect{})
 	}
 }
 
@@ -1342,7 +1584,7 @@ func (r *reader) renderMessages(c *ui.Context) {
 		return ui.Column(c).AlignSelf(ui.Stretch).Margin(-th.Space(1), -th.Space(2)).Padding(th.Space(1), th.Space(2)).Clip().Key(key).Transition(motion).Children(f)
 	}
 	if history > 0 && r.historyShown {
-		part(threadHistory{0}, threadMotion, func() { r.historyToggle(c, 0, history) })
+		part(threadHistory{0}, threadMotion, func() { r.historyToggle(c, nil, history) })
 	}
 	for i := 0; i < len(r.msgs); {
 		m := r.msgs[i]
@@ -1356,7 +1598,7 @@ func (r *reader) renderMessages(c *ui.Context) {
 			j++
 		}
 		if n := j - i; n >= 2 {
-			part(threadHistory{m.ID}, threadMotion, func() { r.historyToggle(c, n, history) })
+			part(threadHistory{m.ID}, threadMotion, func() { r.historyToggle(c, r.msgs[i:j], history) })
 		} else { // in sight, or alone in the history: a card would hide no line
 			part(threadPart{m.ID}, threadMotion, func() { r.folded(c, m) })
 		}
@@ -1375,7 +1617,9 @@ func (r *reader) revealAt(c *ui.Context, id int64, e ui.Element) {
 		c.Invalidate()
 		return
 	}
-	r.scroll.Y = max(0, r.scroll.Y+b.Y-r.pane.Y)
+	th := c.Theme()
+	slimH := th.Space(11)
+	r.scroll.Y = max(0, r.scroll.Y+b.Y-(r.pane.Y+slimH+th.Space(2)))
 	r.revealID = 0
 }
 
@@ -1407,35 +1651,75 @@ type senderName struct{ id int64 }
 // cannot hold its body's native page (it showed as a grey block).
 var openMotion = ui.ElementTransition{Duration: theme.MotionBase, Enter: &ui.Motion{Collapse: true}}
 
-// historyToggle is a history card, a paper as tall as a folded message: one
-// that shows the history, hiding a run of n of its messages, or with n 0 the
-// one that collapses the history (its first messages of the thread), folding
-// the open ones too.
-func (r *reader) historyToggle(c *ui.Context, n, history int) {
+// historyToggle is a history card: when hidden is non-empty, a stacked-paper
+// card summarizing those hidden messages (up to three participant avatars,
+// count, date range and Expand); when hidden is empty, a single paper card
+// that collapses the history (its first history messages), folding open ones too.
+func (r *reader) historyToggle(c *ui.Context, hidden []core.MessageSummary, history int) {
 	t, th := theme.Of(c), c.Theme()
-	label, rot := i18n.Tf("reader.thread.expand", n), float32(0)
-	if n == 0 {
-		label, rot = i18n.T("reader.thread.collapse"), 180
-	}
-	b := paperButton(c, func() {
-		r.historyShown = n > 0
-		if n > 0 {
-			return
-		}
-		clear(r.historyOpen)
-		for _, m := range r.msgs[:history] {
-			if r.open[m.ID] {
-				delete(r.open, m.ID)
-				if b := r.bodies[m.ID]; b != nil {
-					b.closeView()
+	if len(hidden) == 0 {
+		paperButton(c, func() {
+			r.historyShown = false
+			clear(r.historyOpen)
+			for _, m := range r.msgs[:history] {
+				if r.open[m.ID] {
+					delete(r.open, m.ID)
+					if b := r.bodies[m.ID]; b != nil {
+						b.closeView()
+					}
 				}
 			}
-		}
-	}).FillWidth().MaxWidth(r.p.a.readerMaxWidth()).AlignSelf(ui.Center).Height(th.Space(11)).Gap(th.Space(2.5)).Padding(th.Space(2), th.Space(3)).Justify(ui.Center)
-	b.Children(func() {
-		foldArrow(c, rot)
-		kit.Text(c, label, t.Text.Xs).FontWeight(500).TextColor(t.Foreground)
+		}).FillWidth().MaxWidth(r.p.a.readerMaxWidth()).AlignSelf(ui.Center).Height(th.Space(11)).Gap(th.Space(2.5)).Padding(th.Space(2), th.Space(3)).Justify(ui.Center).Children(func() {
+			foldArrow(c, 180)
+			kit.Text(c, i18n.T("reader.thread.collapse"), t.Text.Xs).FontWeight(500).TextColor(t.Foreground)
+		})
+		return
+	}
+	avatars := r.historyAvatars(hidden)
+	span := historyDateRange(r.p.a.clock.Now(), hidden)
+	r.column(c).Padding(0, 0, th.Space(2), 0).Children(func() {
+		kit.Card(c, ui.Box(c).Absolute().Left(th.Space(6)).Right(th.Space(6)).Top(th.Space(2)).Height(th.Space(11)).ZIndex(-2).PassThrough(), kit.ToneOutline)
+		kit.Card(c, ui.Box(c).Absolute().Left(th.Space(3)).Right(th.Space(3)).Top(th.Space(1)).Height(th.Space(11)).ZIndex(-1).PassThrough(), kit.ToneOutline)
+		paperButton(c, func() { r.historyShown = true }).ZIndex(1).AlignSelf(ui.Stretch).Height(th.Space(11)).Gap(th.Space(2.5)).Padding(0, th.Space(3)).Children(func() {
+			kit.AvatarStack(c, avatars, th.Space(6))
+			kit.Text(c, i18n.Plural("reader.thread.earlier", len(hidden)), t.Text.Sm).FontWeight(500).TextColor(t.Foreground).SingleLine().Shrink(0)
+			kit.Text(c, span, t.Text.Xs).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1)
+			kit.Text(c, i18n.T("reader.thread.expand_action"), t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(0)
+			foldArrow(c, 0)
+		})
 	})
+}
+
+// historyAvatars collects up to three distinct senders from hidden, in order.
+func (r *reader) historyAvatars(hidden []core.MessageSummary) []kit.AvatarStackItem {
+	seen := map[string]bool{}
+	var out []kit.AvatarStackItem
+	for _, m := range hidden {
+		name, addr := senderOf(m)
+		key := strings.ToLower(cmp.Or(addr, name))
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, kit.AvatarStackItem{Name: name, Image: r.shownAvatar(m)})
+		if len(out) == 3 {
+			break
+		}
+	}
+	return out
+}
+
+// historyDateRange formats the date range covered by hidden (oldest first).
+func historyDateRange(now time.Time, hidden []core.MessageSummary) string {
+	if len(hidden) == 0 {
+		return ""
+	}
+	first := i18n.FormatDate(hidden[0].Date, now)
+	last := i18n.FormatDate(hidden[len(hidden)-1].Date, now)
+	if first == last {
+		return first
+	}
+	return first + " – " + last
 }
 
 // paperButton is a paper that clicks: the tint of a hover over its hairline box.
@@ -1749,9 +2033,9 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 	if gomail.SecurityRank(m.Security.Status) > gomail.SecurityRank(sec.Status) { // the listed warning, before the body loads
 		sec = m.Security
 	}
-	// A paper: the hairline's box the header, the body and the files sit in,
-	// 2 above the header, whose avatar and name keep to their folded row's place.
-	kit.Card(c, r.column(c), kit.ToneOutline).Padding(th.Space(0.5), th.Space(3), th.Space(3)).Gap(th.Space(3.5)).Children(func() {
+	// An expanded message sits directly on the reading sheet (no outer card border),
+	// indented 12 each side so its avatar lines up with the subject and folded rows.
+	r.column(c).Padding(th.Space(2), th.Space(3), th.Space(2.5)).Gap(th.Space(3.5)).Children(func() {
 		name, addr := senderOf(m)
 		// the header, 14 above what follows; the AI parts, alerts and body in a column of their own 10 apart
 		head := ui.Column(c).FillWidth().Gap(th.Space(2.5))
@@ -1765,7 +2049,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 					e.Menu(func(menu *ui.Menu) { r.senderMenu(c, menu, addr, target, m.ID, sec) })
 				}
 			}
-			ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Center).Margin(0, 0, th.Space(1), 0).Children(func() {
+			ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Center).Margin(0, 0, th.Space(1.5), 0).Children(func() {
 				// At its folded row's place (the paper's padding and this margin), so it stays still as the message opens.
 				avatar := kit.Pressable(c, kit.PressableOpts{}).Shrink(0).Radius(t.Radius.Lg).Label(target).
 					AlignSelf(ui.Start).Margin(th.Space(1), 0, 0, 0)
@@ -1806,6 +2090,7 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 							})
 						}
 						r.securityBadge(c, m.ID, sec)
+						r.unsubInline(c, m.ID, b)
 					})
 					ui.Row(c).Wrap().Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 						r.recipientsLine(c, m, b)
@@ -1856,9 +2141,20 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 			r.translationState(c, m)
 			if b.view != nil { // the body takes the paper's width
 				// a line until the page reports; rounded, so a mail filled edge to edge
-				// with its own color sits as a card; Draw's box is where the web view goes this frame
-				kit.WebView(c, b.view).Height(max(float32(b.height), th.Space(6))).Radius(t.Radius.Xl).Clip().
-					Draw(func(_ *ui.Painter, box ui.Rect) { r.glass(b, box) })
+				// with its own color sits as a card; Draw's box is where the web view goes this frame.
+				// On Linux, GTK3's X11 shape-mask clipping leaves stair-stepped corner fringes, so
+				// Body.tsx rounds the iframe with CSS instead.
+				wv := kit.WebView(c, b.view).Height(max(float32(b.height), th.Space(6)))
+				if goos != "linux" {
+					wv.Radius(t.Radius.Xl).Clip()
+				}
+				wv.Draw(func(p *ui.Painter, box ui.Rect) {
+					if p.NativeGlassSupported() || p.Preferences().ReduceTransparency {
+						r.clearGlass(b)
+						return
+					}
+					r.glass(b, box)
+				})
 			}
 		})
 		if !bodyReady {
@@ -1880,6 +2176,21 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 // imagesNote follows the recipients while remote images wait (the body's,
 // or the sender's avatar): how many, then 加载 and 信任发件人. A failed
 // load is an alert under the header instead.
+// unsubInline shows 退订 beside the sender on the thread's newest open
+// message whose headers allow unsubscribing, matching the link grammar of
+// imagesNote and keeping the top header row dedicated to labels and AI tools.
+func (r *reader) unsubInline(c *ui.Context, id int64, b *msgBody) {
+	if id != r.unsubMessage() || b == nil {
+		return
+	}
+	if b.unsubbing {
+		kit.Spinner(c)
+		return
+	}
+	kit.Button(c, i18n.T("reader.unsubscribe"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).
+		OnClick(func() { r.unsubscribe(id) })
+}
+
 // trackersNote is, in the header's second line, the tracking pixels the
 // body's page left out: always, trusted sender or not, so it offers nothing.
 func (r *reader) trackersNote(c *ui.Context, b *msgBody) {
@@ -2147,7 +2458,7 @@ func (a *App) readerOf(v ui.NativeWebView) *reader {
 func (a *App) BodyHeight(view ui.NativeWebView, message int64, px int) {
 	if b := a.readerOf(view).shown(view, message); b != nil {
 		b.height = px
-		b.glass = [2]int{-1, -1} // the page listens now: what it was told before it loaded was dropped
+		b.glassSet = false // the page listens now: what it was told before it loaded was dropped
 		logBodyTiming(&b.timing, message)
 	}
 }
@@ -2228,7 +2539,7 @@ func senderDate(now, t time.Time) string {
 	return i18n.T("reader.today") + " " + clock
 }
 
-// unsubMessage is the message the thread's 退订 acts on (labelRow): the
+// unsubMessage is the message the thread's 退订 acts on (unsubInline): the
 // newest open one whose headers allow it, as its list's mail in a thread
 // all would.
 func (r *reader) unsubMessage() int64 {
@@ -2407,6 +2718,11 @@ func (r *reader) senderMenu(c *ui.Context, m *ui.Menu, addr, target string, msgI
 	if m.Item(i18n.T("reader.copy_address")).Icon(menuIcon("copy")).Chosen() {
 		c.WriteClipboard(target)
 		r.p.a.toast(i18n.T("reader.address_copied"))
+	}
+	if b := r.bodies[msgID]; b != nil && b.unsub.Method != "" && !b.unsubbing {
+		if m.Item(i18n.T("reader.unsubscribe")).Icon(menuIcon("mail-forbid")).Chosen() {
+			r.unsubscribe(msgID)
+		}
 	}
 	if r.isBlocked(target) {
 		if m.Item(i18n.T("reader.unblock_sender")).Icon(menuIcon("shield")).Chosen() {

@@ -920,6 +920,7 @@
   },
   "reader_ai_close_result": "Close result",
   "reader_ai_copied": "Copied",
+  "reader_ai_generating": "Writing",
   "reader_ai_more_skills": "More skills",
   "reader_ai_no_translation": "Already in {arg1}; no translation needed",
   "@reader_ai_no_translation": {
@@ -933,6 +934,7 @@
   "reader_ai_show_original": "Show original",
   "reader_ai_summarize": "Summary",
   "reader_ai_summary": "Summary",
+  "reader_ai_thinking": "Thinking",
   "reader_ai_todo": "Waiting on you",
   "reader_ai_translate": "Translate",
   "reader_ai_translated": "Translated into {arg1} · {arg2}",
@@ -2384,7 +2386,7 @@
   "settings_summary_help": "Summarize mail as you open it; needs a model service",
   "settings_theme": "Theme",
   "settings_theme_dark": "Dark",
-  "settings_theme_help": "Follows macOS appearance when set to System",
+  "settings_theme_help": "Follows system appearance when set to System",
   "settings_theme_light": "Light",
   "settings_theme_system": "System",
   "settings_thread_view": "Conversation view",
@@ -2439,6 +2441,14 @@
   "settings_unread_on_app_icon": "Show the unread count on the app icon",
   "shell_back": "Back",
   "shell_forward": "Forward",
+  "shell_nav_back_to": "Back to {arg1}",
+  "@shell_nav_back_to": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "shell_nav_mail": "Mail",
   "shell_nav_settings": "Settings",
   "shell_update_available": "Update Available",
@@ -2817,6 +2827,25 @@
     }
   },
   "shell_sync_title": "Sync status",
+  "shell_sync_multi_error": "{arg1} accounts need attention",
+  "@shell_sync_multi_error": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "shell_sync_multi_accounts": "{arg1} · {arg2} accounts",
+  "@shell_sync_multi_accounts": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "int"
+      }
+    }
+  },
   "shell_sync_all": "Sync all now",
   "shell_sync_retry": "Retry now",
   "shell_sync_servers": "Check server settings",
@@ -3538,7 +3567,7 @@
   "settings_rules_condition_remove": "Remove this condition",
   "settings_rules_condition_add": "Add condition",
   "settings_rules_add": "Add",
-  "settings_rules_cond_group_add": "Add a group of conditions",
+  "settings_rules_cond_group_add": "Add condition group",
   "settings_rules_cond_group_remove": "Remove this group",
   "settings_rules_cond_group": "Group of conditions",
   "settings_rules_logic_all": "AND",
@@ -3851,12 +3880,12 @@
   "view_editor_conditions": "Conditions",
   "view_editor_conditions_empty": "With no conditions, it shows all mail.",
   "view_editor_conditions_note": "Includes past mail. Matching conversations stay after you reply or archive.",
-  "view_editor_groups": "Groups",
+  "view_editor_groups": "Conversation groups",
   "view_editor_groups_none": "With no groups, conversations show as a flat list.",
   "view_editor_groups_first": "A conversation goes in the first group it matches.",
   "view_editor_groups_other": "Conversations in no group show under Other.",
   "view_editor_groups_days": "Reply status only reads the last 30 days of mail.",
-  "view_editor_group_add": "Add group",
+  "view_editor_group_add": "Add conversation group",
   "view_editor_group_name": "Group name",
   "view_editor_group_up": "Move group up",
   "view_editor_group_down": "Move group down",
@@ -4128,5 +4157,11 @@
   "settings_plugins_sub": "Script plugins run in a sandbox with only the permissions you approve; native plugins have all the permissions of Godwit.",
   "settings_mcp_sub": "The MCP servers you connect, and the tools they give Wit.",
   "settings_clients_sub": "Let local AI apps like Claude and Codex, and your scripts, use Godwit through the Local API or MCP.",
-  "settings_security_sub": "Spot phishing and spoofed senders."
+  "settings_security_sub": "Spot phishing and spoofed senders.",
+  "mail_other_folders": "Other folders",
+  "reader_thread_earlier": "{arg1, plural, one {{arg1, number, ::group-off} earlier email} other {{arg1, number, ::group-off} earlier emails}}",
+  "reader_thread_expand_action": "Expand",
+  "settings_rules_match_all": "Match all conditions",
+  "settings_rules_match_any": "Match any condition",
+  "settings_rules_edit": "Edit"
 }

@@ -36,6 +36,7 @@ type ButtonOpts struct {
 	Size     Size
 	Disabled bool
 	Flat     bool // Outline without its shadow
+	Round    bool // fully rounded (pill or circle, Radius.Full)
 	Icon     string
 	Trailing string // an icon after the label, as a menu's chevron
 	// Tone colors an Outline button (ToneWarning, ToneDanger, ToneSuccess,
@@ -86,6 +87,9 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 		}
 	} else {
 		b.PaddingX(padX) // the same with an icon: the web pages' buttons do not mark theirs, and stay even
+	}
+	if o.Round {
+		b.Radius(t.Radius.Full)
 	}
 	hover := b.Hovered() && !o.Disabled
 	pressed := hover && b.Pressed() // a step past hover, as CSS's :active

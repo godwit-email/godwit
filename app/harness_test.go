@@ -497,7 +497,7 @@ type fakeBodyView struct {
 	message      int64
 	closed       bool
 	translations map[string]string
-	glass        [2]int // the last BodyGlass
+	glass        bodyGlass // the last BodyGlass
 }
 
 // NewBodyView records "NewBodyView <message>" and makes a fake page;
@@ -535,11 +535,11 @@ func (p *fakePlatform) NewBodyView(message int64) (ui.NativeWebView, func(), err
 
 func (p *fakePlatform) AllowImages(message int64) { p.record("AllowImages", message) }
 
-func (p *fakePlatform) BodyGlass(view ui.NativeWebView, top, bottom int) {
+func (p *fakePlatform) BodyGlass(view ui.NativeWebView, top, bottom BodyGlassRect) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if v, ok := view.(*fakeBodyView); ok {
-		v.glass = [2]int{top, bottom}
+		v.glass = bodyGlass{top: top, bottom: bottom}
 	}
 }
 

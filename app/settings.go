@@ -294,15 +294,13 @@ func (p *settingsPage) Content(c *ui.Context) {
 	th := c.Theme()
 	sec, acc := p.section()
 	kit.Panel(c, panelRadius(c)).Grow(1).Children(func() {
-		scroll := ui.Scroll(c).Grow(1)
-		p.rules.viewTop = scroll.LayoutBounds().Y
-		scroll.Children(func() {
+		if sec == "rules" && p.rules.editing {
+			p.rules.editor(c)
+			return
+		}
+		ui.Scroll(c).Grow(1).Children(func() {
 			ui.Column(c).FillWidth().Padding(th.Space(8)).Children(func() {
-				width := float32(theme.SettingsMaxWidth)
-				if sec == "rules" && p.rules.editing { // the rule editor's two columns
-					width = theme.ContentMaxWidth
-				}
-				ui.Column(c).FillWidth().MaxWidth(width).AlignSelf(ui.Center).Gap(th.Space(8)).Children(func() {
+				ui.Column(c).FillWidth().MaxWidth(theme.SettingsMaxWidth).AlignSelf(ui.Center).Gap(th.Space(8)).Children(func() {
 					switch {
 					case acc != nil:
 						p.accountView(c, *acc)

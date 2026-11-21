@@ -4,8 +4,12 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net/http"
+	"slices"
+	"sync/atomic"
 	"testing"
 
+	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -146,4 +150,70 @@ func TestMailRowDateStaysOnOneLine(t *testing.T) {
 	if math.Abs(float64(longDate.H-shortDate.H)) > 1 || math.Abs(float64(longDate.W)) < 1 {
 		t.Errorf("the long row's date is %v, the short row's one line %v: it wrapped", longDate, shortDate)
 	}
+}
+
+// Mail list rows show real sender avatars under the remote-image policy
+// (deduplicated per sender address), leave initials while remote images are
+// asked for or in Junk, and reload when the policy changes.
+func TestMailRowAvatarPolicy(t *testing.T) {
+	for _, tc := range []struct {
+		mode    string
+		fetched bool
+	}{{"ask", false}, {"auto", true}} {
+		t.Run(tc.mode, func(t *testing.T) {
+			var hits atomic.Int64
+			h, acc := avatarHarness(t, tc.mode, func(w http.ResponseWriter, req *http.Request) {
+				hits.Add(1)
+				w.Write(readerAvatarSVG)
+			})
+			h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "First", "plain body"))
+			h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "Second", "another body"))
+			h.waitMail("both rows", func() bool { return len(h.items()) == 2 })
+			initial := func() bool { return slices.Contains(h.tt.Texts(), "B") }
+			if tc.fetched {
+				h.until("list avatar loaded", func() bool { h.drain(); h.tt.Frame(); return hits.Load() > 0 && !initial() })
+				if hits.Load() != 1 {
+					t.Fatalf("expected 1 deduplicated fetch for two rows from bob@example.com, got %d", hits.Load())
+				}
+				return
+			}
+			h.until("initial shown while blocked", initial)
+			for range 5 {
+				h.tt.Frame()
+				h.drain()
+			}
+			if hits.Load() != 0 {
+				t.Fatalf("fetched %d avatars while remote images are asked for", hits.Load())
+			}
+			// Enabling auto reloads visible list rows immediately.
+			st := h.app.settings
+			st.RemoteImages = "auto"
+			h.app.changeSettings(st)
+			h.until("list avatar after switching to auto", func() bool { h.drain(); h.tt.Frame(); return hits.Load() > 0 && !initial() })
+		})
+	}
+
+	// Junk rows keep initial fallbacks even when RemoteImages is auto.
+	t.Run("junk", func(t *testing.T) {
+		var hits atomic.Int64
+		h, acc := avatarHarness(t, "auto", func(w http.ResponseWriter, req *http.Request) {
+			hits.Add(1)
+			w.Write(readerAvatarSVG)
+		})
+		if err := h.env.IMAP(acc.ID).User.Create("Junk", nil); err != nil {
+			t.Fatal(err)
+		}
+		h.syncNow(acc)
+		h.env.Deliver(t, acc.ID, "Junk", coretest.Msg("Spammer <spam@example.org>", acc.Email, "Offer", "spam"))
+		junk := h.folderOf(acc, "junk")
+		h.post(func() { h.app.navigate(Route{Page: PageMail, View: core.View{FolderID: junk.ID}}) })
+		h.waitMail("junk row", func() bool { return len(h.items()) == 1 })
+		for range 5 {
+			h.tt.Frame()
+			h.drain()
+		}
+		if hits.Load() != 0 || !slices.Contains(h.tt.Texts(), "S") {
+			t.Fatalf("junk row fetched %d avatars, texts %q", hits.Load(), h.tt.Texts())
+		}
+	})
 }

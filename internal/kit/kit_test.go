@@ -318,6 +318,36 @@ func TestKitSidebarItem(t *testing.T) {
 	}
 }
 
+// TestKitSidebarItemSmallKeepsTextSize verifies nested Small sidebar rows are
+// shorter (28 vs 32) while keeping the same font size as top-level rows.
+func TestKitSidebarItemSmallKeepsTextSize(t *testing.T) {
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Column(c).Width(240).Children(func() {
+			SidebarItem(c, SidebarItemOpts{}).Label("level1").Children(func() { ui.Text(c, "Inbox") })
+			SidebarItem(c, SidebarItemOpts{Small: true, Muted: true, Indent: 4}).Label("level2").Children(func() { ui.Text(c, "Inbox2") })
+		})
+	}), 300, 200)
+	row1, ok := tt.Access("level1")
+	if !ok {
+		t.Fatal("missing level1")
+	}
+	row2, ok := tt.Access("level2")
+	if !ok {
+		t.Fatal("missing level2")
+	}
+	if row1.Bounds.H != 32 || row2.Bounds.H != 28 {
+		t.Fatalf("row heights = (%v, %v), want (32, 28)", row1.Bounds.H, row2.Bounds.H)
+	}
+	t1, ok1 := tt.Find("Inbox")
+	t2, ok2 := tt.Find("Inbox2")
+	if !ok1 || !ok2 {
+		t.Fatalf("missing text nodes: ok1=%v ok2=%v", ok1, ok2)
+	}
+	if t1.H != t2.H {
+		t.Errorf("text heights differ: level1=%v level2=%v, want same font size", t1.H, t2.H)
+	}
+}
+
 // TestKitSidebarItemHoverSoft verifies sidebar hover uses HoverTint and is distinct from Selected.
 func TestKitSidebarItemHoverSoft(t *testing.T) {
 	for _, dark := range []bool{false, true} {
@@ -622,6 +652,28 @@ func TestKitSkeletonStillUnderReduceMotion(t *testing.T) {
 		tt.Advance(300 * time.Millisecond)
 		if same := before == px(); same != reduce {
 			t.Errorf("reduce=%v: pixel unchanged=%v", reduce, same)
+		}
+	}
+}
+
+func TestKitThinkingDotsStillUnderReduceMotion(t *testing.T) {
+	for _, reduce := range []bool{true, false} {
+		tt := ui.NewTester(themed(func(c *ui.Context) {
+			ui.Column(c).Padding(20).Children(func() { ThinkingDots(c).Label("dots") })
+		}), 200, 100)
+		tt.SetPreferences(ui.Preferences{ReduceMotion: reduce})
+		tt.Frame()
+		r, ok := tt.Find("dots")
+		if !ok {
+			t.Fatal("thinking dots not found")
+		}
+		// Sample center of the first dot: x = r.X + ThinkingDot/2, y = r.Y + r.H/2.
+		x, y := int(r.X+theme.ThinkingDot/2), int(r.Y+r.H/2)
+		px := func() [4]uint8 { c := tt.Image().RGBAAt(x, y); return [4]uint8{c.R, c.G, c.B, c.A} }
+		before := px()
+		tt.Advance(300 * time.Millisecond)
+		if same := before == px(); same != reduce {
+			t.Errorf("reduce=%v: dot pixel unchanged=%v", reduce, same)
 		}
 	}
 }
@@ -952,6 +1004,45 @@ func TestKitResizerPill(t *testing.T) {
 	}
 }
 
+// TestKitResizerOver: first reaches second's edge with no layout gap, and the
+// grip rides that edge without stealing pointer input from first's scroll bar
+// or second's interior.
+func TestKitResizerOver(t *testing.T) {
+	size := float32(160)
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Row(c).Fill().Children(func() {
+			ResizerOver(c, &size, 4, "Resize", nil,
+				func() { ui.Box(c).Fill().Label("first") },
+				func() { ui.Box(c).Fill().Label("second") })
+		})
+	}), 400, 200)
+	tt.Frame()
+	first, _ := tt.Find("first")
+	grip, _ := tt.Access("Resize")
+	second, _ := tt.Find("second")
+	if first.X != 0 || second.X != 160 || grip.Bounds.X != 158 || grip.Bounds.W != 4 {
+		t.Errorf("first %v, grip %v, second %v: want them touching at 160 with a 4-wide grip centered on it", first, grip.Bounds, second)
+	}
+	// Dragging right on the border moves size.
+	tt.Press(160, 100)
+	tt.Move(180, 100)
+	tt.Release(180, 100)
+	tt.Frame()
+	if size < 179 || size > 181 {
+		t.Errorf("dragged 20 on border: size %v, want 180", size)
+	}
+	// Dragging inside first (where a flush scroll bar sits) or inside second does not move the grip.
+	for _, x := range []float32{175, 190} {
+		tt.Press(x, 100)
+		tt.Move(x+15, 100)
+		tt.Release(x+15, 100)
+		tt.Frame()
+		if size < 179 || size > 181 {
+			t.Errorf("drag at x=%v moved size to %v, want 180", x, size)
+		}
+	}
+}
+
 // TestKitSidebarIconMuted: a SidebarItem's icon is the muted gray, and turns
 // the foreground on hover.
 func TestKitSidebarIconMuted(t *testing.T) {
@@ -1028,6 +1119,42 @@ func TestKitListHoverSoft(t *testing.T) {
 	got := tt.Image().RGBAAt(int(r.X)+4, int(r.Y+r.H/2))
 	if want := th.HoverTint.Over(th.Background); !near(got, want) {
 		t.Errorf("hovered row %v, want %v", got, want)
+	}
+}
+
+// TestKitListInactiveSelectionSoft verifies an inactive window softens a
+// selected List row (tint 1.25) instead of darkening it into mygo's fallback
+// InactiveAccent gray.
+func TestKitListInactiveSelectionSoft(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		mode := "light"
+		if dark {
+			mode = "dark"
+		}
+		t.Run(mode, func(t *testing.T) {
+			var th theme.Tokens
+			var s ui.ListState
+			cur := 0
+			s.Selected = &cur
+			tt := ui.NewTester(func(c *ui.Context) {
+				th = theme.FromSettings(core.Settings{Theme: mode, Density: "standard", FontSize: 14}, dark)
+				theme.Apply(c, th)
+				ui.Box(c).Fill().Background(th.Background).Children(func() {
+					List(c, &s, 2, func(i int) { ui.Text(c, []string{"one", "two"}[i]).Padding(8) }).Height(100)
+				})
+			}, 300, 120)
+			tt.SetWindowActive(false)
+			tt.Frame()
+			r, ok := tt.Find("one")
+			if !ok {
+				t.Fatal("no row one")
+			}
+			got := tt.Image().RGBAAt(int(r.X)+4, int(r.Y+r.H/2))
+			want := tint(th, 1.25).Over(th.Background)
+			if !near(got, want) {
+				t.Errorf("inactive selected row %v, want %v", got, want)
+			}
+		})
 	}
 }
 
@@ -1514,6 +1641,63 @@ func TestDialogGlass(t *testing.T) {
 	}
 }
 
+// TestFrostedPopoverBlursTranslucentBackdrop: over a translucent vibrancy
+// surface (the sidebar), a frosted popover still blurs sharp strokes cleanly
+// instead of letting unblurred pixels bleed through partial backdrop alpha.
+func TestFrostedPopoverBlursTranslucentBackdrop(t *testing.T) {
+	BackdropBlur = true
+	t.Cleanup(func() { BackdropBlur = false })
+
+	for _, tc := range []struct {
+		name string
+		dark bool
+	}{{"light", false}, {"dark", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			open := true
+			tt := ui.NewTester(func(c *ui.Context) {
+				tok := theme.Light()
+				root := tok.Window.Alpha(theme.MaterialTint)
+				if tc.dark {
+					tok = theme.Dark()
+					root = ui.Transparent
+				}
+				theme.Apply(c, tok)
+				c.Root().Background(root)
+				ui.Column(c).Fill().Children(func() {
+					anchor := ui.Box(c).Width(20).Height(20)
+					// Sharp high-contrast 4 px stripe on the translucent surface,
+					// like sidebar text strokes.
+					ui.Box(c).Absolute().Left(80).Top(0).Width(4).Height(200).Background(tok.Foreground)
+					// Wide high-contrast block on the right so we also verify the
+					// backdrop actually blurs through instead of painting flat.
+					ui.Box(c).Absolute().Left(200).Top(0).Width(120).Height(200).Background(tok.Foreground)
+					PopoverAt(c, anchor, &open, ui.AnchorBottomStart, ui.AnchorTopStart, 4, func() {
+						ui.Box(c).Width(260).Height(120)
+					})
+				})
+			}, 360, 200)
+			tt.SetDark(tc.dark)
+			tt.Advance(2 * theme.MotionFast)
+			img := tt.Image()
+
+			onStripe := img.RGBAAt(82, 80)
+			besideStripe := img.RGBAAt(76, 80)
+			overBlock := img.RGBAAt(240, 80)
+			farClear := img.RGBAAt(25, 80)
+
+			if onStripe.A != 255 || besideStripe.A != 255 {
+				t.Fatalf("popover over translucent surface is not opaque: on=%v beside=%v", onStripe, besideStripe)
+			}
+			if d := diff(onStripe.R, besideStripe.R); d > 2 {
+				t.Errorf("sharp stripe bled through popover blur: on=%v beside=%v (diff %d > 2)", onStripe, besideStripe, d)
+			}
+			if d := diff(overBlock.R, farClear.R); d < 10 {
+				t.Errorf("popover did not show blurred backdrop: overBlock=%v farClear=%v (diff %d < 10)", overBlock, farClear, d)
+			}
+		})
+	}
+}
+
 func TestAvatarColorKeptPerNameNeverGray(t *testing.T) {
 	tk := theme.Light()
 	seen := map[theme.LabelColor]bool{}
@@ -1529,11 +1713,23 @@ func TestAvatarColorKeptPerNameNeverGray(t *testing.T) {
 	}
 }
 
-// A shortcut is a keycap each key.
+// A shortcut is a keycap each key, using platform modifier names off macOS.
 func TestKbdKeys(t *testing.T) {
+	old := goos
+	t.Cleanup(func() { goos = old })
+
+	goos = "darwin"
 	for in, want := range map[string]string{"⇧⌘K": "⇧ ⌘ K", "⌥↵": "⌥ ↵", "←→": "← →", "Esc": "Esc", "⌘,": "⌘ ,", "↵": "↵"} {
 		if got := strings.Join(kbdKeys(in), " "); got != want {
-			t.Errorf("%s: %q, want %q", in, got, want)
+			t.Errorf("darwin %s: %q, want %q", in, got, want)
+		}
+	}
+	for _, osName := range []string{"windows", "linux"} {
+		goos = osName
+		for in, want := range map[string]string{"⌘K": "Ctrl K", "⇧⌘K": "Ctrl Shift K", "⌥↵": "Alt ↵", "⌘↵": "Ctrl ↵", "⇧R": "Shift R", "←→": "← →", "Esc": "Esc"} {
+			if got := strings.Join(kbdKeys(in), " "); got != want {
+				t.Errorf("%s %s: %q, want %q", osName, in, got, want)
+			}
 		}
 	}
 }
@@ -1552,8 +1748,18 @@ func TestFrostedMaterialAndTokens(t *testing.T) {
 	if !f.now {
 		t.Error("a frosted material does not tell WebView")
 	}
-	if bar := Bar(l.MaterialBar).(scrim); bar.blur != theme.MaterialBlur || bar.tint != l.MaterialBar {
+	if _, ok := mat.NativeGlass(); ok {
+		t.Error("frosted popover material should not claim native glass")
+	}
+	bar := Bar(l.MaterialBar).(scrim)
+	if bar.blur != theme.MaterialBlur || bar.tint != l.MaterialBar || !bar.native {
 		t.Errorf("bar = %+v, want the bar material", bar)
+	}
+	if _, ok := bar.NativeGlass(); !ok {
+		t.Error("translucent bar should request native glass")
+	}
+	if _, ok := Bar(l.Background).(scrim).NativeGlass(); ok {
+		t.Error("opaque bar should not request native glass")
 	}
 }
 

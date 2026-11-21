@@ -135,16 +135,22 @@ func TestComposeWindowOptions(t *testing.T) {
 	for _, goos := range []string{"darwin", "windows", "linux"} {
 		o := composeWindowOptions(goos)
 		url := "/compose.html"
-		if goos == "darwin" {
+		switch goos {
+		case "darwin":
 			url += "?material" // the main window's material, which the page tints
 			if o.Vibrancy != mygo.VibrancySidebar {
 				t.Errorf("darwin: vibrancy %q, want the main window's", o.Vibrancy)
+			}
+		case "windows":
+			url += "?material"
+			if o.Vibrancy != mygo.VibrancyMica || o.TitleBarHeight != 40 {
+				t.Errorf("windows: vibrancy %q barH %d, want mica 40", o.Vibrancy, o.TitleBarHeight)
 			}
 		}
 		if o.URL != url || o.Width != 860 || o.Height != 720 || o.MinWidth != 640 || o.MinHeight != 480 || o.StateKey != "compose" || o.Title != "新邮件" {
 			t.Fatalf("%s: options %+v", goos, o)
 		}
-		want := mygo.TitleBarStyle("") // the page draws no window controls of Windows or Linux
+		want := mygo.TitleBarHiddenInset // matches main window so Windows/Linux draw native caption buttons without a duplicate title bar or menu strip
 		if goos == "darwin" {
 			want = mygo.TitleBarHidden // the traffic lights over the page's top bar
 			if p := o.TrafficLightPosition; p == nil || p.X != trafficLightInset || p.Y != (theme.TopBarHeight-trafficLightSize)/2 {

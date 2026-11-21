@@ -1,8 +1,11 @@
 package kit
 
 import (
+	"sync"
+
 	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/shader"
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
@@ -136,35 +139,102 @@ func glassPanel(c *ui.Context, panel ui.Element) {
 
 // scrim is what is behind blurred, then tinted: a frosted surface.
 type scrim struct {
-	blur float32
-	tint ui.Color
+	blur   float32
+	tint   ui.Color
+	native bool // back with the system's glass under the surface (macOS 26+) so live web views blur in sync
 }
+
+// NativeGlass backs a translucent Bar with AppKit's NSGlassEffectView under
+// MyGo's surface (above any embedded WKWebView) on macOS 26+. Native UI stays
+// opaque over it and keeps glass.Blur; a web view's hole shows the system's
+// live-blurred glass through the bar's translucent tint on the same
+// CoreAnimation frame, eliminating scroll-lag ghosting.
+func (s scrim) NativeGlass() (ui.NativeGlassSpec, bool) {
+	if !s.native || s.tint.A >= 255 {
+		return ui.NativeGlassSpec{}, false
+	}
+	return ui.NativeGlassSpec{}, true
+}
+
+var (
+	lightWindow = theme.Light().Window
+	darkWindow  = theme.Dark().Window
+)
+
+type frostProg struct {
+	sh            *shader.Shader
+	backing, tint shader.Uniform
+}
+
+// frostShader composites the blurred backdrop over Backing before tinting and
+// outputs opaque alpha: over a translucent vibrancy surface (the sidebar), plain
+// glass.Blur keeps the backdrop's partial alpha so SrcOver leaves sharp text
+// underneath showing through the blur.
+var frostShader = sync.OnceValue(func() frostProg {
+	sh := shader.MustCompile(`package main
+
+var Backing vec4
+var Tint vec4
+
+func Fragment(dst vec4, pos vec2) vec4 {
+	b := backdropSample(pos)
+	c := b.rgb + Backing.rgb*(1-b.a)
+	return vec4(mix(c, Tint.rgb, Tint.a), 1)
+}
+`)
+	return frostProg{sh: sh, backing: sh.Uniform("Backing"), tint: sh.Uniform("Tint")}
+})
 
 func (s scrim) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
-	if BackdropBlur {
-		glass.Blur{Radius: s.blur}.PaintMaterial(p, box, radii)
+	if box.W <= 0 || box.H <= 0 {
+		return
 	}
-	fillRounded(p, box, s.tint, radii)
+	if !BackdropBlur || s.tint.A >= 255 {
+		fillRounded(p, box, s.tint, radii)
+		return
+	}
+	if s.native {
+		glass.Blur{Radius: s.blur}.PaintMaterial(p, box, radii)
+		fillRounded(p, box, s.tint, radii)
+		return
+	}
+	backing := lightWindow
+	if p.Theme().Dark {
+		backing = darkWindow
+	}
+	if p.Preferences().ReduceTransparency {
+		fillRounded(p, box, backing.Mix(s.tint, float32(s.tint.A)/255), radii)
+		return
+	}
+	fp := frostShader()
+	vals := fp.sh.NewValues().Color(fp.backing, backing).Color(fp.tint, s.tint)
+	drawRounded(p, box, radii, func(r float32) {
+		fp.sh.Draw(p, box, shader.Options{Values: vals, Radius: r, BackdropBlur: s.blur})
+	})
 }
 
-// fillRounded fills box rounded by radii (top-left, top-right, bottom-right,
+// drawRounded draws into box rounded by radii (top-left, top-right, bottom-right,
 // bottom-left), as a settings card's first or last row is. Painter rounds
-// every corner alike, so a box round on one side only is filled inside a
+// every corner alike, so a box round on one side only is drawn inside a
 // clip that reaches past its other side by the radius.
 // shortcut: takes the top pair and the bottom pair alike; a box with four
 // different corners needs a path.
-func fillRounded(p *ui.Painter, box ui.Rect, c ui.Color, radii [4]float32) {
+func drawRounded(p *ui.Painter, box ui.Rect, radii [4]float32, draw func(radius float32)) {
 	top, bottom := radii[0], radii[2]
 	switch {
 	case top == bottom:
-		p.Fill(box, c, top)
+		draw(top)
 	case bottom == 0:
-		p.Clip(ui.Rect{X: box.X, Y: box.Y, W: box.W, H: box.H + top}, top, func() { p.Fill(box, c, 0) })
+		p.Clip(ui.Rect{X: box.X, Y: box.Y, W: box.W, H: box.H + top}, top, func() { draw(0) })
 	case top == 0:
-		p.Clip(ui.Rect{X: box.X, Y: box.Y - bottom, W: box.W, H: box.H + bottom}, bottom, func() { p.Fill(box, c, 0) })
+		p.Clip(ui.Rect{X: box.X, Y: box.Y - bottom, W: box.W, H: box.H + bottom}, bottom, func() { draw(0) })
 	default:
-		p.Fill(box, c, min(top, bottom))
+		draw(min(top, bottom))
 	}
+}
+
+func fillRounded(p *ui.Painter, box ui.Rect, c ui.Color, radii [4]float32) {
+	drawRounded(p, box, radii, func(r float32) { p.Fill(box, c, r) })
 }
 
 // frostedMaterial is one of the design's materials: what is behind blurred
@@ -172,7 +242,7 @@ func fillRounded(p *ui.Painter, box ui.Rect, c ui.Color, radii [4]float32) {
 // Call it while building the panel.
 func frostedMaterial(c *ui.Context, tint ui.Color) ui.Material {
 	frostOf(c).now = true // the window's web views under it show a screenshot it can blur (WebView)
-	return scrim{theme.MaterialBlur, tint}
+	return scrim{blur: theme.MaterialBlur, tint: tint}
 }
 
 // popupLook gives a popover, menu or select popup the popover material, its
@@ -184,7 +254,7 @@ func popupLook(c *ui.Context, panel ui.Element, radius float32) {
 // toastLook is popupLook for a toast, which is not modal: the page under it
 // stays live, so its material does not turn web views into stills (WebView).
 func toastLook(c *ui.Context, panel ui.Element, radius float32) {
-	popupFace(c, panel, radius, scrim{theme.MaterialBlur, theme.Of(c).MaterialPopover})
+	popupFace(c, panel, radius, scrim{blur: theme.MaterialBlur, tint: theme.Of(c).MaterialPopover})
 }
 
 func popupFace(c *ui.Context, panel ui.Element, radius float32, m ui.Material) {
@@ -205,15 +275,17 @@ func popoverCard(c *ui.Context, panel ui.Element) {
 // blurred: plain at rest, frosted glass as a drag lifts the row over others.
 // shortcut: its 0.7 tint has no design token, as it is a drag effect and not a material; give it one if the design names it.
 func Frost(fill ui.Color) ui.Material {
-	return scrim{theme.BackdropBlur * 2, fill.Alpha(0.7)}
+	return scrim{blur: theme.BackdropBlur * 2, tint: fill.Alpha(0.7)}
 }
 
-// Bar fills a bar the content scrolls under (the reader's toolbar and reply
-// bar) with tint, theme.Tokens.MaterialBar, over what is behind it blurred.
-// The blur cannot see a native view: a web view's page under it blurs itself
+// Bar fills a bar the content scrolls under (the reader's sticky header and
+// floating reply card) with tint, theme.Tokens.MaterialBar, over what is
+// behind it blurred. On macOS 26+, it also backs the bar with AppKit's
+// NSGlassEffectView under the surface so live web views blur in sync with
+// CoreAnimation; elsewhere the web view blurs its covered strips itself
 // (the reader's BodyGlass).
 func Bar(tint ui.Color) ui.Material {
-	return scrim{theme.MaterialBlur, tint}
+	return scrim{blur: theme.MaterialBlur, tint: tint, native: true}
 }
 
 // PopoverAt is a panel anchored to anchor at (at, self) with topOffset while *open; a press outside or Escape closes it.

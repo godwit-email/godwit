@@ -42,7 +42,7 @@ type contactsPage struct {
 	unsubID  int64
 	unsubDlg bool
 
-	avatars    map[string]*contactAvatar // by primary address and newest message, as settingsSavedVer was
+	avatars    map[string]*contactAvatar // by primary address and newest message, as avatarPolicySavedVer was
 	avatarsVer uint64
 }
 
@@ -120,7 +120,7 @@ func (p *contactsPage) Title() (string, string) {
 
 func (p *contactsPage) refresh(hints []events.Event) {
 	if slices.ContainsFunc(hints, func(ev events.Event) bool {
-		return ev.Type == events.AddressBooksChanged || ev.Type == events.SettingsChanged
+		return ev.Type == events.AddressBooksChanged
 	}) {
 		p.avatars = nil
 	}
@@ -401,12 +401,14 @@ func (p *contactsPage) row(c *ui.Context, ct core.Contact) ui.Element {
 	t := theme.Of(c)
 	th, small := c.Theme(), t.Text.Xs
 	name := cmp.Or(ct.Name, ct.Address)
-	return ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Center).Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5)).Children(func() {
-		if ct.Unread > 0 {
-			ui.Box(c).Absolute().Left(th.Space(1.5)).Top(th.Space(5.5)).Size(th.Space(2), th.Space(2)).Radius(th.Space(1)).Background(t.Unread).
-				Label(i18n.Tf("mail.row.unread", ct.Unread))
-		}
-		kit.AvatarImage(c, name, p.avatar(ct))
+	return ui.Row(c).Gap(th.Space(2.5)).AlignItems(ui.Center).Padding(th.Space(2.5), th.Space(2)).Children(func() {
+		ui.Box(c).Shrink(0).Children(func() {
+			kit.AvatarImage(c, name, p.avatar(ct))
+			if ct.Unread > 0 {
+				ui.Box(c).Absolute().Left(-th.Space(1.25)).Top(-th.Space(1.25)).Size(th.Space(3), th.Space(3)).Radius(th.Space(1.5)).Background(t.Unread).Border(th.Space(0.5), t.Background).
+					Label(i18n.Tf("mail.row.unread", ct.Unread))
+			}
+		})
 		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(0.5)).Children(func() {
 			ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, name).FontWeight(500).SingleLine().Shrink(1)
@@ -818,16 +820,16 @@ func (p *contactsPage) avatar(ct core.Contact) ui.ImageSource {
 	if addr == "" {
 		return nil
 	}
-	if p.avatarsVer != a.settingsSavedVer {
-		p.avatars, p.avatarsVer = nil, a.settingsSavedVer
+	if p.avatarsVer != a.avatarPolicySavedVer {
+		p.avatars, p.avatarsVer = nil, a.avatarPolicySavedVer
 	}
 	// keyed by the newest message too: a sent-only contact's first received mail brings a sender avatar
 	key := addr + "\x00" + strconv.FormatInt(ct.Latest, 10)
 	if av := p.avatars[key]; av != nil {
 		return av.img
 	}
-	if a.settingsVer != a.settingsSavedVer {
-		return nil // as the reader, none while settings are unsaved
+	if a.avatarPolicyVer != a.avatarPolicySavedVer {
+		return nil // as the reader, none while avatar policy settings are unsaved
 	}
 	if p.avatars == nil {
 		p.avatars = map[string]*contactAvatar{}

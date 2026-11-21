@@ -11,7 +11,7 @@ type SidebarItemOpts struct {
 	Selected bool    // the page shown: highlighted, and it does not click
 	Covered  bool    // selected, but something covers the page: it clicks, to show it
 	Muted    bool    // a secondary action, as Add account; a group's title, in small muted text
-	Small    bool    // 28 high in the small text, as an account's header
+	Small    bool    // 28 high, as a nested row or compact footer action (keeps default text size)
 	Indent   float32 // more left padding, in spacing steps, as a folder under its account
 	Open     *bool   // a group's fold, which must outlive the frame
 	Title    func()  // a group's title: its content, before its Chevron and Count
@@ -36,12 +36,12 @@ func SidebarItem(c *ui.Context, o SidebarItemOpts) ui.Element {
 	}
 	b.Height(th.Space(8)).Padding(0, th.Space(2), 0, th.Space(2+o.Indent)).Gap(th.Space(2)).Radius(t.Radius.Lg).Justify(ui.Start).Transition(colors(theme.MotionFast))
 	if o.Small {
-		b.Height(th.Space(7)).Gap(th.Space(1.5)).FontSize(t.Text.Xs)
+		b.Height(th.Space(7))
 	}
 	if o.Muted {
 		b.TextColor(t.Muted)
 		if o.Group != nil {
-			b.Gap(th.Space(1)).FontSize(t.Text.Xs)
+			b.Height(th.Space(6)).Gap(th.Space(1)).FontSize(t.Text.Xs)
 		}
 	}
 	switch {
@@ -195,6 +195,19 @@ func Pressable(c *ui.Context, o PressableOpts) ui.Element {
 func Panel(c *ui.Context, radius float32) ui.Element {
 	t := theme.Of(c)
 	return Elevate(c, ui.Column(c).Radius(radius).Clip().Background(t.Background).Border(theme.Hairline, t.Border), theme.ShadowXs)
+}
+
+// FloatCard gives e the floating composer surface: 16 round translucent frosted
+// glass (MaterialBar over blurred content), ShadowFloat in either appearance
+// plus FloatInset's inner edge in the dark.
+func FloatCard(c *ui.Context, e ui.Element) ui.Element {
+	t := theme.Of(c)
+	e.Radius(t.Radius.X2l).Material(Bar(t.MaterialBar))
+	Elevate(c, e, theme.ShadowFloat)
+	if t.Dark {
+		e.InsetShadow(0, 0, theme.FloatInsetBlur, 0, t.FloatInset)
+	}
+	return e
 }
 
 // CardHeader is a Card's title with an optional description under it.

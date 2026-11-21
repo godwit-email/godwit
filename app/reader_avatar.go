@@ -51,6 +51,9 @@ const (
 // avatarsChanged forgets the avatars why touches and reads again what the
 // open messages show: the one way in from outside the reader.
 func (r *reader) avatarsChanged(why avatarChange) {
+	if r.p != nil && why != settingsSettled {
+		r.p.forgetListAvatars()
+	}
 	switch why {
 	case trustChanged:
 		r.forgetAvatars(true)
@@ -92,7 +95,7 @@ func (r *reader) loadAvatar(id int64, manual bool) {
 	b.stopAvatar()
 	a, s, get := r.p.a, r.session, r.getAvatar
 	b.avatarAllow, b.avatarDone = manual, false
-	if !manual && a.settingsVer != a.settingsSavedVer {
+	if !manual && a.avatarPolicyVer != a.avatarPolicySavedVer {
 		b.avatar, b.avatarSource, b.avatarBlocked = nil, "", true
 		return
 	}

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/button";
 import { Input } from "@/components/ui/input";
 import type { T } from "@/shared/i18n";
+import { isMac } from "@/shared/shortcuts";
 
 /**
  * ⌘K's popover, under the selection's block at the body's width: what to change (Enter or 生成 ↵ submits the trimmed text; an
@@ -62,7 +63,9 @@ export function CmdK({
         />
       </div>
       <div className="flex items-center gap-2">
-        <span className="flex-1 text-muted-foreground text-xs">{t("wit.compose.cmdk")}</span>
+        <span className="flex-1 text-muted-foreground text-xs">
+          {isMac() ? t("wit.compose.cmdk") : t("wit.compose.cmdk").replace("⌘K", "Ctrl+K")}
+        </span>
         <Button type="button" size="xs" variant="outline" onClick={onClose}>
           {t("wit.compose.cmdk.esc")}
         </Button>

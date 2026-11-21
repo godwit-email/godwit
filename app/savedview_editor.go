@@ -31,7 +31,6 @@ type viewEditor struct {
 	exceptions []core.ViewException
 	templates  []core.ViewTemplate
 	iconOpen   bool
-	menus      map[string]*bool // each list of conditions' 添加 menu
 
 	prev       *core.ViewContents
 	prevKey    string
@@ -40,7 +39,7 @@ type viewEditor struct {
 }
 
 func newViewEditor(p *mailPage) *viewEditor {
-	return &viewEditor{p: p, menus: map[string]*bool{}, box: core.SavedView{Icon: "folder-3", Doc: core.SavedViewDoc{Match: core.MatchAll, Conditions: []core.RuleCondition{}}}}
+	return &viewEditor{p: p, box: core.SavedView{Icon: "folder-3", Doc: core.SavedViewDoc{Match: core.MatchAll, Conditions: []core.RuleCondition{}}}}
 }
 
 // openViewEditor shows e in place of the list and loads what it lists.
@@ -279,7 +278,6 @@ func (e *viewEditor) view(c *ui.Context) {
 				e.form(c)
 			})
 		})
-		kit.Separator(c, true)
 		ui.Column(c).Width(theme.RuleAsideWidth).Shrink(0).Label(i18n.T("view.preview")).Children(func() { e.preview(c) })
 	})
 }
@@ -309,12 +307,11 @@ func (e *viewEditor) form(c *ui.Context) {
 			return settingSelect(c, i18n.T("view.editor.account"), &d.Account, accts)
 		})
 	})
-	ui.Column(c).FillWidth().Gap(theme.SectionGap).Children(func() {
-		sectionTitle(c, i18n.T("view.editor.conditions"))
-		settingsCard(c, func() { e.conditionRows(c, &d.Conditions, &d.Match, "view") })
-		if note := e.conditionsNote(); note != "" {
-			kit.Text(c, note, t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(4))
-		}
+	condEditor(c, &d.Conditions, &d.Match, condEditorOpts{
+		title:     i18n.T("view.editor.conditions"),
+		emptyText: i18n.T("view.editor.conditions.empty"),
+		footnote:  e.conditionsNote(),
+		row:       func(cd *core.RuleCondition) { e.condRow(c, cd) },
 	})
 	ui.Column(c).FillWidth().Gap(theme.SectionGap).Children(func() {
 		sectionTitle(c, i18n.T("view.editor.groups"))
@@ -353,8 +350,6 @@ func usesField(conds []core.RuleCondition, fields ...string) bool {
 func (e *viewEditor) conditionsNote() string {
 	conds := e.box.Doc.Conditions
 	switch {
-	case len(conds) == 0:
-		return i18n.T("view.editor.conditions.empty")
 	case usesField(conds, core.FieldReply):
 		return i18n.T("view.editor.groups.days")
 	case usesField(conds, core.FieldRead):
@@ -435,14 +430,6 @@ func (e *viewEditor) fieldChanged(cd *core.RuleCondition, was string) {
 	case cd.Field == core.FieldStarred || cd.Field == core.FieldWrote:
 		cd.Op, cd.Value = core.OpIs, core.RuleYes
 	}
-}
-
-// conditionRows is a list of conditions, as a rule's are; key keeps its 添加 menu.
-func (e *viewEditor) conditionRows(c *ui.Context, conds *[]core.RuleCondition, match *string, key string) {
-	th := c.Theme()
-	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(2.5), th.Space(4)).Children(func() {
-		condEditor(c, conds, match, boolAt(e.menus, key, false), func(cd *core.RuleCondition) { e.condRow(c, cd) })
-	})
 }
 
 // condRow is one condition's controls.
@@ -532,28 +519,47 @@ func (e *viewEditor) condRow(c *ui.Context, cd *core.RuleCondition) {
 	}
 }
 
-// groupCard is group i: its name, how its conditions combine, moves and
-// removal, then its conditions.
+// viewGroupDrag is a group's index in Doc.Groups while its grip drags it.
+type viewGroupDrag int
+
+// groupCard is conversation group i: drag grip, name input, × remove, and its
+// conditions rendered inline inside the card.
 func (e *viewEditor) groupCard(c *ui.Context, i int) {
 	t, th := theme.Of(c), c.Theme()
 	d := &e.box.Doc
 	g := &d.Groups[i]
-	settingsCard(c, func() {
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2), th.Space(4)).Children(func() {
-			kit.Input(c, &g.Name, kit.InputOpts{Placeholder: i18n.T("view.editor.group.name")}).Label(i18n.T("view.editor.group.name")).Width(theme.ViewGroupNameWidth)
-			ui.Spacer(c)
-			kit.IconButton(c, "arrow-up", i18n.T("view.editor.group.up"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Disabled: i == 0}).
-				OnClick(func() { d.Groups[i-1], d.Groups[i] = d.Groups[i], d.Groups[i-1] })
-			kit.IconButton(c, "arrow-down", i18n.T("view.editor.group.down"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Disabled: i == len(d.Groups)-1}).
-				OnClick(func() { d.Groups[i], d.Groups[i+1] = d.Groups[i+1], d.Groups[i] })
-			kit.IconButton(c, "trash-2", i18n.T("view.editor.group.remove"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-				OnClick(func() { d.Groups = slices.Delete(slices.Clone(d.Groups), i, i+1) })
+	wrap := ui.Column(c).FillWidth()
+	if from, ok := ui.DragOver[viewGroupDrag](wrap); ok && int(from) != i {
+		drawDropLine(wrap, int(from) < i, th.Accent)
+	}
+	if from, ok := ui.Drop[viewGroupDrag](wrap); ok && int(from) != i && int(from) >= 0 && int(from) < len(d.Groups) {
+		f := int(from)
+		moved := d.Groups[f]
+		next := slices.Delete(slices.Clone(d.Groups), f, f+1)
+		d.Groups = slices.Insert(next, i, moved)
+	}
+	wrap.Children(func() {
+		settingsCard(c, func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2), th.Space(4), th.Space(2), th.Space(2.5)).Children(func() {
+				grip := ui.Box(c).Size(th.Space(5), th.Space(8)).Center().Shrink(0).Drag(viewGroupDrag(i))
+				if grip.Dragging() {
+					wrap.Opacity(0.4)
+				}
+				grip.Children(func() {
+					ui.Icon(c, icons.Get("grip")).Size(theme.Icon, theme.Icon).TextColor(t.Idle)
+				})
+				kit.Input(c, &g.Name, kit.InputOpts{Placeholder: i18n.T("view.editor.group.name")}).Label(i18n.T("view.editor.group.name")).Width(theme.ViewGroupNameWidth)
+				ui.Spacer(c)
+				kit.IconButton(c, "x", i18n.T("view.editor.group.remove"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs}).
+					Shrink(0).OnClick(func() { d.Groups = slices.Delete(slices.Clone(d.Groups), i, i+1) })
+			})
+		}, func() {
+			condEditor(c, &g.Conditions, &g.Match, condEditorOpts{
+				inline:    true,
+				emptyText: i18n.T("view.editor.group.empty"),
+				row:       func(cd *core.RuleCondition) { e.condRow(c, cd) },
+			})
 		})
-	}, func() {
-		e.conditionRows(c, &g.Conditions, &g.Match, g.ID)
-		if len(g.Conditions) == 0 {
-			kit.Text(c, i18n.T("view.editor.group.empty"), t.Text.Xs).TextColor(t.Muted).Padding(0, th.Space(4), th.Space(2.5), th.Space(4))
-		}
 	})
 }
 
@@ -620,14 +626,14 @@ func (e *viewEditor) preview(c *ui.Context) {
 			total += g.Total
 		}
 	}
-	ui.Row(c).FillWidth().AlignItems(ui.Baseline).Gap(th.Space(2)).Padding(th.Space(4), th.Space(4), th.Space(2), th.Space(4)).Children(func() {
+	ui.Row(c).FillWidth().AlignItems(ui.Baseline).Gap(th.Space(2)).Padding(th.Space(8), th.Space(6), th.Space(2), th.Space(4)).Children(func() {
 		kit.Text(c, i18n.T("view.preview"), t.Text.Sm).FontWeight(500).Grow(1)
 		if e.prev != nil {
 			kit.Text(c, i18n.Tf("view.count", total), t.Text.Xs).TextColor(t.Muted)
 		}
 	})
 	note := func(title, desc string) {
-		kit.Block(c, ui.Column(c), kit.ToneOutline).Margin(0, th.Space(3)).Gap(th.Space(1)).Padding(th.Space(4), th.Space(3)).
+		kit.Block(c, ui.Column(c), kit.ToneOutline).Margin(0, th.Space(6), 0, th.Space(4)).Gap(th.Space(1)).Padding(th.Space(4), th.Space(3)).
 			AlignItems(ui.Center).Children(func() {
 			kit.Text(c, title, t.Text.Xs).FontWeight(500).TextAlign(ui.Center)
 			kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted).TextAlign(ui.Center)
@@ -642,7 +648,7 @@ func (e *viewEditor) preview(c *ui.Context) {
 		note(i18n.T("view.empty"), i18n.T("view.preview.empty.desc"))
 	default: // the list's own group headings and rows
 		ui.Scroll(c).Grow(1).Children(func() {
-			ui.Column(c).FillWidth().Padding(0, th.Space(2), th.Space(2), th.Space(2)).Children(func() {
+			ui.Column(c).FillWidth().Padding(0, th.Space(4), th.Space(6), th.Space(2)).Children(func() {
 				grouped := len(e.box.Doc.Groups) > 0
 				for _, g := range e.prev.Groups {
 					if grouped {

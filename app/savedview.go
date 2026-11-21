@@ -253,7 +253,6 @@ func (p *mailPage) viewEmpty(c *ui.Context) {
 // viewNav is the sidebar's 视图: each view with its icon, name, unread
 // count and menu; its header's menu makes one (viewsMenu). It returns the header.
 func (p *mailPage) viewNav(c *ui.Context) ui.Element {
-	th := c.Theme()
 	head := kit.SidebarItem(c, kit.SidebarItemOpts{Muted: true, Open: &p.viewsOpen,
 		Title: func() { ui.Text(c, i18n.T("view.title")).SingleLine().Shrink(1) },
 		Group: func() {
@@ -261,7 +260,6 @@ func (p *mailPage) viewNav(c *ui.Context) ui.Element {
 				p.viewRow(c.Key(b.ID), b)
 			}
 		}})
-	ui.Box(c).Height(th.Space(2))
 	return head
 }
 
@@ -599,7 +597,7 @@ func (r *reader) loadWhy() {
 	})
 }
 
-// viewBand is the status over the subject, in a view, with 写催促信
+// viewBand is the status above the conversation, in a view, with 写催促信
 // while it waits on someone.
 func (r *reader) viewBand(c *ui.Context) {
 	w := r.why
@@ -624,7 +622,7 @@ func (r *reader) viewBand(c *ui.Context) {
 	}
 	t, th := theme.Of(c), c.Theme()
 	r.column(c).Children(func() {
-		kit.Card(c, ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(4), th.Space(6)), kit.ToneTint).Children(func() {
+		kit.Block(c, ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(4), th.Space(6)), kit.ToneTint).Children(func() {
 			ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon).Shrink(0).TextColor(t.Muted)
 			kit.Text(c, text, t.Text.Sm).Grow(1).Shrink(1)
 			if w.Status == core.ReplyStatusWaiting {

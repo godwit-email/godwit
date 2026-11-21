@@ -80,8 +80,9 @@ func TestTitleBarAt960x600(t *testing.T) {
 	}
 }
 
-// TestSyncStatusRowUnderSettings: the sync status is a row under Settings at
-// the sidebar's foot, saying what each state says.
+// TestSyncStatusRowUnderSettings: healthy/syncing states stay compact beside
+// Settings, while retrying and error states elevate to a full-width alert card
+// directly above Settings so the full reason and account name fit cleanly.
 func TestSyncStatusRowUnderSettings(t *testing.T) {
 	failed := func(kind string) func(*App, core.Account) {
 		return func(a *App, acc core.Account) {
@@ -89,36 +90,61 @@ func TestSyncStatusRowUnderSettings(t *testing.T) {
 		}
 	}
 	for _, c := range []struct {
-		name string
-		do   func(*App, core.Account)
-		want string
+		name  string
+		do    func(*App, core.Account)
+		want  string
+		alert bool
 	}{
-		{"ok", func(a *App, acc core.Account) { a.onEvent(events.Event{Type: events.SyncFinished, AccountID: acc.ID}) }, "已同步 · 刚刚"},
-		{"syncing", func(a *App, acc core.Account) { a.onEvent(events.Event{Type: events.SyncStarted, AccountID: acc.ID}) }, i18n.T("shell.sync.syncing")},
-		{"retrying", failed("connect"), "alice@example.com · 重试中"},
-		{"error", failed("tls"), "alice@example.com · 同步失败"},
+		{"ok", func(a *App, acc core.Account) { a.onEvent(events.Event{Type: events.SyncFinished, AccountID: acc.ID}) }, "已同步 · 刚刚", false},
+		{"syncing", func(a *App, acc core.Account) { a.onEvent(events.Event{Type: events.SyncStarted, AccountID: acc.ID}) }, i18n.T("shell.sync.syncing"), false},
+		{"retrying", failed("connect"), "alice@example.com · 自动重试中", true},
+		{"error", failed("tls"), "alice@example.com · 证书有问题", true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			var acc core.Account
 			h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) { acc = e.AddAccount(t, "alice@example.com") })
 			h.until("initial load", func() bool { return h.app.loaded })
 			h.post(func() { c.do(h.app, acc) })
-			h.click(c.want) // pressing it opens the list, as the title bar's did
-			h.see(i18n.T("shell.sync.title"))
+			h.click(c.want) // pressing it opens the sync status popover
+			h.see(i18n.T("shell.sync.all"))
 			settings, ok := h.tt.Find(i18n.T("shell.nav.settings"))
 			row, found := h.tt.Find(c.want)
 			if !ok || !found {
 				t.Fatalf("settings found %v, row %q found %v", ok, c.want, found)
 			}
-			if row.Y < settings.Y+settings.H || row.H != 28 || row.X+row.W > theme.SidebarWidth {
-				t.Errorf("the row at %+v is not 28 high under Settings %+v in the sidebar", row, settings)
+			if c.alert {
+				if row.Y+row.H > settings.Y || row.X+row.W > theme.SidebarWidth {
+					t.Errorf("alert card at %+v should sit above Settings %+v within sidebar width %v", row, settings, theme.SidebarWidth)
+				}
+			} else {
+				if midDiff := (row.Y + row.H/2) - (settings.Y + settings.H/2); midDiff < -1 || midDiff > 1 || row.X < settings.X+settings.W || row.H != 28 || row.X+row.W > theme.SidebarWidth {
+					t.Errorf("the sync chip at %+v is not 28 high beside Settings %+v in the sidebar", row, settings)
+				}
 			}
-			title, _ := h.tt.Find(i18n.T("shell.sync.title"))
-			if title.Y+title.H > row.Y {
-				t.Errorf("the list at %+v does not open above the row %+v", title, row)
+			allBtn, _ := h.tt.Find(i18n.T("shell.sync.all"))
+			if allBtn.Y+allBtn.H > row.Y {
+				t.Errorf("the popover at %+v does not open above %+v", allBtn, row)
 			}
 		})
 	}
+}
+
+// TestSyncAlertMultiAccountSummary: when multiple accounts need attention, the
+// elevated card summarizes the count rather than hiding the others.
+func TestSyncAlertMultiAccountSummary(t *testing.T) {
+	var a, b core.Account
+	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) {
+		a, b = e.AddAccount(t, "alice@example.com"), e.AddAccount(t, "bob@example.com")
+	})
+	h.until("initial load", func() bool { return h.app.loaded })
+	h.post(func() {
+		h.app.onEvent(events.Event{Type: events.SyncFailed, AccountID: a.ID, Kind: "tls", Error: "bad cert"})
+		h.app.onEvent(events.Event{Type: events.SyncFailed, AccountID: b.ID, Kind: "auth", Error: "bad pass"})
+	})
+	want := i18n.Tf("shell.sync.account", i18n.Tf("shell.sync.multi_accounts", "alice@example.com", 2), i18n.Tf("shell.sync.multi_error", 2))
+	h.see(want)
+	h.click(want)
+	h.see(i18n.T("shell.sync.all"))
 }
 
 type crumbPage struct {
@@ -164,13 +190,34 @@ func TestBreadcrumb(t *testing.T) {
 	}
 }
 
-// TestBackLeavesSettingsWithoutHistory: settings has no row back to mail, so
-// with no history (settings restored at launch) the title bar's back still
-// leaves it, for the page before settings or else the inbox.
+// TestBackLeavesSettingsWithoutHistory: with no history (settings restored at
+// launch) the title bar's back still leaves settings, for the inbox.
 func TestBackLeavesSettingsWithoutHistory(t *testing.T) {
 	h, _ := withAccount(t)
 	h.openSettings("general")
 	h.post(func() { h.app.history, h.app.ahead = nil, nil })
 	h.click(i18n.T("shell.back"))
 	h.until("back in mail", func() bool { return h.app.route.Page == PageMail })
+}
+
+// TestSettingsSidebarFooterLeavesInOneClick: after browsing multiple settings
+// pages, the pinned footer row returns straight to the page settings was opened
+// from in a single click, without stepping back through settings history.
+func TestSettingsSidebarFooterLeavesInOneClick(t *testing.T) {
+	h, _ := withAccount(t)
+	h.openSettings("general")
+	h.post(func() {
+		h.app.navigate(Route{Page: PageSettings, Settings: "models"})
+		h.app.navigate(Route{Page: PageSettings, Settings: "about"})
+	})
+	h.click(i18n.Tf("shell.nav.back_to", i18n.T("shell.nav.mail")))
+	h.until("back in mail in one click", func() bool { return h.app.route.Page == PageMail })
+
+	h.post(func() {
+		h.app.navigate(Route{Page: PageContacts})
+		h.app.navigate(Route{Page: PageSettings, Settings: "general"})
+		h.app.navigate(Route{Page: PageSettings, Settings: "labels"})
+	})
+	h.click(i18n.Tf("shell.nav.back_to", i18n.T("shell.nav.contacts")))
+	h.until("back in contacts in one click", func() bool { return h.app.route.Page == PageContacts })
 }

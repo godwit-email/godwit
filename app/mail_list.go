@@ -152,8 +152,16 @@ type mailPage struct {
 	viewsReading                  bool   // a reload that reads them has not landed
 	viewRefresh                   func() // stops the timer that rereads an open view
 
-	exec    func(ctx context.Context, op string, ids []int64, from, folder int64) (core.ArchiveUndo, error) // write; tests wrap it
-	fetched func()                                                                                          // tests: runs off the UI thread once a reload has read the list
+	exec       func(ctx context.Context, op string, ids []int64, from, folder int64) (core.ArchiveUndo, error) // write; tests wrap it
+	fetched    func()                                                                                          // tests: runs off the UI thread once a reload has read the list
+	avatars    map[string]*listAvatar                                                                          // cached sender avatars for list rows, by normalized address
+	avatarsVer uint64                                                                                          // matches a.avatarPolicySavedVer
+}
+
+// listAvatar is a sender's avatar once read for the mail list; img is nil
+// while it loads or when no image is permitted/available (leaves the initial).
+type listAvatar struct {
+	img ui.ImageSource
 }
 
 // listSel is a list's place and choice, kept on its items by key.
@@ -794,6 +802,15 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 		p.a.openPalette()
 	}
 	saved := p.savedViewID() != 0
+	if splitChrome() {
+		if head == "" {
+			return
+		}
+		ui.Row(c).AlignItems(ui.Center).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4)).Children(func() {
+			kit.Text(c, head, t.Text.Xs).FontWeight(500).TextColor(t.Muted)
+		})
+		return
+	}
 	if saved && head == "" && !p.a.sidebarHidden { // its groups' headings are the list's
 		return
 	}
@@ -801,13 +818,31 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 		kit.Text(c, head, t.Text.Xs).FontWeight(500).TextColor(t.Muted)
 		ui.Spacer(c)
 		if !saved {
-			kit.Tabs(c, &p.filter, kit.TabsOpts{}, kit.TabLabels(i18n.T("mail.filter.all"), i18n.T("mail.filter.unread")))
+			p.filterTabs(c)
 		}
 		if p.a.sidebarHidden { // as the title bar's field, while the sidebar is folded
 			kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 				OnClick(p.a.openPalette)
 		}
 	})
+}
+
+func (p *mailPage) isDraftsView() bool {
+	_, ok := draftsOf(p.folders, p.view)
+	return ok
+}
+
+// showsFilterTabs reports whether the current mail list supports the All/Unread
+// filter switch (shown inside the list header on macOS, and in the aligned Mica
+// context bar on Windows/Linux).
+func (p *mailPage) showsFilterTabs() bool {
+	return p.viewEdit == nil && !p.searchOpen &&
+		p.view.Unified != "outbox" && p.view.Unified != "scheduled" &&
+		p.savedViewID() == 0 && !p.isDraftsView()
+}
+
+func (p *mailPage) filterTabs(c *ui.Context) {
+	kit.Tabs(c, &p.filter, kit.TabsOpts{}, kit.TabLabels(i18n.T("mail.filter.all"), i18n.T("mail.filter.unread")))
 }
 
 // searchHint is the line under the search box: what was found, in which
@@ -941,6 +976,10 @@ func (p *mailPage) listView(c *ui.Context) {
 	}
 	ls.list.Selected, ls.list.Selection = &ls.cur, &ls.sel
 	act, target := "", []mailItem(nil)
+	padR := th.Space(2)
+	if goos != "darwin" {
+		padR = th.Space(3) // keep selected row pills clear of always-visible Windows/Linux scrollbars
+	}
 	l := kit.List(c, ls.list, len(es), func(i int) {
 		if es[i].group != "" {
 			viewHeading(c, es[i])
@@ -1040,7 +1079,7 @@ func (p *mailPage) listView(c *ui.Context) {
 				}
 			}
 		})
-	}).Grow(1).Padding(0, th.Space(2)).Gap(theme.Stroke) // rows a hairline apart: two chosen ones stay two
+	}).Grow(1).Padding(0, padR, 0, th.Space(2)).Gap(theme.Stroke) // rows a hairline apart: two chosen ones stay two
 	if p.devPath != "" { // written off the UI thread; the clipboard needs a frame
 		c.WriteClipboard(p.devPath)
 		p.a.toast(p.devPath)
@@ -1269,10 +1308,10 @@ func (p *mailPage) resultWho(it mailItem) string {
 func (p *mailPage) resultRow(c *ui.Context, it mailItem) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	q := p.hlQuery
-	col := ui.Column(c).Padding(th.Space(2), th.Space(3))
+	col := ui.Column(c).Padding(th.Space(2.5), th.Space(2))
 	return col.Children(func() {
 		who := p.resultWho(it)
-		withAvatar(c, who, func() {
+		withAvatar(c, who, p.itemAvatar(it), func() {
 			ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, who).FontWeight(500).SingleLine().Shrink(1) // the lead line, as a list row's
 				securityIcon(c, p.a.settings, it.Security)
@@ -1403,20 +1442,121 @@ func (p *mailPage) star(c *ui.Context, it mailItem, hovered bool, toggle func())
 	b.OnClick(toggle)
 }
 
+// forgetListAvatars drops cached list avatars when policy, trust or address
+// books change so visible rows re-read under the new rules.
+func (p *mailPage) forgetListAvatars() {
+	p.avatars = nil
+}
+
+func (p *mailPage) inJunkRow(it mailItem) bool {
+	if p.view.FolderID != 0 {
+		if f, ok := p.folder(p.view.FolderID); ok && f.Role == "junk" {
+			return true
+		}
+	}
+	if !it.Thread {
+		if f, ok := p.folder(it.Msg.FolderID); ok && f.Role == "junk" {
+			return true
+		}
+		for _, fid := range it.Msg.FolderIDs {
+			if f, ok := p.folder(fid); ok && f.Role == "junk" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// itemAvatar returns it's sender avatar under the remote-image policy, or nil
+// while loading, blocked, or unavailable (leaving the initial). Junk and Fraud
+// rows never show sender images.
+func (p *mailPage) itemAvatar(it mailItem) ui.ImageSource {
+	if p.inJunkRow(it) || it.Security.Status == gomail.SecurityFraud {
+		return nil
+	}
+	raw, msgID := it.Msg.From, int64(0)
+	if !it.Thread {
+		if f, ok := p.folder(it.Msg.FolderID); ok && f.Role == "sent" && len(it.Msg.To) > 0 {
+			raw = it.Msg.To[0]
+		} else {
+			msgID = it.ID
+		}
+	}
+	return p.addrAvatar(raw, msgID)
+}
+
+// addrAvatar loads and caches the avatar for raw's normalized email address.
+// When msgID != 0, SenderAvatar reads that message directly; otherwise
+// ContactAvatar checks enabled CardDAV PHOTO first, then SenderAvatar on the
+// sender's newest received message.
+func (p *mailPage) addrAvatar(raw string, msgID int64) ui.ImageSource {
+	a := p.a
+	addr := gomail.AddrKey(raw)
+	if addr == "" || !strings.Contains(addr, "@") {
+		return nil
+	}
+	if p.avatarsVer != a.avatarPolicySavedVer {
+		p.avatars, p.avatarsVer = nil, a.avatarPolicySavedVer
+	}
+	if a.avatarPolicyVer != a.avatarPolicySavedVer {
+		return nil // as the reader and contacts, hold fetches while a local policy change is unsaved
+	}
+	if av := p.avatars[addr]; av != nil {
+		return av.img
+	}
+	if p.avatars == nil {
+		p.avatars = map[string]*listAvatar{}
+	}
+	av := &listAvatar{}
+	p.avatars[addr] = av
+	var img ui.ImageSource
+	a.do(func(ctx context.Context) error {
+		var (
+			got core.Avatar
+			err error
+		)
+		if msgID != 0 {
+			got, err = a.svc.SenderAvatar(ctx, msgID, false)
+		} else {
+			got, err = a.svc.ContactAvatar(ctx, addr)
+		}
+		if err != nil || len(got.Data) == 0 {
+			return err
+		}
+		img, err = avatarImage(got)
+		return err
+	}, func(error) {
+		av.img = img
+	})
+	return nil
+}
+
 // withAvatar lays out lines in a column beside who's avatar: a row's body, the
 // labels under its text. The avatar only decorates, as the sender is named in
 // the first line: it has no label of its own.
-func withAvatar(c *ui.Context, who string, lines func()) {
-	th := c.Theme()
-	ui.Row(c).Gap(th.Space(2)).Children(func() {
-		kit.Avatar(c, who).AlignSelf(ui.Start).Label("").Role(ui.RoleNone)
+func withAvatar(c *ui.Context, who string, img ui.ImageSource, lines func()) {
+	withAvatarUnread(c, who, img, 0, lines)
+}
+
+// withAvatarUnread is withAvatar with an unread badge pinned to the avatar's
+// top-left corner when unread > 0, keeping avatars aligned to the list's 16 px axis.
+func withAvatarUnread(c *ui.Context, who string, img ui.ImageSource, unread int, lines func()) {
+	t, th := theme.Of(c), c.Theme()
+	ui.Row(c).Gap(th.Space(2.5)).Children(func() {
+		ui.Box(c).AlignSelf(ui.Start).Shrink(0).Children(func() {
+			kit.AvatarImage(c, who, img).Label("").Role(ui.RoleNone)
+			if unread > 0 {
+				ui.Box(c).Absolute().Left(-th.Space(1.25)).Top(-th.Space(1.25)).Size(th.Space(3), th.Space(3)).Radius(th.Space(1.5)).Background(t.Unread).Border(th.Space(0.5), t.Background).
+					Label(i18n.Tf("mail.row.unread", unread))
+			}
+		})
 		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(0.5)).Children(lines)
 	})
 }
 
 // row is one thread or message: who, when, the subject and the start of the
-// text beside the sender's avatar; unread ones in the foreground, with a dot
-// in the row's left gutter that says how many are unread to assistive technology.
+// text beside the sender's avatar; unread ones in the foreground, with a corner
+// dot on the avatar that says how many are unread to assistive technology.
 // toggleStar is its star's action, nil for a row that only shows (star).
 func (p *mailPage) row(c *ui.Context, it mailItem, toggleStar func()) ui.Element {
 	t := theme.Of(c)
@@ -1427,13 +1567,9 @@ func (p *mailPage) row(c *ui.Context, it mailItem, toggleStar func()) ui.Element
 	if it.Unread > 0 {
 		ink = t.Foreground
 	}
-	col := ui.Column(c).Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5))
+	col := ui.Column(c).Padding(th.Space(2.5), th.Space(2))
 	return col.Children(func() {
-		if it.Unread > 0 {
-			ui.Box(c).Absolute().Left(th.Space(1.5)).Top(th.Space(4)).Size(th.Space(2), th.Space(2)).Radius(th.Space(1)).Background(t.Unread).
-				Label(i18n.Tf("mail.row.unread", it.Unread))
-		}
-		withAvatar(c, it.Who, func() {
+		withAvatarUnread(c, it.Who, p.itemAvatar(it), it.Unread, func() {
 			subject := it.Subject
 			if subject == "" {
 				subject = i18n.T("mail.no_subject")
@@ -1488,14 +1624,17 @@ func (p *mailPage) skeletonRow(c *ui.Context) {
 			bars(func(w float32) { kit.Skeleton(c, w, size) })
 		})
 	}
-	ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5)).Children(func() {
-		line(t.Text.Sm, func(bar func(float32)) {
-			bar(theme.SkeletonShort * 0.75)
-			ui.Spacer(c)
-			bar(th.Space(8))
+	ui.Row(c).Gap(th.Space(2.5)).Padding(th.Space(2.5), th.Space(2)).Children(func() {
+		kit.Skeleton(c, th.Space(8), th.Space(8)).Radius(t.Radius.Lg).Shrink(0)
+		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(0.5)).Children(func() {
+			line(t.Text.Sm, func(bar func(float32)) {
+				bar(theme.SkeletonShort * 0.75)
+				ui.Spacer(c)
+				bar(th.Space(8))
+			})
+			line(t.Text.Sm, func(bar func(float32)) { bar(theme.SkeletonShort * 1.5) })
+			line(t.Text.Xs, func(bar func(float32)) { bar(0) })
 		})
-		line(t.Text.Sm, func(bar func(float32)) { bar(theme.SkeletonShort * 1.5) })
-		line(t.Text.Xs, func(bar func(float32)) { bar(0) })
 	})
 }
 

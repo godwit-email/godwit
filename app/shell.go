@@ -39,6 +39,12 @@ type breadcrumber interface {
 // goos is a var so a test can pose as another platform.
 var goos = runtime.GOOS
 
+// splitChrome reports whether the platform splits the global title bar (logo
+// menu, navigation, centered search, native window controls) from a Mica
+// context bar aligned with the sidebar, list and reader below (Windows and
+// Linux). macOS keeps its single-row unified title bar.
+func splitChrome() bool { return goos != "darwin" }
+
 // chromeMetrics is the top bar's height and the panels' corner radius. Windows
 // draws the design's 40 px strip with 8 px corners; elsewhere the bar is at
 // least TopBarHeight (the window controls only take room beside our bar).
@@ -143,9 +149,6 @@ func (a *App) onEvent(ev events.Event) {
 			a.quit()
 		}
 		return
-	case events.SettingsChanged:
-		a.mail.reader.avatarsChanged(settingsChanged) // core answers for the new settings; an unsaved local change still holds them
-		a.contacts().avatars = nil
 	case events.AddressBooksChanged:
 		a.mail.reader.avatarsChanged(contactsChanged)
 		a.contacts().avatars = nil
@@ -284,7 +287,7 @@ func (a *App) View(c *ui.Context) {
 	barH, _ := chromeMetrics(c.TitleBar().Height, theme.Of(c))
 	switch {
 	case !a.loaded:
-		bareBar(c, barH)
+		bareBar(c, barH, true)
 		if a.loadErr != nil {
 			ui.Column(c).Grow(1).FillWidth().Center().Gap(th.Space(3)).Children(func() {
 				ui.Text(c, humanize(a.loadErr)).TextColor(t.Muted)
@@ -292,13 +295,16 @@ func (a *App) View(c *ui.Context) {
 			})
 		}
 	case a.route.Page == PageOnboarding:
-		bareBar(c, barH)
+		bareBar(c, barH, false) // onboarding draws the brand mark in its left column
 		ui.Column(c).Grow(1).Children(func() { a.page().Content(c) })
 	default:
 		if c.Shortcut(ui.Cmd, ui.KeyK) {
 			a.openPalette()
 		}
 		a.titleBar(c, barH)
+		if splitChrome() {
+			a.contextBar(c)
+		}
 		a.body(c)
 		a.palette.view(c)
 	}
@@ -329,18 +335,17 @@ func (a *App) View(c *ui.Context) {
 const titleShrink = 100
 
 // titleBar leaves the window controls their room (c.TitleBar) and drags the
-// window: the navigation buttons over the sidebar's width, then the page's
-// title over the list's, so the search field starts at the reader's edge,
-// and the mail actions at the right end. Settings shows no title or search
-// (its sidebar names the page), but its breadcrumb when the page has one.
+// window: on macOS it is the single-row unified bar; on Windows and Linux it
+// delegates to splitTitleBar, paired with contextBar below.
 func (a *App) titleBar(c *ui.Context, h float32) {
+	if splitChrome() {
+		a.splitTitleBar(c, h)
+		return
+	}
 	t, th := theme.Of(c), c.Theme()
 	bar := c.TitleBar()
 	padL := bar.Left + th.Space(3)
 	padR := bar.Right + th.Space(2)
-	if goos == "windows" {
-		padR = bar.Right + th.Space(3) // the design's 150 = 3 caption buttons of 46 + 12
-	}
 	ui.Row(c).Height(h).FillWidth().Padding(0, padR, 0, padL).DragWindow().Children(func() {
 		lead := ui.Row(c).Gap(th.Space(1))
 		width := max(0, a.contentLeft(c)-padL)
@@ -351,30 +356,11 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 		}
 		lead.MinWidth(lead.Animate("sidebar-width", width, theme.MotionBase))
 		lead.Children(func() {
-			winCaption(c)
-			ghost := kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}
-			label := i18n.T("shell.sidebar.collapse")
-			if a.sidebarHidden {
-				label = i18n.T("shell.sidebar.expand")
-			}
-			kit.IconButton(c, "panel-left", label, ghost).OnClick(func() { a.sidebarHidden = !a.sidebarHidden })
-			ghost.Disabled = len(a.history) == 0 && a.route.Page != PageSettings
-			kit.IconButton(c, "arrow-left", i18n.T("shell.back"), ghost).OnClick(a.back)
-			ghost.Disabled = len(a.ahead) == 0
-			kit.IconButton(c, "arrow-right", i18n.T("shell.forward"), ghost).OnClick(a.forward)
+			a.navButtons(c)
 		})
 		if b, ok := a.page().(breadcrumber); ok {
 			if parent, current, ok := b.Breadcrumb(); ok {
-				ui.Row(c).AlignItems(ui.Center).Gap(th.Space(1)).Padding(0, 0, 0, th.Space(4)).Children(func() {
-					up := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: b.BreadcrumbUp}).Label(parent)
-					fg := t.Muted
-					if up.Hovered() {
-						fg = t.Foreground
-					}
-					up.Children(func() { kit.Text(c, parent, t.Text.Sm).TextColor(fg).SingleLine().Role(ui.RoleNone) })
-					ui.Icon(c, icons.Get("chevron-right")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
-					kit.Text(c, current, t.Text.Sm).FontWeight(500).SingleLine()
-				})
+				a.breadcrumbRow(c, "", parent, current, b.BreadcrumbUp, th.Space(4))
 				return
 			}
 		}
@@ -407,12 +393,213 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 	})
 }
 
+// splitTitleBar is the Windows/Linux global title bar (Fluent 2 A1): the
+// clickable Godwit brand menu + sidebar/history navigation at left (flush with
+// the sidebar's 20 px left edge), the centered global search field with wide
+// drag space on both sides, and clear room for native window controls on the right.
+func (a *App) splitTitleBar(c *ui.Context, h float32) {
+	th := c.Theme()
+	bar := c.TitleBar()
+	padL := bar.Left + th.Space(5) // align with sidebar content (8 + 12 = 20)
+	padR := bar.Right + th.Space(2)
+	ui.Row(c).Height(h).FillWidth().AlignItems(ui.Center).Padding(0, padR, 0, padL).DragWindow().Children(func() {
+		ui.Row(c).AlignItems(ui.Center).Gap(th.Space(1)).Shrink(0).Children(func() {
+			a.brandMenu(c)
+			kit.GroupDivider(c).Margin(0, th.Space(1))
+			a.navButtons(c)
+		})
+		ui.Spacer(c).MinWidth(th.Space(3))
+		a.titleSearch(c)
+		ui.Spacer(c).MinWidth(th.Space(3))
+	})
+}
+
+// brandMenu is the Windows/Linux top-left Godwit mark: clicking it opens the
+// compact application menu (Compose, Sync All, Settings, Check for Updates,
+// About, Quit) without crowding the title bar with a permanent menu strip.
+func (a *App) brandMenu(c *ui.Context) {
+	t, th := theme.Of(c), c.Theme()
+	b := kit.Pressable(c, kit.PressableOpts{}).Label("Godwit").
+		AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(1), th.Space(2), th.Space(1), th.Space(1)).
+		Menu(func(m *ui.Menu) {
+			if m.Item(i18n.T("mail.compose")).Icon(menuIcon("square-pen")).Chosen() {
+				a.Compose()
+			}
+			if m.Item(i18n.T("shell.sync.all")).Icon(menuIcon("refresh-cw")).Chosen() {
+				a.SyncAll()
+			}
+			m.Separator()
+			if m.Item(i18n.T("shell.nav.settings")).Icon(menuIcon("settings")).Chosen() {
+				a.OpenSettings()
+			}
+			if a.plat != nil {
+				if m.Item(i18n.T("settings.about.updates.check")).Icon(menuIcon("download")).Chosen() {
+					a.plat.CheckForUpdates()
+				}
+			}
+			if m.Item(i18n.T("settings.about")).Icon(menuIcon("info")).Chosen() {
+				a.OpenAbout()
+			}
+			if a.quit != nil {
+				m.Separator()
+				if m.Item(i18n.T("tray.quit")).Chosen() {
+					a.quit()
+				}
+			}
+		})
+	b.Children(func() {
+		ui.Icon(c, logo).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
+		kit.Text(c, "Godwit", t.Text.Xs).FontWeight(500).SingleLine().Role(ui.RoleNone)
+	})
+}
+
+func (a *App) navButtons(c *ui.Context) {
+	ghost := kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}
+	label := i18n.T("shell.sidebar.collapse")
+	if a.sidebarHidden {
+		label = i18n.T("shell.sidebar.expand")
+	}
+	kit.IconButton(c, "panel-left", label, ghost).OnClick(a.ToggleSidebar)
+	ghost.Disabled = len(a.history) == 0 && a.route.Page != PageSettings
+	kit.IconButton(c, "arrow-left", i18n.T("shell.back"), ghost).OnClick(a.back)
+	ghost.Disabled = len(a.ahead) == 0
+	kit.IconButton(c, "arrow-right", i18n.T("shell.forward"), ghost).OnClick(a.forward)
+}
+
+func (a *App) breadcrumbRow(c *ui.Context, prefix, parent, current string, onUp func(), padL float32) {
+	t, th := theme.Of(c), c.Theme()
+	ui.Row(c).AlignItems(ui.Center).Gap(th.Space(1)).Padding(0, 0, 0, padL).Children(func() {
+		if prefix != "" {
+			kit.Text(c, prefix, t.Text.Sm).TextColor(t.Muted).SingleLine()
+			ui.Icon(c, icons.Get("chevron-right")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
+		}
+		if onUp != nil {
+			up := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: onUp}).Label(parent)
+			fg := t.Muted
+			if up.Hovered() {
+				fg = t.Foreground
+			}
+			up.Children(func() { kit.Text(c, parent, t.Text.Sm).TextColor(fg).SingleLine().Role(ui.RoleNone) })
+		} else {
+			kit.Text(c, parent, t.Text.Sm).TextColor(t.Muted).SingleLine()
+		}
+		ui.Icon(c, icons.Get("chevron-right")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
+		kit.Text(c, current, t.Text.Sm).FontWeight(500).SingleLine()
+	})
+}
+
+// contextBar is the Windows/Linux 40 px Mica strip directly under the global
+// title bar, aligned across all three columns with the sidebar, list and reader
+// panels below so the white cards stay clean without internal header dividers.
+func (a *App) contextBar(c *ui.Context) {
+	t, th := theme.Of(c), c.Theme()
+	gap := th.Space(2)
+	width := a.sidebarWidth()
+	target := width
+	if a.sidebarHidden {
+		target = 0
+	}
+	row := ui.Row(c).Height(theme.ContextBarHeight).FillWidth().AlignItems(ui.Center).Padding(0, gap, 0, gap)
+	if !a.sidebarHidden && a.sidebarDragFrom != 0 {
+		row.Jump("ctx-sidebar-width", width)
+	}
+	visible := row.Animate("ctx-sidebar-width", target, theme.MotionBase)
+	row.Children(func() {
+		if visible > 0 {
+			colW := visible
+			if !a.sidebarHidden {
+				colW += gap
+			}
+			ui.Row(c).Width(colW).FillHeight().Shrink(0).Clip().AlignItems(ui.Center).Children(func() {
+				ui.Row(c).Width(width + gap).Shrink(0).AlignItems(ui.Center).Translate(visible-width, 0).
+					Padding(0, sidebarInset(c), 0, th.Space(3)).Disabled(a.sidebarHidden).Children(func() {
+					switch a.route.Page {
+					case PageMail, PageContacts, PageWit:
+						a.pageSwitch(c)
+					case PageSettings:
+						if sp, ok := a.pages[PageSettings].(*settingsPage); ok {
+							sp.searchField(c)
+						}
+					}
+				})
+			})
+		}
+		ui.Row(c).Grow(1).MinWidth(0).AlignItems(ui.Center).Children(func() {
+			if a.route.Page == PageSettings {
+				if b, ok := a.page().(breadcrumber); ok {
+					if parent, current, ok := b.Breadcrumb(); ok {
+						a.breadcrumbRow(c, i18n.T("settings.heading"), parent, current, b.BreadcrumbUp, th.Space(2))
+						return
+					}
+				}
+				title, sub := a.page().Title()
+				if sub != "" {
+					a.breadcrumbRow(c, "", title, sub, nil, th.Space(2))
+				}
+				return
+			}
+			title, sub := a.page().Title()
+			if a.route.Page == PageMail {
+				ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2)).Width(a.listWidth()+th.Space(2)).MinWidth(0).Shrink(titleShrink).
+					Padding(0, th.Space(2), 0, th.Space(1)).Children(func() {
+					ui.Text(c, title).FontWeight(500).SingleLine().MaxWidth(theme.TitleNameMax).Shrink(1)
+					if sub != "" {
+						kit.Text(c, sub, t.Text.Xs).TextColor(t.Muted).SingleLine().MaxWidth(theme.TitleSubMax).Shrink(1)
+					}
+					a.mail.titleMenu(c)
+					ui.Spacer(c)
+					if a.mail.showsFilterTabs() {
+						a.mail.filterTabs(c)
+					}
+				})
+				ui.Spacer(c)
+				a.mail.titleActions(c)
+				return
+			}
+			if p, ok := a.page().(*contactsPage); ok {
+				ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2)).Width(a.listWidth()+th.Space(2)).MinWidth(0).Shrink(titleShrink).
+					Padding(0, th.Space(2), 0, th.Space(1)).Children(func() {
+					ui.Text(c, title).FontWeight(500).SingleLine().MaxWidth(theme.TitleNameMax).Shrink(1)
+					if sub != "" {
+						kit.Text(c, sub, t.Text.Xs).TextColor(t.Muted).SingleLine().MaxWidth(theme.TitleSubMax).Shrink(1)
+					}
+				})
+				ui.Spacer(c)
+				p.titleActions(c)
+				return
+			}
+			if title != "" {
+				ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2)).Padding(0, 0, 0, th.Space(1)).Children(func() {
+					ui.Text(c, title).FontWeight(500).SingleLine().MaxWidth(theme.TitleNameMax).Shrink(1)
+					if sub != "" {
+						kit.Text(c, sub, t.Text.Xs).TextColor(t.Muted).SingleLine().MaxWidth(theme.TitleSubMax).Shrink(1)
+					}
+				})
+			}
+		})
+	})
+}
+
+// ToggleSidebar folds or expands the left navigation sidebar.
+func (a *App) ToggleSidebar() { a.sidebarHidden = !a.sidebarHidden }
+
+// OpenAbout navigates to Settings › About.
+func (a *App) OpenAbout() { a.navigate(Route{Page: PageSettings, Settings: "about"}) }
+
 // titleSearch is the top bar's search field of the mail, contacts and Wit
-// pages: a small flat input that opens the palette (⌘K) at a click.
+// pages (and all pages in splitChrome): a small flat input that opens the
+// palette (⌘K / Ctrl K) at a click.
 func (a *App) titleSearch(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
+	w := float32(theme.TitleSearchWidth)
+	if splitChrome() {
+		w = theme.SplitTitleSearchWidth
+	}
 	box := kit.InputButton(c, kit.InputOpts{Size: kit.SizeSm, Flat: true, Tint: true}, a.openPalette).Label(i18n.T("mail.search")).
-		Width(theme.TitleSearchWidth).MinWidth(0).Gap(th.Space(2))
+		Width(w).MinWidth(0).Gap(th.Space(2))
+	if !splitChrome() {
+		box.Margin(0, th.Space(3), 0, 0)
+	}
 	box.Children(func() {
 		ui.Icon(c, icons.Get("search")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
 		ui.Text(c, i18n.T("mail.search")).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1).Role(ui.RoleNone)
@@ -421,9 +608,13 @@ func (a *App) titleSearch(c *ui.Context) {
 }
 
 // bareBar is the title bar of a window with no page chrome: it drags the
-// window and, on Windows, names it.
-func bareBar(c *ui.Context, h float32) {
-	ui.Row(c).Height(h).FillWidth().Padding(0, 0, 0, c.TitleBar().Left+c.Theme().Space(2)).DragWindow().Children(func() { winCaption(c) })
+// window and, when caption is true on Windows, names it.
+func bareBar(c *ui.Context, h float32, caption bool) {
+	ui.Row(c).Height(h).FillWidth().Padding(0, 0, 0, c.TitleBar().Left+c.Theme().Space(2)).DragWindow().Children(func() {
+		if caption {
+			winCaption(c)
+		}
+	})
 }
 
 // winCaption is Windows' app icon and name at the title bar's start.
@@ -457,11 +648,12 @@ func (a *App) ago(t time.Time) string {
 func (a *App) body(c *ui.Context) {
 	th := c.Theme()
 	p := a.page()
-	padL := th.Space(2)
+	gap := th.Space(2)
+	padL := gap
 	if a.sidebarHidden {
 		padL = 0 // the edge grip takes the inset
 	}
-	row := ui.Row(c).Grow(1).AlignItems(ui.Stretch).Padding(0, th.Space(2), th.Space(2), padL)
+	row := ui.Row(c).Grow(1).AlignItems(ui.Stretch).Padding(0, gap, gap, padL)
 	width := a.sidebarWidth()
 	target := width
 	if a.sidebarHidden {
@@ -475,14 +667,16 @@ func (a *App) body(c *ui.Context) {
 			return
 		}
 		top := th.Space(3)
-		if a.route.Page == PageMail || a.route.Page == PageWit || a.route.Page == PageContacts {
-			top = 0 // the page switch sits right under the title bar
+		if a.route.Page == PageMail || a.route.Page == PageWit || a.route.Page == PageContacts || splitChrome() {
+			top = 0 // the page switch (or splitChrome's context bar) sits right above
 		}
 		// Keep the sidebar's layout at its full width while it slides out of the clipped pane.
-		ui.Column(c).Width(width).FillHeight().Shrink(0).Translate(visible-width, 0).Disabled(a.sidebarHidden).
+		// Include gap on the right so sidebarScroll reaches the content panel's border;
+		// sidebarInset keeps every sidebar item clear of both the gap and the scroll bar.
+		ui.Column(c).Width(width + gap).FillHeight().Shrink(0).Translate(visible-width, 0).Disabled(a.sidebarHidden).
 			Padding(top, 0, th.Space(3), th.Space(3)).Gap(th.Space(0.5)).Children(func() {
 			ui.Column(c).Grow(1).MinHeight(0).Gap(th.Space(0.5)).Children(func() { p.Sidebar(c) })
-			ui.Column(c).Gap(th.Space(0.5)).Padding(0, sidebarInset(c), 0, 0).Children(func() { a.sidebarFoot(c) })
+			ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2), sidebarInset(c), 0, 0).Children(func() { a.sidebarFoot(c) })
 		})
 	}
 	row.Children(func() {
@@ -495,9 +689,10 @@ func (a *App) body(c *ui.Context) {
 			a.edgeGrip(c, visible, sidebar, content)
 			return
 		}
-		before := visible
-		changed, dragging := kit.Resizer(c, &visible, th.Space(2), i18n.T("shell.resize"), nil, sidebar, content)
-		a.sidebarW = width + (visible - before)
+		pane := visible + gap
+		before := pane
+		changed, dragging := kit.ResizerOver(c, &pane, th.Space(1), i18n.T("shell.resize"), nil, sidebar, content)
+		a.sidebarW = width + (pane - before)
 		a.collapsePull(width, dragging)
 		a.sidebarW = min(max(a.sidebarW, theme.SidebarMinWidth), theme.SidebarMaxWidth)
 		if changed {
@@ -576,11 +771,10 @@ func (a *App) pageSwitch(c *ui.Context) ui.Element {
 	}).OnChange(func() { a.navigate(routes[sel]) })
 }
 
-// sidebarInset is the sidebar's right inset. The sidebar itself has none:
-// each of its parts keeps this much, and sidebarScroll's list keeps it inside
-// the scroll area, which so reaches the sidebar's edge, where its scroll bar
-// runs, clear of the items' counts.
-func sidebarInset(c *ui.Context) float32 { return c.Theme().Space(3) }
+// sidebarInset is the sidebar's right inset, including the gap to the content
+// panel. The sidebar itself reaches the content panel's edge so sidebarScroll's
+// scroll bar runs flush along the panel's border, clear of the items and counts.
+func sidebarInset(c *ui.Context) float32 { return c.Theme().Space(3) + c.Theme().Space(2) }
 
 // sidebarScroll scrolls a page's sidebar list (sidebarInset).
 func sidebarScroll(c *ui.Context, children func()) {
@@ -589,27 +783,59 @@ func sidebarScroll(c *ui.Context, children func()) {
 	})
 }
 
-// sidebarFoot is pinned under the page's sidebar: the update card, Settings
-// (and, in dev builds, the Kit) and the sync status; in settings, the way
-// back to the page it was opened from, in the same spot, with no sync status.
+// sidebarFoot is pinned under the page's sidebar: the update card, and a single
+// row holding Settings on the left and the sync status on the right (plus Kit
+// above in dev builds); in settings, a hairline-separated back row in the same
+// spot returns directly to the page settings was opened from.
 func (a *App) sidebarFoot(c *ui.Context) {
-	th := c.Theme()
+	t, th := theme.Of(c), c.Theme()
 	a.updateCard(c)
-	item := func(icon, label string, r Route) {
-		b := kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: func() { a.navigate(r) }}).Gap(th.Space(2.5))
-		b.Children(func() {
-			kit.SidebarIcon(c, b, icon, false)
-			ui.Text(c, label)
+	if a.route.Page == PageSettings {
+		r := a.leaveSettings()
+		name := i18n.T("shell.nav.mail")
+		switch r.Page {
+		case PageWit:
+			name = i18n.T("shell.nav.wit")
+		case PageContacts:
+			name = i18n.T("shell.nav.contacts")
+		}
+		ui.Column(c).FillWidth().Padding(th.Space(2), 0, 0, 0).
+			BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
+			b := kit.SidebarItem(c, kit.SidebarItemOpts{Small: true, OnClick: func() { a.navigate(r) }}).
+				FillWidth().Gap(th.Space(2))
+			b.Children(func() {
+				kit.SidebarIcon(c, b, "arrow-left", false)
+				kit.Text(c, i18n.Tf("shell.nav.back_to", name), t.Text.Sm).SingleLine()
+			})
 		})
-	}
-	if a.route.Page == PageSettings { // the title bar's back leaves settings
 		return
 	}
 	if a.dev {
-		item("component", "Kit", Route{Page: PageKit})
+		b := kit.SidebarItem(c, kit.SidebarItemOpts{OnClick: func() { a.navigate(Route{Page: PageKit}) }}).Gap(th.Space(2.5))
+		b.Children(func() {
+			kit.SidebarIcon(c, b, "component", false)
+			ui.Text(c, "Kit")
+		})
 	}
-	item("sliders-horizontal", i18n.T("shell.nav.settings"), Route{Page: PageSettings})
-	a.syncStatus(c)
+	hs := a.syncHealths()
+	alertCard, hasAlert := a.syncAlertCard(c, hs)
+	foot := ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(th.Space(1))
+	foot.Children(func() {
+		b := kit.SidebarItem(c, kit.SidebarItemOpts{Small: true, OnClick: func() { a.navigate(Route{Page: PageSettings}) }}).
+			Gap(th.Space(2)).Shrink(0)
+		b.Children(func() {
+			kit.SidebarIcon(c, b, "sliders-horizontal", false)
+			kit.Text(c, i18n.T("shell.nav.settings"), t.Text.Sm).SingleLine()
+		})
+		a.syncStatus(c, hs, hasAlert)
+	})
+	if len(hs) > 0 {
+		anchor := foot
+		if hasAlert {
+			anchor = alertCard
+		}
+		kit.PopoverAt(c, anchor, &a.syncOpen, ui.AnchorTopStart, ui.AnchorBottomStart, -theme.PopupOffset, func() { a.syncMenu(c, hs) })
+	}
 }
 
 // updateCard offers the newer version the update feed has, above Settings:

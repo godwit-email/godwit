@@ -425,6 +425,75 @@ func TestReaderAvatarManualPermissionSurvivesUnrelatedSettings(t *testing.T) {
 	}
 }
 
+// TestSidebarAccountFoldKeepsAvatarsWithoutFlash verifies toggling an account's
+// folder fold in the sidebar (which saves SidebarAccountsOpen) neither clears
+// cached list/reader avatars nor flashes the remote-images-blocked notice.
+func TestSidebarAccountFoldKeepsAvatarsWithoutFlash(t *testing.T) {
+	var hits atomic.Int64
+	h, acc := avatarHarness(t, "auto", func(w http.ResponseWriter, req *http.Request) {
+		hits.Add(1)
+		w.Write(readerAvatarSVG)
+	})
+	m := h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "Avatar", "plain"))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	b := h.app.mail.reader.bodies[m.ID]
+	h.until("initial reader and list avatars", func() bool {
+		h.tt.Frame()
+		return b.avatar != nil && h.app.mail.addrAvatar("bob@example.com", m.ID) != nil
+	})
+	hitsBefore := hits.Load()
+
+	// Block the settings save in flight so we can inspect the intermediate frame
+	// while the unrelated SidebarAccountsOpen write is pending.
+	started, release := make(chan struct{}), make(chan struct{}, 1)
+	t.Cleanup(func() { close(release) })
+	origSave := h.app.saveSettings
+	h.app.saveSettings = func(ctx context.Context, st core.Settings) (core.Settings, error) {
+		close(started)
+		select {
+		case <-ctx.Done():
+			return core.Settings{}, ctx.Err()
+		case <-release:
+		}
+		return origSave(ctx, st)
+	}
+
+	st := h.app.settings
+	st.SidebarAccountsOpen = map[int64]bool{acc.ID: false}
+	h.app.changeSettings(st)
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("save did not start")
+	}
+	h.tt.Frame()
+	if b.avatar == nil || b.avatarBlocked {
+		t.Fatalf("reader avatar flashed while saving fold: avatar=%v blocked=%v", b.avatar != nil, b.avatarBlocked)
+	}
+	if h.app.mail.addrAvatar("bob@example.com", m.ID) == nil {
+		t.Fatal("list avatar flashed to nil while saving fold")
+	}
+
+	before := h.app.events
+	release <- struct{}{}
+	h.until("settings saved and event handled", func() bool {
+		return h.app.settingsVer == h.app.settingsSavedVer && h.app.events > before
+	})
+	h.advance(refreshEvery)
+	h.until("reload finished", func() bool { return h.app.accountsGen == h.app.loads.Gen() })
+	h.tt.Frame()
+	if b.avatar == nil || b.avatarBlocked {
+		t.Fatalf("reader avatar cleared after SettingsChanged: avatar=%v blocked=%v", b.avatar != nil, b.avatarBlocked)
+	}
+	if h.app.mail.addrAvatar("bob@example.com", m.ID) == nil {
+		t.Fatal("list avatar cleared after SettingsChanged")
+	}
+	if hits.Load() != hitsBefore {
+		t.Fatalf("unrelated setting triggered %d extra avatar fetches", hits.Load()-hitsBefore)
+	}
+}
+
 func TestReaderAvatarLifecycleCancellation(t *testing.T) {
 	for _, action := range []string{"settings", "account", "close", "body replacement"} {
 		t.Run(action, func(t *testing.T) {
@@ -655,20 +724,20 @@ func TestReaderThreadHistoryCollapse(t *testing.T) {
 	// the newest five kept in sight (the fourth open among them); the
 	// first and second fold into a card above them
 	h.until("the oldest a card", func() bool {
-		return h.tt.HasText("展开历史邮件（2 封）") && !h.tt.HasText("msg one") && !h.tt.HasText("msg two") &&
+		return h.tt.HasText("2 封较早的邮件") && h.tt.HasText("展开") && !h.tt.HasText("msg one") && !h.tt.HasText("msg two") &&
 			h.tt.HasText("msg three") && h.tt.HasText("msg five") && h.tt.HasText("msg six")
 	})
-	if card, _ := h.tt.Find("展开历史邮件（2 封）"); func() bool { three, _ := h.tt.Find("msg three"); return card.Y > three.Y }() {
+	if card, _ := h.tt.Find("2 封较早的邮件"); func() bool { three, _ := h.tt.Find("msg three"); return card.Y > three.Y }() {
 		t.Fatal("the card is not above the messages kept")
 	}
 
-	h.click("展开历史邮件（2 封）")
+	h.click("2 封较早的邮件")
 	h.until("the oldest shown", func() bool {
 		return h.tt.HasText("msg one") && h.tt.HasText("msg two") && h.countTexts("折叠历史邮件") == 1
 	})
 	h.click("折叠历史邮件")
 	h.until("collapsed again", func() bool {
-		return h.tt.HasText("展开历史邮件（2 封）") && !h.tt.HasText("msg one")
+		return h.tt.HasText("2 封较早的邮件") && !h.tt.HasText("msg one")
 	})
 
 	// the threshold is how many stay in sight: 7 keeps all of 7
@@ -676,26 +745,26 @@ func TestReaderThreadHistoryCollapse(t *testing.T) {
 	st.ThreadCollapseThreshold = 7
 	h.app.changeSettings(st)
 	h.until("all kept", func() bool {
-		return !h.tt.HasText("展开历史邮件（2 封）") && h.tt.HasText("msg one") && h.tt.HasText("msg two")
+		return !h.tt.HasText("2 封较早的邮件") && h.tt.HasText("msg one") && h.tt.HasText("msg two")
 	})
 	// 6 leaves one older: a single message needs no card
 	st.ThreadCollapseThreshold = 6
 	h.app.changeSettings(st)
 	h.tt.Advance(2 * theme.MotionBase)
-	if h.tt.HasText("展开历史邮件") || !h.tt.HasText("msg one") {
+	if h.tt.HasText("封较早的邮件") || !h.tt.HasText("msg one") {
 		t.Fatalf("one message carded: %q", h.tt.Texts())
 	}
 	// 3 keeps the newest three; the open fourth ends the older run
 	st.ThreadCollapseThreshold = 3
 	h.app.changeSettings(st)
 	h.until("the older carded", func() bool {
-		return h.tt.HasText("展开历史邮件（3 封）") && !h.tt.HasText("msg one") && h.tt.HasText("msg five") && h.tt.HasText("msg six")
+		return h.tt.HasText("3 封较早的邮件") && !h.tt.HasText("msg one") && h.tt.HasText("msg five") && h.tt.HasText("msg six")
 	})
 
 	st.ThreadCollapse = false
 	h.app.changeSettings(st)
 	h.until("collapsing off", func() bool {
-		return !h.tt.HasText("展开历史邮件") && h.tt.HasText("msg one") && h.tt.HasText("msg two")
+		return !h.tt.HasText("封较早的邮件") && h.tt.HasText("msg one") && h.tt.HasText("msg two")
 	})
 }
 
@@ -737,8 +806,8 @@ func TestReaderHistoryKeepsShown(t *testing.T) {
 	r := h.app.mail.reader
 	h.openThread(msgs[0].ThreadID)
 	h.seeBody(msgs[6].ID)
-	h.until("the older a card", func() bool { return h.tt.HasText("展开历史邮件（5 封）") && h.tt.HasText("msg six") })
-	h.click("展开历史邮件（5 封）")
+	h.until("the older a card", func() bool { return h.tt.HasText("5 封较早的邮件") && h.tt.HasText("msg six") })
+	h.click("5 封较早的邮件")
 	h.until("the older shown", func() bool { return h.tt.HasText("msg one") })
 	h.tt.Advance(2 * theme.MotionBase) // the rows in place before one is clicked
 	h.click("msg three")
@@ -755,7 +824,7 @@ func TestReaderHistoryKeepsShown(t *testing.T) {
 
 	h.click("折叠历史邮件")
 	h.tt.Advance(2 * theme.MotionBase)
-	if r.open[msgs[2].ID] || !h.tt.HasText("展开历史邮件（5 封）") || h.tt.HasText("msg one") || !h.tt.HasText("msg six") {
+	if r.open[msgs[2].ID] || !h.tt.HasText("5 封较早的邮件") || h.tt.HasText("msg one") || !h.tt.HasText("msg six") {
 		t.Fatalf("not collapsed whole (open %v): %q", r.open, h.tt.Texts())
 	}
 
@@ -763,7 +832,7 @@ func TestReaderHistoryKeepsShown(t *testing.T) {
 	r.toggle(msgs[2].ID) // folded by the reader, the history collapsed
 	h.tt.Frame()
 	h.tt.Advance(2 * theme.MotionBase)
-	if !h.tt.HasText("msg three") || !h.tt.HasText("展开历史邮件（2 封）") {
+	if !h.tt.HasText("msg three") || !h.tt.HasText("2 封较早的邮件") {
 		t.Fatalf("a message folded went into the history: %q", h.tt.Texts())
 	}
 }
