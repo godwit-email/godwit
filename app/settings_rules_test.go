@@ -600,6 +600,7 @@ func TestSettingsRulesLogicButtonFitsAllLocales(t *testing.T) {
 // Dragging an action's grip handle reorders the actions inside the 就 card.
 func TestSettingsRulesActionDragReorder(t *testing.T) {
 	h, _ := withAccount(t)
+	h.resize(1280, 650) // The action rows can start below the viewport.
 	h.openSettings("rules")
 	h.click("新建规则")
 	h.click("值")
@@ -610,10 +611,19 @@ func TestSettingsRulesActionDragReorder(t *testing.T) {
 	if len(rv.edit.Doc.Actions) != 2 || rv.edit.Doc.Actions[0].Kind != core.ActionLabel || rv.edit.Doc.Actions[1].Kind != core.ActionArchive {
 		t.Fatalf("initial actions %+v", rv.edit.Doc.Actions)
 	}
+	second := i18n.Tf("settings.rules.action.n", 2)
+	r, ok := h.tt.Find(second)
+	if !ok {
+		t.Fatalf("action select %q not found", second)
+	}
+	midY := float32(h.size[1]) / 2
+	h.tt.Scroll(r.X+1, midY, 0, r.Y-midY)
+	h.tt.Frame()
+
 	a1, ok1 := h.tt.Find(i18n.Tf("settings.rules.action.n", 1))
-	a2, ok2 := h.tt.Find(i18n.Tf("settings.rules.action.n", 2))
-	if !ok1 || !ok2 {
-		t.Fatalf("action selects not found: ok1=%v ok2=%v", ok1, ok2)
+	a2, ok2 := h.tt.Find(second)
+	if !ok1 || !ok2 || a1.W <= 0 || a1.H <= 0 || a2.W <= 0 || a2.H <= 0 {
+		t.Fatalf("action selects not visible after scrolling: first=%+v second=%+v", a1, a2)
 	}
 	// Grip sits directly left of the action select (gap 8 + grip center 10).
 	sx, sy := a1.X-18, a1.Y+a1.H/2
