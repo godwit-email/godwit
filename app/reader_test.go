@@ -1191,6 +1191,25 @@ func TestReaderRefreshKeepsNewest(t *testing.T) {
 	}
 }
 
+// TestReaderSettles: an open message stops asking for frames once laid out.
+// The bars' measured heights flipped by float rounding (97.01, 97.009995) and
+// redrew the reader every frame.
+func TestReaderSettles(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Plan", "body"))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.tt.Advance(5 * time.Second)
+	for range 30 {
+		h.drain()
+		h.tt.Frame()
+		h.tt.Advance(time.Second / 60)
+	}
+	if h.tt.FramePending() {
+		t.Fatal("the open reader still asks for frames")
+	}
+}
+
 func TestReaderNewReplyExpandsAndReads(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	acc := accs[0]

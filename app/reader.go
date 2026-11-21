@@ -1449,12 +1449,15 @@ func (r *reader) clearGlass(b *msgBody) {
 
 // measured is e's height as the last frame laid it out, asking for another
 // frame when it differs from was: what floats over the messages keeps them
-// clear of itself.
+// clear of itself. Less than half a pixel keeps was: the layout's float
+// rounding can flip a height by 1e-5 each frame, which would ask for frames
+// forever.
 func (r *reader) measured(c *ui.Context, e ui.Element, was float32) float32 {
 	h := e.LayoutBounds().H
-	if h != was {
-		c.Invalidate()
+	if math.Abs(float64(h-was)) < 0.5 {
+		return was
 	}
+	c.Invalidate()
 	return h
 }
 
