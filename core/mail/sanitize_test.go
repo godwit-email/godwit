@@ -300,6 +300,19 @@ func TestSanitizeKeepsLayout(t *testing.T) {
 	assert.NotContains(t, safe, "position", "an overlay must not survive")
 }
 
+// A flex box keeps its direction and alignment: with display:flex surviving and
+// flex-direction dropped, images a mail stacks in a column sit side by side,
+// stretched to the row's height (#828).
+func TestSanitizeKeepsFlexLayout(t *testing.T) {
+	src := `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px"><img src="cid:a" style="flex:0 0 auto;align-self:center"><img src="cid:b"></div>`
+	safe, _, _ := mail.Sanitize(src, nil, false)
+	for _, want := range []string{"display: flex", "flex-direction: column", "align-items: center", "justify-content: center", "flex-wrap: wrap", "gap: 8px", "flex: 0 0 auto", "align-self: center"} {
+		assert.Contains(t, safe, want)
+	}
+	sheet, _, _ := mail.Sanitize(`<style>.col{display:flex;flex-direction:column}</style><div class="col">x</div>`, nil, false)
+	assert.Contains(t, sheet, "flex-direction:column")
+}
+
 // A table's spacing attributes survive, as numbers only: without cellspacing="0"
 // a card of bgcolor cells shows the default 2px gaps between them.
 func TestSanitizeKeepsTableSpacing(t *testing.T) {

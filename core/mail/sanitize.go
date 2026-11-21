@@ -48,6 +48,9 @@ var cssProps = []string{
 	"overflow", "overflow-x", "overflow-y", "opacity", "letter-spacing", "text-transform", "text-indent",
 	"white-space", "word-break", "list-style-type", "background", "font", "box-shadow", "text-shadow",
 	"table-layout", "clear", "outline", "empty-cells", "direction",
+	// flex: display:flex alone lays a column of images out as a stretched row
+	"flex", "flex-direction", "flex-wrap", "flex-flow", "flex-grow", "flex-shrink", "flex-basis",
+	"align-items", "align-self", "align-content", "justify-content", "gap", "row-gap", "column-gap",
 }
 
 func policy() *bluemonday.Policy {
