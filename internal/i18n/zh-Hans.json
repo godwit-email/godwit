@@ -1266,7 +1266,7 @@
   "settings_notify_preview": "通知里显示邮件预览",
   "settings_notify_preview_help": "关闭后只提示有新邮件",
   "settings_privacy": "隐私与安全",
-  "settings_privacy_sub": "发给云端模型之前，先把敏感信息换成占位符。",
+  "settings_privacy_sub": "设置敏感信息发往云端模型前的处理方式。",
   "settings_px": "{arg1, number, ::group-off} px",
   "settings_px_default": "{arg1, number, ::group-off} px（默认）",
   "settings_quick_replies": "即时回复",

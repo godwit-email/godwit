@@ -485,7 +485,10 @@ func (p *contactsPage) titleActions(c *ui.Context) {
 		if blocked {
 			label = i18n.T("reader.unblock_sender")
 		}
-		block := act("spam", label, false).OnClick(func() { p.blockAll(addrs, !blocked) })
+		block := act("spam", label, !ok || len(addrs) == 0)
+		if ok && len(addrs) > 0 {
+			block.OnClick(func() { p.blockAll(addrs, !blocked) })
+		}
 		if blocked { // on: the tint a pressed toggle keeps
 			block.Background(t.HoverTint)
 		}
@@ -645,13 +648,48 @@ func (p *contactsPage) mailRow(c *ui.Context, ct core.Contact, m core.MessageSum
 	t, th := theme.Of(c), c.Theme()
 	id := m.ID
 	who, avatar := cmp.Or(ct.Name, ct.Address), p.avatar(ct)
-	if f, ok := findFolder(a.mail.folders, m.FolderID); ok && f.Role == "sent" {
+	f, inFolder := findFolder(a.mail.folders, m.FolderID)
+	if inFolder && f.Role == "sent" {
 		who, avatar = i18n.T("reader.me"), nil
 	}
-	paperButton(c, func() { a.OpenMessage(id) }).Label(m.Subject).AlignSelf(ui.Stretch).Gap(th.Space(2.5)).Padding(th.Space(0.5), th.Space(3)).Children(func() {
-		kit.AvatarImage(c, who, avatar).Margin(th.Space(1), 0)
-		ui.Text(c, cmp.Or(m.Subject, i18n.T("mail.no_subject"))).FontWeight(500).SingleLine().Shrink(0)
+	// what the row shows beside its subject, also in its label (a button's
+	// label is all a screen reader reads of it): unread, starred or replied, its folder
+	unread := !slices.Contains(m.Flags, `\Seen`)
+	state := ""
+	switch {
+	case slices.Contains(m.Flags, `\Flagged`):
+		state = i18n.T("mail.unified.starred")
+	case slices.Contains(m.Flags, `\Answered`):
+		state = i18n.T("contacts.replied")
+	}
+	label := []string{cmp.Or(m.Subject, i18n.T("mail.no_subject"))}
+	if unread {
+		label = append(label, i18n.Tf("mail.row.unread", 1))
+	}
+	if state != "" {
+		label = append(label, state)
+	}
+	if inFolder {
+		label = append(label, folderName(f))
+	}
+	paperButton(c, func() { a.OpenMessage(id) }).Label(strings.Join(label, " · ")).AlignSelf(ui.Stretch).Gap(th.Space(2.5)).Padding(th.Space(0.5), th.Space(3)).Children(func() {
+		ui.Box(c).Shrink(0).Margin(th.Space(1), 0).Children(func() {
+			kit.AvatarImage(c, who, avatar)
+			if unread { // the mail list's corner dot
+				ui.Box(c).Absolute().Left(-th.Space(1.25)).Top(-th.Space(1.25)).Size(th.Space(3), th.Space(3)).Radius(th.Space(1.5)).Background(t.Unread).Border(th.Space(0.5), t.Background)
+			}
+		})
+		subject := ui.Text(c, cmp.Or(m.Subject, i18n.T("mail.no_subject"))).FontWeight(500).SingleLine().Shrink(0)
+		if !unread {
+			subject.TextColor(t.Muted)
+		}
 		ui.Text(c, m.Snippet).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1)
+		if state != "" {
+			kit.Text(c, state, t.Text.Xs).TextColor(t.Muted).Shrink(0)
+		}
+		if inFolder {
+			kit.Badge(c, folderName(f)).Shrink(0)
+		}
 		kit.Text(c, listTime(a.clock.Now(), m.Date), t.Text.Xs).TextColor(t.Muted).Shrink(0)
 		foldArrow(c, 0)
 	})

@@ -1098,3 +1098,23 @@ func TestReportMasksHostsOutsideTrace(t *testing.T) {
 		}
 	}
 }
+
+// TestSyncTroubleWithSidebarFolded: with the sidebar folded, whose foot holds
+// the sync status, the title bar shows it, its menu opening below.
+func TestSyncTroubleWithSidebarFolded(t *testing.T) {
+	asMac(t)
+	var acc core.Account
+	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) { acc = e.AddAccount(t, "alice@example.com") })
+	h.until("initial load", func() bool { return h.app.loaded })
+	h.post(func() {
+		h.app.sidebarHidden = true
+		h.app.onEvent(events.Event{Type: events.SyncFailed, AccountID: acc.ID, Error: "dial tcp: connection refused", Kind: "connect"})
+	})
+	title := i18n.T("shell.sync.title")
+	h.until("the sync chip in the title bar", func() bool {
+		r, ok := h.tt.Find(title)
+		return ok && r.Y+r.H <= theme.TopBarHeight
+	})
+	h.click(title)
+	h.see("会自动重试，一般不用处理")
+}

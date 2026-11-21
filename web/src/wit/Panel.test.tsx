@@ -1323,7 +1323,7 @@ describe("Panel", () => {
     expect(
       screen
         .getByText("来源 [2] 中包含疑似指令。它只被当作邮件内容处理，没有执行。")
-        .closest("[role=alert]"),
+        .closest("[role=status]"),
     ).toHaveClass("bg-(--warning-bg)", "text-(--warning-text)", "rounded-xl");
     expect(
       screen.getByText("来源 [2] 中包含疑似指令。它只被当作邮件内容处理，没有执行。"),
@@ -1425,6 +1425,8 @@ describe("Panel", () => {
       `来源 [5] 中包含疑似指令（「${quote}」）。它只被当作邮件内容处理，没有执行。`,
     );
     expect(banner.querySelector("b")).toBeNull();
+    // a note, not an interruption: polite, as before the house Alert
+    expect(banner.closest('[data-slot="alert"]')?.getAttribute("role")).toBe("status");
   });
 
   it("the reviewed edit shows a card with the page's summary and decisions", async () => {

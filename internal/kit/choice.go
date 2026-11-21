@@ -209,6 +209,8 @@ func SelectWith[T comparable](c *ui.Context, o SelectOpts, sel *T, opts []Option
 		}
 	}
 	trigger := selectFace(c, ui.ButtonBase(c).Justify(ui.Start), current, o)
+	// a pop-up button whose value is the choice, as ui.SelectBase is: Menu keeps a role set before it
+	trigger.Role(ui.RolePopUpButton).Value(current)
 	trigger.Menu(func(m *ui.Menu) {
 		for _, opt := range opts {
 			if m.Item(opt.Label).Checked(opt.Value == *sel).Disabled(opt.Disabled).Chosen() && opt.Value != *sel {

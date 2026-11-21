@@ -444,3 +444,39 @@ func TestContactsActionsAreInTheTitleBar(t *testing.T) {
 		t.Errorf("archive at %+v is not in the title bar", r)
 	}
 }
+
+// TestContactsBlockNeedsAContact: with no contact chosen, 屏蔽发件人 is
+// disabled and blocks nothing, rather than reporting a block that did not happen.
+func TestContactsBlockNeedsAContact(t *testing.T) {
+	asMac(t)
+	h, _ := mailHarness(t, nil, "alice@example.com")
+	h.click("联系人")
+	h.until("the contacts page", func() bool { return h.app.route.Page == PageContacts })
+	label := i18n.T("reader.block_sender")
+	if _, ok := h.tt.Find(label); !ok {
+		t.Fatalf("no %q in the title bar", label)
+	}
+	_ = h.tt.Click(label)
+	for range 10 {
+		h.drain()
+		h.tt.Frame()
+	}
+	if h.tt.HasText(i18n.T("reader.sender_blocked")) {
+		t.Fatal("a block with no contact reported success")
+	}
+}
+
+// TestContactMailRowsShowState: a contact's mail says which messages are
+// unread, starred or replied to and where each is, on screen and in its label.
+func TestContactMailRowsShowState(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	m := h.deliverOne(accs[0], coretest.Msg("Bob <bob@example.com>", accs[0].Email, "Lunch?", "Noon?"))
+	if err := h.env.Svc.SetFlags(context.Background(), []int64{m.ID}, []string{`\Flagged`}, nil); err != nil {
+		t.Fatal(err)
+	}
+	h.click("联系人")
+	h.until("bob chosen", func() bool { return h.app.route.Contact == "bob@example.com" })
+	label := "Lunch? · " + i18n.Tf("mail.row.unread", 1) + " · " + i18n.T("mail.unified.starred") + " · " + i18n.T("mail.folder.inbox")
+	h.until("the row with its state", func() bool { _, ok := h.tt.Find(label); return ok })
+	h.see(i18n.T("mail.unified.starred"))
+}

@@ -666,6 +666,11 @@ func (v *rulesView) actionRow(c *ui.Context, i int, labels []kit.Option[string])
 				ac.Label, ac.To, ac.Dir, ac.Subfolder, ac.Naming = "", "", "", false, ""
 				ui.Spacer(c)
 			}
+			// the grip is the pointer's; these move an action from the keyboard and screen readers
+			kit.IconButton(c, "arrow-up", i18n.T("settings.rules.action.up"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs, Disabled: i == 0}).
+				Shrink(0).OnClick(func() { d.Actions[i-1], d.Actions[i] = d.Actions[i], d.Actions[i-1] })
+			kit.IconButton(c, "arrow-down", i18n.T("settings.rules.action.down"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs, Disabled: i == len(d.Actions)-1}).
+				Shrink(0).OnClick(func() { d.Actions[i], d.Actions[i+1] = d.Actions[i+1], d.Actions[i] })
 			kit.IconButton(c, "x", i18n.T("settings.rules.action.remove"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs, Disabled: len(d.Actions) == 1}).
 				Shrink(0).OnClick(func() { d.Actions = slices.Delete(d.Actions, i, i+1) })
 		})
@@ -821,6 +826,7 @@ func (v *rulesView) commit() {
 		return
 	}
 	a := v.a
+	syncFollowers(&v.edit.Doc)
 	r, name, wit := v.edit, ruleName(v.edit.Doc), v.wit
 	n := 0
 	if v.prev != nil && v.runExisting {

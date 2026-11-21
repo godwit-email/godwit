@@ -16,22 +16,26 @@ const tones: Record<Tone, string> = {
  * The design's Alert: a notice to read before acting (a refused send, a plugin's warning, a draft
  * a program wrote). Its tone's mark of 16 level with the first line however tall the action is,
  * the lines of text in a column, and at most one action at the end, centred. Its children are the
- * lines; wrap each title in `font-medium`.
+ * lines; wrap each title in `font-medium`. `role` is "alert" (assertive) unless a notice that
+ * does not need to interrupt says "status".
  */
 export function Alert({
   tone,
   action,
   className,
+  role,
   children,
 }: {
   tone: Tone;
   action?: ReactNode;
   className?: string;
+  role?: "alert" | "status";
   children: ReactNode;
 }) {
   const Mark = tone === "info" ? RiInformationLine : RiErrorWarningLine;
   return (
     <Base
+      role={role ?? "alert"}
       className={cn(
         "flex w-auto items-center gap-3 rounded-xl border-[0.5px] px-4 py-3 text-sm",
         tones[tone],

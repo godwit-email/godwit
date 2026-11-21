@@ -83,6 +83,8 @@ func (p toastPlace) inset(c *ui.Context) (right, bottom float32, measured bool) 
 		if bar, field := p.bar, p.field; bar.W > 0 && field.W > 0 {
 			edgeX, edgeY = field.X+field.W, bar.Y-th.Space(2)
 		}
+		// a field near the window's left (a narrow compose window) keeps the toast inside it
+		edgeX = max(edgeX, min(win.X+win.W-th.Space(4), win.X+th.Space(4)+theme.ToastWidth))
 	}
 	return win.X + win.W - edgeX, win.Y + win.H - edgeY, measured
 }

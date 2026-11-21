@@ -203,7 +203,7 @@ func (s scrim) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
 		backing = darkWindow
 	}
 	if p.Preferences().ReduceTransparency {
-		fillRounded(p, box, backing.Mix(s.tint, float32(s.tint.A)/255), radii)
+		fillRounded(p, box, s.tint.Over(backing), radii) // Over keeps it opaque, as Reduce Transparency asks
 		return
 	}
 	fp := frostShader()
@@ -358,10 +358,12 @@ func tooltip(c *ui.Context, anchor ui.Element, text string, describe bool) {
 // as Tooltip shows its text (after 600 ms of hover, at once on keyboard focus,
 // the pointer passing through it): body fills it.
 func HoverCard(c *ui.Context, anchor ui.Element, w float32, body func()) {
-	t := theme.Of(c)
+	t, th := theme.Of(c), c.Theme()
 	ui.TooltipBase(c, anchor, func(tip ui.Element) {
 		tip.AttachTo(anchor, ui.AnchorBottomStart, ui.AnchorTopStart).Margin(theme.PopupOffset, 0, 0, 0).Width(w).TextColor(t.Foreground)
-		popoverCard(c, tip)
+		// popoverCard's padding on toastLook: not modal, so the page's web views stay live
+		toastLook(c, tip, t.Radius.X2l)
+		tip.Padding(th.Space(4)).Gap(th.Space(2.5))
 		tip.Children(body)
 	})
 }

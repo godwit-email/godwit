@@ -1266,7 +1266,7 @@
   "settings_notify_preview": "알림에 메일 미리보기 표시",
   "settings_notify_preview_help": "끄면 새 메일이 도착했다는 사실만 알립니다",
   "settings_privacy": "개인정보 보호 및 보안",
-  "settings_privacy_sub": "민감한 정보를 클라우드 모델로 보내기 전에 자리표시자로 바꿉니다.",
+  "settings_privacy_sub": "민감한 정보를 클라우드 모델로 보내기 전에 어떻게 처리할지 설정합니다.",
   "settings_px": "{arg1, number, ::group-off} px",
   "settings_px_default": "{arg1, number, ::group-off} px(기본값)",
   "settings_quick_replies": "빠른 답장",

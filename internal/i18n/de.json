@@ -1271,7 +1271,7 @@
   "settings_notify_preview": "Vorschau in Benachrichtigungen anzeigen",
   "settings_notify_preview_help": "Wenn deaktiviert, melden Benachrichtigungen nur den Eingang einer neuen E-Mail",
   "settings_privacy": "Datenschutz & Sicherheit",
-  "settings_privacy_sub": "Ersetze sensible Daten durch Platzhalter, bevor sie an ein Cloud-Modell gehen.",
+  "settings_privacy_sub": "Lege fest, was mit sensiblen Daten geschieht, bevor sie an ein Cloud-Modell gehen.",
   "settings_px": "{arg1, number, ::group-off} px",
   "settings_px_default": "{arg1, number, ::group-off} px (Standard)",
   "settings_quick_replies": "Schnellantworten",

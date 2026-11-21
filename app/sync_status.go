@@ -198,9 +198,9 @@ func (a *App) syncAlertCard(c *ui.Context, hs []syncHealth) (ui.Element, bool) {
 // syncStatus sits on the right end of the sidebar's footer row beside Settings:
 // syncing or how long ago the last sync finished, or a quiet trigger when
 // syncAlertCard shows above it.
-func (a *App) syncStatus(c *ui.Context, hs []syncHealth, hasAlert bool) {
+func (a *App) syncStatus(c *ui.Context, hs []syncHealth, hasAlert bool) (ui.Element, bool) {
 	if len(hs) == 0 {
-		return
+		return ui.Element{}, false
 	}
 	t, th := theme.Of(c), c.Theme()
 	w := hs[0]
@@ -214,10 +214,12 @@ func (a *App) syncStatus(c *ui.Context, hs []syncHealth, hasAlert bool) {
 		text, dotLevel = i18n.T("shell.sync.syncing"), syncBusy
 	case w.level == syncBusy:
 		text = w.status
-	default:
-		if a.syncedAt.IsZero() {
-			return
+	case a.syncedAt.IsZero():
+		if w.level != syncAction && w.level != syncRetrying {
+			return ui.Element{}, false
 		}
+		text = i18n.T("shell.sync.title") // a trouble before any sync: its dot says which
+	default:
 		text = a.syncedAgo()
 	}
 	chip := kit.SidebarItem(c, kit.SidebarItemOpts{Small: true, OnClick: func() { a.syncOpen = !a.syncOpen }}).
@@ -231,6 +233,19 @@ func (a *App) syncStatus(c *ui.Context, hs []syncHealth, hasAlert bool) {
 		kit.Text(c, text, t.Text.Xs).SingleLine().Shrink(1)
 		ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconXs, theme.IconXs).Shrink(0)
 	})
+	return chip, true
+}
+
+// titleSync is the sync chip at the title bar's end while the sidebar, whose
+// foot holds it, is folded: a failing account stays in sight, its menu below.
+func (a *App) titleSync(c *ui.Context) {
+	if !a.sidebarHidden || a.route.Page == PageSettings {
+		return
+	}
+	hs := a.syncHealths()
+	if chip, ok := a.syncStatus(c, hs, false); ok {
+		kit.PopoverAt(c, chip, &a.syncOpen, ui.AnchorBottomEnd, ui.AnchorTopEnd, theme.PopupOffset, func() { a.syncMenu(c, hs) })
+	}
 }
 
 // syncMenu lists each account: its state, why, and what to do about it.

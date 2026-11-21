@@ -1266,7 +1266,7 @@
   "settings_notify_preview": "Показывать предпросмотр в уведомлениях",
   "settings_notify_preview_help": "Если выключено, в уведомлении сообщается только о получении нового письма",
   "settings_privacy": "Конфиденциальность и безопасность",
-  "settings_privacy_sub": "Заменяйте конфиденциальные данные заполнителями перед отправкой в облачную модель.",
+  "settings_privacy_sub": "Выберите, что делать с конфиденциальными данными перед отправкой в облачную модель.",
   "settings_px": "{arg1, number, ::group-off} пикс.",
   "settings_px_default": "{arg1, number, ::group-off} пикс. (по умолчанию)",
   "settings_quick_replies": "Быстрые ответы",

@@ -96,7 +96,21 @@ func Tf(key string, args ...any) string {
 			values["arg"+strconv.Itoa(i+1)] = v
 		}
 	}
-	return localizePlatform(Language(), Catalog.Format(Language(), k, values))
+	// The platform wording adapts Godwit's text, never a caller's value (an
+	// address, a subject): strings go in as stand-ins and come back after.
+	var back []string
+	for name, v := range values {
+		if s, ok := v.(string); ok {
+			mark := "\uE000" + name + "\uE001"
+			values[name] = mark
+			back = append(back, mark, s)
+		}
+	}
+	s := localizePlatform(Language(), Catalog.Format(Language(), k, values))
+	if len(back) > 0 {
+		s = strings.NewReplacer(back...).Replace(s)
+	}
+	return s
 }
 
 // TIn is T in lang, whatever the UI's language, for text a model reads.

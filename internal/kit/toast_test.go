@@ -296,3 +296,26 @@ func TestToastActionFromFolded(t *testing.T) {
 }
 
 func within(got, want float32) bool { return got > want-1.5 && got < want+1.5 }
+
+// TestToastStaysInANarrowWindow: a bar's field near the window's left (a
+// 640-wide compose window with the Wit panel open, Send ending at 312) keeps
+// the toast inside the window, its icon and first words shown.
+func TestToastStaysInANarrowWindow(t *testing.T) {
+	const text = "Couldn't send: the server closed the connection"
+	added := false
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		if !added {
+			c.AddToast(ui.Toast{ID: "x", Title: text, Type: ToastError, Timeout: -1})
+			added = true
+		}
+		ui.Column(c).Fill().Children(func() { ui.Box(c).Grow(1) })
+		ToastBarRect(c, ui.Rect{X: 8, Y: 400, W: 320, H: 60}, ui.Rect{X: 200, Y: 412, W: 112, H: 32})
+		ToastHost(c, "Close")
+	}), 640, 480)
+	settle(tt)
+	tt.Frame()
+	r, ok := tt.Find(text)
+	if !ok || r.X < 16 {
+		t.Fatalf("toast text at %+v (found %v), want it inside the window, 16 from its left or more", r, ok)
+	}
+}

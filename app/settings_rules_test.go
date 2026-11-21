@@ -692,3 +692,24 @@ func TestSettingsRulesHitActions(t *testing.T) {
 		})
 	}
 }
+
+// TestSettingsRulesActionMoveButtons: 上移/下移 reorder actions without the
+// pointer, as keyboard and screen-reader users must.
+func TestSettingsRulesActionMoveButtons(t *testing.T) {
+	h, _ := withAccount(t)
+	h.openSettings("rules")
+	h.click("新建规则")
+	h.click("值")
+	h.typeText("billing@")
+	h.click("添加动作")
+	h.click("归档")
+	rv := h.app.pages[PageSettings].(*settingsPage).rules
+	if a := rv.edit.Doc.Actions; len(a) != 2 || a[0].Kind != core.ActionLabel {
+		t.Fatalf("initial actions %+v", a)
+	}
+	h.click(i18n.T("settings.rules.action.down")) // the first's: the last's is disabled
+	h.tt.Frame()
+	if a := rv.edit.Doc.Actions; a[0].Kind != core.ActionArchive || a[1].Kind != core.ActionLabel {
+		t.Fatalf("after 下移: %+v", a)
+	}
+}

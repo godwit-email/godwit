@@ -1266,7 +1266,7 @@
   "settings_notify_preview": "Bildirimlerde önizleme göster",
   "settings_notify_preview_help": "Kapalı olduğunda bildirimler yalnızca yeni e-posta geldiğini belirtir",
   "settings_privacy": "Gizlilik ve güvenlik",
-  "settings_privacy_sub": "Hassas bilgileri bir bulut modeline gitmeden önce yer tutucularla değiştirin.",
+  "settings_privacy_sub": "Hassas bilgilerin bir bulut modeline gitmeden önce nasıl işleneceğini seçin.",
   "settings_px": "{arg1, number, ::group-off} px",
   "settings_px_default": "{arg1, number, ::group-off} px (varsayılan)",
   "settings_quick_replies": "Hızlı yanıtlar",

@@ -783,20 +783,23 @@ func (fs *composeFrames) set(win int, f *app.ComposeFrame) {
 func newComposeWindow(ws *webui.Windows, cas *cascade, frames *composeFrames, view func(*app.ComposeFrame) func(*ui.Context)) webui.Window {
 	opts := composeWindowOptions(runtime.GOOS)
 	entry := opts.URL
-	var draw func(*ui.Context)
+	// Set after NewWindow, which called off the main thread returns while the
+	// main thread draws the window already: an atomic, not a plain variable.
+	var draw atomic.Pointer[func(*ui.Context)]
 	opts.URL, opts.Content = "", ui.View(func(c *ui.Context) {
-		if draw != nil {
-			draw(c)
+		if d := draw.Load(); d != nil {
+			(*d)(c)
 		}
 	})
 	w := mygo.NewWindow(opts)
 	cas.place(w)
 	if v, err := w.NewWebView(mygo.WebViewOptions{Transparent: true}); err != nil {
-		log.Printf("the compose page: %v", err) // the window shows its title bar alone
+		log.Printf("the compose page: %v", err) // the window stays blank
 	} else {
 		f := app.NewComposeFrame(v, w.Invalidate)
 		frames.set(w.ID(), f)
-		draw = view(f)
+		d := view(f)
+		draw.Store(&d)
 		lockPage(v.Page())
 		if err := v.Page().LoadURL(entry); err != nil {
 			log.Printf("the compose page: %v", err)

@@ -15,6 +15,25 @@ func TestPseudoLocale(t *testing.T) {
 	}
 }
 
+// TestLocalizePlatformKeepsArguments: the wording swap leaves the caller's
+// values alone, as a forward rule's recipient on its confirmation.
+func TestLocalizePlatformKeepsArguments(t *testing.T) {
+	oldOS := goos
+	t.Cleanup(func() {
+		goos = oldOS
+		SetLanguage("zh-Hans")
+	})
+	for _, tc := range []struct{ osName, lang string }{{"windows", "en"}, {"linux", "en"}, {"windows", "zh-Hans"}, {"linux", "zh-Hans"}} {
+		goos = tc.osName
+		SetLanguage(tc.lang)
+		for _, arg := range []string{"it-keychain@corp.example", "Keychain Team", "iCloud 钥匙串"} {
+			if got := Tf("settings.rules.confirm.to", arg); !strings.Contains(got, arg) {
+				t.Errorf("%s/%s: %q lost the argument %q", tc.osName, tc.lang, got, arg)
+			}
+		}
+	}
+}
+
 func TestLocalizePlatformKeychainAndThemeHelp(t *testing.T) {
 	oldOS := goos
 	t.Cleanup(func() {

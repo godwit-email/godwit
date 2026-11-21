@@ -1266,7 +1266,7 @@
   "settings_notify_preview": "Afficher un aperçu dans les notifications",
   "settings_notify_preview_help": "Si désactivé, les notifications indiquent seulement qu’un nouvel e-mail est arrivé",
   "settings_privacy": "Confidentialité et sécurité",
-  "settings_privacy_sub": "Remplacez les informations sensibles par des marqueurs avant leur envoi à un modèle cloud.",
+  "settings_privacy_sub": "Choisissez le traitement des informations sensibles avant leur envoi à un modèle cloud.",
   "settings_px": "{arg1, number, ::group-off} px",
   "settings_px_default": "{arg1, number, ::group-off} px (par défaut)",
   "settings_quick_replies": "Réponses rapides",

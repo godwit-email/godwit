@@ -1266,7 +1266,7 @@
   "settings_notify_preview": "Voorbeeld tonen in meldingen",
   "settings_notify_preview_help": "Indien uitgeschakeld melden meldingen alleen dat er nieuwe e-mail is binnengekomen",
   "settings_privacy": "Privacy en beveiliging",
-  "settings_privacy_sub": "Vervang gevoelige gegevens door plaatshouders voordat ze naar een cloudmodel gaan.",
+  "settings_privacy_sub": "Kies wat er met gevoelige gegevens gebeurt voordat ze naar een cloudmodel gaan.",
   "settings_px": "{arg1, number, ::group-off} px",
   "settings_px_default": "{arg1, number, ::group-off} px (standaard)",
   "settings_quick_replies": "Snelle antwoorden",

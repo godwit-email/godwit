@@ -46,3 +46,31 @@ func TestSettingsRulesFileActions(t *testing.T) {
 		t.Fatalf("second action %+v", rs[0].Doc.Actions[1])
 	}
 }
+
+// TestFileReadyNeedsAbsoluteFolder: a typed folder core would reject keeps
+// the editor's Save off, rather than closing the editor on a failed save.
+func TestFileReadyNeedsAbsoluteFolder(t *testing.T) {
+	abs := filepath.Join(t.TempDir(), "Invoices")
+	for dir, want := range map[string]bool{abs: true, "Invoices": false, "~/Documents": false, "": false} {
+		d := &core.RuleDoc{Actions: []core.RuleAction{{Kind: core.ActionPDF, Dir: dir, Subfolder: true, Naming: core.NamingPresets[0]}}}
+		if got := fileReady(d); got != want {
+			t.Errorf("fileReady(%q) = %v, want %v", dir, got, want)
+		}
+	}
+}
+
+// TestFileFollowerKeepsNamingUntilSaved: a folder typed through another
+// action's keeps the action's own naming; saving gives a follower its leader's.
+func TestFileFollowerKeepsNamingUntilSaved(t *testing.T) {
+	d := &core.RuleDoc{Actions: []core.RuleAction{
+		{Kind: core.ActionPDF, Dir: "/a/b", Subfolder: true, Naming: core.NamingPresets[0]},
+		{Kind: core.ActionEML, Dir: "/a/b", Subfolder: false, Naming: "{subject}"},
+	}}
+	if !fileReady(d) {
+		t.Fatal("a follower's own naming should not block saving")
+	}
+	syncFollowers(d)
+	if f := d.Actions[1]; f.Subfolder != true || f.Naming != core.NamingPresets[0] {
+		t.Fatalf("follower after sync = %+v", f)
+	}
+}

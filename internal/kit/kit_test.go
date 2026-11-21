@@ -169,6 +169,10 @@ func TestKitSelectChooses(t *testing.T) {
 	if sel != 2 || changed != 1 || !tt.HasText("Beta") {
 		t.Errorf("selected %d, changed %d times, texts %q; want 2, once, Beta shown", sel, changed, tt.Texts())
 	}
+	// a screen reader hears the choice, as of ui.SelectBase's pop-up button
+	if a, ok := tt.AccessByRole(ui.RolePopUpButton, "Letter"); !ok || a.Value != "Beta" {
+		t.Errorf("select access %+v (found %v), want a pop-up button valued Beta", a, ok)
+	}
 	if err := tt.Click("Letter"); err != nil {
 		t.Fatal(err)
 	}

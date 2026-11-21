@@ -1446,7 +1446,7 @@ function Answer({
           return k?.suspect ? [{ id: c.messageId, ...k }] : [];
         })
         .map((c) => (
-          <Notice key={c.id} tone="warning">
+          <Notice key={c.id} tone="warning" role="status">
             {/* the quote is mail text: a plain string, never markup */}
             <span>
               {c.quote ? t("wit.suspect_quote", `[${c.n}]`, c.quote) : t("wit.suspect", `[${c.n}]`)}

@@ -1266,7 +1266,7 @@
   "settings_notify_preview": "通知裡顯示郵件預覽",
   "settings_notify_preview_help": "關閉後只提示有新郵件",
   "settings_privacy": "隱私與安全",
-  "settings_privacy_sub": "傳給雲端模型之前，先把敏感資訊換成佔位符。",
+  "settings_privacy_sub": "設定敏感資訊傳往雲端模型前的處理方式。",
   "settings_px": "{arg1, number, ::group-off} px",
   "settings_px_default": "{arg1, number, ::group-off} px（預設）",
   "settings_quick_replies": "即時回覆",

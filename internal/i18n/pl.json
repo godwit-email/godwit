@@ -1271,7 +1271,7 @@
   "settings_notify_preview": "Pokazuj podgląd w powiadomieniach",
   "settings_notify_preview_help": "Gdy wyłączone, powiadomienia informują tylko o nadejściu nowych wiadomości",
   "settings_privacy": "Prywatność i bezpieczeństwo",
-  "settings_privacy_sub": "Zamieniaj dane wrażliwe na symbole zastępcze, zanim trafią do modelu w chmurze.",
+  "settings_privacy_sub": "Wybierz, co dzieje się z danymi wrażliwymi, zanim trafią do modelu w chmurze.",
   "settings_px": "{arg1, number, ::group-off} px",
   "settings_px_default": "{arg1, number, ::group-off} px (domyślnie)",
   "settings_quick_replies": "Szybkie odpowiedzi",

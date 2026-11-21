@@ -2267,7 +2267,7 @@
   "settings_notify_preview": "Show a preview in notifications",
   "settings_notify_preview_help": "Off, notifications say only that new mail arrived",
   "settings_privacy": "Privacy & security",
-  "settings_privacy_sub": "Replace sensitive details with placeholders before they go to a cloud model.",
+  "settings_privacy_sub": "Choose what happens to sensitive details before they go to a cloud model.",
   "settings_px": "{arg1, number, ::group-off} px",
   "@settings_px": {
     "placeholders": {

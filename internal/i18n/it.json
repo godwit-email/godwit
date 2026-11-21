@@ -1266,7 +1266,7 @@
   "settings_notify_preview": "Mostra un’anteprima nelle notifiche",
   "settings_notify_preview_help": "Se disattivato, le notifiche avvisano solo dell’arrivo di una nuova email",
   "settings_privacy": "Privacy e sicurezza",
-  "settings_privacy_sub": "Sostituisci i dati sensibili con segnaposto prima che vadano a un modello cloud.",
+  "settings_privacy_sub": "Scegli cosa succede ai dati sensibili prima che vadano a un modello cloud.",
   "settings_px": "{arg1, number, ::group-off} px",
   "settings_px_default": "{arg1, number, ::group-off} px (predefinito)",
   "settings_quick_replies": "Risposte rapide",

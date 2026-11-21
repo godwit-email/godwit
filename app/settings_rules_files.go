@@ -85,11 +85,26 @@ func filePreview(ac core.RuleAction) string {
 	return filepath.Join(append(parts, name)...)
 }
 
-// fileReady reports whether the editor's file actions can be saved.
+// fileReady reports whether the editor's file actions can be saved: each
+// has an absolute folder (core takes no other), and each leader a naming.
 func fileReady(d *core.RuleDoc) bool {
-	return !slices.ContainsFunc(d.Actions, func(ac core.RuleAction) bool {
-		return fileAction(ac.Kind) && (ac.Dir == "" || namingError(ac.Naming) != "")
-	})
+	for i, ac := range d.Actions {
+		if fileAction(ac.Kind) && (!filepath.IsAbs(ac.Dir) || leader(d, i) == i && namingError(ac.Naming) != "") {
+			return false
+		}
+	}
+	return true
+}
+
+// syncFollowers gives every file action its leader's subfolder and naming,
+// as core requires of actions to one folder. Saving does it once: a folder
+// being typed may pass through another's on the way.
+func syncFollowers(d *core.RuleDoc) {
+	for i := range d.Actions {
+		if l := leader(d, i); l != i && fileAction(d.Actions[i].Kind) {
+			d.Actions[i].Subfolder, d.Actions[i].Naming = d.Actions[l].Subfolder, d.Actions[l].Naming
+		}
+	}
 }
 
 // fileDir is action i's folder: an editable path input beside a button that
@@ -125,13 +140,16 @@ func (v *rulesView) fileOptions(c *ui.Context, d *core.RuleDoc, i int) {
 	t, th := theme.Of(c), c.Theme()
 	ac := &d.Actions[i]
 	pathRow := func() {
+		shown := *ac
+		if l := leader(d, i); l != i { // shown as it will save (syncFollowers), its own kept meanwhile
+			shown.Subfolder, shown.Naming = d.Actions[l].Subfolder, d.Actions[l].Naming
+		}
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(1.5)).TextColor(t.Muted).Children(func() {
 			ui.Icon(c, icons.Get("folder")).Size(theme.IconSm, theme.IconSm).Shrink(0)
-			kit.Text(c, filePreview(*ac), t.Text.Xs).Font(theme.Mono).SingleLine().Shrink(1)
+			kit.Text(c, filePreview(shown), t.Text.Xs).Font(theme.Mono).SingleLine().Shrink(1)
 		})
 	}
 	if l := leader(d, i); l != i {
-		ac.Subfolder, ac.Naming = d.Actions[l].Subfolder, d.Actions[l].Naming
 		pathRow()
 		return
 	}

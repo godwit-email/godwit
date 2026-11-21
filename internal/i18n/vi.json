@@ -1266,7 +1266,7 @@
   "settings_notify_preview": "Hiển thị bản xem trước trong thông báo",
   "settings_notify_preview_help": "Khi tắt, thông báo chỉ cho biết có thư mới đến",
   "settings_privacy": "Quyền riêng tư & bảo mật",
-  "settings_privacy_sub": "Thay thông tin nhạy cảm bằng chỗ giữ chỗ trước khi gửi tới mô hình đám mây.",
+  "settings_privacy_sub": "Chọn cách xử lý thông tin nhạy cảm trước khi gửi tới mô hình đám mây.",
   "settings_px": "{arg1, number, ::group-off} px",
   "settings_px_default": "{arg1, number, ::group-off} px (mặc định)",
   "settings_quick_replies": "Trả lời nhanh",

@@ -550,6 +550,11 @@ func (e *viewEditor) groupCard(c *ui.Context, i int) {
 				})
 				kit.Input(c, &g.Name, kit.InputOpts{Placeholder: i18n.T("view.editor.group.name")}).Label(i18n.T("view.editor.group.name")).Width(theme.ViewGroupNameWidth)
 				ui.Spacer(c)
+				// the grip is the pointer's; these move a group from the keyboard and screen readers
+				kit.IconButton(c, "arrow-up", i18n.T("view.editor.group.up"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs, Disabled: i == 0}).
+					Shrink(0).OnClick(func() { d.Groups[i-1], d.Groups[i] = d.Groups[i], d.Groups[i-1] })
+				kit.IconButton(c, "arrow-down", i18n.T("view.editor.group.down"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs, Disabled: i == len(d.Groups)-1}).
+					Shrink(0).OnClick(func() { d.Groups[i], d.Groups[i+1] = d.Groups[i+1], d.Groups[i] })
 				kit.IconButton(c, "x", i18n.T("view.editor.group.remove"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs}).
 					Shrink(0).OnClick(func() { d.Groups = slices.Delete(slices.Clone(d.Groups), i, i+1) })
 			})

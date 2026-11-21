@@ -390,6 +390,7 @@ func (a *App) titleBar(c *ui.Context, h float32) {
 		if p, ok := a.page().(*contactsPage); ok {
 			p.titleActions(c)
 		}
+		a.titleSync(c)
 	})
 }
 
@@ -577,6 +578,7 @@ func (a *App) contextBar(c *ui.Context) {
 				})
 			}
 		})
+		a.titleSync(c)
 	})
 }
 

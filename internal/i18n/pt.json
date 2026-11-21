@@ -1266,7 +1266,7 @@
   "settings_notify_preview": "Mostrar prévia nas notificações",
   "settings_notify_preview_help": "Quando desativado, as notificações informam apenas que um novo e-mail chegou",
   "settings_privacy": "Privacidade e segurança",
-  "settings_privacy_sub": "Substitua dados sensíveis por marcadores antes de irem para um modelo na nuvem.",
+  "settings_privacy_sub": "Escolha o que acontece com dados sensíveis antes de irem para um modelo na nuvem.",
   "settings_px": "{arg1, number, ::group-off} px",
   "settings_px_default": "{arg1, number, ::group-off} px (padrão)",
   "settings_quick_replies": "Respostas rápidas",

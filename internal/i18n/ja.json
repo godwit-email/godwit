@@ -1266,7 +1266,7 @@
   "settings_notify_preview": "通知にメールのプレビューを表示",
   "settings_notify_preview_help": "オフにすると、新着メールがあることだけを通知します",
   "settings_privacy": "プライバシーとセキュリティ",
-  "settings_privacy_sub": "機密情報をクラウドのモデルに送る前に、プレースホルダーに置き換えます。",
+  "settings_privacy_sub": "機密情報をクラウドのモデルに送る前の扱いを設定します。",
   "settings_px": "{arg1, number, ::group-off} px",
   "settings_px_default": "{arg1, number, ::group-off} px（デフォルト）",
   "settings_quick_replies": "クイック返信",
