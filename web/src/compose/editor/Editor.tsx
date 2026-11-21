@@ -65,7 +65,7 @@ const fold = (s: string) =>
 function resembles(word: string, text: string): boolean {
   const a = [...fold(word)];
   const b = [...fold(text)];
-  if (b.length === 0) return false; // punctuation only (a smart quote): no word to correct
+  if (a.length === 0 || b.length === 0) return false;
   // Levenshtein distance, one row at a time.
   let row = Array.from({ length: b.length + 1 }, (_, j) => j);
   for (let i = 1; i <= a.length; i++) {
@@ -149,7 +149,6 @@ export function Editor(props: {
         inputEvent.stopImmediatePropagation();
       }
       if (readOnly) return true;
-      lastReplacementTime.current = Date.now();
 
       let targetRange: TRange | null = null;
       const ranges = inputEvent.getTargetRanges?.();
@@ -197,6 +196,7 @@ export function Editor(props: {
           editor.tf.addMark(k, v);
         }
         editor.tf.insertText(text);
+        lastReplacementTime.current = Date.now();
       }
       return true;
     },

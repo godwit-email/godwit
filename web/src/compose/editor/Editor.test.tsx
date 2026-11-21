@@ -479,6 +479,23 @@ describe("Editor", () => {
     expect(box.textContent).toBe("hello i'");
   });
 
+  it("lets Enter through after ignoring a smart quote", async () => {
+    const { box } = setup("<p>i'</p>");
+    await select(box, 2, 0);
+    const enter = createEvent.keyDown(box, { key: "Enter", code: "Enter" });
+    replace(box, "’");
+    fireEvent(box, enter);
+    expect(enter.defaultPrevented).toBe(false);
+  });
+
+  it("ignores a rangeless word correction when the source is only punctuation", async () => {
+    const { box } = setup("<p>!</p>");
+    await select(box, 1, 0);
+    replace(box, "a");
+    await act(async () => {});
+    expect(box.textContent).toBe("!");
+  });
+
   it("insertReplacementText without a range still applies a correction of the last word", async () => {
     for (const [initial, data, want] of [
       ["<p>teh </p>", "the", "<p>the </p>"],
