@@ -136,3 +136,27 @@ func TestReaderUnsubscribeOncePerThread(t *testing.T) {
 		t.Fatalf("%d 退订 texts; want one button", n)
 	}
 }
+
+// 退订 sits beside the sender on the message header's first line rather than
+// beside the AI tools in the top header row.
+func TestReaderUnsubscribeBesideSender(t *testing.T) {
+	h, acc, _ := aiHarness(t, true, noAuto)
+	m := h.deliverOne(acc, coretest.Msg("Shop <news@shop.example>", acc.Email, "Deals", "Hello.",
+		coretest.Header("List-Unsubscribe: <mailto:leave@shop.example>")))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.see("退订")
+	h.see("总结")
+	unsub, ok1 := h.tt.Find("退订")
+	sum, ok2 := h.tt.Find("总结")
+	sender, ok3 := h.tt.Find("<news@shop.example>")
+	if !ok1 || !ok2 || !ok3 {
+		t.Fatalf("missing elements: unsub=%v sum=%v sender=%v", ok1, ok2, ok3)
+	}
+	if unsub.Y <= sum.Y+sum.H {
+		t.Fatalf("退订 (%v) should sit below the AI header row (总结 %v)", unsub, sum)
+	}
+	if dy := unsub.Y + unsub.H/2 - (sender.Y + sender.H/2); dy < -2 || dy > 2 || unsub.X <= sender.X+sender.W {
+		t.Fatalf("退订 (%v) should sit right of sender (%v) on the same line", unsub, sender)
+	}
+}

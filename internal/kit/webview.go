@@ -6,13 +6,27 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// frosted is whether a frosted panel was built this frame, wasFrosted the
-// last frame's. UI thread only.
-var frosted, wasFrosted bool
+// frost is a window's: whether a frosted panel was built this frame (now)
+// and the last (was), and the screenshots of its web views taken while one
+// was. Each window keeps its own, so one window's dialog stills no other's
+// pages.
+type frost struct {
+	now, was bool
+	shots    map[ui.NativeWebView]*shot
+}
 
-// NewFrame starts a frame: WebView goes by whether the last one frosted a
-// panel, as dialogs build after the pages under them.
-func NewFrame() { wasFrosted, frosted = frosted, false }
+type frostKey struct{}
+
+func frostOf(c *ui.Context) *frost {
+	return ui.Local(c.Root(), frostKey{}, func() frost { return frost{shots: map[ui.NativeWebView]*shot{}} })
+}
+
+// NewFrame starts the window's frame: WebView goes by whether its last one
+// frosted a panel, as dialogs build after the pages under them.
+func NewFrame(c *ui.Context) {
+	f := frostOf(c)
+	f.was, f.now = f.now, false
+}
 
 // pageCapturer is a web view that screenshots its page (mygo.WebView).
 type pageCapturer interface {
@@ -24,9 +38,6 @@ type shot struct {
 	mu  sync.Mutex
 	src ui.ImageSource
 }
-
-// shots are the screenshots taken while panels frost. UI thread only.
-var shots = map[ui.NativeWebView]*shot{}
 
 // WebView shows v as ui.WebView does, but while a frosted panel is up a
 // screenshot of its page stands in for it: a web view is a native view under
@@ -45,10 +56,12 @@ func WebView(c *ui.Context, v ui.NativeWebView) ui.Element {
 // time; nil until it arrives, and when nothing frosts (which forgets them,
 // so the next panel sees the page as it is then).
 func still(c *ui.Context, v ui.NativeWebView) ui.ImageSource {
-	if !frosted && !wasFrosted {
-		clear(shots)
+	f := frostOf(c)
+	if !f.now && !f.was {
+		clear(f.shots)
 		return nil
 	}
+	shots := f.shots
 	cp, ok := v.(pageCapturer)
 	if !ok {
 		return nil

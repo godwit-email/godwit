@@ -15,7 +15,7 @@ import (
 // newArchive makes a local archive named name from the accounts header's menu.
 func (h *harness) newArchive(name string) core.Account {
 	h.t.Helper()
-	h.headerMenu(i18n.T("mail.accounts"), i18n.T("mail.archive.new"))
+	h.headerMenu(i18n.T("mail.other_folders"), i18n.T("mail.archive.new"))
 	h.typeText(name)
 	h.click(i18n.T("mail.archive.create"))
 	h.see(name)

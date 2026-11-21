@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -683,7 +684,7 @@ func remoteImages(t *testing.T, h *harness, mode string) {
 }
 
 // A body's page is told how much of it the bars cover, as it scrolls under
-// them: the reply bar its bottom at first, the toolbar its top once
+// them: the reply bar its bottom at first, the part scrolled out its top once
 // scrolled; again once it reports, as a page drops what came before it
 // listened.
 func TestReaderBodyGlass(t *testing.T) {
@@ -695,26 +696,26 @@ func TestReaderBodyGlass(t *testing.T) {
 	h.app.BodyHeight(v, m.ID, 3000)
 	h.tt.Frame()
 	h.tt.Advance(2 * theme.MotionBase) // the message grows to hold it
-	glass := func() [2]int {
+	glass := func() bodyGlass {
 		h.plat.mu.Lock()
 		defer h.plat.mu.Unlock()
 		return v.glass
 	}
-	// a band runs from its edge of the page to the bar's, out of sight too
-	if g := glass(); g[0] != 0 || g[1] < int(r.barBottom) || g[1] >= 3000 {
-		t.Fatalf("glass %v at the top (reply bar %v): want only the bottom covered", g, r.barBottom)
+	// At the top: only the floating reply card overlaps the tall body, with its exact rounded card height (not the margin below it).
+	if g := glass(); g.top != (BodyGlassRect{}) || g.bottom.W <= 0 || g.bottom.H <= 0 || g.bottom.R <= 0 || float32(g.bottom.H) >= r.barBottom {
+		t.Fatalf("glass %+v at the top (reply bar %v, card %v): want only the floating card covered", g, r.barBottom, r.replyCard)
 	}
 	r.scroll.Y = 1000
 	h.tt.Frame()
 	h.tt.Frame()
-	if g := glass(); g[0] < int(r.barTop) || g[1] < int(r.barBottom) {
-		t.Fatalf("glass %v scrolled (bars %v, %v): want both covered", g, r.barTop, r.barBottom)
+	if g := glass(); g.top.W <= 0 || g.top.H <= 0 || g.top.Y <= 0 || float32(g.top.H) > float32(math.Ceil(float64(r.barTop)))+1 || g.bottom.W <= 0 || g.bottom.H <= 0 {
+		t.Fatalf("glass %+v scrolled (barTop %v, reply bar %v): want tight visible top strip and floating card covered", g, r.barTop, r.barBottom)
 	}
-	r.bodies[m.ID].glass = [2]int{}
-	v.glass = [2]int{}
+	r.bodies[m.ID].glass = bodyGlass{}
+	v.glass = bodyGlass{}
 	h.app.BodyHeight(v, m.ID, 3000)
 	h.tt.Frame()
-	if g := glass(); g == ([2]int{}) {
+	if g := glass(); g == (bodyGlass{}) {
 		t.Fatal("not told again once the page reported")
 	}
 }

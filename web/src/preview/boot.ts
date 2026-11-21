@@ -9,6 +9,17 @@ const page = q.get("page") ?? "compose";
 const state = q.get("state") ?? "";
 const mode = q.get("theme") === "dark" ? "dark" : "light";
 const nothing = async () => {};
+const designStates = [
+  "allowed",
+  "question",
+  "mcp",
+  "egress",
+  "batch",
+  "rule",
+  "thinking",
+  "answering",
+  "error",
+];
 const runStart = { run: 2, conversation: 1, turn: "2", revision: 1, conflict: false };
 
 const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; setup(): void }> = {
@@ -25,12 +36,23 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
       "program",
       "warned",
       "conflict",
+      "invalid",
+      "late",
+      "nowit",
     ],
     entry: () => import("@/compose/main"),
     setup() {
-      const withBody = ["inline", "rewrite", "cmdk", "program", "warned", "conflict"].includes(
-        state,
-      );
+      const withBody = [
+        "nowit",
+        "inline",
+        "rewrite",
+        "cmdk",
+        "program",
+        "warned",
+        "conflict",
+        "invalid",
+        "late",
+      ].includes(state);
       let revision = 1;
       let followed = false;
       const body = () => (revision > 1 || withBody ? fx.compose(mode, true).body : "");
@@ -61,7 +83,9 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
           ...(state === "translate" && {
             wit: { ...fx.compose(mode, withBody).wit, translateOnly: true },
           }),
+          ...(state === "nowit" && { wit: { ...fx.compose(mode, true).wit, enabled: false } }),
           ...(state === "program" && { fromProgram: true }), // a draft godwit mcp wrote (ADR 0043)
+          ...(state === "invalid" && { to: [...fx.compose(mode, true).to, "mark@"] }),
           ...(state === "signature" && {
             signatureHtml: `<p>Alex Chen<br>Partnerships · Example Co.</p><img src="${fx.logo}">`, // no "-- ": SignatureDelimiter is off by default
           }),
@@ -96,8 +120,8 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "ComposePage.Closed": nothing,
         "ComposePage.Stop": nothing,
         "ComposePage.OpenLink": nothing,
-        // no native menu in a browser: picks the last item (Send later…), to show what follows
-        "ComposePage.PopupMenu": async (items: string[]) => items.length - 1,
+        // no native menu in a browser: picks the last entry (Send later…), to show what follows
+        "ComposePage.PopupMenu": async (entries: { id: string }[]) => entries.at(-1)?.id ?? "",
         "ComposePage.OpenModels": nothing,
         "ComposePage.Models": async () => fx.witModels,
         "ComposePage.SearchContacts": async (q: string) =>
@@ -131,11 +155,21 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         }),
       });
       if (state === "cmdk") setTimeout(selectAndOpenCmdK, 1500);
+      // the states that wait for a click: the send bar's Send, or its options (Send later…)
+      const click = (label: string) =>
+        setTimeout(() => {
+          const b = [...document.querySelectorAll("button")].find(
+            (x) => x.textContent === label || x.getAttribute("aria-label") === label,
+          );
+          if (b) b.click();
+        }, 1500);
+      if (state === "warned" || state === "conflict") click("发送");
+      if (state === "late") click("发送选项");
     },
   },
   wit: {
     // plus: the + menu open; picker: 引用邮件's search with hits; quoted: a quoted mail's chip
-    states: ["conversation", "empty", "plus", "picker", "quoted", "create-skill"],
+    states: ["conversation", "empty", "plus", "picker", "quoted", "create-skill", ...designStates],
     entry: () => import("@/wit-page/main"),
     setup() {
       const conv = state === "empty" ? 0 : 1;
@@ -146,7 +180,13 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "WitPage.Load": async () => fx.witPage(mode, conv),
         "WitPage.TakeAsk": async () => ({ text: "", hits: [] }),
         "WitPage.Follow": async () =>
-          state === "create-skill" ? skillHistory : conv ? fx.witConversation() : fx.witEmpty(),
+          state === "create-skill"
+            ? skillHistory
+            : designStates.includes(state)
+              ? fx.witDesign(state)
+              : conv
+                ? fx.witConversation()
+                : fx.witEmpty(),
         "WitPage.Navigate": nothing,
         "WitPage.NewConversation": nothing,
         // a while, so the conversation's compacting line shows

@@ -131,35 +131,34 @@ func labelSubmenu(m *ui.Menu, t theme.Tokens, labels []core.Label, state func(id
 // It returns the header, none while no label is on mail (sectionShown).
 func (p *mailPage) labelNav(c *ui.Context) ui.Element {
 	a := p.a
-	t, th := theme.Of(c), c.Theme()
+	t := theme.Of(c)
 	if !p.sectionShown("labels") {
 		return ui.Element{}
 	}
-	head := kit.SidebarCollapsible(c, &p.labelsOpen, true, func() {
-		ui.Text(c, i18n.T("mail.labels")).SingleLine().Grow(1).Shrink(1)
-	}, func() {
-		for _, l := range a.labels {
-			if l.Count == 0 {
-				continue
+	head := kit.SidebarItem(c, kit.SidebarItemOpts{Muted: true, Open: &p.labelsOpen,
+		Title: func() { ui.Text(c, i18n.T("mail.labels")).SingleLine().Shrink(1) },
+		Group: func() {
+			for _, l := range a.labels {
+				if l.Count == 0 {
+					continue
+				}
+				v := core.View{LabelID: l.ID}
+				on := p.viewShown(v)
+				item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Covered: p.viewEdit != nil, OnClick: func() { a.navigate(Route{Page: PageMail, View: v}) }})
+				item.Children(func() {
+					ui.Icon(c, icons.Get("label-"+l.Icon)).Size(theme.Icon, theme.Icon).TextColor(t.Label(l.Color).Text)
+					ui.Text(c, l.Name).SingleLine().Grow(1).Shrink(1)
+					if l.Unread > 0 {
+						kit.Text(c, strconv.Itoa(l.Unread), t.Text.Xs).TextColor(t.Muted)
+					}
+				})
+				item.ContextMenu(func(m *ui.Menu) {
+					if m.Item(i18n.T("mail.mark_all_read")).Disabled(l.Unread == 0).Chosen() {
+						p.markViewAsRead(core.View{LabelID: l.ID})
+					}
+				})
 			}
-			v := core.View{LabelID: l.ID}
-			on := p.viewShown(v)
-			item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Covered: p.viewEdit != nil, OnClick: func() { a.navigate(Route{Page: PageMail, View: v}) }})
-			item.Children(func() {
-				ui.Icon(c, icons.Get("label-"+l.Icon)).Size(theme.Icon, theme.Icon).TextColor(t.Label(l.Color).Text)
-				ui.Text(c, l.Name).SingleLine().Grow(1).Shrink(1)
-				if l.Unread > 0 {
-					kit.Text(c, strconv.Itoa(l.Unread), t.Text.Xs).TextColor(t.Muted)
-				}
-			})
-			item.ContextMenu(func(m *ui.Menu) {
-				if m.Item(i18n.T("mail.mark_all_read")).Disabled(l.Unread == 0).Chosen() {
-					p.markViewAsRead(core.View{LabelID: l.ID})
-				}
-			})
-		}
-	})
-	ui.Box(c).Height(th.Space(2))
+		}})
 	return head
 }
 

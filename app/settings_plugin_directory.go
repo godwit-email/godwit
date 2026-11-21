@@ -19,40 +19,39 @@ import (
 // plugin; a card opens its install dialog, or the row of what is installed.
 func (e *extView) directoryView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).Gap(theme.HeadingGap).Children(func() {
-		settingsBack(c, i18n.T("settings.extensions"), func() { e.onDirectory = false })
-		pageHeading(c, i18n.T("settings.ext.directory"), i18n.T("settings.ext.directory.sub"))
-	})
-	switch {
-	case len(e.reg.Entries) == 0 && e.reg.Stale != "":
-		kit.Block(c, ui.Row(c), kit.ToneCard).FillWidth().Gap(th.Space(6)).Padding(th.Space(3), th.Space(4)).AlignItems(ui.Center).Children(func() {
-			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-				kit.Text(c, i18n.T("settings.ext.directory.offline"), t.Text.Sm).FontWeight(500)
-				kit.Text(c, i18n.T("settings.ext.directory.offline.hint"), t.Text.Xs).TextColor(t.Muted)
-			})
-			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(e.refreshRegistry)
-		})
-	case len(e.reg.Entries) == 0:
-		ui.Text(c, i18n.T("settings.ext.registry.empty")).TextColor(t.Muted)
-	default:
-		ui.Column(c).FillWidth().Gap(th.Space(3)).Children(func() {
-			for i := 0; i < len(e.reg.Entries); i += 2 {
-				ui.Row(c.Key(i)).FillWidth().Gap(th.Space(3)).AlignItems(ui.Stretch).Children(func() {
-					for _, en := range e.reg.Entries[i:min(i+2, len(e.reg.Entries))] {
-						e.directoryCard(c.Key("registry:"+en.Name), en)
-					}
-					if i+1 == len(e.reg.Entries) { // a lone last card keeps its column's width; the card's padding counts toward its basis, so the filler's must too
-						ui.Box(c).Grow(1).Shrink(1).Basis(0).MinWidth(0).Padding(th.Space(3))
-					}
+	pageHeading(c, i18n.T("settings.ext.directory"), i18n.T("settings.ext.directory.sub"))
+	ui.Column(c).Gap(th.Space(3)).Children(func() { // the footnote hangs 12 under what it follows
+		switch {
+		case len(e.reg.Entries) == 0 && e.reg.Stale != "":
+			kit.Block(c, ui.Row(c), kit.ToneCard).FillWidth().Gap(th.Space(6)).Padding(th.Space(3), th.Space(4)).AlignItems(ui.Center).Children(func() {
+				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
+					kit.Text(c, i18n.T("settings.ext.directory.offline"), t.Text.Sm).FontWeight(500)
+					kit.Text(c, i18n.T("settings.ext.directory.offline.hint"), t.Text.Xs).TextColor(t.Muted)
 				})
-			}
-		})
-	}
-	foot := i18n.T("settings.ext.no_send")
-	if e.reg.Stale != "" && len(e.reg.Entries) > 0 {
-		foot = i18n.T("settings.ext.registry.stale") + " " + foot
-	}
-	kit.Text(c, foot, t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(4))
+				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Outline}).OnClick(e.refreshRegistry)
+			})
+		case len(e.reg.Entries) == 0:
+			ui.Text(c, i18n.T("settings.ext.registry.empty")).TextColor(t.Muted)
+		default:
+			ui.Column(c).FillWidth().Gap(th.Space(3)).Children(func() {
+				for i := 0; i < len(e.reg.Entries); i += 2 {
+					ui.Row(c.Key(i)).FillWidth().Gap(th.Space(3)).AlignItems(ui.Stretch).Children(func() {
+						for _, en := range e.reg.Entries[i:min(i+2, len(e.reg.Entries))] {
+							e.directoryCard(c.Key("registry:"+en.Name), en)
+						}
+						if i+1 == len(e.reg.Entries) { // a lone last card keeps its column's width; the card's padding counts toward its basis, so the filler's must too
+							ui.Box(c).Grow(1).Shrink(1).Basis(0).MinWidth(0).Padding(th.Space(3))
+						}
+					})
+				}
+			})
+		}
+		foot := i18n.T("settings.ext.no_send")
+		if e.reg.Stale != "" && len(e.reg.Entries) > 0 {
+			foot = i18n.T("settings.ext.registry.stale") + " " + foot
+		}
+		kit.Text(c, foot, t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(4))
+	})
 	e.installDialog(c)
 }
 
@@ -93,10 +92,23 @@ func flowLabel(flow string) string {
 	return ""
 }
 
+// flowLine is where the plugin's data goes: amber to a third party, green kept here.
+func flowLine(c *ui.Context, en core.RegistryEntry) {
+	l := flowLabel(en.DataFlow)
+	if l == "" {
+		return
+	}
+	if en.DataFlow == plugins.DataFlowThirdParty {
+		statusLine(c, line{l, lookUntested})
+		return
+	}
+	statusLine(c, line{l, lookOK})
+}
+
 func entryIconBox(c *ui.Context, en core.RegistryEntry, tone kit.Tone) {
 	t, th := theme.Of(c), c.Theme()
-	kit.Tile(c, th.Space(10), th.Space(10), tone).TextColor(t.Muted).Children(func() {
-		ui.Icon(c, icons.Get(entryIcon(en))).Size(theme.IconLg, theme.IconLg)
+	kit.Tile(c, th.Space(8), th.Space(8), tone).TextColor(t.Foreground).Children(func() {
+		ui.Icon(c, icons.Get(entryIcon(en))).Size(theme.Icon, theme.Icon)
 	})
 }
 
@@ -118,14 +130,8 @@ func (e *extView) directoryCard(c *ui.Context, en core.RegistryEntry) {
 				if s := en.Summary.For(i18n.Language()); s != "" {
 					kit.Tooltip(c, kit.Text(c, s, t.Text.Xs).TextColor(t.Muted).MaxLines(2).Shrink(1), s)
 				}
-				ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Wrap().Children(func() {
-					if l := flowLabel(en.DataFlow); l != "" {
-						if en.DataFlow == plugins.DataFlowThirdParty {
-							statusPill(c, l, false)
-						} else {
-							kit.Text(c, l, t.Text.Xs).TextColor(t.Muted)
-						}
-					}
+				ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Wrap().Children(func() {
+					flowLine(c, en)
 					if m := strings.TrimPrefix(strings.TrimSuffix(entryKind(en)+" · "+cmp.Or(en.Version, en.Installed), " · "), " · "); m != "" {
 						kit.Text(c, m, t.Text.Xs).TextColor(t.Muted)
 					}
@@ -140,7 +146,7 @@ func (e *extView) directoryCard(c *ui.Context, en core.RegistryEntry) {
 func (e *extView) entryAction(c *ui.Context, en core.RegistryEntry) {
 	t := theme.Of(c)
 	dialog := func(text string) {
-		kit.Button(c, text, kit.ButtonOpts{Variant: kit.Outline, Disabled: e.installing != ""}).Label(i18n.Tf("settings.ext.registry.named", text, en.Name)).OnClick(func() { e.openDialog(en.Name) })
+		kit.Button(c, text, kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Outline, Disabled: e.installing != ""}).Label(i18n.Tf("settings.ext.registry.named", text, en.Name)).OnClick(func() { e.openDialog(en.Name) })
 	}
 	switch {
 	case e.installing == en.Name:
@@ -161,14 +167,14 @@ func (e *extView) entryAction(c *ui.Context, en core.RegistryEntry) {
 // updateButton: a newer reviewed release of what the user already allowed.
 func (e *extView) updateButton(c *ui.Context, en core.RegistryEntry) {
 	text := i18n.Tf("settings.ext.registry.update", en.Version)
-	kit.Button(c, text, kit.ButtonOpts{Variant: kit.Outline, Disabled: e.installing != ""}).Label(i18n.Tf("settings.ext.registry.named", text, en.Name)).
+	kit.Button(c, text, kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Outline, Disabled: e.installing != ""}).Label(i18n.Tf("settings.ext.registry.named", text, en.Name)).
 		OnClick(func() { e.installFromRegistry(en.Name, nil) })
 }
 
 func (e *extView) openEntry(en core.RegistryEntry) {
 	switch {
 	case en.Installed != "" && en.InstalledTrust == "listed":
-		e.onDirectory, e.tab, e.plugin = false, 1, en.Name
+		e.onDirectory, e.plugin = false, en.Name
 	case en.Version != "":
 		e.openDialog(en.Name)
 	}
@@ -245,10 +251,10 @@ func (e *extView) installDialog(c *ui.Context) {
 			dataFlowCard(c, en)
 			entryPermissions(c, en)
 			if en.Installed != "" {
-				kit.Alert(c, kit.Warning, strings.TrimSpace(i18n.Tf("settings.ext.registry.confirm.replace", en.Name)), nil)
+				kit.Alert(c, kit.ToneWarning, strings.TrimSpace(i18n.Tf("settings.ext.registry.confirm.replace", en.Name)), nil)
 			}
 			if en.Homepage != "" {
-				kit.TextLink(c, i18n.T("settings.ext.dialog.home"), t.Muted, t.Text.Xs).AlignSelf(ui.Start).OnClick(func() {
+				kit.Button(c, i18n.T("settings.ext.dialog.home"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).AlignSelf(ui.Start).OnClick(func() {
 					home, plat := en.Homepage, e.a.plat
 					e.a.do(func(context.Context) error { return plat.OpenURL(home) }, e.a.toastErr)
 				})
@@ -295,9 +301,7 @@ func dataFlowCard(c *ui.Context, en core.RegistryEntry) {
 	kit.Block(c, ui.Column(c), kit.ToneCard).FillWidth().Gap(th.Space(1)).Padding(th.Space(3), th.Space(4)).Children(func() {
 		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 			kit.Text(c, i18n.T("settings.ext.dialog.flow"), t.Text.Sm).FontWeight(500)
-			if l := flowLabel(en.DataFlow); l != "" {
-				statusPill(c, l, false)
-			}
+			flowLine(c, en)
 		})
 		if s := en.Summary.For(i18n.Language()); s != "" {
 			kit.Text(c, s, t.Text.Sm)
@@ -406,7 +410,7 @@ func readmeView(c *ui.Context, blocks []readmeBlock) {
 			cc := c.Key(i)
 			switch b.kind {
 			case "h":
-				kit.Text(cc, b.text, t.Text.Sm).FontWeight(600).Margin(th.Space(2), 0, 0, 0)
+				kit.Text(cc, b.text, t.Text.Sm).FontWeight(500).Margin(th.Space(2), 0, 0, 0)
 			case "li":
 				ui.Row(cc).FillWidth().Gap(th.Space(2)).Children(func() {
 					kit.Text(cc, b.mark, t.Text.Sm).TextColor(t.Muted).Shrink(0)

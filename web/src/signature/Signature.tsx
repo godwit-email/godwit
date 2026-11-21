@@ -21,7 +21,7 @@ import {
   usePlateEditor,
 } from "platejs/react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { fromHTML, IMAGE_SRC, toHTML, toText } from "@/compose/editor/html";
 import { linkPlugin, SafePastePlugin } from "@/compose/editor/plugins";
@@ -136,7 +136,6 @@ function Bar({ t, mode, children }: { t: T; mode: Mode; children?: ReactNode }) 
           aria-pressed={false}
           aria-label={t("settings.account.signature.html.label")}
           title={t("settings.account.signature.html.label")}
-          className="text-muted-foreground"
           onMouseDown={(e) => e.preventDefault()}
           onClick={mode.onHTML}
         >

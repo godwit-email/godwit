@@ -294,10 +294,7 @@ export function Toolbar(props: {
     <div className="-ml-1.5 flex flex-wrap items-center gap-0.5">
       {historyButton("compose.undo", RiArrowGoBackLine, canUndo, () => editor.tf.undo())}
       {historyButton("compose.redo", RiArrowGoForwardLine, canRedo, () => editor.tf.redo())}
-      <Separator
-        orientation="vertical"
-        className="mx-0.5 h-4.5 bg-transparent data-vertical:w-0 data-vertical:self-center data-vertical:border-l-[0.5px]"
-      />
+      <Separator orientation="vertical" className="mx-0.5 h-5 data-vertical:self-center" />
       <ToggleGroup multiple value={value} size="sm" spacing={0.5}>
         {items.map((it) => {
           const trigger = <TooltipTrigger render={button(it)} />;
@@ -319,10 +316,7 @@ export function Toolbar(props: {
           );
         })}
       </ToggleGroup>
-      <Separator
-        orientation="vertical"
-        className="mx-0.5 h-4.5 bg-transparent data-vertical:w-0 data-vertical:self-center data-vertical:border-l-[0.5px]"
-      />
+      <Separator orientation="vertical" className="mx-0.5 h-5 data-vertical:self-center" />
       {fontMenu({
         mark: "fontFamily",
         label: "compose.font_family",
@@ -343,10 +337,7 @@ export function Toolbar(props: {
       })}
       {attach && (
         <>
-          <Separator
-            orientation="vertical"
-            className="mx-1.5 h-4.5 bg-transparent data-vertical:w-0 data-vertical:self-center data-vertical:border-l-[0.5px]"
-          />
+          <Separator orientation="vertical" className="mx-1.5 h-5 data-vertical:self-center" />
           {attach}
         </>
       )}

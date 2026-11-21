@@ -35,9 +35,10 @@ const (
 var logo = ui.MustParseSVG(assets.Logo)
 
 // settingsPage is the Settings section: the accounts and the app's pages,
-// chosen by Route.Settings ("account:<id>", "general", "signatures",
-// "signature:<id>", "models", "labels", "extensions", "privacy", "masklog"
-// (脱敏记录, under privacy), "labs", "about").
+// chosen by Route.Settings ("account:<id>", "addressbook:<id>", and the keys
+// of settingsNav; "signature:<id>" and "masklog" are subpages of
+// "signatures" and "masking"). The old "extensions" and "privacy" open their
+// first page (legacySettingsRoutes).
 type settingsPage struct {
 	a *App
 
@@ -71,9 +72,8 @@ type settingsPage struct {
 	importErr     error                                                                          // ImportAccounts's failure
 	update        func(ctx context.Context, id int64, p core.AccountPatch) (core.Account, error) // tests swap it
 
-	aiTab, privacyTab int                         // the AI and 隐私与安全 pages' tabs
-	clients           map[string]mcpclients.State // 接入 AI 应用: how each AI app stands, as last read
-	logFilter         maskLogFilter               // what 脱敏记录 lists
+	clients   map[string]mcpclients.State // 接入 AI 应用: how each AI app stands, as last read
+	logFilter maskLogFilter               // what 脱敏记录 lists
 
 	// general
 	st, shown   core.Settings         // what the controls are bound to, and what they showed last frame
@@ -114,8 +114,7 @@ type settingsPage struct {
 	starred    bool // the user starred Godwit, by gh
 	starring   bool // StarRepo runs
 
-	query    string // the sidebar's search
-	searched string // query, lowercased, when it last picked the tabs
+	query string // the sidebar's search
 
 	models       *modelsView
 	ext          *extView
@@ -141,7 +140,7 @@ type settingsPage struct {
 func newSettingsPage(a *App) *settingsPage {
 	return &settingsPage{a: a, forms: map[int64]*accountForm{}, usage: map[int64]int64{}, imgSize: -1, boxes: map[int64]*mailbox{}, reauth: map[int64]bool{}, rechecking: map[int64]bool{}, sigDocs: map[int64]sigDoc{},
 		secDays: 30,
-		update:  a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestCapability, testPlugin: a.svc.TestPluginModel, serviceAvatar: a.svc.ModelServiceAvatar}, ext: &extView{a: a, tab: 1}, labels: newLabelsView(a), rules: &rulesView{a: a}, addressBooks: newAddressBooksView(a)}
+		update:  a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestCapability, testPlugin: a.svc.TestPluginModel, serviceAvatar: a.svc.ModelServiceAvatar}, ext: &extView{a: a}, labels: newLabelsView(a), rules: &rulesView{a: a}, addressBooks: newAddressBooksView(a)}
 }
 
 // section is the page shown: an unknown or missing account or address book
@@ -149,6 +148,9 @@ func newSettingsPage(a *App) *settingsPage {
 func (p *settingsPage) section() (sec string, acc *core.Account) {
 	a := p.a
 	sec = a.route.Settings
+	if first, ok := legacySettingsRoutes[sec]; ok {
+		sec = first
+	}
 	if rest, ok := strings.CutPrefix(sec, "addressbook:"); ok {
 		if id, _ := strconv.ParseInt(rest, 10, 64); id > 0 {
 			if _, ok := a.standaloneBook(id); ok {
@@ -191,14 +193,14 @@ func (p *settingsPage) refresh(hints []events.Event) {
 	case acc != nil:
 		p.readUsage(acc.ID)
 		p.readMailbox(acc.ID)
-	case sec == "models":
+	case sec == "models" || sec == "features" || sec == "mcp" || sec == "clients":
 		if hints == nil || slices.ContainsFunc(hints, func(ev events.Event) bool { return extChange(ev) || ev.Type == events.ModelsChanged }) { // a plugin's models come and go with it
 			p.models.load()
 		}
 		if hints != nil && !slices.ContainsFunc(hints, extChange) {
 			break
 		}
-		p.ext.load() // the MCP tab's servers, and the registry naming the translators
+		p.ext.load() // the MCP page's servers, and the registry naming the translators
 		if hints == nil {
 			p.readClients()
 		}
@@ -209,13 +211,18 @@ func (p *settingsPage) refresh(hints []events.Event) {
 					p.translators = list
 				}
 			})
-	case sec == "extensions":
+	case sec == "skills": // its own list only: the plugin directory is 插件's to refresh
+		if hints == nil || slices.ContainsFunc(hints, func(ev events.Event) bool { return ev.Type == events.SkillsChanged }) {
+			p.ext.loadSkills()
+		}
+	case sec == "plugins":
 		if hints == nil || slices.ContainsFunc(hints, extChange) {
 			p.ext.load()
 		} else if slices.ContainsFunc(hints, func(ev events.Event) bool { return ev.Type == events.SkillsChanged }) {
 			p.ext.loadSkills()
 		}
 		if hints == nil { // opened: the directory may have changed since
+			p.ext.onDirectory = false // 插件 is its way back
 			p.ext.refreshRegistry()
 		}
 	case sec == "about" && hints == nil:
@@ -223,7 +230,7 @@ func (p *settingsPage) refresh(hints []events.Event) {
 		var starred, ok bool
 		a.query(func(ctx context.Context) error { starred, ok = a.plat.RepoStarred(ctx); return nil },
 			func(error) { p.gh, p.starred = ok, starred })
-	case sec == "privacy" && hints == nil:
+	case isPrivacyPage(sec) && hints == nil:
 		p.readSecurityProgress()
 		var err error
 		a.query(func(ctx context.Context) error { err = a.svc.KeychainStatus(ctx); return nil },
@@ -233,7 +240,7 @@ func (p *settingsPage) refresh(hints []events.Event) {
 		var here bool
 		a.query(func(context.Context) error { here = a.svc.RecognitionModelInstalled(); return nil }, func(error) { p.recognition.installed = here })
 		p.readRecognitionModel()
-	case sec == "privacy":
+	case isPrivacyPage(sec):
 		p.readSecurityProgress()
 		if slices.ContainsFunc(hints, func(ev events.Event) bool { return ev.Type == events.SettingsChanged }) {
 			p.readRecognitionModel() // 识别模型 may have been turned on or off
@@ -267,13 +274,10 @@ func (p *settingsPage) Title() (string, string) {
 	if ab, ok := p.shownBook(sec); ok {
 		return i18n.T("settings.heading"), i18n.T("settings.accounts") + " · " + ab.Name
 	}
-	switch {
-	case strings.HasPrefix(sec, "signature:"):
-		sec = "signatures"
-	case sec == "masklog":
+	if sec == "masklog" {
 		return i18n.T("settings.heading"), i18n.T("settings.privacy") + " · " + i18n.T("settings.masking.log")
 	}
-	return i18n.T("settings.heading"), i18n.T("settings." + sec)
+	return i18n.T("settings.heading"), pageName(settingsParent(sec))
 }
 
 // shownBook is the standalone address book whose page sec is.
@@ -286,99 +290,17 @@ func (p *settingsPage) shownBook(sec string) (core.AddressBook, bool) {
 	return p.a.standaloneBook(id)
 }
 
-var appSections = []string{"general", "signatures", "models", "labels", "rules", "extensions", "privacy", "labs", "about"}
-
-// sectionIcons are the app sections' sidebar icons.
-var sectionIcons = map[string]string{"general": "settings", "signatures": "quill-pen", "models": "brain-4", "labels": "tag", "rules": "filter", "extensions": "puzzle", "privacy": "shield", "labs": "flask", "about": "info"}
-
-// Sidebar: the accounts list (mail accounts and address books with no mail
-// account, each with its mark, a status dot and what it syncs), then Add
-// account; then the app's pages.
-func (p *settingsPage) Sidebar(c *ui.Context) {
-	a := p.a
-	t, th := theme.Of(c), c.Theme()
-	cur, _ := p.section()
-	switch {
-	case strings.HasPrefix(cur, "signature:"):
-		cur = "signatures" // a signature is a page of the list
-	case cur == "masklog":
-		cur = "privacy" // 脱敏记录 is a page of 隐私与安全
-	}
-	group := func(label string, top, bottom float32) {
-		kit.Text(c, label, t.Text.Xs).TextColor(t.Muted).Padding(top, th.Space(2), bottom, th.Space(2))
-	}
-	item := func(sec string) ui.Element {
-		return kit.SidebarItem(c, kit.SidebarItemOpts{Selected: sec == cur, OnClick: func() { a.navigate(Route{Page: PageSettings, Settings: sec}) }})
-	}
-	sidebarScroll(c, func() {
-		kit.Text(c, i18n.T("settings.heading"), t.Text.Base).FontWeight(600).Padding(th.Space(1), th.Space(1.5), th.Space(2.5), th.Space(1.5))
-		p.searchField(c)
-		hit := p.matching(p.query)
-		if hit.accounts {
-			group(i18n.T("settings.accounts"), th.Space(1), th.Space(1.5))
-		}
-		entries := a.accountEntries()
-		entry := func(e accountEntry) {
-			route := accountRoute(e.key().Account)
-			if e.ab != nil {
-				route = addressBookRoute(e.ab.ID)
-			}
-			p.entryRow(c, e, route == cur, route)
-		}
-		switch n := len(entries); {
-		case !hit.accounts:
-		case hit.email == "" && n > 1: // dragged to reorder; not while a search hides some
-			p.accountOrder.Key = func(i int) any { return entries[i].key() }
-			p.accountOrder.Reorder = func(rows []int, to int) { p.moveEntry(rows[0], to) }
-			gap := th.Space(0.5) // the sidebar column's
-			kit.List(c, &p.accountOrder, n, func(i int) {
-				var top float32
-				if i > 0 {
-					top = gap
-				}
-				ui.Column(c).FillWidth().Padding(top, 0, 0, 0).Children(func() { entry(entries[i]) })
-			}).FillWidth().Height(float32(n)*(th.Space(11)+gap) - gap)
-		default:
-			for _, e := range entries {
-				if hit.email == "" || e.acc != nil && accountMatches(*e.acc, hit.email) || e.ab != nil && strings.Contains(strings.ToLower(e.ab.Name), hit.email) {
-					entry(e)
-				}
-			}
-		}
-		if hit.accounts {
-			kit.SidebarItem(c, kit.SidebarItemOpts{Muted: true, OnClick: a.openAddAccount}).Children(func() {
-				ui.Row(c).Width(theme.MarkSm).Justify(ui.Center).Children(func() { // the accounts' marks' column
-					ui.Icon(c, icons.Get("plus")).Size(theme.IconSm, theme.IconSm)
-				})
-				ui.Text(c, i18n.T("settings.add_account"))
-			})
-		}
-		if len(hit.apps) > 0 {
-			group(i18n.T("settings.app"), th.Space(3), th.Space(1))
-		}
-		for _, sec := range hit.apps {
-			b := item(sec)
-			b.Children(func() {
-				kit.SidebarIcon(c, b, sectionIcons[sec], sec == cur)
-				ui.Text(c, i18n.T("settings."+sec))
-			})
-		}
-	})
-}
-
 func (p *settingsPage) Content(c *ui.Context) {
 	th := c.Theme()
 	sec, acc := p.section()
 	kit.Panel(c, panelRadius(c)).Grow(1).Children(func() {
-		scroll := ui.Scroll(c).Grow(1)
-		p.rules.viewTop = scroll.LayoutBounds().Y
-		scroll.Children(func() {
+		if sec == "rules" && p.rules.editing {
+			p.rules.editor(c)
+			return
+		}
+		ui.Scroll(c).Grow(1).Children(func() {
 			ui.Column(c).FillWidth().Padding(th.Space(8)).Children(func() {
-				width := float32(theme.SettingsMaxWidth)
-				if sec == "rules" && p.rules.editing { // the rule editor's two columns
-					width = theme.ContentMaxWidth
-				}
-				ui.Column(c).FillWidth().MaxWidth(width).AlignSelf(ui.Center).Gap(th.Space(8)).Children(func() {
+				ui.Column(c).FillWidth().MaxWidth(theme.SettingsMaxWidth).AlignSelf(ui.Center).Gap(th.Space(8)).Children(func() {
 					switch {
 					case acc != nil:
 						p.accountView(c, *acc)
@@ -394,24 +316,32 @@ func (p *settingsPage) Content(c *ui.Context) {
 						if ab, ok := p.shownBook(sec); ok {
 							p.addressBooks.page(c, ab)
 						}
-					case sec == "privacy":
-						p.privacyView(c)
+					case isPrivacyPage(sec):
+						p.privacyView(c, sec)
 					case sec == "masklog":
 						p.maskLogPage(c)
 					case sec == "models":
-						p.aiView(c)
+						p.modelsPage(c)
+					case sec == "features":
+						p.featuresPage(c)
+					case sec == "mcp":
+						p.mcpPage(c)
+					case sec == "clients":
+						p.clientsPage(c)
 					case sec == "labels":
 						p.labels.view(c, p)
 					case sec == "rules":
 						p.rules.view(c)
-					case sec == "extensions":
-						p.ext.view(c)
+					case sec == "skills":
+						p.ext.skillsPage(c)
+					case sec == "plugins":
+						p.ext.pluginsPage(c)
 					case sec == "labs":
 						p.labsView(c)
 					case sec == "about":
 						p.aboutView(c)
 					default:
-						pageHeading(c, i18n.T("settings."+sec), "")
+						pageHeading(c, pageName(sec), "")
 					}
 				})
 			})
@@ -444,7 +374,9 @@ func pageHeading(c *ui.Context, title, sub string, action ...func()) {
 func settingsSection(c *ui.Context, title, footnote string, rows ...func()) {
 	t := theme.Of(c)
 	ui.Column(c).Gap(theme.SectionGap).Children(func() {
-		sectionTitle(c, title)
+		if title != "" { // the page's own first section is named by the page
+			sectionTitle(c, title)
+		}
 		settingsCard(c, rows...)
 		if footnote != "" {
 			kit.Text(c, footnote, t.Text.Xs).TextColor(t.Muted).PaddingX(c.Theme().Space(4))
@@ -452,9 +384,14 @@ func settingsSection(c *ui.Context, title, footnote string, rows ...func()) {
 	})
 }
 
+// emptyCard is a page's empty state in a hairline frame, as the design draws it.
+func emptyCard(c *ui.Context, o kit.EmptyOpts) {
+	kit.Card(c, ui.Column(c).FillWidth(), kit.ToneOutline).Children(func() { kit.Empty(c, o) })
+}
+
 // sectionTitle is a settings section's title, inset as its card's rows.
-func sectionTitle(c *ui.Context, title string) {
-	kit.Text(c, title, theme.Of(c).Text.Sm).FontWeight(600).PaddingX(c.Theme().Space(4))
+func sectionTitle(c *ui.Context, title string) ui.Element {
+	return kit.Text(c, title, theme.Of(c).Text.Sm).FontWeight(500).PaddingX(c.Theme().Space(4))
 }
 
 // settingsCard is a section's card of rows, with hairlines between them: a
@@ -496,18 +433,45 @@ func hairline(c *ui.Context) {
 	kit.Separator(c, false).Shrink(0).MarginX(c.Theme().Space(4))
 }
 
-// settingRow is a labelled control: label (500) and description on the
-// left, the control on the right; at least 48 high.
-func settingRow(c *ui.Context, label, desc string, control func()) ui.Element {
+// settingRow is a labelled control: label and description on the left, the
+// control on the right; at least 48 high. control returns the element a click
+// on the label focuses, or ui.Element{} for a row that ends in a button, a
+// link or plain text.
+func settingRow(c *ui.Context, label, desc string, control func() ui.Element) ui.Element {
+	return kit.LabelledRow(c, label, desc, "", control)
+}
+
+// iconLabel is a 32 tile (mark draws its glyph) before a title and a muted
+// line under it: what the design's list rows say.
+func iconLabel(c *ui.Context, mark func(), title, desc string) {
+	iconLabelGap(c, 0.5, mark, title, desc)
+}
+
+// iconLabelGap is iconLabel with gap (in Space units) between title and line:
+// the services' rows have 4, the others 2.
+func iconLabelGap(c *ui.Context, gap float32, mark func(), title, desc string) {
 	t, th := theme.Of(c), c.Theme()
-	return ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
-		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-			kit.Text(c, label, t.Text.Sm).FontWeight(500)
-			if desc != "" {
-				kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted)
-			}
-		})
-		control()
+	kit.Tile(c, th.Space(8), th.Space(8), kit.ToneTint).Children(mark)
+	ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(gap)).Children(func() {
+		kit.Text(c, title, t.Text.Sm).SingleLine()
+		if desc != "" {
+			kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted).SingleLine()
+		}
+	})
+}
+
+// iconRow is a card row of an iconLabel and trailing after it.
+func iconRow(c *ui.Context, mark func(), title, desc string, trailing func()) ui.Element {
+	return iconRowGap(c, 0.5, mark, title, desc, trailing)
+}
+
+func iconRowGap(c *ui.Context, gap float32, mark func(), title, desc string, trailing func()) ui.Element {
+	th := c.Theme()
+	return ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
+		iconLabelGap(c, gap, mark, title, desc)
+		if trailing != nil {
+			trailing()
+		}
 	})
 }
 
@@ -517,30 +481,43 @@ func settingBlock(c *ui.Context, body func()) {
 	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(2), th.Space(4)).Children(body)
 }
 
-// settingButton is a button in a settings row: the default size, 12 padding.
+// settingButton is a button beside a settings page's title or under its rows: the default size.
 func settingButton(c *ui.Context, label string, v kit.Variant, disabled bool) ui.Element {
 	return kit.Button(c, label, kit.ButtonOpts{Variant: v, Disabled: disabled})
 }
 
-// settingSelect is a select in a settings row.
-func settingSelect[T comparable](c *ui.Context, label string, sel *T, opts []kit.Option[T]) ui.Element {
-	return kit.SelectWith(c, kit.SelectOpts{MinWidth: theme.SettingsSelectMin, MaxWidth: theme.SettingsSelectMax, Flat: true}, sel, opts).Label(label)
+// rowButton is a button in a settings row: the small size, as the design's rows have it.
+func rowButton(c *ui.Context, label string, v kit.Variant, disabled bool) ui.Element {
+	return kit.Button(c, label, kit.ButtonOpts{Variant: v, Disabled: disabled, Size: kit.SizeSm})
 }
 
-// privacyView is 隐私与安全, a tab each: masking with its log, remote
-// images with the senders trusted to load them, and the blocked senders;
-// the keychain's state stands by the title.
-func (p *settingsPage) privacyView(c *ui.Context) {
-	pageHeading(c, i18n.T("settings.privacy"), i18n.T("settings.privacy.sub"), func() { p.keychainState(c) })
-	kit.TabsUnderline(c, &p.privacyTab, i18n.T("settings.masking"), i18n.T("settings.security"), i18n.T("settings.remote_images"), i18n.T("settings.blocked"))
+// settingSelect is a select in a settings row.
+func settingSelect[T comparable](c *ui.Context, label string, sel *T, opts []kit.Option[T]) ui.Element {
+	return kit.SelectWith(c, kit.SelectOpts{MinWidth: theme.SettingsControlWidth, MaxWidth: theme.SettingsSelectMax, Flat: true}, sel, opts).Label(label)
+}
+
+// privacyView is a page of 隐私与安全: masking with its log (the keychain's
+// state stands by its title), the sender security checks, remote images with
+// the senders trusted to load them, or the blocked senders.
+func (p *settingsPage) privacyView(c *ui.Context, sec string) {
+	switch sec {
+	case "masking":
+		pageHeading(c, pageName(sec), i18n.T("settings.privacy.sub"), func() { p.keychainState(c) })
+	case "security":
+		pageHeading(c, pageName(sec), i18n.T("settings.security.sub"))
+	case "images":
+		pageHeading(c, pageName(sec), i18n.T("settings.remote_images.page.sub"))
+	default:
+		pageHeading(c, pageName(sec), i18n.T("settings.blocked.sub"))
+	}
 	p.syncSettings()
 	defer p.syncSettings() // what the controls changed while building
-	switch p.privacyTab {
-	case 0:
+	switch sec {
+	case "masking":
 		p.maskingView(c)
-	case 1:
+	case "security":
 		p.securityView(c)
-	case 2:
+	case "images":
 		p.remoteImagesView(c)
 		p.trustedView(c)
 	default:
@@ -577,11 +554,12 @@ func (a *App) localAPIPath() string {
 	return filepath.Join(dir, rpc.SocketName)
 }
 
-// localAPIView is the Local API (本机 API), the Intelligence page's 接入 AI 应用 tab: its
-// switch and what godwit mcp may send; while it runs, the MCP client config
-// and the socket to copy. What it can reach is the section's footnote.
+// localAPIView is the Local API (本机 API), the 接入 AI 应用 page: its
+// switch and what godwit mcp may send, and the socket to copy while it runs;
+// then the AI apps and the MCP client config. What it can reach is the
+// section's footnote.
 func (p *settingsPage) localAPIView(c *ui.Context) {
-	th, a := c.Theme(), p.a
+	a := p.a
 	p.syncSettings()
 	defer p.syncSettings() // what the switch changed while building
 	copied := func(text string) {
@@ -590,83 +568,88 @@ func (p *settingsPage) localAPIView(c *ui.Context) {
 	}
 	rows := []func(){func() {
 		if a.externalAlways { // the switch would say off while clients connect
-			settingBlock(c, func() { kit.Alert(c, kit.Info, i18n.T("settings.local_api.always"), nil) })
+			settingBlock(c, func() { kit.Alert(c, kit.ToneInfo, i18n.T("settings.local_api.always"), nil) })
 			return
 		}
-		kit.SwitchRow(c, &p.st.LocalAPI, i18n.T("settings.local_api.on"), i18n.T("settings.local_api.help"))
-	}}
-	path := a.localAPIPath()
-	if path != "" {
-		rows = append(rows, func() { p.clientsRow(c, copied) })
-	}
-	rows = append(rows, func() {
-		settingRow(c, i18n.T("settings.local_api.send"), i18n.T("settings.local_api.send.help"), func() {
+		kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &p.st.LocalAPI}, i18n.T("settings.local_api.on"), i18n.T("settings.local_api.help"), "", nil)
+	}, func() {
+		settingRow(c, i18n.T("settings.local_api.send"), i18n.T("settings.local_api.send.help"), func() ui.Element {
 			level := p.st.MCPSend
 			if level == "" {
 				level = core.MCPSendConfirm
 			}
-			settingSelect(c, i18n.T("settings.local_api.send"), &level, []kit.Option[string]{
+			sel := settingSelect(c, i18n.T("settings.local_api.send"), &level, []kit.Option[string]{
 				{Value: core.MCPSendOff, Label: i18n.T("settings.local_api.send.off")},
 				{Value: core.MCPSendConfirm, Label: i18n.T("settings.local_api.send.confirm")},
 				{Value: core.MCPSendDirect, Label: i18n.T("settings.local_api.send.direct")},
 			})
 			p.st.MCPSend = level
+			return sel
 		})
 		if p.st.MCPSend == core.MCPSendDirect {
-			settingBlock(c, func() { kit.Alert(c, kit.Warning, i18n.T("settings.local_api.send.risk"), nil) })
+			settingBlock(c, func() { kit.Alert(c, kit.ToneWarning, i18n.T("settings.local_api.send.risk"), nil) })
 		}
-	})
+	}}
+	path := a.localAPIPath()
 	if path != "" {
 		rows = append(rows, func() {
-			t := theme.Of(c)
-			settingRow(c, i18n.T("settings.local_api.path"), "", func() {
-				ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Shrink(1).Children(func() {
-					kit.Text(c, path, t.Text.Xs).Font(theme.Mono).TextColor(t.Muted).Selectable().Shrink(1)
-					if settingButton(c, i18n.T("settings.local_api.copy_path"), kit.Outline, false).Clicked() {
-						copied(path)
-					}
-				})
+			settingRow(c, i18n.T("settings.local_api.path"), path, func() ui.Element {
+				if rowButton(c, i18n.T("settings.local_api.copy_path"), kit.Outline, false).Clicked() {
+					copied(path)
+				}
+				return ui.Element{}
 			})
 		})
 	}
 	settingsSection(c, i18n.T("settings.local_api"), i18n.T("settings.local_api.foot"), rows...)
+	if path != "" {
+		p.clientsSection(c, copied)
+	}
 }
 
-// aiView is the Intelligence page, a tab each: the model services, the features and
-// languages that use them (aiFeaturesView), the MCP servers Wit uses, and
-// the AI apps that use Godwit through the Local API (localAPIView).
-func (p *settingsPage) aiView(c *ui.Context) {
+// modelsPage is 模型: the model services and the models the features use.
+func (p *settingsPage) modelsPage(c *ui.Context) {
 	m := p.models
-	var add []func()
-	if p.aiTab == 0 && !m.empty() {
-		add = append(add, func() { settingButton(c, i18n.T("settings.models.add"), kit.Default, false).OnClick(m.add) })
-	}
-	pageHeading(c, i18n.T("settings.models"), i18n.T("settings.models.sub"), add...)
-	kit.TabsUnderline(c, &p.aiTab, i18n.T("settings.ai.tab.models"), i18n.T("settings.ai.tab.features"), i18n.Tf("settings.ext.tab.mcp", len(p.ext.servers)),
-		i18n.T("settings.ai.tab.apps"))
-	switch p.aiTab {
-	case 0:
-		m.view(c)
-	case 1:
-		p.aiFeaturesView(c)
-	case 2:
-		p.ext.mcpView(c)
-		p.ext.confirmView(c)
-	default:
-		p.localAPIView(c)
-	}
+	pageHeading(c, pageName("models"), i18n.T("settings.models.desc"), func() {
+		kit.Button(c, i18n.T("settings.models.add"), kit.ButtonOpts{Icon: "plus"}).OnClick(m.add)
+	})
+	m.view(c)
+}
+
+// featuresPage is AI 功能: the features that use the models, and the
+// languages and translation they use (aiFeaturesView).
+func (p *settingsPage) featuresPage(c *ui.Context) {
+	pageHeading(c, pageName("features"), i18n.T("settings.ai.sub"))
+	p.aiFeaturesView(c)
+}
+
+// mcpPage is MCP: the servers Wit uses.
+func (p *settingsPage) mcpPage(c *ui.Context) {
+	e := p.ext
+	pageHeading(c, pageName("mcp"), i18n.T("settings.mcp.sub"), func() {
+		kit.Button(c, i18n.T("settings.ext.mcp.add"), kit.ButtonOpts{Icon: "plus"}).OnClick(func() { e.mform = &mcpForm{transport: "stdio"} })
+	})
+	p.ext.mcpView(c)
+	p.ext.confirmView(c)
+}
+
+// clientsPage is 接入 AI 应用: the AI apps that use Godwit through the Local
+// API (localAPIView).
+func (p *settingsPage) clientsPage(c *ui.Context) {
+	pageHeading(c, pageName("clients"), i18n.T("settings.clients.sub"))
+	p.localAPIView(c)
 }
 
 func (p *settingsPage) securityView(c *ui.Context) {
-	settingsSection(c, i18n.T("settings.security"), "",
+	settingsSection(c, "", "",
 		func() {
-			kit.SwitchRow(c, &p.st.SecurityWarnings, i18n.T("settings.security.warnings"), i18n.T("settings.security.warnings.help"))
+			kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &p.st.SecurityWarnings}, i18n.T("settings.security.warnings"), i18n.T("settings.security.warnings.help"), "", nil)
 		},
 		func() {
-			kit.SwitchRow(c, &p.st.VerifiedBadge, i18n.T("settings.security.verified"), i18n.T("settings.security.verified.help"))
+			kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &p.st.VerifiedBadge}, i18n.T("settings.security.verified"), i18n.T("settings.security.verified.help"), "", nil)
 		},
 		func() {
-			kit.SwitchRow(c, &p.st.SecurityAI, i18n.T("settings.security.ai"), i18n.T("settings.security.ai.help"))
+			kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &p.st.SecurityAI}, i18n.T("settings.security.ai"), i18n.T("settings.security.ai.help"), "", nil)
 		},
 	)
 	if p.st.SecurityWarnings || p.st.VerifiedBadge || p.st.SecurityAI {
@@ -691,13 +674,13 @@ func (p *settingsPage) securityRescanView(c *ui.Context) {
 	}
 	settingsSection(c, i18n.T("settings.security.rescan"), i18n.T("settings.security.rescan.sub"),
 		func() {
-			settingRow(c, i18n.T("settings.security.rescan.range"), "", func() {
-				settingSelect(c, i18n.T("settings.security.rescan.range"), &p.secDays, opts).Disabled(p.securityRescanBlocked())
+			settingRow(c, i18n.T("settings.security.rescan.range"), "", func() ui.Element {
+				return settingSelect(c, i18n.T("settings.security.rescan.range"), &p.secDays, opts).Disabled(p.securityRescanBlocked())
 			})
 		},
 		func() {
-			settingRow(c, i18n.T("settings.security.rescan.mode"), help, func() {
-				kit.Tabs(c, &p.secMode, i18n.T("settings.security.rescan.redo"), i18n.T("settings.security.rescan.missing")).Disabled(p.securityRescanBlocked())
+			settingRow(c, i18n.T("settings.security.rescan.mode"), help, func() ui.Element {
+				return kit.Tabs(c, &p.secMode, kit.TabsOpts{}, kit.TabLabels(i18n.T("settings.security.rescan.redo"), i18n.T("settings.security.rescan.missing"))).Disabled(p.securityRescanBlocked())
 			})
 		},
 		func() {
@@ -784,7 +767,7 @@ func (p *settingsPage) scheduleSecurityRescan() {
 		p.secPoll()
 	}
 	p.secPoll = p.a.after(time.Second, func() {
-		if p.a.route.Page == PageSettings && p.a.route.Settings == "privacy" {
+		if sec, _ := p.section(); p.a.route.Page == PageSettings && isPrivacyPage(sec) {
 			p.readSecurityProgress()
 		}
 	})
@@ -824,26 +807,27 @@ func (p *settingsPage) remoteImagesView(c *ui.Context) {
 	if p.imgSize >= 0 {
 		size = formatBytes(p.imgSize)
 	}
-	settingsSection(c, i18n.T("settings.remote_images"), i18n.T("settings.remote_images.sub")+"\n"+i18n.T("settings.remote_images.avatars"),
+	settingsSection(c, "", i18n.T("settings.remote_images.sub")+"\n"+i18n.T("settings.remote_images.avatars"),
 		func() {
-			settingRow(c, i18n.T("settings.remote_images.mode"), i18n.T("settings.remote_images.mode.help"), func() {
+			settingRow(c, i18n.T("settings.remote_images.mode"), i18n.T("settings.remote_images.mode.help"), func() ui.Element {
 				mode := p.st.RemoteImages
 				if mode == "" {
 					mode = "auto"
 				}
-				settingSelect(c, i18n.T("settings.remote_images.mode"), &mode, []kit.Option[string]{
+				sel := settingSelect(c, i18n.T("settings.remote_images.mode"), &mode, []kit.Option[string]{
 					{Value: "auto", Label: i18n.T("settings.remote_images.auto")},
 					{Value: "trusted", Label: i18n.T("settings.remote_images.trusted")},
 					{Value: "ask", Label: i18n.T("settings.remote_images.ask")},
 				})
 				p.st.RemoteImages = mode
+				return sel
 			})
 		},
 		func() {
-			settingRow(c, i18n.T("settings.remote_images.cache"), i18n.T("settings.remote_images.cache.help"), func() {
+			settingRow(c, i18n.T("settings.remote_images.cache"), i18n.T("settings.remote_images.cache.help"), func() ui.Element {
 				ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, size).TextColor(t.Muted)
-					if settingButton(c, i18n.T("settings.remote_images.clear"), kit.Outline, false).Clicked() {
+					if rowButton(c, i18n.T("settings.remote_images.clear"), kit.Outline, false).Clicked() {
 						a.do(func(context.Context) error { return a.svc.ClearImageCache() }, func(err error) {
 							if err != nil {
 								a.toastErr(err)
@@ -852,15 +836,16 @@ func (p *settingsPage) remoteImagesView(c *ui.Context) {
 						})
 					}
 				})
+				return ui.Element{}
 			})
 		},
 		func() {
-			settingRow(c, i18n.T("settings.remote_images.keep"), i18n.T("settings.remote_images.keep.help"), func() {
+			settingRow(c, i18n.T("settings.remote_images.keep"), i18n.T("settings.remote_images.keep.help"), func() ui.Element {
 				opts := []kit.Option[int]{{Value: 0, Label: i18n.T("settings.remote_images.keep.forever")}}
 				for _, days := range []int{7, 14, 30, 90} {
 					opts = append(opts, kit.Option[int]{Value: days, Label: i18n.Tf("settings.remote_images.keep.days", days)})
 				}
-				settingSelect(c, i18n.T("settings.remote_images.keep"), &p.st.ImageRetentionDays, opts)
+				return settingSelect(c, i18n.T("settings.remote_images.keep"), &p.st.ImageRetentionDays, opts)
 			})
 		})
 }
@@ -872,11 +857,9 @@ func (p *settingsPage) trustedView(c *ui.Context) {
 	var rows []func()
 	for _, addr := range a.trusted {
 		rows = append(rows, func() {
-			settingRow(c, addr, "", func() {
-				if settingButton(c, i18n.T("settings.trusted.remove"), kit.Outline, false).Label(i18n.Tf("settings.trusted.remove.label", addr)).Clicked() {
-					a.do(func(ctx context.Context) error { return a.svc.UntrustImageSender(ctx, addr) }, a.toastErr)
-				}
-			}).Label(addr)
+			senderRow(c, addr, i18n.T("settings.trusted.remove"), i18n.Tf("settings.trusted.remove.label", addr), func() {
+				a.do(func(ctx context.Context) error { return a.svc.UntrustImageSender(ctx, addr) }, a.toastErr)
+			})
 		})
 	}
 	if len(rows) == 0 {
@@ -887,17 +870,26 @@ func (p *settingsPage) trustedView(c *ui.Context) {
 	settingsSection(c, i18n.T("settings.trusted"), i18n.T("settings.trusted.sub"), rows...)
 }
 
+// senderRow is a card row of a sender: its avatar, its address and a button
+// that does what label says to it.
+func senderRow(c *ui.Context, addr, button, label string, do func()) {
+	th := c.Theme()
+	ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Label(addr).Children(func() {
+		kit.Avatar(c, addr)
+		ui.Text(c, addr).Grow(1).Shrink(1).SingleLine()
+		if rowButton(c, button, kit.Outline, false).Label(label).Clicked() {
+			do()
+		}
+	})
+}
+
 // blockedView lists the senders the user blocked, each with an unblock button.
 func (p *settingsPage) blockedView(c *ui.Context) {
 	t, a := theme.Of(c), p.a
 	var rows []func()
 	for _, addr := range a.blocked {
 		rows = append(rows, func() {
-			settingRow(c, addr, "", func() {
-				if settingButton(c, i18n.T("settings.blocked.remove"), kit.Outline, false).Label(i18n.Tf("settings.blocked.remove.label", addr)).Clicked() {
-					a.setBlocked(addr, false, nil)
-				}
-			}).Label(addr)
+			senderRow(c, addr, i18n.T("settings.blocked.remove"), i18n.Tf("settings.blocked.remove.label", addr), func() { a.setBlocked(addr, false, nil) })
 		})
 	}
 	if len(rows) == 0 {
@@ -905,7 +897,7 @@ func (p *settingsPage) blockedView(c *ui.Context) {
 			settingBlock(c, func() { ui.Text(c, i18n.T("settings.blocked.none")).TextColor(t.Muted) })
 		})
 	}
-	settingsSection(c, i18n.T("settings.blocked"), i18n.T("settings.blocked.sub"), rows...)
+	settingsSection(c, "", i18n.T("settings.blocked.foot"), rows...)
 }
 
 // godwitExe is this executable's absolute path.
@@ -929,7 +921,7 @@ func (a *App) mcpConfig() string {
 func (p *settingsPage) aboutView(c *ui.Context) {
 	t, th, a := theme.Of(c), c.Theme(), p.a
 	p.bird()
-	ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(1)).Children(func() {
+	ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(3)).Children(func() {
 		ui.Column(c).FillWidth().Height(theme.AboutBird).Center().Children(func() {
 			if p.birdView != nil {
 				kit.WebView(c, p.birdView).FillWidth().Height(theme.AboutBird) // on the panel's color (NewBirdView)
@@ -937,8 +929,18 @@ func (p *settingsPage) aboutView(c *ui.Context) {
 				ui.Icon(c, logo).Size(theme.Logo, theme.Logo).TextColor(t.Foreground)
 			}
 		})
-		kit.Text(c, "Godwit", t.Text.Xl).FontWeight(600)
-		ui.Text(c, i18n.Tf("settings.about.version", Version)).TextColor(t.Muted)
+		ui.Column(c).AlignItems(ui.Center).Gap(th.Space(1)).Children(func() {
+			kit.Text(c, "Godwit", t.Text.Xl).FontWeight(600)
+			ui.Text(c, i18n.Tf("settings.about.version", Version+" ("+runtime.GOOS+"/"+runtime.GOARCH+")")).TextColor(t.Muted).Selectable()
+		})
+		// Either opens the updater's window (the Store's page): up to date, or the newer version to install.
+		label, v := i18n.T("settings.about.updates.check"), kit.Outline
+		if a.latest != "" {
+			label, v = i18n.Tf("settings.about.upgrade", a.latest), kit.Default
+		}
+		if kit.Button(c, label, kit.ButtonOpts{Variant: v, Size: kit.SizeSm}).Margin(th.Space(1), 0, 0, 0).Clicked() {
+			a.plat.CheckForUpdates()
+		}
 	})
 	// value is a row's muted value on the right, a button with icon after it.
 	value := func(text, icon string) bool {
@@ -951,34 +953,20 @@ func (p *settingsPage) aboutView(c *ui.Context) {
 		a.do(func(context.Context) error { return a.plat.OpenURL(url) }, a.toastErr)
 	}
 	rows := []func(){func() {
-		settingRow(c, i18n.T("settings.about.build"), "", func() {
-			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "Godwit "+Version+" ("+runtime.GOOS+"/"+runtime.GOARCH+")").TextColor(t.Muted).Selectable()
-				// Either opens the updater's window (the Store's page): up to date, or the newer version to install.
-				label, v := i18n.T("settings.about.updates.check"), kit.Outline
-				if a.latest != "" {
-					label, v = i18n.Tf("settings.about.upgrade", a.latest), kit.Default
-				}
-				if settingButton(c, label, v, false).Clicked() {
-					a.plat.CheckForUpdates()
-				}
-			})
-		})
-	}, func() {
-		settingRow(c, i18n.T("settings.about.license"), "", func() {
+		settingRow(c, i18n.T("settings.about.license"), "", func() ui.Element {
 			if value("Apache-2.0", "arrow-up-right") {
 				open(repoURL + "/blob/main/LICENSE")
 			}
+			return ui.Element{}
 		})
-	}}
-	settingsCard(c, rows...)
-	links := []func(){func() {
-		settingRow(c, i18n.T("settings.about.source"), "", func() {
+	}, func() {
+		settingRow(c, i18n.T("settings.about.source"), "", func() ui.Element {
 			if !p.starred {
 				p.starButton(c)
 			} else if value("GitHub", "arrow-up-right") {
 				open(repoURL)
 			}
+			return ui.Element{}
 		})
 	}}
 	for _, l := range []struct{ key, value, url string }{
@@ -986,15 +974,16 @@ func (p *settingsPage) aboutView(c *ui.Context) {
 		{"settings.about.changelog", "GitHub Releases", repoURL + "/releases"},
 		{"settings.about.feedback", "GitHub Issues", repoURL + "/issues"},
 	} {
-		links = append(links, func() {
-			settingRow(c, i18n.T(l.key), "", func() {
+		rows = append(rows, func() {
+			settingRow(c, i18n.T(l.key), "", func() ui.Element {
 				if value(l.value, "arrow-up-right") {
 					open(l.url)
 				}
+				return ui.Element{}
 			})
 		})
 	}
-	settingsSection(c, i18n.T("settings.about.links"), "", links...)
+	settingsCard(c, rows...)
 }
 
 // starButton stars Godwit's repository with the GitHub CLI; without gh it
@@ -1002,8 +991,8 @@ func (p *settingsPage) aboutView(c *ui.Context) {
 func (p *settingsPage) starButton(c *ui.Context) {
 	t, th, a := theme.Of(c), c.Theme(), p.a
 	label := i18n.T("settings.about.star")
-	b := kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Label(label).Gap(th.Space(1.5)).Children(func() {
-		ui.Icon(c, icons.Get("star")).Size(theme.IconSm, theme.IconSm).TextColor(t.Foreground)
+	b := kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Label(label).Gap(th.Space(1)).Children(func() {
+		ui.Icon(c, icons.Get("star")).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
 		ui.Text(c, label).Role(ui.RoleNone) // the button's Label names it
 		if !p.gh {
 			ui.Icon(c, icons.Get("arrow-up-right")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)

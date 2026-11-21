@@ -64,7 +64,7 @@ func (h *harness) openSettings(sec string) *settingsPage {
 	return h.app.pages[PageSettings].(*settingsPage)
 }
 
-// The Intelligence page's tabs.
+// The pages of the Intelligence group, in the sidebar's order.
 const (
 	aiModels = iota
 	aiFeatures
@@ -72,13 +72,12 @@ const (
 	aiApps // 接入 AI 应用: the Local API
 )
 
-// aiTab opens the Intelligence page on tab.
-func (h *harness) aiTab(tab int) *settingsPage {
+var aiPages = []string{"models", "features", "mcp", "clients"}
+
+// aiTab opens the Intelligence group's page of that number.
+func (h *harness) aiTab(page int) *settingsPage {
 	h.t.Helper()
-	p := h.openSettings("models")
-	p.aiTab = tab
-	h.tt.Frame()
-	return p
+	return h.openSettings(aiPages[page])
 }
 
 // openSignature makes a signature the account uses, opens it, and waits
@@ -177,6 +176,22 @@ func TestSettingsAccountEdit(t *testing.T) {
 	h.see("已同步 · 刚刚")
 }
 
+// An IMAP and SMTP account has one 服务器 row naming both servers, and its 编辑
+// opens the servers dialog; no row of its own for each server.
+func TestSettingsAccountOneServerRow(t *testing.T) {
+	h, acc := withAccount(t)
+	h.openSettings(accountRoute(acc.ID))
+	h.see(i18n.T("settings.account.server"))
+	h.see("IMAP · " + acc.Receiving.Host)
+	h.see("SMTP · " + acc.Sending.Host)
+	if h.tt.HasText(i18n.T("settings.account.servers")) { // 服务器设置 is the receive-only and JMAP page's row
+		t.Fatal("the plain account has the servers row of the others")
+	}
+	h.click("编辑")
+	h.see("IMAP 服务器")
+	h.see(i18n.T("settings.account.servers.security"))
+}
+
 // Instructions longer than core takes are not saved: they stay for the user
 // to shorten, and shortened they save.
 func TestSettingsAccountAIInstructions(t *testing.T) {
@@ -271,12 +286,12 @@ func TestSettingsDefaultAccount(t *testing.T) {
 	h.until("initial load", func() bool { return h.app.loaded })
 	h.openSettings(accountRoute(b.ID))
 	h.see("bob@example.com")
-	if _, badge := h.tt.Find("默认发件"); badge {
+	if h.tt.HasText("· 默认发件") {
 		t.Fatalf("bob shows as the default: %q", h.tt.Texts())
 	}
 	h.click("设为默认发件账户")
 	h.until("bob is the default", func() bool { return h.account(b.ID).IsDefault && !h.account(a.ID).IsDefault })
-	h.until("the badge", func() bool { _, badge := h.tt.Find("默认发件"); return badge })
+	h.until("the header says so", func() bool { return h.tt.HasText("· 默认发件") })
 }
 
 func TestSettingsReorderAccounts(t *testing.T) {
@@ -608,8 +623,8 @@ func TestSettingsLoginItemOffInSystem(t *testing.T) {
 
 func TestSettingsPrivacyAndAbout(t *testing.T) {
 	h, _ := withAccount(t)
-	h.openSettings("privacy")
-	h.see("系统钥匙串可用")
+	h.openSettings("masking")
+	h.see(i18n.T("settings.keychain.ok"))
 	h.openSettings("about")
 	h.see("版本 " + Version)
 	h.called("NewBirdView") // failed here: the logo stands in
@@ -620,13 +635,13 @@ func TestSettingsPrivacyAndAbout(t *testing.T) {
 	h.plat.mu.Lock()
 	h.plat.latest = "9.0.0"
 	h.plat.mu.Unlock()
-	h.openSettings("privacy")
+	h.openSettings("masking")
 	h.openSettings("about")
 	h.click("升级到 9.0.0")
 	h.plat.mu.Lock()
 	h.plat.gh = true
 	h.plat.mu.Unlock()
-	h.openSettings("privacy")
+	h.openSettings("masking")
 	h.openSettings("about")
 	h.click("加星标")
 	h.called("StarRepo")
@@ -1033,7 +1048,7 @@ func (h *harness) fillRow(label, value string) {
 		h.tt.Frame()
 		r, _ = h.tt.Find(label)
 	}
-	h.tt.ClickAt(r.X+r.W+theme.SettingsInputWidth/2, r.Y+r.H/2)
+	h.tt.ClickAt(r.X+r.W+theme.SettingsControlWidth/2, r.Y+r.H/2)
 	h.tt.Command("selectAll")
 	h.typeText(value)
 }
@@ -1067,19 +1082,19 @@ func TestAccountHeaderMeta(t *testing.T) {
 	}
 	h.syncedHoursAgo(acc.ID, 3)
 	h.see("已同步 · 3 小时前")
-	// The sidebar footer shows the same text, so find the chip by its place: on the badge's row, right of it.
-	badge, ok := h.tt.Find("默认发件")
+	// The header's sync status follows the meta, a green dot left of its text.
+	status, ok := h.tt.Find("已同步 · 3 小时前")
 	if !ok {
-		t.Fatalf("no badge: %q", h.tt.Texts())
+		t.Fatalf("no sync status: %q", h.tt.Texts())
 	}
-	img, want, found := h.tt.Image(), theme.Dark().SuccessBg.SRGB(), false
-	y := int(badge.Y + badge.H/2)
-	for x := int(badge.X + badge.W); x < int(badge.X+badge.W)+400 && !found; x++ {
+	img, want, found := h.tt.Image(), theme.Dark().Success.SRGB(), false
+	y := int(status.Y + status.H/2)
+	for x := int(status.X) - 1; x > int(status.X)-theme.Icon && !found; x-- {
 		got := img.RGBAAt(x, y)
 		found = max(diff(got.R, want.R), diff(got.G, want.G), diff(got.B, want.B)) <= 8
 	}
 	if !found {
-		t.Fatalf("no dark SuccessBg chip on the badge's row %d", y)
+		t.Fatalf("no Success dot left of the status on row %d", y)
 	}
 }
 
@@ -1090,18 +1105,19 @@ func TestReauthBannerElapsed(t *testing.T) {
 	h.openSettings(accountRoute(acc.ID))
 	h.until("unknown-time banner", func() bool {
 		h.advance(refreshEvery)
-		return h.tt.HasText("登录已过期，已停止同步。")
+		return h.tt.HasText("登录已过期") && h.tt.HasText("已停止同步。")
 	})
 	h.syncedHoursAgo(acc.ID, 3)
-	h.see("登录已过期，3 小时前起停止同步。")
+	h.see("3 小时前起停止同步。")
 	h.see("需要重新登录")
 }
 
 func TestDeleteAccountOutline(t *testing.T) {
 	h, acc := withAccount(t)
 	h.openSettings(accountRoute(acc.ID))
-	h.see("清除本机的邮件缓存、草稿和钥匙串里的凭据。服务器上的邮件不受影响")
-	if h.tt.HasText("清除本机的邮件缓存、草稿和钥匙串里的凭据。服务器上的邮件不受影响。") {
+	help := i18n.T("settings.account.remove.help")
+	h.see(strings.TrimSuffix(help, "。"))
+	if h.tt.HasText(help) {
 		t.Fatal("row desc keeps the trailing 。")
 	}
 	h.clickRemove()
@@ -1358,12 +1374,7 @@ func TestSignaturesList(t *testing.T) {
 	})
 	h.click("Work")
 	h.until("opened", func() bool { return h.app.route.Settings == signatureRoute(sig.ID) })
-	// ‹ 签名 above the title goes back to the list (the sidebar's 签名 is selected and does not click).
-	r, ok := h.tt.Find("Work")
-	if !ok {
-		t.Fatal("no title")
-	}
-	h.tt.ClickAt(r.X+8, r.Y-20) // the back link sits just above the title, its text aligned with it
+	h.click("后退") // the title bar's back: the list was the route before
 	h.until("back to the list", func() bool { return h.app.route.Settings == "signatures" })
 }
 
@@ -1424,8 +1435,7 @@ func TestAccountDefaultSignature(t *testing.T) {
 // 隐私与安全 lists the trusted senders; 移除 stops trusting one.
 func TestSettingsTrustedSenders(t *testing.T) {
 	h, _ := withAccount(t)
-	h.openSettings("privacy")
-	h.click("远程图片")
+	h.openSettings("images")
 	h.see("还没有信任的发件人")
 	if err := h.env.Svc.TrustImageSender(context.Background(), "Bob <bob@example.com>"); err != nil {
 		t.Fatal(err)
@@ -1541,8 +1551,7 @@ func TestLinkHref(t *testing.T) {
 
 func TestSettingsBlockedSenders(t *testing.T) {
 	h, _ := withAccount(t)
-	h.openSettings("privacy")
-	h.click("已屏蔽的发件人")
+	h.openSettings("blocked")
 	h.see("没有已屏蔽的发件人")
 	if err := h.env.Svc.BlockSender(context.Background(), "spammer@example.com"); err != nil {
 		t.Fatal(err)
@@ -1620,8 +1629,7 @@ func installClaudeExtension(t *testing.T, home string, s mcpclients.Server) {
 
 func TestSettingsSecuritySection(t *testing.T) {
 	h, _ := withAccount(t)
-	h.openSettings("privacy")
-	h.click(i18n.T("settings.security"))
+	h.openSettings("security")
 	h.see(i18n.T("settings.security"))
 	h.see(i18n.T("settings.security.ai"))
 
@@ -1663,8 +1671,7 @@ func TestSettingsSecurityRescan(t *testing.T) {
 	st := h.app.settings
 	st.SecurityAI = true
 	h.app.changeSettings(st)
-	p := h.openSettings("privacy")
-	h.click(i18n.T("settings.security"))
+	p := h.openSettings("security")
 	h.until("background security queue shown", func() bool { return p.secLoaded && p.secBusy })
 	h.see(i18n.T("settings.security.rescan.busy"))
 	p.startSecurityRescan() // the background queue must block even direct invocation

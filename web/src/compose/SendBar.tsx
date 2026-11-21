@@ -1,7 +1,8 @@
 import { RiArrowDownSLine } from "@remixicon/react";
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
+import { type Ref, useState } from "react";
+import { Button } from "@/components/button";
 import { ButtonGroup } from "@/components/ui/button-group";
+import { type PopupMenu, popupUnder, separator } from "@/components/wit-menu";
 import { currentLocale, type T } from "@/shared/i18n";
 import { SendLaterDialog } from "./SendLaterDialog";
 
@@ -20,6 +21,7 @@ export function presets(now: Date): { key: string; at: Date }[] {
  * with a native menu: send now, the presets, and Send later…, a dialog for any date and time.
  */
 export function SendBar({
+  anchor,
   sending,
   frozen,
   anyway = false,
@@ -29,6 +31,8 @@ export function SendBar({
   menu,
   t,
 }: {
+  /** The buttons' box, which the toasts line their right edge up with. */
+  anchor?: Ref<HTMLDivElement>;
   sending: boolean;
   /** True while any operation runs: the buttons are inert. */
   frozen: boolean;
@@ -39,8 +43,8 @@ export function SendBar({
   onSendNow?(): void;
   /** Sends at at, unix milliseconds. */
   onSendLater(at: number): void;
-  /** Shows items ("" a separator) as a native menu at x, y of the page: the index chosen, -1 none. */
-  menu(items: string[], x: number, y: number): Promise<number>;
+  /** Shows entries as the system's menu: the id chosen, "" for none. */
+  menu: PopupMenu;
   t: T;
 }) {
   const [dialog, setDialog] = useState(false);
@@ -54,20 +58,21 @@ export function SendBar({
   const options = async (e: React.MouseEvent<HTMLElement>) => {
     const hm = new Intl.DateTimeFormat(currentLocale(), { hour: "numeric", minute: "2-digit" });
     const ps = presets(new Date());
-    const items = [t("compose.send_now"), "", ...ps.map((p) => t(p.key, hm.format(p.at))), ""];
-    const r = e.currentTarget.getBoundingClientRect();
-    const i = await menu(
-      [...items, t("compose.send_later")],
-      Math.round(r.left),
-      Math.round(r.bottom),
-    );
-    if (i === 0) onSendNow();
-    else if (i === items.length) openDialog();
-    else if (i >= 2 && i < 2 + ps.length) onSendLater(ps[i - 2].at.getTime());
+    const id = await popupUnder(menu, e.currentTarget, [
+      { id: "now", label: t("compose.send_now") },
+      separator,
+      ...ps.map((p, i) => ({ id: `preset:${i}`, label: t(p.key, hm.format(p.at)) })),
+      separator,
+      { id: "later", label: t("compose.send_later") },
+    ]);
+    const preset = id.startsWith("preset:") ? ps[Number(id.slice("preset:".length))] : undefined;
+    if (id === "now") onSendNow();
+    else if (id === "later") openDialog();
+    else if (preset) onSendLater(preset.at.getTime());
   };
   const off = sending || frozen;
   return (
-    <ButtonGroup className="ml-auto">
+    <ButtonGroup ref={anchor} className="ml-auto">
       <Button disabled={off} onClick={onSend}>
         {t(anyway ? "compose.send_anyway" : "compose.send")}
       </Button>

@@ -66,8 +66,8 @@ func TestSidebarFolderTree(t *testing.T) {
 		}
 		return r.X
 	}
-	if d1, d2 := x("Q4")-x("Projects"), x("Contracts")-x("Q4"); d1 != 16 || d2 != 16 || x("Projects") != x("收件箱") {
-		t.Fatalf("indents %v %v, Projects at %v and 收件箱 at %v", d1, d2, x("Projects"), x("收件箱"))
+	if d1, d2 := x("Q4")-x("Projects"), x("Contracts")-x("Q4"); d1 != 16 || d2 != 16 || x("Projects") != x("已发送") {
+		t.Fatalf("indents %v %v, Projects at %v and 已发送 at %v", d1, d2, x("Projects"), x("已发送"))
 	}
 	h.click("Projects") // only a prefix: the row folds it
 	h.until("Projects folded", func() bool { return !h.tt.HasText("Contracts") && !h.tt.HasText("Expenses") })
@@ -76,6 +76,14 @@ func TestSidebarFolderTree(t *testing.T) {
 	}
 	h.click("Projects")
 	h.until("Projects unfolded", func() bool { return h.tt.HasText("Contracts") })
+	// The sidebar's foot (Settings, sync status) leaves its list room for fewer rows: scroll it until the row shows.
+	for range 10 {
+		if r, ok := h.tt.Find("Contracts"); ok && r.H > 0 {
+			break
+		}
+		h.tt.Scroll(100, 400, 0, 30)
+		h.tt.Frame()
+	}
 	h.click("Contracts")
 	if v := h.app.route.View; v.FolderID == 0 {
 		t.Fatalf("view %+v", v)
@@ -97,4 +105,45 @@ func (h *harness) folderNamed(acc core.Account, name string) core.Folder {
 	}
 	h.t.Fatalf("no folder %s", name)
 	return core.Folder{}
+}
+
+// TestSidebarSpacingAndLevel2Height checks that nested sidebar rows match
+// top-level height (32px) and that dragging Other folders before Labels keeps
+// the full section gap between them.
+func TestSidebarSpacingAndLevel2Height(t *testing.T) {
+	h, acc, m := labeledMail(t)
+	h.autoLabel(m.ID, "otp")
+	h.waitMail("label group", func() bool {
+		return slices.ContainsFunc(h.app.labels, func(l core.Label) bool { return l.Slug == "otp" && l.Count > 0 })
+	})
+	st := h.app.settings
+	st.SidebarOrder = "views,accounts,labels"
+	st.SidebarAccountsOpen = map[int64]bool{acc.ID: false}
+	h.app.changeSettings(st)
+	h.until("reordered sections", func() bool {
+		h.tt.Frame()
+		return h.tt.HasText("其他文件夹") && h.tt.HasText("标签")
+	})
+
+	// Level-2 inbox account row matches level-1 row height (32px).
+	accInbox, ok := h.tt.Access(acc.Email + " · 收件箱")
+	if !ok {
+		t.Fatal("missing nested inbox row")
+	}
+	if accInbox.Bounds.H != 32 {
+		t.Errorf("nested inbox row height = %v, want 32", accInbox.Bounds.H)
+	}
+
+	// Section gap between Other folders' last row and Labels header is >= 18px (2 + 14 + 2).
+	otherAcc, ok := h.tt.Access(acc.Email + " · 其他文件夹")
+	if !ok {
+		t.Fatal("missing account row under Other folders")
+	}
+	lblHead, ok := h.tt.Find("标签")
+	if !ok {
+		t.Fatal("missing Labels section header")
+	}
+	if gap := lblHead.Y - (otherAcc.Bounds.Y + otherAcc.Bounds.H); gap < 14 {
+		t.Errorf("gap between Other folders and Labels = %v, want >= 14", gap)
+	}
 }

@@ -14,7 +14,7 @@ func settingRowBoxes(t *testing.T, font int, label, desc string, w int) (row, la
 	tt := ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c, theme.FromSettings(core.Settings{Theme: "light", Density: "standard", FontSize: font, BodyFontSize: font}, false))
 		ui.Column(c).FillWidth().Children(func() {
-			settingRow(c, label, desc, func() { kit.Button(c, "Control", kit.ButtonOpts{Variant: kit.Outline}) }).Label("the row")
+			settingRow(c, label, desc, func() ui.Element { kit.Button(c, "Control", kit.ButtonOpts{Variant: kit.Outline}); return ui.Element{} }).Label("the row")
 		})
 	}, w, 300)
 	var ok [3]bool
@@ -64,7 +64,7 @@ func TestFixedHeightTextFits(t *testing.T) {
 		theme.Apply(c, theme.FromSettings(core.Settings{Theme: "light", Density: "standard", FontSize: 16, BodyFontSize: 16}, false))
 		box = c.Theme().Space(5)
 		ui.Column(c).Children(func() {
-			capChip(c, "chip", true)
+			kit.Badge(c, "chip")
 			kit.Kbd(c, "Tab")
 		})
 		c.Root()

@@ -90,7 +90,7 @@ func (p *settingsPage) signaturesView(c *ui.Context) {
 	}
 	pageHeading(c, i18n.T("settings.signatures"), i18n.T("settings.signatures.sub"), add...)
 	if len(sigs) == 0 {
-		kit.Empty(c, kit.EmptyOpts{Icon: "quill-pen", Title: i18n.T("settings.signatures.empty.title"), Desc: i18n.T("settings.signatures.empty.desc"), Dashed: true, Actions: func() {
+		emptyCard(c, kit.EmptyOpts{Icon: "quill-pen", Title: i18n.T("settings.signatures.empty.title"), Desc: i18n.T("settings.signatures.empty.desc"), Actions: func() {
 			kit.EmptyAction(c, i18n.T("settings.signatures.new"), kit.ButtonOpts{}).OnClick(p.newSignature)
 		}})
 		return
@@ -102,7 +102,7 @@ func (p *settingsPage) signaturesView(c *ui.Context) {
 				Label(sig.Name).Radius(0).FillWidth().Gap(th.Space(4)).Padding(th.Space(3), th.Space(4)).AlignItems(ui.Center).Children(func() {
 				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(2)).Children(func() {
 					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-						kit.Text(c, sig.Name, t.Text.Sm).FontWeight(500).SingleLine().Shrink(1)
+						kit.Text(c, sig.Name, t.Text.Sm).SingleLine().Shrink(1)
 						kit.Text(c, usedBy(len(a.signatureUsers(sig.ID))), t.Text.Xs).TextColor(t.Muted).SingleLine()
 					})
 					lines := core.SignaturePreview(sig.HTML, 2)
@@ -113,7 +113,7 @@ func (p *settingsPage) signaturesView(c *ui.Context) {
 						for i, l := range lines {
 							line := kit.Text(c, l, t.Text.Xs).SingleLine()
 							if i == 0 {
-								line.FontWeight(600)
+								line.FontWeight(500)
 							} else {
 								line.TextColor(t.Muted)
 							}
@@ -131,7 +131,7 @@ func (p *settingsPage) signaturesView(c *ui.Context) {
 	p.syncSettings()
 	defer p.syncSettings() // what the switch changed while building
 	settingsSection(c, i18n.T("settings.signatures.options"), "", func() {
-		kit.SwitchRow(c, &p.st.SignatureDelimiter, i18n.T("settings.signatures.delimiter"), i18n.T("settings.signatures.delimiter.help"))
+		kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &p.st.SignatureDelimiter}, i18n.T("settings.signatures.delimiter"), i18n.T("settings.signatures.delimiter.help"), "", nil)
 	})
 }
 
@@ -160,18 +160,16 @@ func (p *settingsPage) signatureView(c *ui.Context, sig core.Signature) {
 	}
 	users := a.signatureUsers(sig.ID)
 
-	ui.Column(c).Gap(theme.HeadingGap).Children(func() {
-		settingsBack(c, i18n.T("settings.signatures"), func() { a.navigate(Route{Page: PageSettings, Settings: "signatures"}) })
-		kit.Text(c, sig.Name, t.Text.X3l).FontWeight(600)
-		kit.Text(c, usedBy(len(users)), t.Text.Sm).TextColor(t.Muted)
-	})
+	pageHeading(c, sig.Name, usedBy(len(users)))
 
 	bad := !validSignatureName(f.name)
 	settingsSection(c, i18n.T("settings.account.basic"), "", func() {
-		settingRow(c, i18n.T("settings.signature.name"), i18n.T("settings.signature.name.help"), func() {
-			if kit.Input(c, &f.name, kit.InputOpts{Invalid: bad}).Width(theme.SettingsInputWidth).Label(i18n.T("settings.signature.name")).Changed() {
+		settingRow(c, i18n.T("settings.signature.name"), i18n.T("settings.signature.name.help"), func() ui.Element {
+			field := kit.Input(c, &f.name, kit.InputOpts{Invalid: bad}).Width(theme.SettingsControlWidth).Label(i18n.T("settings.signature.name"))
+			if field.Changed() {
 				p.editSignatureName()
 			}
+			return field
 		})
 	})
 
@@ -216,7 +214,7 @@ func (p *settingsPage) signatureView(c *ui.Context, sig core.Signature) {
 			ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
 				a.accountMark(c, acc)
 				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-					kit.Text(c, acc.Email, t.Text.Sm).FontWeight(500).SingleLine()
+					kit.Text(c, acc.Email, t.Text.Sm).SingleLine()
 					kit.Text(c, note, t.Text.Xs).TextColor(t.Muted)
 				})
 				was := on
@@ -233,8 +231,9 @@ func (p *settingsPage) signatureView(c *ui.Context, sig core.Signature) {
 	settingsSection(c, i18n.T("settings.signature.default"), i18n.T("settings.signature.default.foot"), rows...)
 
 	settingsSection(c, i18n.T("settings.signature.delete"), "", func() {
-		settingRow(c, i18n.T("settings.signature.delete.row"), deleteHint(users), func() {
-			settingButton(c, i18n.T("settings.signature.delete"), kit.DestructiveOutline, false).Label(i18n.Tf("settings.signature.delete.aria", sig.Name)).OnClick(func() { p.sigDelete = true })
+		settingRow(c, i18n.T("settings.signature.delete.row"), deleteHint(users), func() ui.Element {
+			kit.Button(c, i18n.T("settings.signature.delete"), kit.ButtonOpts{Variant: kit.Outline, Tone: kit.ToneDanger}).Label(i18n.Tf("settings.signature.delete.aria", sig.Name)).OnClick(func() { p.sigDelete = true })
+			return ui.Element{}
 		})
 	})
 	p.deleteSignatureDialog(c, sig, users)
@@ -261,7 +260,7 @@ func (p *settingsPage) deleteSignatureDialog(c *ui.Context, sig core.Signature, 
 	kit.Dialog(c, &p.sigDelete, i18n.Tf("settings.signature.delete.confirm", sig.Name),
 		kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: deleteHint(users), Close: i18n.T("common.close")}, nil, func() {
 			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { p.sigDelete = false })
-			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
+			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).OnClick(func() {
 				p.sigDelete = false
 				if f := &p.sigForm; f.id == sig.ID && f.stop != nil {
 					f.stop()
@@ -394,15 +393,16 @@ func (p *settingsPage) accountSignatureView(c *ui.Context, acc core.Account) {
 	}
 	opts = append(opts, kit.Option[int64]{Value: 0, Label: i18n.T("settings.account.signature.none")})
 	rows := []func(){func() {
-		settingRow(c, i18n.T("settings.account.signature.default"), i18n.T("settings.account.signature.default.help"), func() {
+		settingRow(c, i18n.T("settings.account.signature.default"), i18n.T("settings.account.signature.default.help"), func() ui.Element {
 			sel := acc.SignatureID
 			if cur == nil {
 				sel = 0
 			}
-			settingSelect(c, i18n.T("settings.account.signature.default"), &sel, opts)
+			field := settingSelect(c, i18n.T("settings.account.signature.default"), &sel, opts)
 			if sel != acc.SignatureID && (cur != nil || sel != 0) {
 				p.setAccountSignature(acc.ID, sel)
 			}
+			return field
 		})
 	}}
 	if cur != nil {
@@ -427,7 +427,7 @@ func (p *settingsPage) accountSignatureView(c *ui.Context, acc core.Account) {
 		before, after, _ := strings.Cut(i18n.Tf("settings.account.signature.foot", where), where)
 		ui.RichText(c).FontSize(t.Text.Xs).TextColor(t.Muted).PaddingX(c.Theme().Space(4)).Children(func() {
 			ui.Text(c, before)
-			if ui.Link(c, where, "").TextColor(t.Foreground).Underline().Clicked() {
+			if ui.Link(c, where, "").TextColor(t.Muted).FontWeight(400).Clicked() {
 				a.navigate(Route{Page: PageSettings, Settings: "signatures"})
 			}
 			ui.Text(c, after)
@@ -673,7 +673,7 @@ func (p *settingsPage) linkDialog(c *ui.Context) {
 		})
 	}, func() {
 		if l.had {
-			kit.Button(c, i18n.T("settings.signature.link.remove"), kit.ButtonOpts{Variant: kit.DestructiveOutline}).OnClick(func() { done("", true) })
+			kit.Button(c, i18n.T("settings.signature.link.remove"), kit.ButtonOpts{Variant: kit.Outline, Tone: kit.ToneDanger}).OnClick(func() { done("", true) })
 			ui.Box(c).Grow(1)
 		}
 		kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { done("", false) })

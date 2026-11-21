@@ -51,7 +51,6 @@ func TestViewCreateFromSidebar(t *testing.T) {
 	if !h.tt.HasText(i18n.T("view.editor.create")) {
 		t.Fatal("no create button")
 	}
-	h.click(i18n.T("settings.rules.add"))
 	h.click(i18n.T("settings.rules.condition.add"))
 	h.app.mail.viewEdit.box.Doc.Conditions[0].Field = core.FieldFrom
 	h.fill(i18n.T("settings.rules.value"), "acme.example")
@@ -216,6 +215,16 @@ func TestViewWhyAndRemove(t *testing.T) {
 	h.waitMail("it gone", func() bool { return len(h.items()) == 0 })
 	h.click(i18n.T("compose.undo"))
 	h.waitMail("it back", func() bool { return len(h.items()) == 1 })
+
+	// Held under the pointer past its window, the toast stays but its undo goes.
+	h.click(i18n.T("view.remove"))
+	h.waitMail("it gone again", func() bool { return len(h.items()) == 0 })
+	title, _ := h.tt.Find(i18n.Tf("view.removed", "Acme"))
+	h.tt.Move(title.X+1, title.Y+1)
+	h.advance(viewUndoWindow + time.Second)
+	if !h.tt.HasText(i18n.Tf("view.removed", "Acme")) || h.tt.HasText(i18n.T("compose.undo")) {
+		t.Fatalf("past its window the toast offers undo: %q", h.tt.Texts())
+	}
 }
 
 // TestViewSaveSearch: a search becomes a view with the same results, and a
@@ -247,6 +256,10 @@ func TestViewSaveSearch(t *testing.T) {
 	})
 	if got := p.viewEdit.box.Doc.Conditions; len(got) != 2 || got[0].Field != core.FieldAny || got[1].Field != core.FieldDate || got[1].Value != "30" {
 		t.Fatalf("conditions %+v", got)
+	}
+	// The preview only shows: its rows have no star to toggle.
+	if h.tt.HasText(i18n.T("mail.action.star")) {
+		t.Errorf("the preview's row offers a star: %q", h.tt.Texts())
 	}
 	h.click(i18n.T("view.editor.create"))
 	h.waitMail("the view", func() bool { return p.viewEdit == nil && p.savedViewID() != 0 && len(h.items()) == 1 })
@@ -476,5 +489,40 @@ func TestViewRefreshesAtMidnight(t *testing.T) {
 	h.advance(time.Date(y, m, d+1, 0, 0, 2, 0, now.Location()).Sub(now))
 	if h.app.mail.list.Gen() == before {
 		t.Fatal("no reread just after midnight")
+	}
+}
+
+// TestViewGroupDragReorder: dragging a conversation group's grip handle
+// reorders Doc.Groups cleanly.
+func TestViewGroupDragReorder(t *testing.T) {
+	h, _ := mailHarness(t, nil, "alice@example.com")
+	p := h.app.mail
+	e := newViewEditor(p)
+	e.box.Name = "待处理"
+	e.box.Doc.Conditions = []core.RuleCondition{{Field: core.FieldReply, Op: core.OpIs, Value: core.ViewReplyUnreplied}}
+	e.box.Doc.Groups = []core.ViewGroup{
+		{ID: "g1", Name: "等我回复", Match: core.MatchAll, Conditions: []core.RuleCondition{{Field: core.FieldStarred, Op: core.OpIs, Value: core.RuleYes}}},
+		{ID: "g2", Name: "等对方回复", Match: core.MatchAll, Conditions: []core.RuleCondition{{Field: core.FieldWrote, Op: core.OpIs, Value: core.RuleYes}}},
+	}
+	p.openViewEditor(e)
+	h.see(i18n.T("view.starred.yes"))
+	h.see(i18n.T("view.wrote.yes"))
+	in1, ok0 := h.tt.Find(i18n.T("view.editor.group.name"))
+	c1, ok1 := h.tt.Find(i18n.T("view.starred.yes"))
+	c2, ok2 := h.tt.Find(i18n.T("view.wrote.yes"))
+	if !ok0 || !ok1 || !ok2 {
+		t.Fatalf("group elements not found: ok0=%v ok1=%v ok2=%v", ok0, ok1, ok2)
+	}
+	// Grip sits directly left of the first group's name input; drag it down onto the second group card.
+	sx, sy := in1.X-18, in1.Y+in1.H/2
+	dx, dy := sx, sy+(c2.Y-c1.Y)
+	h.tt.Move(sx, sy)
+	h.tt.Press(sx, sy)
+	h.tt.Move(sx, (sy+dy)/2)
+	h.tt.Move(dx, dy)
+	h.tt.Release(dx, dy)
+	h.tt.Frame()
+	if got := e.box.Doc.Groups; len(got) != 2 || got[0].ID != "g2" || got[1].ID != "g1" {
+		t.Fatalf("after drag reorder: %+v", got)
 	}
 }

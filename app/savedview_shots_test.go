@@ -61,7 +61,8 @@ func TestViewShots(t *testing.T) {
 	h.app.mail.open(h.items(), 0)
 	h.see(i18n.T("view.band.unreplied"))
 	shot("SmartMailAll")
-	h.app.mail.open(h.items(), 1)
+	h.click("2027 年续约报价")
+	h.advance(prevWait) // the thread before stays until the new one reports its height, on the test clock
 	h.see(i18n.T("view.follow_up"))
 	shot("SmartMailReader")
 	h.app.mail.editView(b)

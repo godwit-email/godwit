@@ -59,7 +59,7 @@ func (m *modelsView) localRow(c *ui.Context, lm localModel) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-			kit.Text(c, lm.name, t.Text.Sm).FontWeight(500)
+			kit.Text(c, lm.name, t.Text.Sm)
 			kit.Text(c, m.localLine(lm), t.Text.Xs).TextColor(t.Muted)
 			if lm.note != "" { // the plugin's text, untrusted length: one line, all of it in the tooltip
 				kit.Tooltip(c, kit.Text(c, lm.note, t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(1), lm.note)
@@ -103,13 +103,13 @@ func (m *modelsView) localButton(c *ui.Context, lm localModel) {
 	st := lm.status
 	switch {
 	case m.downloads[lm.ref] != nil:
-		settingButton(c, i18n.T("settings.models.files.cancel"), kit.Outline, false).OnClick(func() { m.downloads[lm.ref].cancel() })
+		rowButton(c, i18n.T("settings.models.files.cancel"), kit.Outline, false).OnClick(func() { m.downloads[lm.ref].cancel() })
 	case st.State == core.ModelNotDownloaded:
-		settingButton(c, i18n.T("settings.models.files.download"), kit.Default, false).OnClick(func() { m.download(lm.ref) })
+		rowButton(c, i18n.T("settings.models.files.download"), kit.Default, false).OnClick(func() { m.download(lm.ref) })
 	case st.Error != nil && st.Error.Code == "verification_failed":
-		settingButton(c, i18n.T("settings.models.files.redownload"), kit.Default, false).OnClick(func() { m.download(lm.ref) })
+		rowButton(c, i18n.T("settings.models.files.redownload"), kit.Default, false).OnClick(func() { m.download(lm.ref) })
 	case st.State == core.ModelDownloaded || st.State == core.ModelReady:
-		settingButton(c, i18n.T("settings.models.files.remove"), kit.Outline, false).OnClick(func() { m.removeFiles(lm.ref) })
+		rowButton(c, i18n.T("settings.models.files.remove"), kit.Outline, false).OnClick(func() { m.removeFiles(lm.ref) })
 	} // otherwise nothing to do: insufficient memory, unsupported, update required
 }
 

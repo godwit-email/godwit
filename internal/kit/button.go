@@ -1,14 +1,13 @@
 package kit
 
 import (
-	"cmp"
-
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
-// Variant is a button's look.
+// Variant is a button's look: Default is the primary, filled one. Danger
+// and the colored tones are a Tone on an Outline or Ghost button.
 type Variant int
 
 const (
@@ -16,9 +15,7 @@ const (
 	Secondary
 	Outline
 	Ghost
-	Destructive
 	Link
-	DestructiveOutline
 )
 
 // Size is a control's height, a step of the control scale: a button's, an
@@ -39,13 +36,14 @@ type ButtonOpts struct {
 	Size     Size
 	Disabled bool
 	Flat     bool // Outline without its shadow
+	Round    bool // fully rounded (pill or circle, Radius.Full)
 	Icon     string
 	Trailing string // an icon after the label, as a menu's chevron
-	// Tone is the colored Block the button sits on (ToneWarning, ToneDanger,
-	// ToneSuccess, ToneInfo): it is drawn in that tone, a fill a step deeper
-	// than the block's (halfway to its border) under its text, the border's
-	// own color on hover, so it reads as part of the block. Variant is then
-	// ignored; a neutral tone changes nothing.
+	// Tone colors an Outline button (ToneWarning, ToneDanger, ToneSuccess,
+	// ToneInfo: the tone's border and text on Background, its fill on hover,
+	// no shadow), as the actions of a colored Alert, Toast or notice, and a
+	// Ghost one (ToneDanger: Danger text, DangerBg on hover), as a delete
+	// in a confirmation. Other looks and the neutral tones ignore it.
 	Tone Tone
 }
 
@@ -71,16 +69,13 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 	if o.Size == SizeXs || o.Size == SizeSm { // shadcn Nova's small buttons: smaller text, a tighter gap
 		b.Gap(th.Space(1)).FontSize(t.Text.Xs)
 	}
-	if o.Variant == Link {
-		b.TextColor(t.Muted)
-		if o.Disabled {
+	if o.Variant == Link { // inline text: no height, padding or fill, always underlined
+		b.TextColor(t.Foreground).Underline()
+		switch {
+		case o.Disabled:
 			b.TextColor(t.Idle)
-		}
-		if o.Size == SizeSm {
-			b.FontSize(t.Text.Xs)
-		}
-		if b.Hovered() && !o.Disabled {
-			b.TextColor(t.Foreground).Underline()
+		case b.Hovered():
+			b.TextColor(t.Muted)
 		}
 		return b
 	}
@@ -93,17 +88,29 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 	} else {
 		b.PaddingX(padX) // the same with an icon: the web pages' buttons do not mark theirs, and stay even
 	}
+	if o.Round {
+		b.Radius(t.Radius.Full)
+	}
 	hover := b.Hovered() && !o.Disabled
-	if bg, border, text, ok := toneColors(t, o.Tone); ok { // a step deeper than its block, no outline
-		b.Background(bg.Mix(border, 0.5)).TextColor(text)
+	pressed := hover && b.Pressed() // a step past hover, as CSS's :active
+	if bg, border, text, ok := toneColors(t, o.Tone); ok && (o.Variant == Outline || o.Variant == Ghost && o.Tone == ToneDanger) {
+		if o.Tone == ToneDanger {
+			text = t.Danger
+		}
+		b.TextColor(text)
+		if o.Variant == Outline {
+			b.Background(t.Background).Border(theme.Stroke, border)
+		}
 		switch {
-		case hover && b.Pressed():
-			b.Background(border.Mix(text, 0.1))
+		case pressed && o.Tone == ToneDanger:
+			b.Background(t.DangerBg.Mix(t.Danger, 0.12))
+		case pressed:
+			b.Background(bg.Mix(border, 0.5))
 		case hover:
-			b.Background(border)
+			b.Background(bg)
 		}
 		if o.Disabled {
-			b.TextColor(text.Alpha(0.5))
+			b.TextColor(t.Idle)
 		}
 		return b
 	}
@@ -134,18 +141,8 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 		if hover {
 			b.Background(t.HoverTint).TextColor(t.Foreground)
 		}
-	case Destructive:
-		b.TextColor(t.Danger)
-		if hover {
-			b.Background(t.DangerBg)
-		}
-	case DestructiveOutline:
-		b.Background(t.Background).Border(theme.Stroke, t.DangerBorder).TextColor(t.Danger)
-		if hover {
-			b.Background(t.DangerBg)
-		}
 	}
-	if hover && b.Pressed() { // a step past hover, as CSS's :active
+	if pressed {
 		switch o.Variant {
 		case Default:
 			b.Background(t.Primary.Mix(t.Background, 0.2))
@@ -155,8 +152,6 @@ func button(c *ui.Context, o ButtonOpts, square bool) ui.Element {
 			b.Background(t.Hover.Mix(t.Foreground, 0.08))
 		case Ghost:
 			b.Background(t.HoverTint.Alpha(2))
-		case Destructive, DestructiveOutline:
-			b.Background(t.DangerBg.Mix(t.Danger, 0.12))
 		}
 	}
 	if o.Disabled {
@@ -232,41 +227,5 @@ func IconButton(c *ui.Context, icon, label string, o ButtonOpts) ui.Element {
 	size := iconSize(o.Size, true)
 	return b.Children(func() {
 		ui.Icon(c, icons.Get(icon)).Size(size, size)
-	})
-}
-
-// TextLink is an underlined text button of size in color (a notice's action).
-func TextLink(c *ui.Context, label string, color ui.Color, size float32) ui.Element {
-	return ui.ButtonBase(c).Label(label).Children(func() {
-		Text(c, label, size).TextColor(color).Underline()
-	})
-}
-
-// RoundAction is an action named under its icon, as a contact's under their
-// name: the icon in a round tint, then name; tip, if set, is its label and
-// tooltip, saying more than name. On is a state the action turns off, as
-// being blocked.
-func RoundAction(c *ui.Context, icon, name, tip string, disabled, on bool) ui.Element {
-	t, th := theme.Of(c), c.Theme()
-	b := ui.ButtonBase(c).Label(cmp.Or(tip, name)).Width(th.Space(18)).Disabled(disabled)
-	if tip != "" {
-		tooltip(c, b, tip, false)
-	}
-	return b.Children(func() {
-		fg, fill := t.Foreground, tint(t, 1)
-		switch { // as a Secondary button: a step on hover (or while on), another pressed
-		case disabled:
-			fg = t.Idle
-		case b.Pressed():
-			fill = tint(t, 3)
-		case on || b.Hovered():
-			fill = tint(t, 2)
-		}
-		ui.Column(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(1.5)).TextColor(fg).Children(func() {
-			ui.Box(c).Size(th.Space(10), th.Space(10)).Radius(t.Radius.Full).Background(fill).Center().Transition(colors(theme.MotionFast)).Children(func() {
-				ui.Icon(c, icons.Get(icon)).Size(theme.IconMd, theme.IconMd)
-			})
-			Text(c, name, t.Text.Xs).TextAlign(ui.Center)
-		})
 	})
 }

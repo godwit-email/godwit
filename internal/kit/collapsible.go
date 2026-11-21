@@ -17,51 +17,21 @@ func Collapsible(c *ui.Context, open *bool, trigger, panel func()) ui.Element {
 		tr.Background(tint(t, 1))
 	}
 	tr.Children(func() {
-		ui.Icon(c, icons.Get("chevron-right")).Size(theme.IconSm, theme.IconSm).Rotate(90 * parts.Progress())
+		Chevron(c, *open, theme.IconSm)
 		trigger()
 	})
 	parts.Panel(panel)
 	return tr
 }
 
-// SidebarCollapsible is a sidebar row (SidebarItem's size and padding) that
-// folds the rows below it: trigger's children, then a 12 chevron at its
-// right, turned a quarter while open. Muted is a group's title: small muted
-// text. *open must outlive the frame. It returns the trigger.
-func SidebarCollapsible(c *ui.Context, open *bool, muted bool, trigger, panel func()) ui.Element {
-	return SidebarCollapsibleCount(c, open, muted, trigger, "", panel)
-}
-
-// SidebarCollapsibleCount is a SidebarCollapsible with count at its end, in
-// the column the counts of the sidebar's plain rows are in: the chevron
-// follows the trigger's content, and room is left between them. An empty
-// count is none.
-func SidebarCollapsibleCount(c *ui.Context, open *bool, muted bool, trigger func(), count string, panel func()) ui.Element {
-	t, th := theme.Of(c), c.Theme()
-	parts := ui.CollapsibleBase(c, open)
-	tr := parts.Trigger.Height(th.Space(8)).PaddingX(th.Space(2)).Gap(th.Space(2)).Radius(t.Radius.Lg).
-		Justify(ui.Start).Transition(colors(theme.MotionFast))
-	if muted {
-		tr.Gap(th.Space(1)).FontSize(t.Text.Xs).TextColor(t.Muted)
+// Chevron is the arrow of what opens: muted, a quarter turn clockwise while
+// open, over MotionBase. size is theme.IconXs for a sidebar's rows and
+// theme.IconSm for a Collapsible's.
+func Chevron(c *ui.Context, open bool, size float32) ui.Element {
+	e := ui.Icon(c, icons.Get("chevron-right")).Size(size, size).Shrink(0).TextColor(theme.Of(c).Muted)
+	turn := float32(0)
+	if open {
+		turn = 1
 	}
-	if tr.Hovered() {
-		tr.Background(t.HoverTint)
-	}
-	tr.Children(func() {
-		trigger()
-		SidebarChevron(c, parts.Progress())
-		if count != "" {
-			ui.Spacer(c)
-			Text(c, count, t.Text.Xs).TextColor(t.Muted)
-		}
-	})
-	parts.Panel(func() { // the sidebar's own gap, above and between the rows
-		ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(0.5), 0, 0, 0).Children(panel)
-	})
-	return tr
-}
-
-// SidebarChevron is a sidebar row's 12 muted chevron, turned a quarter at open 1.
-func SidebarChevron(c *ui.Context, open float32) ui.Element {
-	return ui.Icon(c, icons.Get("chevron-right")).Size(theme.IconXs, theme.IconXs).Shrink(0).TextColor(theme.Of(c).Muted).Rotate(90 * open)
+	return e.Rotate(90 * e.AnimateTo("turn", turn, ui.Animation{Duration: theme.MotionBase}))
 }

@@ -25,14 +25,24 @@ type Tokens struct {
 	// GlassBg, GlassBorder and GlassHover are the semantic tokens for frosted liquid glass surfaces
 	// (popovers, dropdowns, and floating menus).
 	GlassBg, GlassBorder, GlassHover ui.Color
+	// MaterialPopover, MaterialDialog and MaterialBar are the tints of the
+	// design's frosted materials over a backdrop blurred by MaterialBlur:
+	// popovers, menus and toasts (macOS's menu gray at 84%, 80% in the
+	// dark); dialogs and the search palette (Raised at 80%); a bar the
+	// content scrolls under (Background at 85%). GlassBorder edges them.
+	MaterialPopover, MaterialDialog, MaterialBar ui.Color
 	// HoverTint is a tint of the foreground for what sits on the window's
 	// material (the page switch's track, the top bar's ghost buttons), which
 	// a solid gray would cover; over white it is Hover's gray.
 	HoverTint                                                       ui.Color
 	WarningBg, WarningBorder, WarningText, Danger, DangerBg         ui.Color
 	SuccessBg, SuccessBorder, SuccessText, DangerBorder, DangerText ui.Color
-	InsBg, InsText, DelBg, DelText                                  ui.Color
-	Attention, Unread, Input, Ring                                  ui.Color
+	// InfoBg, InfoBorder and InfoText are the blue of an informational
+	// notice: blue-100 halfway to Background behind, -200 around, -700 text
+	// (-950 halfway, -800, -300 in the dark).
+	InfoBg, InfoBorder, InfoText   ui.Color
+	InsBg, InsText, DelBg, DelText ui.Color
+	Attention, Unread, Input, Ring ui.Color
 	// Idle is the grey of a status dot with nothing to report (neutral-400).
 	Idle ui.Color
 	// Subdued is text a step under Foreground and over Muted, for what has
@@ -62,7 +72,7 @@ type Tokens struct {
 	// MarkTile is the tile under a provider's logo: white in either
 	// appearance, as logos are drawn for white.
 	MarkTile ui.Color
-	// OnSolid is text on a solid status fill (AlertAction): white in either appearance.
+	// OnSolid is text on a solid status fill (the web pages' --destructive-foreground): white in either appearance.
 	OnSolid ui.Color
 	// Highlight marks matched text (search hits) in either appearance, with
 	// HighlightText on it.
@@ -120,34 +130,38 @@ const (
 	SidebarMaxWidth = 480
 	// SidebarCollapsePull is how far past SidebarMinWidth a drag goes on
 	// before it folds the sidebar away.
-	SidebarCollapsePull = 80
-	ListWidth           = 340 // the mail list column, until the user drags it
-	ListMinWidth        = 280 // the narrowest and widest a drag makes it
-	ListMaxWidth        = 560
-	TopBarHeight        = 44   // the top bar's least height
-	DialogSmWidth       = 440  // confirmations
-	BackdropBlur        = 4    // a frosted panel blurs what is behind it 4× this much
-	GlassBlur           = 20   // DIPs of Gaussian blur behind floating glass popovers
-	DialogLift          = 0.2  // a dialog's backdrop pads its bottom by this share of its height: the panel centred at 40%
-	DialogMinTop        = 32   // yet a dialog stays at least this far below the window's top
-	DialogTop           = 64   // a Top dialog's distance from the window's top
-	SheetWidth          = 560  // DialogMd: forms, the add-account dialog
-	DialogWideWidth     = 640  // DialogLg
-	DialogWideMax       = 788  // DialogLg's tallest
-	SheetMaxHeight      = 760  // DialogSm's and DialogMd's tallest
-	AsideWidth          = 440  // onboarding's left panel
-	FormMaxWidth        = 520  // onboarding's form column
-	ContentMaxWidth     = 1040 // settings pages
-	RuleAsideWidth      = 340  // the rule editor's side panel
-	RuleConnector       = 20   // the line between the rule editor's cards
-	RuleFieldWidth      = 108  // a rule condition's field select
-	RuleOpWidth         = 96   // a rule condition's comparison select
-	RuleActionWidth     = 200  // a rule action's kind select
-	SettingsMaxWidth    = 760  // a settings page's column
-	SettingsSelectMin   = 200  // a select in a settings row
-	SettingsSelectMax   = 280
-	UsageSelectMin      = 240 // a select in the model services' 用途 card
-	SettingsInputWidth  = 260 // an input in a settings row
+	SidebarCollapsePull   = 80
+	ListWidth             = 340 // the mail list column, until the user drags it
+	ListMinWidth          = 280 // the narrowest and widest a drag makes it
+	ListMaxWidth          = 560
+	TopBarHeight          = 44  // the top bar's least height
+	ContextBarHeight      = 40  // the non-macOS Mica context bar below the title bar
+	TitleSearchWidth      = 360 // the top bar's search field, which shrinks in a narrow window
+	SplitTitleSearchWidth = 400 // the centered search field in the split Windows/Linux title bar
+	TitleNameMax          = 200 // the top bar's title, then its subtitle: longer ones end in …
+	TitleSubMax           = 112
+	SyncAccountMax        = 80   // the account's name in the sync status row
+	DialogSmWidth         = 440  // confirmations
+	BackdropBlur          = 4    // a frosted panel blurs what is behind it 4× this much
+	MaterialBlur          = 25   // DIPs of Gaussian blur behind the design's materials (its blur/material 50 is a CSS blur radius twice this); shortcut: matched by eye on macOS only, recheck on Windows
+	DialogLift            = 0.2  // a dialog's backdrop pads its bottom by this share of its height: the panel centred at 40%
+	DialogMinTop          = 32   // yet a dialog stays at least this far below the window's top
+	DialogTop             = 64   // a Top dialog's distance from the window's top
+	SheetWidth            = 560  // DialogMd: forms, the add-account dialog
+	DialogWideWidth       = 640  // DialogLg
+	DialogWideMax         = 788  // DialogLg's tallest
+	SheetMaxHeight        = 760  // DialogSm's and DialogMd's tallest
+	AsideWidth            = 440  // onboarding's left panel
+	FormMaxWidth          = 520  // onboarding's form column
+	ContentMaxWidth       = 1040 // settings pages
+	RuleAsideWidth        = 340  // the rule editor's side panel
+	RuleFieldWidth        = 108  // a rule condition's field select
+	RuleOpWidth           = 96   // a rule condition's comparison select
+	RuleActionWidth       = 200  // a rule action's kind select
+	SettingsMaxWidth      = 760  // a settings page's column
+	SettingsControlWidth  = 240  // a settings row's input or select (a select may grow to SettingsSelectMax)
+	SettingsSelectMax     = 280
+	ViewGroupNameWidth    = 200 // a view group's name in the view editor
 	// SignatureEditorHeight is a signature's editor, the same in both modes so
 	// switching keeps the card's size: the page's toolbar over its editor, or
 	// the native toolbar over MyGo's code editor; either scrolls inside.
@@ -155,6 +169,7 @@ const (
 	HeadingGap            = 6  // a page heading to its subtitle
 	SectionGap            = 10 // a section's title to its card
 	PortWidth             = 90 // port fields
+	ServerPortWidth       = 72 // the port field of an account's servers dialog, over its 端口 column
 	SelectMinWidth        = 120
 	FilterMenuMin         = 200 // a search filter chip's menu
 	LabelMenuWidth        = 240 // the palette's menu
@@ -168,12 +183,13 @@ const (
 	LabelThumb            = 35  // its thumb's height; it is as much wider than a cell
 	LabelThumbRing        = 2   // the ring of the background the thumb sits on
 	LabelIconCell         = 36  // a cell of the label icon grid
-	ToastMaxWidth         = 420
-	ToastMax              = 3  // toasts shown at once
-	TitleButtonHeight     = 24 // buttons in the top bar
-	PopupOffset           = 4  // room between a popup and its anchor
-	SelectedBorder        = 2  // the border of a chosen tile
-	GripWidth             = 3  // a resize grip's line, down the middle of the panels' gap
+	ToastWidth            = 360 // a toast's width, the design's fixed one
+	ToastStackInset       = 9   // each toast behind the front one is this much narrower on either side: 95%, then 90% of ToastWidth
+	ToastMax              = 3   // toasts shown at once
+	TitleButtonHeight     = 24  // buttons in the top bar
+	PopupOffset           = 4   // room between a popup and its anchor
+	SelectedBorder        = 2   // the border of a chosen tile
+	GripWidth             = 3   // a resize grip's line, down the middle of the panels' gap
 	GripHeight            = 56
 	RingWidth             = 3    // shadcn's focused box ring, outside its border
 	QuoteBar              = 2    // the bar left of a quote in a mail body
@@ -204,7 +220,7 @@ const (
 	ServiceMarkOffset                                = 4              // optical alignment with a service name's first line
 	LabelChip, LabelChipX, LabelChipXIcon            = 20, 16, 10     // a mail label chip, its × and the ×'s glyph
 	Control                                          = 16             // check boxes and radio buttons
-	RadioDot, StatusDot                              = 8, 6           // a chosen radio's dot; status dots
+	RadioDot, StatusDot, ThinkingDot                 = 8, 6, 5        // a chosen radio's dot; status dots; AI thinking pulse dots
 	StatusBadge, StatusBadgeRing                     = 9, 1.5         // a status dot on a mark's corner: the 6 dot in a ring of the background
 	SwitchWidth, SwitchHeight, SwitchThumb           = 32, 18, 14     // a switch's track and thumb
 	SwitchInset                                      = (SwitchHeight - SwitchThumb) / 2
@@ -249,6 +265,10 @@ const FloatInsetBlur = 1
 // appearance's is an inner edge, FloatInset.
 var ShadowFloat = Elevation{{0, 0, 1, 0x0a / 255.0}, {2, 8, 0, 0x0a / 255.0}, {4, 80, 8, 0x06 / 255.0}}
 
+// ShadowPopover is the drop of the design's popover material: popovers, menus
+// and toasts, 0 8px 40px of the ink at 16% over 0 1px 3px at 8%.
+var ShadowPopover = Elevation{{8, 40, 0, 0.16}, {1, 3, 0, 0.08}}
+
 // sized fills the size tokens from the font size.
 func sized(t Tokens) Tokens {
 	f := t.FontSize
@@ -282,6 +302,16 @@ var labelSteps = map[string][7]p.OKLCH{
 
 // LabelNames are the label colors' names, in the picker's order.
 var LabelNames = [...]string{"gray", "red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal", "cyan", "sky", "blue", "indigo", "violet", "fuchsia", "pink"}
+
+// ShadowInk is the color of shadows: dark in either appearance, the
+// foreground in the light and the background in the dark. Native (kit.Elevate)
+// and the web (webui's --shadow-*) draw theirs with it.
+func (t Tokens) ShadowInk() ui.Color {
+	if t.Dark {
+		return t.Background
+	}
+	return t.Foreground
+}
 
 // Label is the label color of a name; an unknown name is gray.
 func (t Tokens) Label(name string) LabelColor {
@@ -328,6 +358,8 @@ func status(t Tokens) Tokens {
 		t.Highlight, t.HighlightText = p.Yellow900.Color(), p.Yellow100.Color()
 	}
 	t.Labels = labels(t)
+	blue := t.Label("blue")
+	t.InfoBg, t.InfoBorder, t.InfoText = blue.Fill.Mix(t.Background, 0.5), blue.Edge, blue.Text
 	t.FontSize, t.BodyFontSize, t.Scale = 14, 14, 1
 	return sized(t)
 }
@@ -342,6 +374,7 @@ func Light() Tokens {
 		HoverTint: p.Neutral950.Color().Alpha(0.04),
 		Hover:     p.Neutral100.Color(),
 		GlassBg:   p.White.Color().Alpha(0.70), GlassBorder: p.Neutral950.Color().Alpha(0.12), GlassHover: p.Neutral100.Color().Alpha(0.80),
+		MaterialPopover: p.MacMaterial.Color().Alpha(0.84), MaterialDialog: p.White.Color().Alpha(0.8), MaterialBar: p.White.Color().Alpha(0.85),
 	})
 }
 
@@ -356,6 +389,7 @@ func Dark() Tokens {
 		HoverTint: p.White.Color().Alpha(0.08),
 		Hover:     p.Neutral800.Color(),
 		GlassBg:   p.Neutral900.Color().Alpha(0.70), GlassBorder: p.White.Color().Alpha(0.15), GlassHover: p.Neutral800.Color().Alpha(0.80),
+		MaterialPopover: p.MacMaterialDark.Color().Alpha(0.8), MaterialDialog: p.Neutral900.Color().Alpha(0.8), MaterialBar: p.Neutral950.Color().Alpha(0.85),
 	})
 }
 
@@ -444,4 +478,6 @@ const (
 	MotionOffset = 4
 
 	SkeletonPulse = 1500 * time.Millisecond // one dim-and-return of a Skeleton
+	ThinkingPulse = 1200 * time.Millisecond // one wave cycle across AI thinking dots and sparkles
+	CursorBlink   = 900 * time.Millisecond  // one dim-and-return of the streaming AI typing cursor
 )

@@ -36,10 +36,9 @@ type rulesView struct {
 	heights    map[int64]float32 // each rule's row as last laid out, which the list is as tall as
 	shape      [2]int64          // the open rule and its hits' count the rows were built with
 
-	editing  bool
-	edit     core.Rule // the rule in the editor; ID 0 a new one
-	menu     bool      // the add-action menu is open
-	condMenu bool      // the add-condition menu is open
+	editing bool
+	edit    core.Rule // the rule in the editor; ID 0 a new one
+	menu    bool      // the add-action menu is open
 
 	// The confirmation of forward recipients not confirmed yet, before saving.
 	confirming  bool
@@ -61,9 +60,6 @@ type rulesView struct {
 
 	saveAsk     bool // the save dialog is open
 	runExisting bool // its 同时处理现有的邮件
-
-	viewTop  float32 // the settings page's scroller's top, last frame (window coordinates)
-	asideTop float32 // how far the editor's side panel moved down to stay in view
 }
 
 // witProposal is a rule Wit proposed, taken to the editor: the conversation
@@ -186,7 +182,7 @@ func (v *rulesView) view(c *ui.Context) {
 		}
 	})
 	if len(v.rules) == 0 {
-		kit.Empty(c, kit.EmptyOpts{Icon: "filter", Title: i18n.T("settings.rules.empty"), Desc: i18n.T("settings.rules.empty.desc"), Dashed: true,
+		emptyCard(c, kit.EmptyOpts{Icon: "filter", Title: i18n.T("settings.rules.empty"), Desc: i18n.T("settings.rules.empty.desc"),
 			Actions: func() {
 				kit.EmptyAction(c, i18n.T("settings.rules.new"), kit.ButtonOpts{}).OnClick(v.create)
 				kit.EmptyAction(c, i18n.T("settings.rules.empty.wit"), kit.ButtonOpts{Variant: kit.Outline, Icon: "sparkles"}).OnClick(a.NewConversation)
@@ -195,41 +191,40 @@ func (v *rulesView) view(c *ui.Context) {
 		settingsSection(c, i18n.T("settings.rules.list"), i18n.T("settings.rules.list.foot"), func() { v.list(c) })
 	}
 	ui.Column(c).Gap(theme.SectionGap).Children(func() {
-		ui.Column(c).Gap(th.Space(0.5)).Children(func() {
-			sectionTitle(c, i18n.T("settings.rules.templates"))
-			kit.Text(c, i18n.T("settings.rules.templates.foot"), t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(4))
+		sectionTitle(c, i18n.T("settings.rules.templates"))
+		ui.Column(c).FillWidth().Gap(th.Space(2.5)).Children(func() {
+			for i := 0; i < len(ruleTemplates); i += 2 {
+				ui.Row(c.Key(i)).FillWidth().Gap(th.Space(2.5)).AlignItems(ui.Stretch).Children(func() {
+					for _, tp := range ruleTemplates[i:min(i+2, len(ruleTemplates))] {
+						v.templateCard(c.Key(tp.key), tp.key, tp.doc)
+					}
+				})
+			}
 		})
-		for i := 0; i < len(ruleTemplates); i += 2 {
-			ui.Row(c.Key(i)).FillWidth().Gap(th.Space(2)).AlignItems(ui.Stretch).Children(func() {
-				for _, tp := range ruleTemplates[i:min(i+2, len(ruleTemplates))] {
-					v.templateCard(c.Key(tp.key), tp.key, tp.icon, tp.doc)
-				}
-			})
-		}
+		kit.Text(c, i18n.T("settings.rules.templates.foot"), t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(4))
 		// Emptying Trash and Junk is not a rule: it stays with the account's mailboxes.
 		if len(a.accounts) > 0 {
 			id := a.accounts[0].ID
-			kit.TextLink(c, i18n.T("settings.rules.empty_trash"), t.Muted, t.Text.Xs).PaddingX(th.Space(4)).AlignSelf(ui.Start).
+			kit.Button(c, i18n.T("settings.rules.empty_trash"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).PaddingX(th.Space(4)).AlignSelf(ui.Start).
 				OnClick(func() { a.navigate(Route{Page: PageSettings, Settings: accountRoute(id)}) })
 		}
 	})
 	v.deleteDialog(c)
 }
 
-// templateCard is a template: its icon, name and what it does; it opens the editor.
-func (v *rulesView) templateCard(c *ui.Context, key, icon string, d core.RuleDoc) {
+// templateCard is a template: its name and what it does in a gray card; it opens the editor.
+func (v *rulesView) templateCard(c *ui.Context, key string, d core.RuleDoc) {
 	t, th := theme.Of(c), c.Theme()
 	name := i18n.T("settings.rules.template." + key)
-	kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { v.fromTemplate(d, name) }}).
+	kit.ChoiceCard(c, kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { v.fromTemplate(d, name) }}).
 		Label(i18n.Tf("settings.rules.template.use.label", name)).Grow(1).Basis(0).Shrink(1).
-		AlignItems(ui.Start).Gap(th.Space(3)).Padding(th.Space(3), th.Space(3.5)).Radius(t.Radius.Xl).Children(func() {
-		kit.Tile(c, th.Space(8), th.Space(8), kit.ToneTint).Children(func() {
-			ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
-		})
+		AlignItems(ui.Center).Gap(th.Space(2.5)).Padding(th.Space(3), th.Space(3.5), th.Space(3), th.Space(4)).MinHeight(th.Space(19)).
+		Radius(t.Radius.Xl), kit.ChoiceCardOpts{Look: kit.ChoiceOnCard}, func() {
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
 			kit.Text(c, name, t.Text.Sm).FontWeight(500)
 			kit.Text(c, i18n.T("settings.rules.template."+key+".desc"), t.Text.Xs).TextColor(t.Muted)
 		})
+		ui.Icon(c, icons.Get("chevron-right")).Size(theme.Icon, theme.Icon).TextColor(t.Muted).Shrink(0)
 	})
 }
 
@@ -295,41 +290,45 @@ func (v *rulesView) row(c *ui.Context, r core.Rule) {
 		v.loadHits()
 	}
 	ui.Column(c).FillWidth().Children(func() {
-		ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(2), th.Space(4), th.Space(2), th.Space(2)).MinHeight(th.Space(12)).AlignItems(ui.Center).
-			Children(func() {
-				ui.Icon(c, icons.Get("grip")).Size(theme.Icon, theme.Icon).TextColor(t.Idle).Shrink(0)
-				on := r.Enabled
-				kit.Switch(c, &on).Label(i18n.Tf("settings.rules.enable", name))
-				if on != r.Enabled {
-					id := r.ID
-					v.rules = slices.Clone(v.rules)
-					v.rules[slices.IndexFunc(v.rules, func(x core.Rule) bool { return x.ID == id })].Enabled = on // at once; load reads them again
-					a.writes.Chain("rules", func(ctx context.Context) error { return a.svc.SetRuleEnabled(ctx, id, on) }, v.saved)
-				}
-				fg := t.Foreground
-				if !r.Enabled {
-					fg = t.Muted
-				}
-				kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: toggle}).Label(name).Grow(1).Shrink(1).Children(func() {
-					ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-						ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-							kit.Text(c, name, t.Text.Sm).FontWeight(500).TextColor(fg).SingleLine().Shrink(1)
-							v.badges(c, r)
-						})
-						kit.Text(c, v.summary(r.Doc), t.Text.Xs).TextColor(t.Muted).SingleLine()
+		head := ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(2), th.Space(4), th.Space(2), th.Space(2)).MinHeight(th.Space(12)).AlignItems(ui.Center)
+		hovered := head.Hovered()
+		head.Children(func() {
+			ui.Icon(c, icons.Get("grip")).Size(theme.Icon, theme.Icon).TextColor(t.Idle).Shrink(0)
+			on := r.Enabled
+			kit.Switch(c, &on).Label(i18n.Tf("settings.rules.enable", name))
+			if on != r.Enabled {
+				id := r.ID
+				v.rules = slices.Clone(v.rules)
+				v.rules[slices.IndexFunc(v.rules, func(x core.Rule) bool { return x.ID == id })].Enabled = on // at once; load reads them again
+				a.writes.Chain("rules", func(ctx context.Context) error { return a.svc.SetRuleEnabled(ctx, id, on) }, v.saved)
+			}
+			fg := t.Foreground
+			if !r.Enabled {
+				fg = t.Muted
+			}
+			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: toggle}).Label(name).Grow(1).Shrink(1).Children(func() {
+				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
+					ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+						kit.Text(c, name, t.Text.Sm).FontWeight(500).TextColor(fg).SingleLine().Shrink(1)
+						v.badges(c, r)
 					})
+					kit.Text(c, v.summary(r.Doc), t.Text.Xs).TextColor(t.Muted).SingleLine()
 				})
-				hits := i18n.T("settings.rules.off")
-				if r.Enabled {
-					hits = i18n.Tf("settings.rules.hits.count", v.counts[r.ID])
-				}
-				kit.Text(c, hits, t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(0)
-				chev, label := "chevron-right", i18n.T("settings.rules.hits.show")
-				if open {
-					chev, label = "chevron-down", i18n.T("settings.rules.hits.hide")
-				}
-				kit.IconButton(c, chev, label, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(toggle)
 			})
+			if !open && hovered {
+				kit.Button(c.Key("edit"), i18n.T("settings.rules.edit"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs}).Shrink(0).OnClick(func() { v.openEditor(r) })
+			}
+			hits := i18n.T("settings.rules.off")
+			if r.Enabled {
+				hits = i18n.Tf("settings.rules.hits.count", v.counts[r.ID])
+			}
+			kit.Text(c.Key("hits"), hits, t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(0)
+			chev, label := "chevron-right", i18n.T("settings.rules.hits.show")
+			if open {
+				chev, label = "chevron-down", i18n.T("settings.rules.hits.hide")
+			}
+			kit.IconButton(c.Key("toggle"), chev, label, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(toggle)
+		})
 		if open {
 			v.hitList(c, r)
 		}
@@ -356,41 +355,35 @@ func (v *rulesView) move(i, to int) {
 	a.writes.Chain("rules", func(ctx context.Context) error { return a.svc.ReorderRules(ctx, ids) }, v.saved)
 }
 
-// badges are a rule's kinds as the list tags them: 外发, AI, 后台运行.
+// badges are a rule's kinds as the list tags them: 后台运行, 外发, AI.
 func (v *rulesView) badges(c *ui.Context, r core.Rule) {
 	t := theme.Of(c)
+	if r.Background {
+		kit.BadgeWith(c, i18n.T("settings.rules.run.background"), kit.BadgeOpts{Tone: kit.BadgeNeutral, Muted: true}).Shrink(0)
+	}
 	if forwards(r.Doc) {
-		amber := t.Label("amber")
-		ruleTag(c, i18n.T("settings.rules.egress"), amber.Fill, amber.Text, "")
+		kit.BadgeWith(c, i18n.T("settings.rules.egress"), kit.BadgeOpts{Tone: kit.BadgeWarning}).Shrink(0)
 	}
 	if usesAI(r.Doc) {
 		violet := t.Label("violet")
 		ruleTag(c, i18n.T("settings.rules.kind.ai"), violet.Fill, violet.Text, "")
 	}
-	if r.Background {
-		blue := t.Label("blue")
-		ruleTag(c, i18n.T("settings.rules.run.background"), blue.Fill, blue.Text, "")
-	}
 }
 
-// hitList is the open rule's hits of the last week, newest first, in a box
-// about two and a half rows tall that scrolls past them, then 编辑规则 and
-// 删除规则.
+// hitList is the open rule's hits of the last week, newest first, directly in
+// the rule card under a hairline, then what the hits allow beside 删除规则 and 编辑规则.
 func (v *rulesView) hitList(c *ui.Context, r core.Rule) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(0, th.Space(4), th.Space(3), th.Space(4)+th.Space(11.5)).Children(func() {
-		box := func() ui.Element {
-			return kit.Block(c, ui.Column(c), kit.ToneOutline).FillWidth().MaxHeight(th.Space(42)).Clip()
-		}
+	ui.Column(c).FillWidth().Padding(0, th.Space(4), th.Space(3), th.Space(4)+th.Space(11.5)).Children(func() {
+		kit.Separator(c, false).Shrink(0)
 		if len(v.hits) == 0 {
-			box().Padding(th.Space(4), th.Space(3)).AlignItems(ui.Center).Children(func() {
+			ui.Row(c).FillWidth().Padding(th.Space(3.5), 0).Justify(ui.Center).Children(func() {
 				kit.Text(c, i18n.T("settings.rules.hits.none"), t.Text.Xs).TextColor(t.Muted)
 			})
 		} else {
-			kit.Text(c, i18n.Tf("settings.rules.hits.head", len(v.hits)), t.Text.Xs).TextColor(t.Muted)
-			box().Children(func() {
+			ui.Column(c).FillWidth().MaxHeight(th.Space(64)).Clip().Children(func() {
 				ui.Scroll(c).Shrink(1).Children(func() {
-					now := time.Now()
+					now := v.a.clock.Now()
 					for i, h := range v.hits {
 						if i > 0 {
 							kit.Separator(c, false)
@@ -400,55 +393,64 @@ func (v *rulesView) hitList(c *ui.Context, r core.Rule) {
 				})
 			})
 		}
-		ui.Row(c).Gap(th.Space(2)).Children(func() {
-			kit.Button(c, i18n.T("settings.rules.edit_rule"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).OnClick(func() { v.openEditor(r) })
-			kit.Button(c, i18n.T("settings.rules.delete"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).TextColor(t.Danger).
-				OnClick(func() { v.deleting = &r })
+		kit.Separator(c, false).Shrink(0)
+		ui.Row(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(2.5), 0, 0, 0).AlignItems(ui.Center).Children(func() {
+			if len(v.hits) > 0 {
+				kit.Text(c, i18n.T("settings.rules.hits.note"), t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
+			} else {
+				ui.Spacer(c)
+			}
+			kit.Button(c, i18n.T("settings.rules.delete"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger, Size: kit.SizeSm}).OnClick(func() { v.deleting = &r })
+			kit.Button(c, i18n.T("settings.rules.edit_rule"), kit.ButtonOpts{Variant: kit.Outline, Flat: true, Size: kit.SizeSm}).OnClick(func() { v.openEditor(r) })
 		})
 	})
 }
 
-// hit is a run: when, the message, each action's result, and undo or retry.
+// hit is a run: the message, each action's result in a line (a failure in red),
+// then right-aligned time and an action slot at least as wide as one action (retry, undo, both, or empty)
+// so every row's time column stays aligned.
 func (v *rulesView) hit(c *ui.Context, r core.Rule, h core.RuleHit, now time.Time) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(2.5), th.Space(3)).Children(func() {
-		kit.Text(c, listTime(now, h.At), t.Text.Xs).TextColor(t.Muted).Width(th.Space(22)).Shrink(0)
-		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1.5)).Children(func() {
+	ui.Row(c).FillWidth().Gap(th.Space(3)).Padding(th.Space(2.5), 0).AlignItems(ui.Center).Children(func() {
+		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
+			if h.MessageID == 0 {
+				kit.Text(c, i18n.T("settings.rules.hits.gone"), t.Text.Sm).TextColor(t.Muted)
+				return
+			}
 			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				if h.MessageID == 0 {
-					kit.Text(c, i18n.T("settings.rules.hits.gone"), t.Text.Sm).TextColor(t.Muted)
-					return
-				}
 				kit.Text(c, displayName(h.From), t.Text.Sm).FontWeight(500).Shrink(0)
-				kit.Text(c, h.Subject, t.Text.Sm).SingleLine().Shrink(1)
+				kit.Text(c, h.Subject, t.Text.Sm).TextColor(t.Muted).SingleLine().Shrink(1)
 			})
-			ui.Row(c).Wrap().Gap(th.Space(1.5)).Children(func() {
+			ui.Row(c).Gap(th.Space(1.5)).Shrink(1).Children(func() {
 				for i, res := range h.Actions {
-					fill, fg, icon := t.Hover, t.Muted, actionIcon(res.Kind)
-					switch res.State {
-					case core.RuleActionDone:
-						fill, fg = t.SuccessBg, t.SuccessText
-					case core.RuleActionFailed:
-						fill, fg, icon = t.DangerBg, t.DangerText, "triangle-alert"
+					fg := t.Muted
+					if res.State == core.RuleActionFailed {
+						fg = t.DangerText
 					}
-					ruleTag(c.Key(i), v.result(r, i, res), fill, fg, icon)
+					if i > 0 {
+						kit.Text(c.Key(-i), "·", t.Text.Xs).TextColor(t.Muted).Shrink(0)
+					}
+					kit.Text(c.Key(i), v.result(r, i, res), t.Text.Xs).TextColor(fg).SingleLine().Shrink(0)
 				}
 			})
 		})
-		if h.State == core.RuleRunUndone {
-			kit.Text(c, i18n.T("settings.rules.hits.undone"), t.Text.Xs).TextColor(t.Muted).Shrink(0)
-			return
-		}
-		if slices.ContainsFunc(h.Actions, func(x core.RuleActionResult) bool {
-			return x.State == core.RuleActionDone && core.RuleUndoable(x.Kind)
-		}) {
-			kit.Button(c, i18n.T("settings.rules.hits.undo"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Icon: "undo-2"}).Shrink(0).
-				OnClick(func() { v.undo(h.RunID) })
-		}
-		if h.State == core.RuleRunFailed && h.MessageID != 0 {
-			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Shrink(0).
-				OnClick(func() { v.retry(h.RunID) })
-		}
+		kit.Text(c, listTime(now, h.At), t.Text.Xs).TextColor(t.Muted).TextAlign(ui.End).MinWidth(th.Space(10)).Shrink(0)
+		// usually one action; a failed run whose earlier actions are done offers both, and the slot widens
+		ui.Row(c).MinWidth(th.Space(11)).Gap(th.Space(1)).Justify(ui.End).AlignItems(ui.Center).Shrink(0).Children(func() {
+			if h.State == core.RuleRunUndone {
+				kit.Text(c, i18n.T("settings.rules.hits.undone"), t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(0)
+				return
+			}
+			if h.State == core.RuleRunFailed && h.MessageID != 0 {
+				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Flat: true, Size: kit.SizeXs}).Shrink(0).OnClick(func() { v.retry(h.RunID) })
+			}
+			// a done action stays undoable after a later one fails or the message is gone (a block, by sender)
+			if slices.ContainsFunc(h.Actions, func(x core.RuleActionResult) bool {
+				return x.State == core.RuleActionDone && core.RuleUndoable(x.Kind)
+			}) {
+				kit.IconButton(c, "undo-2", i18n.T("settings.rules.hits.undo"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).Shrink(0).OnClick(func() { v.undo(h.RunID) })
+			}
+		})
 	})
 }
 
@@ -504,7 +506,7 @@ func (v *rulesView) deleteDialog(c *ui.Context) {
 	kit.Dialog(c, &v.deleteOpen, i18n.Tf("settings.rules.delete.title", name),
 		kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("settings.rules.delete.desc"), Close: i18n.T("common.close")}, nil, func() {
 			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { v.deleting = nil })
-			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
+			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Outline, Tone: kit.ToneDanger}).OnClick(func() {
 				v.deleting = nil
 				if v.open == r.ID {
 					v.open, v.hits = 0, nil
@@ -659,7 +661,7 @@ func cloneConds(conds []core.RuleCondition) []core.RuleCondition {
 // closeEditor leaves the editor, stopping its preview.
 func (v *rulesView) closeEditor() {
 	v.stopPreview()
-	v.editing, v.menu, v.condMenu, v.saveAsk, v.runExisting, v.wit, v.asideTop = false, false, false, false, false, nil, 0
+	v.editing, v.menu, v.saveAsk, v.runExisting, v.wit = false, false, false, false, nil
 	v.from, v.suggest, v.prevKey, v.prev = "", nil, "", nil
 }
 

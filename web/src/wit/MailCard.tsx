@@ -1,7 +1,7 @@
 import { RiChatQuoteLine, RiExternalLinkLine } from "@remixicon/react";
 import { cn } from "cn";
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/button";
 import type { T } from "@/shared/i18n";
 import { imageURL } from "@/shared/imageURL";
 import { citeDate } from "./Citations";
@@ -13,31 +13,36 @@ export function senderName(from: string): string {
   return m[1].trim() || m[2].trim();
 }
 
-// The label colours but gray (internal/theme LabelNames[1:]): -100 fill, -700 text; dark -950, -300.
+// The label colours but gray (internal/theme LabelNames[1:]).
 const TONES = [
-  "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
-  "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300",
-  "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-  "bg-yellow-100 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-300",
-  "bg-lime-100 text-lime-700 dark:bg-lime-950 dark:text-lime-300",
-  "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
-  "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-  "bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300",
-  "bg-cyan-100 text-cyan-700 dark:bg-cyan-950 dark:text-cyan-300",
-  "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
-  "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
-  "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300",
-  "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300",
-  "bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-950 dark:text-fuchsia-300",
-  "bg-pink-100 text-pink-700 dark:bg-pink-950 dark:text-pink-300",
+  "red",
+  "orange",
+  "amber",
+  "yellow",
+  "lime",
+  "green",
+  "emerald",
+  "teal",
+  "cyan",
+  "sky",
+  "blue",
+  "indigo",
+  "violet",
+  "fuchsia",
+  "pink",
 ];
 
-/** A sender's avatar colour: fnv-1a of the name, as internal/kit Avatar picks it, so each keeps theirs. */
+/** A sender's avatar label colour: fnv-1a of the name, as internal/kit Avatar picks it, so each keeps theirs. */
 export function avatarTone(name: string): string {
   let h = 0x811c9dc5;
   for (const b of new TextEncoder().encode(name)) h = Math.imul(h ^ b, 0x01000193) >>> 0;
   return TONES[h % TONES.length];
 }
+
+const avatarStyle = (name: string) => ({
+  background: `var(--label-${avatarTone(name)}-fill)`,
+  color: `var(--label-${avatarTone(name)}-text)`,
+});
 
 /**
  * A mail as a card: a small avatar on the sender line with the date, the subject and a snippet,
@@ -101,17 +106,15 @@ export function MailCard({
     <div
       className={cn(
         "flex min-w-0 flex-col text-sm",
-        card && "group max-w-md rounded-[10px] border-[0.5px] bg-background px-2.5 py-2",
+        card && "group max-w-md rounded-xl border-[0.5px] bg-background px-2.5 py-2",
         className,
       )}
     >
       <div className="flex items-center gap-2">
         <span
           aria-hidden="true"
-          className={cn(
-            "relative flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-[5px] font-semibold text-xs",
-            avatarTone(name),
-          )}
+          style={avatarStyle(name)}
+          className="relative flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-lg font-medium text-xs"
         >
           {[...name][0]?.toUpperCase() ?? "?"}
           {messageId !== undefined && (

@@ -159,6 +159,7 @@ func gui(ctx context.Context, dataDir, open string) int {
 			a.OnUI(func() { f(a) }) // dropped once the App closed
 		}
 	}
+	var frames composeFrames // the compose windows' native layers
 	mygo.Bind(webui.NewComposePage(pages, webui.PageDeps{
 		WinOf: func(ctx context.Context) (int, bool) {
 			if w := mygo.CallerWindow(ctx); w != nil {
@@ -166,8 +167,33 @@ func gui(ctx context.Context, dataDir, open string) int {
 			}
 			return 0, false
 		},
-		PickFiles:   pickFiles,
-		PopupMenu:   popupMenu,
+		PickFiles: pickFiles,
+		PopupMenu: func(winID int, entries []webui.MenuEntry, x, y int) string {
+			f := frames.get(winID)
+			if f == nil {
+				return ""
+			}
+			ox, oy := f.Origin() // the page sits under the native title bar
+			return witPopupMenu(mygo.WindowByID(winID), entries, ox+x, oy+y)
+		},
+		Toast: func(winID int, kind, text string) {
+			if f := frames.get(winID); f != nil {
+				f.Toast(kind, text)
+			}
+		},
+		ToastBar: func(winID int, bar, field ui.Rect) {
+			if f := frames.get(winID); f != nil {
+				f.SetToastBar(bar, field)
+			}
+		},
+		TitleBar: func(winID int, title, status string) {
+			if f := frames.get(winID); f != nil {
+				f.SetTitleBar(title, status)
+			}
+			if w := mygo.WindowByID(winID); w != nil {
+				w.SetTitle(title) // the Dock's, the Window menu's and the taskbar's: a page in a view titles nothing
+			}
+		},
 		Emit:        emit,
 		OpenURL:     mygo.Shell.OpenExternal,
 		OpenCompose: openCompose,
@@ -177,6 +203,7 @@ func gui(ctx context.Context, dataDir, open string) int {
 	// The Wit page, embedded in the main window: its callbacks run on the
 	// App's UI thread; its events go to its page only.
 	var witView *mygo.WebView
+	var witOrigin func() (int, int) // where the Wit page's view is in its window
 	toWit := func(what string, emit func(*mygo.Page) error) {
 		if witView == nil {
 			return
@@ -196,17 +223,26 @@ func gui(ctx context.Context, dataDir, open string) int {
 		State: func(st webui.WitPageState) {
 			toWit("witState", func(p *mygo.Page) error { return webui.WitState.EmitPage(p, st) })
 		},
-		OpenMessage:         func(id int64) { onApp(func(a *app.App) { a.OpenMessage(id) }) },
-		OpenModels:          func() { onApp((*app.App).OpenModels) },
-		Navigate:            func(dir int) { onApp(func(a *app.App) { a.Navigate(dir) }) },
-		Search:              func() { onApp((*app.App).Search) },
-		NewConversation:     func() { onApp((*app.App).NewConversation) },
+		OpenMessage:     func(id int64) { onApp(func(a *app.App) { a.OpenMessage(id) }) },
+		OpenModels:      func() { onApp((*app.App).OpenModels) },
+		Navigate:        func(dir int) { onApp(func(a *app.App) { a.Navigate(dir) }) },
+		Search:          func() { onApp((*app.App).Search) },
+		NewConversation: func() { onApp((*app.App).NewConversation) },
+		PopupMenu: func(entries []webui.MenuEntry, x, y int) string {
+			if witView == nil || witOrigin == nil {
+				return ""
+			}
+			ox, oy := witOrigin()
+			return witPopupMenu(witView.Window(), entries, ox+x, oy+y)
+		},
 		ConversationCreated: func(id, v int64) { onApp(func(a *app.App) { a.ConversationCreated(id, v) }) },
 		OnLink:              func(u string) { onApp(func(a *app.App) { a.OpenLink(u) }) },
 		OpenCompose:         func(id int64) { onApp(func(a *app.App) { a.OpenDraft(id) }) }, // a draft Wit made may be in the outbox
 		EditRule: func(r core.Rule, conv, approval int64, ask string) {
 			onApp(func(a *app.App) { a.EditRule(r, conv, approval, ask) })
 		},
+		Toast:    func(kind, text string) { onApp(func(a *app.App) { a.WitToast(kind, text) }) },
+		ToastBar: func(bar, field ui.Rect) { onApp(func(a *app.App) { a.WitToastBar(bar, field) }) },
 	})
 	mygo.Bind(webui.NewWitPage(wit))
 	// The reader pages, one per expanded message in the main window, each
@@ -268,7 +304,14 @@ func gui(ctx context.Context, dataDir, open string) int {
 	}
 	mygo.Bind(webui.NewSignaturePage(sig))
 	var cas cascade
-	windows = webui.NewWindows(pages, func(int64) webui.Window { return newComposeWindow(windows, &cas) }, askUnsaved)
+	composeView := func(f *app.ComposeFrame) func(*ui.Context) {
+		return func(c *ui.Context) {
+			if a != nil { // a compose window opens from the App, which is there by then
+				a.ComposeView(f)(c)
+			}
+		}
+	}
+	windows = webui.NewWindows(pages, func(int64) webui.Window { return newComposeWindow(windows, &cas, &frames, composeView) }, askUnsaved)
 	mygo.App.WhenReady(func() {
 		lang := "en"
 		if preferred := mygo.App.PreferredLanguages(); len(preferred) > 0 {
@@ -388,7 +431,7 @@ func gui(ctx context.Context, dataDir, open string) int {
 			}); err != nil {
 				log.Printf("the Wit page: %v", err)
 			} else {
-				witView = v
+				witView, witOrigin = v, a.WitOrigin
 				a.SetWitPage(v, wit.SetConversation, wit.SetCreated)
 				a.SetWitAsk(wit.Handoff)
 			}
@@ -435,31 +478,62 @@ func gui(ctx context.Context, dataDir, open string) int {
 
 			compose := func(*mygo.MenuItem, *mygo.Window) { a.Compose() }
 			updateMenu := func() {
-				// The Mail menu stands in for File, which on macOS holds Close (⌘W).
-				mailMenu := []*mygo.MenuItem{{Label: i18n.T("mail.compose"), Accelerator: "CmdOrCtrl+N", Click: compose},
-					mygo.Separator(), {Role: mygo.RoleClose}}
-				appMenu := []*mygo.MenuItem{
-					{Role: mygo.RoleAbout},
-					mygo.Separator(),
-					{Label: i18n.T("shell.nav.settings") + "…", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow(); a.OpenSettings() }},
-					mygo.Separator(),
-					{Role: mygo.RoleServices},
-					mygo.Separator(),
-					{Role: mygo.RoleHide},
-					{Role: mygo.RoleHideOthers},
-					{Role: mygo.RoleUnhide},
-					mygo.Separator(),
-					{Role: mygo.RoleQuit},
+				openSettings := func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow(); a.OpenSettings() }
+				if runtime.GOOS == "darwin" {
+					// The Mail menu stands in for File, which on macOS holds Close (⌘W).
+					mailMenu := []*mygo.MenuItem{{Label: i18n.T("mail.compose"), Accelerator: "CmdOrCtrl+N", Click: compose},
+						mygo.Separator(), {Role: mygo.RoleClose}}
+					appMenu := []*mygo.MenuItem{
+						{Role: mygo.RoleAbout},
+						mygo.Separator(),
+						{Label: i18n.T("shell.nav.settings") + "…", Accelerator: "CmdOrCtrl+,", Click: openSettings},
+						mygo.Separator(),
+						{Role: mygo.RoleServices},
+						mygo.Separator(),
+						{Role: mygo.RoleHide},
+						{Role: mygo.RoleHideOthers},
+						{Role: mygo.RoleUnhide},
+						mygo.Separator(),
+						{Role: mygo.RoleQuit},
+					}
+					if !packaged() { // the Store updates the MSIX
+						appMenu = slices.Insert(appMenu, 3, updater.MenuItem())
+					}
+					mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
+						{Label: "Godwit", Submenu: appMenu}, // the first menu is the app's, named by the bundle
+						{Label: i18n.T("shell.nav.mail"), Submenu: mailMenu},
+						{Role: mygo.RoleEditMenu},
+						{Role: mygo.RoleWindowMenu},
+					}))
+				} else {
+					// Windows and Linux (invoked via Alt / F10): standard File / Edit / View / Godwit menu.
+					fileMenu := []*mygo.MenuItem{
+						{Label: i18n.T("mail.compose"), Accelerator: "CmdOrCtrl+N", Click: compose},
+						{Label: i18n.T("shell.sync.all"), Click: func(*mygo.MenuItem, *mygo.Window) { a.SyncAll() }},
+						mygo.Separator(),
+						{Label: i18n.T("shell.nav.settings") + "…", Accelerator: "CmdOrCtrl+,", Click: openSettings},
+						mygo.Separator(),
+						{Role: mygo.RoleClose},
+						{Role: mygo.RoleQuit},
+					}
+					viewMenu := []*mygo.MenuItem{
+						{Label: i18n.T("shell.sidebar.collapse"), Click: func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow(); a.ToggleSidebar() }},
+						mygo.Separator(),
+						{Role: mygo.RoleToggleFullScreen},
+					}
+					aboutMenu := []*mygo.MenuItem{
+						{Label: i18n.T("settings.about"), Click: func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow(); a.OpenAbout() }},
+					}
+					if !packaged() {
+						aboutMenu = append([]*mygo.MenuItem{updater.MenuItem(), mygo.Separator()}, aboutMenu...)
+					}
+					mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
+						{Role: mygo.RoleFileMenu, Submenu: fileMenu},
+						{Role: mygo.RoleEditMenu},
+						{Role: mygo.RoleViewMenu, Submenu: viewMenu},
+						{Label: "Godwit", Submenu: aboutMenu},
+					}))
 				}
-				if !packaged() { // the Store updates the MSIX
-					appMenu = slices.Insert(appMenu, 3, updater.MenuItem())
-				}
-				mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
-					{Label: "Godwit", Submenu: appMenu}, // the first menu is the app's, named by the bundle
-					{Label: i18n.T("shell.nav.mail"), Submenu: mailMenu},
-					{Role: mygo.RoleEditMenu},
-					{Role: mygo.RoleWindowMenu},
-				}))
 				mygo.App.Dock.SetMenu(mygo.NewMenu([]*mygo.MenuItem{ // no-op off macOS
 					{Label: i18n.T("tray.sync_all"), Click: func(*mygo.MenuItem, *mygo.Window) { a.SyncAll() }},
 					{Label: i18n.T("mail.compose"), Click: compose},

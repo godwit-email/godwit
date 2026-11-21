@@ -1,6 +1,5 @@
 import { cn } from "cn";
 import { type KeyboardEvent, type ReactNode, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
 import {
   type Components,
   defaultRehypePlugins,
@@ -8,7 +7,9 @@ import {
   Streamdown,
   type StreamdownProps,
 } from "streamdown";
+import { toast } from "@/components/toast";
 import "streamdown/styles.css";
+import { Button } from "@/components/button";
 import {
   Dialog,
   DialogAction,
@@ -19,7 +20,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/dialog";
-import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { T } from "@/shared/i18n";
 
@@ -342,7 +342,10 @@ export function Response({
   return (
     <>
       <Streamdown
-        className={cn("space-y-2.5 text-sm", size === "page" && "leading-[1.75]")}
+        className={cn(
+          "space-y-2.5 text-sm [&_li+li]:mt-1 [&_li]:py-0",
+          size === "page" && "leading-[1.75]",
+        )}
         mode={streaming ? "streaming" : "static"}
         skipHtml
         remarkPlugins={/<mail\s+id=/.test(text) ? remarkPlugins : legacyPlugins}

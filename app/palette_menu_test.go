@@ -91,7 +91,7 @@ func TestPaletteMenuMail(t *testing.T) {
 	h.tt.Key(0, ui.KeyDown)
 	h.tt.Key(0, ui.KeyEnter)
 	h.until("archived, the palette still open", func() bool {
-		return h.countIn(h.folderOf(accs[0], "archive")) == 1 && paletteShown(h) && paletteHas(h, "Bob · 归档 · alice@example.com")
+		return h.countIn(h.folderOf(accs[0], "archive")) == 1 && paletteShown(h) && paletteHas(h, "归档 · alice@example.com") // the preview names the folder it moved to
 	})
 
 	h.tt.Key(ui.Alt, ui.KeyEnter)

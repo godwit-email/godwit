@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createRef, type Ref, useState } from "react";
-import type { ContactHit } from "@/mygo";
+import type { ContactHit, MenuEntry } from "@/mygo";
 import { makeT } from "@/shared/i18n";
 import { Fields, type FieldsEdit, type FieldsHandle } from "./Fields";
 
@@ -37,6 +37,7 @@ function Host({
       accounts={accounts}
       from={1}
       onFrom={onFrom}
+      menu={menu}
       frozen={frozen}
       onSearch={onSearch}
       {...v}
@@ -69,6 +70,10 @@ function setup(
   );
   return { onChange, onFrom, ref };
 }
+
+// The system's menu: picks the entry labelled pick.
+let pick = "";
+const menu = vi.fn(async (entries: MenuEntry[]) => entries.find((e) => e.label === pick)?.id ?? "");
 
 const chips = () => screen.queryAllByRole("button", { name: /^移除 / }).map((b) => b.ariaLabel);
 
@@ -146,13 +151,13 @@ test("choosing another account calls onFrom", async () => {
   const { onFrom } = setup();
   const from = screen.getByRole("button", { name: "发件账户" });
   expect(from).toHaveTextContent("me@x.com"); // the pill shows the current account
+  pick = "work@x.com";
   await userEvent.click(from);
-  // the menu checks the one in use, then picks the other
-  expect(await screen.findByRole("menuitemradio", { name: "me@x.com" })).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
-  await userEvent.click(screen.getByRole("menuitemradio", { name: "work@x.com" }));
+  // the system's menu lists the accounts as a run of radio items, the one in use checked
+  expect(menu.mock.lastCall?.[0]).toEqual([
+    { id: "1", label: "me@x.com", radio: true, checked: true },
+    { id: "2", label: "work@x.com", radio: true, checked: false },
+  ]);
   expect(onFrom).toHaveBeenCalledWith(2);
 });
 
@@ -197,10 +202,11 @@ test("a menu left open when the fields freeze switches nothing", async () => {
     <Host init={{}} frozen={frozen} onChange={vi.fn()} onFrom={onFrom} fieldsRef={createRef()} />
   );
   const { rerender } = render(host(false));
+  let choose = (_: string) => {};
+  menu.mockImplementationOnce(() => new Promise<string>((r) => (choose = r)));
   await userEvent.click(screen.getByRole("button", { name: "发件账户" }));
-  const work = await screen.findByRole("menuitemradio", { name: "work@x.com" });
-  rerender(host(true));
-  await userEvent.click(work);
+  rerender(host(true)); // frozen while the system's menu is up
+  await act(async () => choose("2"));
   expect(onFrom).not.toHaveBeenCalled();
 });
 
@@ -223,6 +229,7 @@ test("rows read 收件人, 抄送 · 密送's, 主题, then 发件人", () => {
       accounts={accounts}
       from={1}
       onFrom={vi.fn()}
+      menu={menu}
       to={[]}
       cc={["c@x.com"]}
       bcc={[]}

@@ -84,24 +84,40 @@
 /* Where the native kit differs from shadcn's components on purpose, the pages follow the kit, here
    and once rather than in each page's classes. A badge has radius-sm and reads at 400 beside the
    mail label chips (shadcn: a pill at 500). A title is at 600 (shadcn: 500). */
-/* Popups have one edge, their border, and the native ShadowMd: Nova's ring
-   would stack a second line on it. */
-.glass-popover,
+/* Popups are the design's popover material (webui.ThemeVars): its tint over the backdrop blurred
+   by --material-blur, one hairline edge of GlassBorder and ShadowPopover, which Nova's ring would
+   stack a second line on. Popover cards and hover cards are 16 round, menus and lists 8. */
+.material-popover,
 [data-slot="popover-content"],
 [data-slot="dropdown-menu-content"],
 [data-slot="dropdown-menu-sub-content"],
 [data-slot="select-content"],
 [data-slot="hover-card-content"] {
-  box-shadow:
-    0 4px 6px -1px rgb(0 0 0 / 0.1),
-    0 2px 4px -2px rgb(0 0 0 / 0.1); /* shadow-md */
+  background-color: var(--material-popover);
+  backdrop-filter: blur(var(--material-blur));
+  -webkit-backdrop-filter: blur(var(--material-blur));
+  border: 0.5px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-popover);
+}
+[data-slot="popover-content"],
+[data-slot="hover-card-content"] {
+  border-radius: var(--radius-2xl);
+}
+
+/* A bar the content scrolls under: MaterialBar over the blurred backdrop. */
+.material-bar {
+  background-color: var(--material-bar);
+  backdrop-filter: blur(var(--material-blur));
+  -webkit-backdrop-filter: blur(var(--material-blur));
 }
 
 [data-slot="badge"] {
   border-radius: var(--radius-sm);
   font-weight: 400;
 }
-[data-slot$="-title"] {
+/* a Wit step's line (trace-title) reads at the body weight, as the design's */
+[data-slot$="-title"]:not([data-slot="trace-title"]) {
   font-weight: 600;
 }
 
@@ -142,6 +158,8 @@
   --glass-bg: oklch(1 0 0 / 70%);
   --glass-border: oklch(0.145 0 0 / 12%);
   --glass-hover: oklch(0 0 0 / 6%);
+  --tint-2: rgb(from var(--hover-tint) r g b / calc(alpha * 2));
+  --tint-3: rgb(from var(--hover-tint) r g b / calc(alpha * 3));
 }
 
 .dark {
@@ -209,38 +227,10 @@ kbd {
   font-family: ui-monospace, monospace;
 }
 
-/* The compose window's top bar: drags the window (mygo), clear of macOS's traffic lights. */
-/* The main window's top bar: 44 high, the title 20 past the traffic lights. */
-.compose-titlebar {
-  --app-region: drag;
-  min-height: max(44px, var(--mygo-titlebar-height, 44px));
-  padding-left: calc(var(--mygo-titlebar-inset-left, 0px) + 20px);
-}
-.compose-titlebar :is(button, input, a, select) {
-  --app-region: no-drag;
-}
-
-@layer components {
-  /* Frosted liquid glass for popups, menus and dropdowns. */
-  .glass-popover,
-  [data-slot="popover-content"],
-  [data-slot="dropdown-menu-content"],
-  [data-slot="dropdown-menu-sub-content"],
-  [data-slot="select-content"],
-  [data-slot="hover-card-content"] {
-    --popover: var(--glass-bg);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--glass-border);
-  }
-
-  [data-slot="select-scroll-up-button"],
-  [data-slot="select-scroll-down-button"] {
-    --popover: var(--glass-bg);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-  }
+/* The select list's scroll arrows sit on the list's own material. */
+[data-slot="select-scroll-up-button"],
+[data-slot="select-scroll-down-button"] {
+  background-color: transparent;
 }
 
 /* Wit's review marks: the native InsBg/InsText/DelBg/DelText, set by applyTheme (webui.ThemeVars). */

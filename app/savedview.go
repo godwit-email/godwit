@@ -253,15 +253,13 @@ func (p *mailPage) viewEmpty(c *ui.Context) {
 // viewNav is the sidebar's 视图: each view with its icon, name, unread
 // count and menu; its header's menu makes one (viewsMenu). It returns the header.
 func (p *mailPage) viewNav(c *ui.Context) ui.Element {
-	th := c.Theme()
-	head := kit.SidebarCollapsible(c, &p.viewsOpen, true, func() {
-		ui.Text(c, i18n.T("view.title")).SingleLine().Grow(1).Shrink(1)
-	}, func() {
-		for _, b := range p.views {
-			p.viewRow(c.Key(b.ID), b)
-		}
-	})
-	ui.Box(c).Height(th.Space(2))
+	head := kit.SidebarItem(c, kit.SidebarItemOpts{Muted: true, Open: &p.viewsOpen,
+		Title: func() { ui.Text(c, i18n.T("view.title")).SingleLine().Shrink(1) },
+		Group: func() {
+			for _, b := range p.views {
+				p.viewRow(c.Key(b.ID), b)
+			}
+		}})
 	return head
 }
 
@@ -307,9 +305,8 @@ func (p *mailPage) titleMenu(c *ui.Context) {
 	if !ok || p.a.route.Page != PageMail || p.viewEdit != nil {
 		return
 	}
-	t, th := theme.Of(c), c.Theme()
-	kit.IconButton(c, "ellipsis", i18n.T("view.menu"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-		Size(th.Space(5), th.Space(5)).TextColor(t.Muted).Menu(func(m *ui.Menu) { p.savedViewMenu(m, b) })
+	kit.IconButton(c, "ellipsis", i18n.T("view.menu"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs}).
+		TextColor(theme.Of(c).Muted).Menu(func(m *ui.Menu) { p.savedViewMenu(m, b) })
 }
 
 // viewDeleteDialog asks before deleting a view.
@@ -321,7 +318,7 @@ func (p *mailPage) viewDeleteDialog(c *ui.Context) {
 	p.viewDeleteOpen = p.viewDelete != nil
 	kit.Dialog(c, &p.viewDeleteOpen, i18n.Tf("view.delete.title", b.Name), kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("view.delete.desc"), Close: i18n.T("common.close")}, nil, func() {
 		kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { p.viewDelete = nil })
-		kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
+		kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).OnClick(func() {
 			p.viewDelete = nil
 			if p.viewEdit != nil && p.viewEdit.box.ID == b.ID {
 				p.closeViewEditor()
@@ -401,7 +398,8 @@ func (p *mailPage) removeFromView(b core.SavedView, rows []mailItem) {
 	a, threads := p.a, threadsOf(rows)
 	p.setViewExceptions(b.ID, threads, core.ViewExceptionRemoved, func() {
 		a.toasts = append(a.toasts, ui.Toast{ID: fmt.Sprintf("view-out-%d-%d", b.ID, threads[0]), Title: i18n.Tf("view.removed", b.Name),
-			Action: i18n.T("compose.undo"), Timeout: viewUndoWindow, OnAction: func() { p.setViewExceptions(b.ID, threads, "", nil) }})
+			Action: i18n.T("compose.undo"), Timeout: viewUndoWindow, OnAction: func() { p.setViewExceptions(b.ID, threads, "", nil) },
+			Data: kit.ToastData{Deadline: a.clock.Now().Add(viewUndoWindow)}}) // a pointer holding the toast does not hold the undo
 	})
 }
 
@@ -423,12 +421,31 @@ func (p *mailPage) archiveThreads(rows []mailItem) {
 		for _, it := range rows { // not the row advance chose meanwhile
 			l.sel.Remove(it.key())
 		}
-		p.offerUndoArchive([]core.ArchiveUndo{undo}, start)
+		p.offerUndoArchiveOf(len(threads), []core.ArchiveUndo{undo}, start)
 	})
 }
 
-// offerUndoArchive is the toast after an archive: it says so, and takes it back.
+// offerUndoArchive is the toast after archiving messages: it says how many
+// moved, and takes it back. Those are the messages the user chose that moved,
+// not the conversations' other copies.
 func (p *mailPage) offerUndoArchive(undos []core.ArchiveUndo, start time.Time) {
+	moved := map[int64]bool{}
+	marked := map[int64]bool{}
+	for _, u := range undos {
+		for _, m := range u.Moved {
+			moved[m.ID] = true
+		}
+		for _, m := range u.Marks {
+			marked[m.ThreadID] = true
+		}
+	}
+	p.offerUndoArchiveOf(max(len(moved), len(marked)), undos, start)
+}
+
+// offerUndoArchiveOf is offerUndoArchive titled with n, how many the user
+// archived: the conversations of ArchiveThreads, whose Moved holds every inbox
+// copy of each.
+func (p *mailPage) offerUndoArchiveOf(n int, undos []core.ArchiveUndo, start time.Time) {
 	a := p.a
 	var all core.ArchiveUndo
 	for _, u := range undos {
@@ -437,14 +454,15 @@ func (p *mailPage) offerUndoArchive(undos []core.ArchiveUndo, start time.Time) {
 	if len(all.Moved) == 0 && len(all.Marks) == 0 {
 		return
 	}
+	title := i18n.Tf("view.archived_n", n)
 	// Start before the Service call so the toast cannot outlive its durable deadline.
 	left := start.Add(core.UndoArchiveWindow).Sub(a.clock.Now())
 	if left <= 0 {
-		a.toast(i18n.T("view.archived"))
+		a.toast(title)
 		return
 	}
-	a.toasts = append(a.toasts, ui.Toast{ID: fmt.Sprintf("archive-%d", a.clock.Now().UnixNano()), Title: i18n.T("view.archived"),
-		Action: i18n.T("compose.undo"), Timeout: left, OnAction: func() {
+	a.toasts = append(a.toasts, ui.Toast{ID: fmt.Sprintf("archive-%d", a.clock.Now().UnixNano()), Title: title,
+		Action: i18n.T("compose.undo"), Timeout: left, Data: kit.ToastData{Deadline: start.Add(core.UndoArchiveWindow)}, OnAction: func() {
 			a.writes.Chain("mail:expand", func(ctx context.Context) error { return a.svc.UndoArchiveThreads(ctx, all) }, a.toastErr)
 		}})
 }
@@ -579,7 +597,7 @@ func (r *reader) loadWhy() {
 	})
 }
 
-// viewBand is the status under the subject, in a view, with 写催促信
+// viewBand is the status above the conversation, in a view, with 写催促信
 // while it waits on someone.
 func (r *reader) viewBand(c *ui.Context) {
 	w := r.why
@@ -604,8 +622,8 @@ func (r *reader) viewBand(c *ui.Context) {
 	}
 	t, th := theme.Of(c), c.Theme()
 	r.column(c).Children(func() {
-		kit.Block(c, ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2), th.Space(3)).MinHeight(th.Space(10)), kit.ToneTint).Children(func() {
-			ui.Icon(c, icons.Get(icon)).Size(theme.IconSm, theme.IconSm).Shrink(0).TextColor(t.Muted)
+		kit.Block(c, ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(4), th.Space(6)), kit.ToneTint).Children(func() {
+			ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon).Shrink(0).TextColor(t.Muted)
 			kit.Text(c, text, t.Text.Sm).Grow(1).Shrink(1)
 			if w.Status == core.ReplyStatusWaiting {
 				kit.Button(c, i18n.T("view.follow_up"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Shrink(0).OnClick(func() { r.draft("reply") })
@@ -640,9 +658,9 @@ func (r *reader) viewWhyLine(c *ui.Context) {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), 0, 0, 0).Children(func() {
 			kit.Text(c, text, t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
 			if w.Manual {
-				kit.TextLink(c, i18n.T("compose.undo"), t.Foreground, t.Text.Xs).Shrink(0).OnClick(func() { p.setViewExceptions(b.ID, []int64{r.key[0]}, "", nil) })
+				kit.Button(c, i18n.T("compose.undo"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).Shrink(0).OnClick(func() { p.setViewExceptions(b.ID, []int64{r.key[0]}, "", nil) })
 			} else {
-				kit.TextLink(c, i18n.T("view.remove"), t.Foreground, t.Text.Xs).Shrink(0).OnClick(func() { p.removeFromView(b, thread) })
+				kit.Button(c, i18n.T("view.remove"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).Shrink(0).OnClick(func() { p.removeFromView(b, thread) })
 			}
 		})
 	})

@@ -114,7 +114,7 @@ func (f *clientForm) importFile(a *App, path string) {
 func (f *clientForm) view(c *ui.Context, a *App, secretHelp string, pub *auth.PublicClient) {
 	t, th := theme.Of(c), c.Theme()
 	if !f.ownChosen(pub) {
-		kit.Alert(c, kit.Warning, i18n.T("onboarding.own_client.public.notice"), nil)
+		kit.Alert(c, kit.ToneWarning, i18n.T("onboarding.own_client.public.notice"), nil)
 		return
 	}
 	change := func() {

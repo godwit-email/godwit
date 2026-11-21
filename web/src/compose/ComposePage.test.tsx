@@ -19,6 +19,9 @@ vi.mock("@/mygo", () => ({
     send: vi.fn(),
     popupMenu: vi.fn(),
     setModel: vi.fn(),
+    titleBar: vi.fn(),
+    toast: vi.fn(),
+    toastBar: vi.fn(),
   },
   events: {
     closing: {
@@ -34,10 +37,6 @@ vi.mock("@/mygo", () => ({
       },
     },
   },
-}));
-vi.mock("mygo-runtime", async (original) => ({
-  ...(await original<typeof import("mygo-runtime")>()),
-  currentWindow: { setTitle: vi.fn() },
 }));
 // Plate has its own tests; here the body is a textarea that, like Plate, reads `initial` at mount
 // and takes no input while read-only.
@@ -73,7 +72,6 @@ vi.mock("./editor/Editor", async () => {
   };
 });
 
-import { currentWindow } from "mygo-runtime";
 import { ComposePage as api, type ComposeState as ComposeStateT } from "@/mygo";
 
 const theme = { mode: "light", light: {}, dark: {}, fontSize: 14, bodyFontSize: 14 };
@@ -108,14 +106,17 @@ beforeEach(() => {
   vi.mocked(api.save).mockResolvedValue({ revision: 8, conflict: false });
   vi.mocked(api.closed).mockResolvedValue();
   vi.mocked(api.send).mockResolvedValue({ ...noWarnings, sent: true });
+  for (const f of [api.titleBar, api.toast, api.toastBar]) vi.mocked(f).mockResolvedValue();
 });
 
 const body = () => screen.findByRole("textbox", { name: "正文" });
 
 /** Picks a sending account through the menu the From pill opens. */
 async function pickAccount(email: string) {
+  vi.mocked(api.popupMenu).mockImplementationOnce(
+    async (entries) => entries.find((e) => e.label === email)?.id ?? "",
+  );
   await userEvent.click(screen.getByRole("button", { name: "发件账户" }));
-  await userEvent.click(await screen.findByRole("menuitemradio", { name: email }));
 }
 
 test("loads the draft", async () => {
@@ -127,7 +128,7 @@ test("loads the draft", async () => {
   expect(screen.queryByText("> 原文")).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "显示引用的原邮件（助手只读）" }));
   expect(screen.getByText("> 原文")).toBeInTheDocument();
-  expect(currentWindow.setTitle).toHaveBeenLastCalledWith("你好");
+  expect(api.titleBar).toHaveBeenLastCalledWith("你好", expect.any(String)); // native's title bar names the window
 });
 
 test("a program's draft asks for a check before sending (ADR 0043)", async () => {
@@ -148,12 +149,11 @@ test("the user's own draft has no program notice", async () => {
   expect(screen.queryByText("来自程序的草稿")).not.toBeInTheDocument();
 });
 
-test("the editor is a card on the window's material, under a borderless title bar", async () => {
+test("the editor is a card on the window's material, under native's title bar", async () => {
   render(<ComposePage />);
   const section = (await body()).closest("section");
   const main = screen.getByRole("main");
   expect(main).toHaveClass("bg-window");
-  expect(main.querySelector("header")).not.toHaveClass("border-b");
   expect(section).toHaveClass("overflow-hidden", "rounded-xl", "border-[0.5px]", "bg-background");
   // in a resizable panel of the row inset on the material; the grip is the 8 px gap
   expect(section?.closest("[data-group]")).toHaveClass("px-2", "pb-2");
@@ -335,7 +335,10 @@ describe("autosave", () => {
     await u.type(screen.getByRole("textbox", { name: "正文" }), "?");
     await act(() => vi.advanceTimersByTimeAsync(1000));
     expect(vi.mocked(api.save).mock.calls.map((c) => c[0].revision)).toEqual([7, 8]);
-    expect(screen.getByText(/草稿已保存 · \d\d:\d\d/)).toBeInTheDocument();
+    expect(api.titleBar).toHaveBeenLastCalledWith(
+      "你好",
+      expect.stringMatching(/^草稿已保存 · \d\d:\d\d$/),
+    );
   });
 
   test("input after a saved closing answer is rejected until the window outlives it 2 s", async () => {
@@ -426,8 +429,8 @@ test("only the latest load applies", async () => {
 test("an untouched draft reads as saved; unmount disposes the saver", async () => {
   const { unmount } = render(<ComposePage />);
   await body();
-  // the stored draft's time, in the top bar
-  expect(within(screen.getByRole("banner")).getByText("草稿已保存 · 09:05")).toBeInTheDocument();
+  // the stored draft's time, in native's title bar
+  expect(api.titleBar).toHaveBeenLastCalledWith("你好", "草稿已保存 · 09:05");
   vi.useFakeTimers();
   fireEvent.change(screen.getByRole("textbox", { name: "正文" }), { target: { value: "x" } });
   unmount();
@@ -466,8 +469,7 @@ test("an empty subject titles the window 新邮件", async () => {
   vi.mocked(api.load).mockResolvedValue({ ...state, subject: "" });
   render(<ComposePage />);
   await body();
-  expect(currentWindow.setTitle).toHaveBeenLastCalledWith("新邮件");
-  expect(screen.getByRole("heading", { name: "新邮件" })).toBeInTheDocument();
+  expect(api.titleBar).toHaveBeenLastCalledWith("新邮件", expect.any(String));
 });
 
 test("send flushes first and freezes", async () => {
@@ -483,10 +485,10 @@ test("send flushes first and freezes", async () => {
   // typing while it sends is refused, and says so
   await userEvent.type(el, "y");
   expect(el).toHaveValue("正文!");
-  expect(await screen.findByText("正在发送，暂时不能修改草稿")).toBeInTheDocument();
+  await waitFor(() => expect(api.toast).toHaveBeenCalledWith("", "正在发送，暂时不能修改草稿"));
   fireEvent.change(screen.getByRole("textbox", { name: "主题" }), { target: { value: "x" } });
   expect(screen.getByRole("textbox", { name: "主题" })).toHaveValue("你好");
-  expect(await screen.findByText("正在发送，暂时不能修改草稿")).toBeInTheDocument();
+  expect(api.toast).toHaveBeenCalledTimes(1); // once per lock
   expect(el).toHaveAttribute("readonly");
   expect(screen.getByRole("textbox", { name: "主题" })).toHaveAttribute("readonly");
   expect(screen.getByRole("button", { name: "发件账户" })).toBeDisabled();
@@ -507,7 +509,7 @@ test("send aborts on failed save", async () => {
   expect(api.send).not.toHaveBeenCalled();
   await userEvent.type(el, "?");
   expect(el).toHaveValue("正文!?");
-  expect(screen.getByText("未保存")).toBeInTheDocument();
+  await waitFor(() => expect(api.titleBar).toHaveBeenLastCalledWith("你好", "未保存"));
 });
 
 test("clicking 发送 commits a typed address", async () => {
@@ -551,8 +553,8 @@ test("send later: warnings keep the time for send anyway", async () => {
   vi.mocked(api.send).mockResolvedValueOnce({ ...noWarnings, warnings: [w], digest: "d" });
   render(<ComposePage />);
   await body();
-  vi.mocked(api.popupMenu).mockImplementationOnce(async (items) =>
-    items.findIndex((l) => l.startsWith("明天")),
+  vi.mocked(api.popupMenu).mockImplementationOnce(
+    async (entries) => entries.find((e) => e.label.startsWith("明天"))?.id ?? "",
   );
   await userEvent.click(screen.getByRole("button", { name: "发送选项" }));
   const at = vi.mocked(api.send).mock.calls[0][2];
@@ -567,18 +569,18 @@ test("send now from the menu after a warned send later sends now, not at its tim
   vi.mocked(api.send).mockResolvedValueOnce({ ...noWarnings, warnings: [w], digest: "d" });
   render(<ComposePage />);
   await body();
-  vi.mocked(api.popupMenu).mockImplementationOnce(async (items) =>
-    items.findIndex((l) => l.startsWith("明天")),
+  vi.mocked(api.popupMenu).mockImplementationOnce(
+    async (entries) => entries.find((e) => e.label.startsWith("明天"))?.id ?? "",
   );
   await userEvent.click(screen.getByRole("button", { name: "发送选项" }));
   expect(screen.getByRole("button", { name: "仍然发送" })).toBeInTheDocument();
-  vi.mocked(api.popupMenu).mockImplementationOnce(async () => 0); // 立即发送
+  vi.mocked(api.popupMenu).mockImplementationOnce(async () => "now"); // 立即发送
   await userEvent.click(screen.getByRole("button", { name: "发送选项" }));
   expect(api.send).toHaveBeenLastCalledWith(7, "", 0);
 });
 
 test("send later…: ⌘↩ in the dialog schedules, it does not send now", async () => {
-  vi.mocked(api.popupMenu).mockImplementationOnce(async (items) => items.length - 1);
+  vi.mocked(api.popupMenu).mockImplementationOnce(async () => "later");
   render(<ComposePage />);
   await body();
   await userEvent.click(screen.getByRole("button", { name: "发送选项" }));
@@ -619,7 +621,7 @@ test("account switch keeps body", async () => {
   const sig = (await screen.findByText("-- work")).closest('[data-slot="signature-preview"]');
   expect(sig?.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,AAAA");
   expect(el).toHaveValue("正文!");
-  expect(within(screen.getByRole("banner")).getByText("草稿已保存 · 11:42")).toBeInTheDocument();
+  await waitFor(() => expect(api.titleBar).toHaveBeenLastCalledWith("你好", "草稿已保存 · 11:42"));
 });
 
 test("a signature laid out with a table shows as its HTML, table kept", async () => {
@@ -684,7 +686,7 @@ test("attachments: add reports oversize, × removes", async () => {
   expect(screen.getByText("a.pdf")).toBeInTheDocument();
   expect(screen.getByText("big.zip")).toBeInTheDocument();
   expect(screen.getByText("未能添加：bad.bin")).toBeInTheDocument();
-  expect(within(screen.getByRole("banner")).getByText("草稿已保存 · 11:43")).toBeInTheDocument();
+  await waitFor(() => expect(api.titleBar).toHaveBeenLastCalledWith("你好", "草稿已保存 · 11:43"));
   await userEvent.click(screen.getByRole("button", { name: "移除 a.pdf" }));
   expect(api.removeAttachment).toHaveBeenCalledWith(3, 9);
   expect(screen.queryByText("a.pdf")).not.toBeInTheDocument();
@@ -835,7 +837,7 @@ test.each([
   render(<ComposePage />);
   await body();
   await userEvent.click(screen.getByRole("button", { name: "发送" }));
-  expect(await screen.findByText(text)).toBeInTheDocument();
+  await waitFor(() => expect(api.toast).toHaveBeenCalledWith("error", text)); // drawn by native
 });
 
 test("a failed load shows the error and retries into the draft", async () => {
@@ -850,4 +852,32 @@ test("a failed load shows the error and retries into the draft", async () => {
   } finally {
     vi.unstubAllGlobals();
   }
+});
+
+test("at 640 by 480 the fields and body scroll while the toolbar and Send stay put", async () => {
+  vi.stubGlobal("innerWidth", 640);
+  vi.stubGlobal("innerHeight", 480);
+  vi.mocked(api.load).mockResolvedValue({ ...state, body: "a long line\n".repeat(400) });
+  const { container } = render(<ComposePage />);
+  const editor = await body();
+  const scroll = container.querySelector<HTMLElement>("[data-scroll]");
+  const bar = container.querySelector<HTMLElement>("[data-bar]");
+  const toolbar = container.querySelector<HTMLElement>("[data-toolbar]");
+  const send = screen.getByRole("button", { name: "发送" });
+  if (!scroll || !bar || !toolbar) throw new Error("the card's regions are missing");
+  // The fields and the body are in the one scroll area, which takes the card's spare height...
+  expect(scroll).toContainElement(screen.getByRole("textbox", { name: "主题" }));
+  expect(scroll).toContainElement(editor);
+  expect(scroll).toHaveClass("overflow-auto", "min-h-0", "flex-1");
+  // ...the toolbar and Send are in the bar beside it, in no scroll area and never shrunk.
+  expect(bar).toContainElement(toolbar);
+  expect(bar).toContainElement(send);
+  expect(bar).toHaveClass("shrink-0");
+  expect(scroll).not.toContainElement(bar);
+  expect(bar.closest("[data-scroll]")).toBeNull();
+  // The card clips (so only the scroll area scrolls) and fills the window's height.
+  expect(scroll.parentElement).toBe(bar.parentElement);
+  expect(bar.parentElement).toHaveClass("flex", "flex-col", "overflow-hidden", "h-full");
+  expect(container.querySelector("main")).toHaveClass("h-screen", "flex-col");
+  vi.unstubAllGlobals();
 });

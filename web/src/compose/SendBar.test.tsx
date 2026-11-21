@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { MenuEntry } from "@/mygo";
 import { makeT } from "@/shared/i18n";
 import { presets, SendBar } from "./SendBar";
 import { FACE, facePoint } from "./SendLaterDialog";
@@ -10,8 +11,9 @@ const t = makeT("zh-Hans");
 function setup(frozen = false, sending = false, pick = "") {
   const onSend = vi.fn();
   const onSendLater = vi.fn();
-  const menu = vi.fn(async (items: string[], _x: number, _y: number) =>
-    items.findIndex((l) => pick && l.startsWith(pick)),
+  const menu = vi.fn(
+    async (entries: MenuEntry[], _x: number, _y: number) =>
+      entries.find((e) => pick && e.label.startsWith(pick))?.id ?? "",
   );
   render(
     <SendBar
@@ -47,7 +49,8 @@ test("presets: tonight at 21:00 only before then, tomorrow at 8:00", () => {
 test("the native menu: send now, the presets, send later…", async () => {
   const { menu } = setup();
   await options();
-  const [items, x, y] = menu.mock.calls[0];
+  const [entries, x, y] = menu.mock.calls[0];
+  const items = entries.map((e) => (e.separator ? "" : e.label));
   expect(items[0]).toBe("立即发送");
   expect(items[1]).toBe("");
   expect(items.at(-2)).toBe("");

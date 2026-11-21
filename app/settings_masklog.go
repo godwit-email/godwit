@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -120,7 +121,7 @@ func maskLogSummary(reqs []maskRequest) string {
 	return i18n.Tf("settings.masking.log.summary", len(reqs), blocked, warned)
 }
 
-// maskLogEntry is the 隐私脱敏 tab's way into 脱敏记录.
+// maskLogEntry is 隐私脱敏's way into 脱敏记录.
 func (p *settingsPage) maskLogEntry(c *ui.Context) {
 	t, th, a := theme.Of(c), c.Theme(), p.a
 	settingsSection(c, i18n.T("settings.masking.log"), "", func() {
@@ -128,7 +129,7 @@ func (p *settingsPage) maskLogEntry(c *ui.Context) {
 			FillWidth().MinHeight(th.Space(12)).Padding(th.Space(2), th.Space(4)).Gap(th.Space(6)).AlignItems(ui.Center).Radius(0).Label(i18n.T("settings.masking.log.open"))
 		b.Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-				kit.Text(c, i18n.T("settings.masking.log.open"), t.Text.Sm).FontWeight(500)
+				kit.Text(c, i18n.T("settings.masking.log.open"), t.Text.Sm)
 				kit.Text(c, maskLogSummary(maskRequests(p.maskLog)), t.Text.Xs).TextColor(t.Muted)
 			})
 			ui.Icon(c, icons.Get("chevron-right")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
@@ -136,36 +137,15 @@ func (p *settingsPage) maskLogEntry(c *ui.Context) {
 	})
 }
 
-// settingsBack is the link back up from a settings subpage (a signature,
-// 脱敏记录): a ghost button, muted until hovered, pulled left by its padding
-// so its text lines up with the title under it.
-func settingsBack(c *ui.Context, label string, onClick func()) {
-	t, th := theme.Of(c), c.Theme()
-	back := kit.Pressable(c, kit.PressableOpts{OnClick: onClick}).
-		Label(label).AlignSelf(ui.Start).Height(th.Space(7)).PaddingX(th.Space(2)).Margin(0, 0, 0, -th.Space(2)).
-		Gap(th.Space(1.5)).AlignItems(ui.Center).Radius(t.Radius.Md)
-	fg := t.Muted
-	if back.Hovered() {
-		fg = t.Foreground
-	}
-	back.TextColor(fg).Children(func() {
-		ui.Icon(c, icons.Get("arrow-left")).Size(theme.Icon, theme.Icon)
-		kit.Text(c, label, t.Text.Sm)
-	})
-}
-
-// maskLogPage is 脱敏记录, a subpage of 隐私与安全: tiles that count and
+// maskLogPage is 脱敏记录, a subpage of 隐私脱敏: tiles that count and
 // pick the requests by what was done, the category and feature filters, and
 // the requests by day, each opening on the values it held.
 func (p *settingsPage) maskLogPage(c *ui.Context) {
 	t, th, a := theme.Of(c), c.Theme(), p.a
 	f := &p.logFilter
 	reqs := maskRequests(p.maskLog)
-	ui.Column(c).Gap(theme.HeadingGap).Children(func() {
-		settingsBack(c, i18n.T("settings.privacy"), func() { a.navigate(Route{Page: PageSettings, Settings: "privacy"}) })
-		pageHeading(c, i18n.T("settings.masking.log"), i18n.T("settings.masking.log.foot"), func() {
-			settingButton(c, i18n.T("settings.masking.log.clear"), kit.Outline, len(reqs) == 0).OnClick(func() { f.clearing = true })
-		})
+	pageHeading(c, i18n.T("settings.masking.log"), i18n.T("settings.masking.log.foot"), func() {
+		kit.Button(c, i18n.T("settings.masking.log.clear"), kit.ButtonOpts{Variant: kit.Outline, Icon: "trash-2", Disabled: len(reqs) == 0}).OnClick(func() { f.clearing = true })
 	})
 
 	blocked, warned, masked := 0, 0, 0
@@ -176,43 +156,44 @@ func (p *settingsPage) maskLogPage(c *ui.Context) {
 		warned += q.sent(core.MaskWarn)
 		masked += q.sent(core.MaskMask)
 	}
-	ui.Row(c).FillWidth().Gap(th.Space(2)).Children(func() {
-		for _, tile := range []struct {
-			result, key string
-			n           int
-			color       ui.Color
-		}{{maskAll, "all", len(reqs), t.Foreground}, {core.MaskBlock, "blocked", blocked, t.DangerText}, {core.MaskWarn, "warned", warned, t.WarningText}, {core.MaskMask, "masked", masked, t.Foreground}} {
-			label := i18n.T("settings.masking.log." + tile.key)
-			b := kit.Choice(c, kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { f.result = tile.result }}).
-				Grow(1).Shrink(1).Basis(0).Padding(th.Space(3)).Radius(t.Radius.Xl).Label(label), f.result == tile.result, kit.ChoiceOpts{Card: true})
-			b.Children(func() {
-				ui.Column(c).Gap(th.Space(0.5)).Children(func() {
-					kit.Text(c, label, t.Text.Xs).TextColor(t.Muted)
-					color := tile.color
-					if tile.n == 0 {
-						color = t.Muted
-					}
-					kit.Text(c, strconv.Itoa(tile.n), t.Text.Xl).FontWeight(600).TextColor(color)
-					kit.Text(c, i18n.T("settings.masking.log."+tile.key+".help"), t.Text.Xs).TextColor(t.Muted)
+	ui.Column(c).FillWidth().Gap(th.Space(3)).Children(func() { // the tiles and the filters under them, one group
+		ui.Row(c).FillWidth().Gap(th.Space(2)).Children(func() {
+			for _, tile := range []struct {
+				result, key string
+				n           int
+				color       ui.Color
+			}{{maskAll, "all", len(reqs), t.Foreground}, {core.MaskBlock, "blocked", blocked, t.DangerText}, {core.MaskWarn, "warned", warned, t.WarningText}, {core.MaskMask, "masked", masked, t.Foreground}} {
+				label := i18n.T("settings.masking.log." + tile.key)
+				kit.ChoiceCard(c, kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { f.result = tile.result }}).
+					Grow(1).Shrink(1).Basis(0).Padding(th.Space(4)).Radius(t.Radius.Xl).Label(label), kit.ChoiceCardOpts{Selected: f.result == tile.result, Look: kit.ChoiceOnCard}, func() {
+					ui.Column(c).Gap(th.Space(0.5)).Children(func() {
+						kit.Text(c, label, t.Text.Xs).TextColor(t.Muted)
+						color := tile.color
+						if tile.n == 0 {
+							color = t.Muted
+						}
+						kit.Text(c, strconv.Itoa(tile.n), t.Text.Xl).FontWeight(600).TextColor(color)
+						kit.Text(c, i18n.T("settings.masking.log."+tile.key+".help"), t.Text.Xs).TextColor(t.Muted)
+					})
 				})
-			})
-		}
-	})
+			}
+		})
 
-	cats := []kit.Option[string]{{Value: "", Label: i18n.T("settings.masking.log.cat.all")}}
-	for name := range (&core.MaskCategories{}).All() {
-		cats = append(cats, kit.Option[string]{Value: name, Label: maskCategoryName(name)})
-	}
-	cats = append(cats, kit.Option[string]{Value: maskOwn, Label: maskCategoryName("")})
-	features := []kit.Option[string]{{Value: "", Label: i18n.T("settings.masking.log.feature.all")}}
-	for _, name := range maskFeatures {
-		if slices.ContainsFunc(reqs, func(q maskRequest) bool { return q.feature == name }) {
-			features = append(features, kit.Option[string]{Value: name, Label: maskFeatureName(name)})
+		cats := []kit.Option[string]{{Value: "", Label: i18n.T("settings.masking.log.cat.all")}}
+		for name := range (&core.MaskCategories{}).All() {
+			cats = append(cats, kit.Option[string]{Value: name, Label: maskCategoryName(name)})
 		}
-	}
-	ui.Row(c).Gap(th.Space(2)).Children(func() {
-		settingSelect(c, i18n.T("settings.masking.log.cat.all"), &f.cat, cats)
-		settingSelect(c, i18n.T("settings.masking.log.feature.all"), &f.feature, features)
+		cats = append(cats, kit.Option[string]{Value: maskOwn, Label: maskCategoryName("")})
+		features := []kit.Option[string]{{Value: "", Label: i18n.T("settings.masking.log.feature.all")}}
+		for _, name := range maskFeatures {
+			if slices.ContainsFunc(reqs, func(q maskRequest) bool { return q.feature == name }) {
+				features = append(features, kit.Option[string]{Value: name, Label: maskFeatureName(name)})
+			}
+		}
+		ui.Row(c).Gap(th.Space(2)).Children(func() {
+			settingSelect(c, i18n.T("settings.masking.log.cat.all"), &f.cat, cats)
+			settingSelect(c, i18n.T("settings.masking.log.feature.all"), &f.feature, features)
+		})
 	})
 
 	now := a.clock.Now()
@@ -246,7 +227,7 @@ func (p *settingsPage) maskLogPage(c *ui.Context) {
 	flush()
 	if shown > limit {
 		ui.Row(c).Justify(ui.Center).Children(func() {
-			kit.Button(c, i18n.T("settings.masking.log.more"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { f.pages++ })
+			kit.Button(c, i18n.T("settings.masking.log.more"), kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Outline}).OnClick(func() { f.pages++ })
 		})
 	}
 	if shown == 0 {
@@ -262,7 +243,7 @@ func (p *settingsPage) maskLogPage(c *ui.Context) {
 		dismiss := func() { f.clearing = false }
 		kit.Dialog(c, &f.clearing, i18n.T("settings.masking.log.clear.title"), kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("settings.masking.log.clear.body"), Close: i18n.T("common.close")}, nil, func() {
 			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(dismiss)
-			kit.Button(c, i18n.T("settings.masking.log.clear"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
+			kit.Button(c, i18n.T("settings.masking.log.clear"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).OnClick(func() {
 				dismiss()
 				a.do(func(ctx context.Context) error { return a.svc.ClearMaskingLog(ctx) }, func(err error) {
 					if err != nil {
@@ -288,10 +269,8 @@ func (p *settingsPage) maskRequestRow(c *ui.Context, q maskRequest) {
 				f.open = map[string]bool{}
 			}
 			f.open[q.key] = !open
-		}}).FillWidth().MinHeight(th.Space(11)).Padding(th.Space(2), th.Space(4)).Gap(th.Space(3)).AlignItems(ui.Center).Radius(0).Label(feature)
+		}}).FillWidth().MinHeight(th.Space(12)).Padding(th.Space(2), th.Space(4)).Gap(th.Space(3)).AlignItems(ui.Center).Radius(0).Label(feature)
 		b.Children(func() {
-			kit.Text(c, q.at.In(p.a.clock.Now().Location()).Format("15:04"), t.Text.Xs).Width(th.Space(10)).Shrink(0).TextColor(t.Muted)
-			kit.Text(c, feature, t.Text.Sm).FontWeight(500).Grow(1).Shrink(1)
 			per := map[string]int{}
 			var order []string
 			for _, r := range q.values {
@@ -300,14 +279,27 @@ func (p *settingsPage) maskRequestRow(c *ui.Context, q maskRequest) {
 				}
 				per[r.Category]++
 			}
+			sub := []string{q.at.In(p.a.clock.Now().Location()).Format("15:04")}
+			var held []string
 			for _, cat := range order {
-				statusPill(c, maskCategoryName(cat)+" ×"+strconv.Itoa(per[cat]), false)
+				held = append(held, maskCategoryName(cat)+" ×"+strconv.Itoa(per[cat]))
 			}
+			if len(held) > 0 {
+				sub = append(sub, strings.Join(held, i18n.T("mail.list_sep")))
+			}
+			icon := maskFeatureIcons[q.feature]
+			if icon == "" {
+				icon = "shield"
+			}
+			iconLabel(c, func() { ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon).TextColor(t.Foreground) }, feature, strings.Join(sub, " · "))
 			switch {
 			case q.blocked():
-				dangerPill(c, i18n.T("settings.masking.log.flag.blocked"))
+				ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Shrink(0).Children(func() {
+					kit.StatusDot(c, kit.Error)
+					kit.Text(c, i18n.T("settings.masking.log.flag.blocked"), t.Text.Xs).TextColor(t.Muted)
+				})
 			case q.sent(core.MaskWarn) > 0:
-				statusPill(c, i18n.T("settings.masking.log.flag.warned"), true)
+				statusLine(c, line{i18n.T("settings.masking.log.flag.warned"), lookUntested})
 			}
 			turn := float32(0)
 			if open {
@@ -318,7 +310,7 @@ func (p *settingsPage) maskRequestRow(c *ui.Context, q maskRequest) {
 		if !open {
 			return
 		}
-		ui.Column(c).FillWidth().Gap(th.Space(1.5)).Padding(0, th.Space(4), th.Space(3), th.Space(17)).Children(func() {
+		ui.Column(c).FillWidth().Padding(0, th.Space(4), th.Space(2), th.Space(15)).Children(func() { // under the row's text
 			for _, r := range q.values {
 				p.maskValueRow(c, r, q.blocked())
 			}
@@ -345,8 +337,9 @@ func (p *settingsPage) maskValueRow(c *ui.Context, r core.MaskRecord, blocked bo
 	case r.Action == core.MaskWarn:
 		color = t.WarningText
 	}
-	kit.Block(c, ui.Row(c), kit.ToneRaised).FillWidth().MinHeight(th.Space(8)).Padding(th.Space(1), th.Space(2.5)).Gap(th.Space(2.5)).AlignItems(ui.Center).Children(func() {
-		kit.Text(c, maskCategoryName(r.Category), t.Text.Sm).FontWeight(500).Shrink(0)
+	row := ui.Row(c).FillWidth().MinHeight(th.Space(9)).Padding(th.Space(1), 0).Gap(th.Space(2)).AlignItems(ui.Center)
+	row.BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
+		kit.Text(c, maskCategoryName(r.Category), t.Text.Sm).Shrink(0)
 		kit.Text(c, r.Kind, t.Text.Xs).Font(theme.Mono).TextColor(t.Muted).Shrink(0)
 		kit.Text(c, shape, t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
 		kit.Text(c, i18n.T("settings.masking.log.source."+r.Source), t.Text.Xs).TextColor(t.Muted).Shrink(0)
@@ -354,10 +347,8 @@ func (p *settingsPage) maskValueRow(c *ui.Context, r core.MaskRecord, blocked bo
 	})
 }
 
-// dangerPill is statusPill in the danger colors: 已拦截.
-func dangerPill(c *ui.Context, text string) {
-	kit.BadgeWith(c, text, kit.BadgeOpts{Tone: kit.BadgeDanger})
-}
+// maskFeatureIcons are the icons of the features' rows; one not named has a shield.
+var maskFeatureIcons = map[string]string{"wit": "sparkles", "compose": "quill-pen", "skill": "file-text", "quick_replies": "sparkles", "translate": "languages", "labels": "tag", "compact": "list", "plugin": "puzzle", "rules": "filter"}
 
 // maskFeatures are the features the masking log names (core's
 // MaskRecord.Feature), in the order the filter offers them.

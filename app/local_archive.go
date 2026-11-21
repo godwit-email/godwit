@@ -211,5 +211,5 @@ func (p *mailPage) importProgress(ev events.Event) {
 		return
 	}
 	p.a.toasts = append(p.a.toasts, ui.Toast{ID: importToastID(ev.AccountID), Title: i18n.Tf("mail.archive.importing", ev.Done, ev.Total),
-		Timeout: -1, Action: i18n.T("common.cancel"), OnAction: stop})
+		Timeout: -1, Action: i18n.T("mail.archive.import.cancel"), OnAction: stop})
 }

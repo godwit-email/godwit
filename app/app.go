@@ -21,6 +21,12 @@ import (
 	"github.com/godwit-email/godwit/internal/mcpclients"
 )
 
+// BodyGlassRect is a frosted surface's visible overlap inside a body page, in
+// CSS pixels, rounded by R.
+type BodyGlassRect struct {
+	X, Y, W, H, R int
+}
+
 // Platform is what the App needs from the operating system. OpenFiles,
 // OpenDirectory and SaveFile block: call them only off the UI thread.
 type Platform interface {
@@ -65,10 +71,10 @@ type Platform interface {
 	// (加载图片). Call it after NewBodyView: it forgets once the last page
 	// of the message closes.
 	AllowImages(message int64)
-	// BodyGlass tells a body's page how much of it, in CSS pixels, the
-	// reader's bars cover from its top and from its bottom: the page blurs
-	// there. UI thread only.
-	BodyGlass(view ui.NativeWebView, top, bottom int)
+	// BodyGlass tells a body's page what the reader's frosted surfaces cover of
+	// it, in CSS pixels: top for the collapsing sticky header and bottom for the
+	// floating reply card. Used when system native glass is unavailable. UI thread only.
+	BodyGlass(view ui.NativeWebView, top, bottom BodyGlassRect)
 	// TranslateBody replaces only the body's text nodes; nil shows the original.
 	TranslateBody(message int64, texts map[string]string)
 	// Print prints the message's body page. UI thread only.
@@ -221,15 +227,17 @@ type App struct {
 	taskModels    map[string]bool        // the reader's tasks ("summarize", "translate", "" quick replies) core has a model for, and "labels"
 	tasks         latest                 // refreshTasks' reads; only the newest answer counts
 
-	settingsOK       core.Settings                                                      // the last settings the Service confirmed; a failed save reverts to them
-	settingsGen      uint64                                                             // bumped per settings save; only the newest one's result counts
-	settingsVer      uint64                                                             // bumped per local settings change
-	settingsSavedVer uint64                                                             // the settingsVer whose save the Service confirmed (or reverted to)
-	saveSettings     func(ctx context.Context, st core.Settings) (core.Settings, error) // tests swap it
-	mcpEnv           func() (mcpclients.Env, error)                                     // where 接入 AI 应用 looks for the AI apps; tests swap it
-	setLanguage      func(string)
-	sysLang          string // Deps.SystemLanguage
-	accountsGen      uint64 // the loads.Gen that read a.accounts
+	settingsOK           core.Settings                                                      // the last settings the Service confirmed; a failed save reverts to them
+	settingsGen          uint64                                                             // bumped per settings save; only the newest one's result counts
+	settingsVer          uint64                                                             // bumped per local settings change
+	settingsSavedVer     uint64                                                             // the settingsVer whose save the Service confirmed (or reverted to)
+	avatarPolicyVer      uint64                                                             // bumped per local settings change affecting remote avatars (RemoteImages, Proxy)
+	avatarPolicySavedVer uint64                                                             // the avatarPolicyVer whose save the Service confirmed (or reverted to)
+	saveSettings         func(ctx context.Context, st core.Settings) (core.Settings, error) // tests swap it
+	mcpEnv               func() (mcpclients.Env, error)                                     // where 接入 AI 应用 looks for the AI apps; tests swap it
+	setLanguage          func(string)
+	sysLang              string // Deps.SystemLanguage
+	accountsGen          uint64 // the loads.Gen that read a.accounts
 
 	externalAlways bool // Deps.ExternalAlways
 
@@ -511,7 +519,10 @@ func (a *App) load() {
 				a.settingsEffects(old, st)
 			}
 		}
-		a.mail.reader.avatarsChanged(avatars) // with the settings above: loadAvatar holds them while a local change is unsaved
+		if avatars == trustChanged {
+			a.contacts().avatars = nil
+		}
+		a.mail.reader.avatarsChanged(avatars) // with the settings above: loadAvatar holds them while a local policy change is unsaved
 		a.refreshTasks()                      // skills or services may have changed too
 		a.inboxUnread = inbox
 		a.showUnread(inbox)

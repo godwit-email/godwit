@@ -35,7 +35,7 @@ func (p *palette) preview(c *ui.Context, m core.MessageSummary) {
 	if _, ok := p.a.mail.folder(m.FolderID); ok {
 		kit.Text(c, p.a.mail.folderLine(messageItem(m)), t.Text.Xs).TextColor(t.Muted).SingleLine()
 	}
-	marked(c, cmp.Or(m.Subject, i18n.T("mail.no_subject")), p.hl).FontWeight(600).MaxLines(2)
+	marked(c, cmp.Or(m.Subject, i18n.T("mail.no_subject")), p.hl).FontWeight(500).MaxLines(2)
 	if m.Snippet != "" {
 		marked(c, m.Snippet, p.hl).FontSize(t.Text.Xs).TextColor(t.Muted).MaxLines(4)
 	}
@@ -60,7 +60,7 @@ func (p *palette) card(m core.MessageSummary) *palCard {
 	}
 	p.cards[m.ID] = pc
 	a, id, atts := p.a, m.ID, m.HasAttachments
-	settled := a.settingsVer == a.settingsSavedVer
+	settled := a.avatarPolicyVer == a.avatarPolicySavedVer
 	var img ui.ImageSource
 	var names []string
 	a.do(func(ctx context.Context) error {

@@ -28,15 +28,6 @@ func (r *reader) labelRow(c *ui.Context) {
 		}
 		kit.BadgeButton(c, i18n.T("reader.labels.add"), kit.BadgeOpts{Tone: kit.BadgeOutline, Muted: true, Icon: "plus"}).
 			Label(i18n.T("reader.labels.add.label")).Menu(func(m *ui.Menu) { r.labelMenu(m, t) })
-		// 退订, once a thread: it leaves the list, whichever message says how.
-		if id := r.unsubMessage(); id != 0 {
-			ui.Spacer(c)
-			if r.bodies[id].unsubbing {
-				kit.Spinner(c)
-			} else {
-				kit.BadgeButton(c, i18n.T("reader.unsubscribe"), kit.BadgeOpts{Icon: "mail-forbid"}).OnClick(func() { r.unsubscribe(id) })
-			}
-		}
 	})
 }
 

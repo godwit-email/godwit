@@ -44,7 +44,7 @@ func (h *harness) top(label string) float32 {
 // The sidebar's sections follow Settings.SidebarOrder.
 func TestSidebarSectionOrder(t *testing.T) {
 	h, _ := mailHarness(t, nil, "alice@example.com")
-	views, accounts := i18n.T("view.title"), i18n.T("mail.accounts")
+	views, accounts := i18n.T("view.title"), i18n.T("mail.other_folders")
 	if h.top(views) > h.top(accounts) {
 		t.Fatalf("by default the views (%v) come before the accounts (%v)", h.top(views), h.top(accounts))
 	}
@@ -97,7 +97,7 @@ func TestLayoutSettingsPage(t *testing.T) {
 // fixed rows above stay.
 func TestSidebarSectionDrag(t *testing.T) {
 	h, _ := mailHarness(t, nil, "alice@example.com")
-	views, accounts := i18n.T("view.title"), i18n.T("mail.accounts")
+	views, accounts := i18n.T("view.title"), i18n.T("mail.other_folders")
 	h.top(views)
 	from, _ := h.tt.Find(accounts)
 	to, _ := h.tt.Find(views)
@@ -119,7 +119,7 @@ func TestSidebarSectionDrag(t *testing.T) {
 // labels while none is on mail, and back up.
 func TestSidebarSectionMenu(t *testing.T) {
 	h, _ := mailHarness(t, nil, "alice@example.com")
-	views, accounts := i18n.T("view.title"), i18n.T("mail.accounts")
+	views, accounts := i18n.T("view.title"), i18n.T("mail.other_folders")
 	h.top(views)
 	h.headerMenu(views, i18n.T("mail.section.down"))
 	h.until("the views under the accounts", func() bool { return h.app.settings.SidebarOrder == "labels,accounts,views" })
@@ -151,8 +151,9 @@ func TestSidebarAccountFoldSaved(t *testing.T) {
 	if *h.app.mail.accountOpen(accs[1].ID) {
 		t.Fatal("the second account starts folded")
 	}
-	h.until("the second account's row", func() bool { _, ok := h.tt.Find("bob@example.com"); return ok })
-	if err := h.tt.Click("bob@example.com"); err != nil {
+	bobFolders := "bob@example.com · " + i18n.T("mail.other_folders")
+	h.until("the second account's row", func() bool { _, ok := h.tt.Find(bobFolders); return ok })
+	if err := h.tt.Click(bobFolders); err != nil {
 		t.Fatal(err)
 	}
 	// changeSettings saves after it returns: wait for the store, not the window's copy

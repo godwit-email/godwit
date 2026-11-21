@@ -106,7 +106,7 @@ export function QuotePicker({
       ref={box}
       role="dialog"
       aria-label={t("wit.quote")}
-      className="absolute bottom-full left-0 z-3 mb-2 flex w-80 max-w-full flex-col gap-1 rounded-lg border border-glass-border bg-glass-bg p-1.5 text-popover-foreground shadow-md backdrop-blur-2xl outline-none"
+      className="absolute bottom-full left-0 z-3 mb-2 flex w-80 max-w-full flex-col gap-1 p-1.5 text-popover-foreground outline-none material-popover"
     >
       {own && (
         <div className="relative flex items-center">
@@ -127,7 +127,7 @@ export function QuotePicker({
             type="button"
             aria-label={t("common.close")}
             title={t("common.close")}
-            className="absolute right-1.5 flex size-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
+            className="absolute right-1.5 flex size-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-(--hover-tint) hover:text-foreground"
             onClick={onClose}
           >
             <RiCloseLine className="size-4" />

@@ -74,7 +74,11 @@ func TestSettingsIndexCoversRows(t *testing.T) {
 	for _, txt := range h.tt.Texts() {
 		chrome[txt] = true
 	}
-	for sec, route := range map[string]string{"account": accountRoute(acc.ID), "general": "general", "models": "models", "extensions": "extensions", "privacy": "privacy", "about": "about", "labs": "labs", "labels": "labels", "rules": "rules", "signatures": "signatures", "addressbook": addressBookRoute(ab.ID)} {
+	routes := map[string]string{"account": accountRoute(acc.ID), "addressbook": addressBookRoute(ab.ID)}
+	for _, sec := range appSections {
+		routes[sec] = sec
+	}
+	for sec, route := range routes {
 		p := h.openSettings(route)
 		if sec == "addressbook" { // an account page: searched with the accounts
 			sec = "account"
@@ -83,47 +87,24 @@ func TestSettingsIndexCoversRows(t *testing.T) {
 			p.proxy.mode, p.proxy.addr = core.ProxyCustom, "socks5://127.0.0.1:1080"
 			h.tt.Frame()
 		}
-		tabs := map[string]*int{"models": &p.aiTab, "privacy": &p.privacyTab}[sec]
 		in := map[string]bool{}
 		for _, k := range settingsIndex[sec] {
 			in[strings.ReplaceAll(k, ".", "_")] = true
 		}
-		for tab := range 4 { // every tab of a page that has them (the Intelligence page has 4)
-			if tabs == nil && tab > 0 {
-				break
+		for _, txt := range h.tt.Texts() {
+			ks := byText[txt]
+			if len(ks) == 0 || chrome[txt] {
+				continue
 			}
-			if tabs != nil {
-				*tabs = tab
-				h.tt.Frame()
+			found := false
+			for _, k := range ks {
+				found = found || in[k]
 			}
-			for _, txt := range h.tt.Texts() {
-				ks := byText[txt]
-				if len(ks) == 0 || chrome[txt] {
-					continue
-				}
-				found := false
-				for _, k := range ks {
-					found = found || in[k]
-				}
-				if !found {
-					t.Errorf("%s tab %d: %q (%v) is not in settingsIndex", sec, tab, txt, ks)
-				}
+			if !found {
+				t.Errorf("%s: %q (%v) is not in settingsIndex", sec, txt, ks)
 			}
 		}
 	}
-}
-
-// A search opens the AI and 隐私与安全 pages on the tab it found.
-func TestSettingsSearchOpensTab(t *testing.T) {
-	h, _ := withAccount(t)
-	p := h.openSettings("models") // the page open already: its tab changes still
-	p.query = "本机 API"
-	h.see("允许外部应用和脚本接入")
-	p.query = "屏蔽"
-	h.click(i18n.T("settings.privacy"))
-	h.see("没有已屏蔽的发件人。")
-	p.query = "远程图片" // on the page open
-	h.see(i18n.T("settings.remote_images.mode"))
 }
 
 func TestSettingsSearchFilter(t *testing.T) {
@@ -133,7 +114,7 @@ func TestSettingsSearchFilter(t *testing.T) {
 	if len(all.apps) != len(appSections) || !all.accounts {
 		t.Fatalf("empty query hides sections: %+v", all)
 	}
-	if m := p.matching("语言"); !slices.Equal(m.apps, []string{"general", "models"}) || m.accounts { // 界面语言; 阅读语言 on the Intelligence page
+	if m := p.matching("语言"); !slices.Equal(m.apps, []string{"general", "features"}) || m.accounts { // 界面语言; 阅读语言 on the AI 功能 page
 		t.Errorf("语言: %+v", m)
 	}
 	if m := p.matching("签名"); !m.accounts || !slices.Equal(m.apps, []string{"signatures"}) {
@@ -152,7 +133,7 @@ func TestSettingsSearchFilter(t *testing.T) {
 			t.Errorf("%s: %+v", q, m)
 		}
 	}
-	for q, sec := range map[string]string{"mcp": "extensions", "skill": "extensions", "判断": "models", "插入图片": "signatures"} {
+	for q, sec := range map[string]string{"mcp": "mcp", "skill": "skills", "判断": "models", "插入图片": "signatures", "沙箱": "plugins", i18n.T("settings.keychain"): "masking", "扩展": "plugins", "智能": "models"} {
 		if m := p.matching(q); !slices.Contains(m.apps, sec) {
 			t.Errorf("%s: %+v, want %s", q, m, sec)
 		}

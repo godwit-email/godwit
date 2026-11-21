@@ -221,3 +221,27 @@ func TestControlHeightsOnScale(t *testing.T) {
 		}
 	})
 }
+
+// TestSemiboldOnlyAtTitleSizes holds the design's type scale: 600 is the
+// title, heading and display weight (Text.Base and up); caption and body
+// text (Xs, Sm) take 400 or 500.
+func TestSemiboldOnlyAtTitleSizes(t *testing.T) {
+	titled := regexp.MustCompile(`Text\.(Base|Xl|X3l)\b`)
+	for _, dir := range []string{".", "../internal/kit"} {
+		paths, _ := filepath.Glob(filepath.Join(dir, "*.go"))
+		for _, p := range paths {
+			if strings.HasSuffix(p, "_test.go") {
+				continue
+			}
+			src, err := os.ReadFile(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i, line := range strings.Split(string(src), "\n") {
+				if strings.Contains(line, "FontWeight(600)") && !titled.MatchString(line) {
+					t.Errorf("%s:%d: FontWeight(600) on text under Text.Base", p, i+1)
+				}
+			}
+		}
+	}
+}

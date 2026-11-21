@@ -225,6 +225,8 @@ func TestWitPageRoleRefused(t *testing.T) {
 		assert.ErrorIs(t, f.p.OpenModels(ctx), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.Navigate(ctx, -1), ErrWrongPage, name)
 		assert.ErrorIs(t, f.p.Search(ctx), ErrWrongPage, name)
+		_, err = f.p.PopupMenu(ctx, []MenuEntry{{ID: "a", Label: "A"}}, 0, 0)
+		assert.ErrorIs(t, err, ErrWrongPage, name)
 	}
 	// Another role's page.
 	pages := NewPages(func(ctx context.Context) any { return ctx.Value(pageKey{}) })

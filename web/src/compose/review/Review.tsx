@@ -1,8 +1,8 @@
-import { RiSparkling2Line } from "@remixicon/react";
 import { type FocusEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/button";
 import type { ReviewBlock, ReviewOp, Review as ReviewT, ReviewToken } from "@/mygo";
 import type { T } from "@/shared/i18n";
+import { WitBanner } from "../Banner";
 import { sanitize } from "../editor/html";
 
 /** The panel card's line for a review: how many changes, or how much was rewritten. */
@@ -222,7 +222,7 @@ export function Review({
               {active === s.k && (
                 // pt-1, not mt-1: the gap stays inside the change, so moving the mouse onto the buttons keeps them open.
                 <span ref={pop} className="absolute z-10 pt-1" style={at}>
-                  <span className="flex items-center gap-1 whitespace-nowrap rounded-lg border border-glass-border bg-glass-bg p-1 text-xs shadow-md backdrop-blur-2xl">
+                  <span className="material-popover flex items-center gap-1 whitespace-nowrap p-1 text-xs">
                     {link && (
                       <span className="px-1 text-muted-foreground text-xs">
                         {t("wit.compose.link", link)}
@@ -233,7 +233,7 @@ export function Review({
                     </Button>
                     <Button
                       size="xs"
-                      variant="secondary"
+                      variant="ghost"
                       disabled={busy}
                       onClick={() => decide(s.k, -1)}
                     >
@@ -252,17 +252,17 @@ export function Review({
   const pct = Math.round(r.ratio * 100);
   return (
     <div className="flex flex-col">
-      <div className="flex items-center gap-2 bg-sidebar px-4 py-2 text-sm">
-        <RiSparkling2Line className="size-3.5 shrink-0" />
-        <span className="flex-1">
-          {r.kind === "translate"
+      <WitBanner
+        text={
+          r.kind === "translate"
             ? t("wit.compose.translated")
             : r.inline
               ? t("wit.compose.pending", open)
               : r.exact
                 ? t("wit.compose.rewrite", pct)
-                : t("wit.compose.rewrite_plain")}
-        </span>
+                : t("wit.compose.rewrite_plain")
+        }
+      >
         {!r.inline && (
           <Button size="sm" variant="outline" onClick={() => setCompare(!compare)}>
             {t(compare ? "wit.compose.back" : "wit.compose.compare")}
@@ -274,7 +274,7 @@ export function Review({
         <Button size="sm" variant="outline" disabled={busy} onClick={() => onDecide(false)}>
           {t("wit.compose.reject_all")}
         </Button>
-      </div>
+      </WitBanner>
       <section
         ref={body}
         aria-label={t("wit.compose.review_body")}

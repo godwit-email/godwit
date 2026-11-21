@@ -443,6 +443,219 @@ export const contactHits: ContactHit[] = [
 ];
 export const witEmpty = (): WitHistory => history({ conversation: 0, turns: [] });
 
+/** The conversations the design draws one approval or question each (Wit frames 138, 139 and 417:*). */
+export const witDesign = (kind: string): WitHistory => {
+  let nextApproval = 10;
+  const ask = (
+    id: string,
+    question: string,
+    calls: WitTurnCall[],
+    text = "",
+    extra: Partial<WitTurn> = {},
+  ) => turn({ id, question, runs: [1], calls, text, elapsed: 3000, ...extra });
+  const one = (id: string, tool: string, args: unknown, a: Partial<Approval>, result?: unknown) => {
+    const c = call(id, tool, args);
+    const ap = approval({ id: ++nextApproval, run: 1, callId: id, tool, args: c.args, ...a });
+    return on(c, result === undefined ? null : ok(c, result), ap);
+  };
+  const reply = {
+    to: ["Lena Fischer <lena@partner.example>"],
+    subject: "Re: Q4 partnership proposal",
+    body: "Hi Lena, thanks for the revised proposal. November works for us.",
+  };
+  const turns: Record<string, WitTurn> = {
+    allowed: ask(
+      "1",
+      "好，帮我回复 Lena：11 月可以，但研讨会想推迟一周",
+      [one("r1", "reply_to_mail", reply, { state: "done", draft: 7, summary: "撰写回复" }, {})],
+      "草稿写好了：答应 11 月联合发布，并提议把研讨会推迟一周。发送前请在撰写窗口核对收件人和内容。",
+    ),
+    question: ask(
+      "1",
+      "Acme Cloud 的账单以后自动处理一下",
+      [
+        one(
+          "q1",
+          "ask_user_question",
+          {
+            questions: [
+              {
+                question: "这些账单要怎么处理？",
+                header: "处理方式",
+                multiSelect: true,
+                options: [
+                  { label: "打上「账单」标签", description: "以后按标签就能找到" },
+                  { label: "归档", description: "从收件箱移走，在归档里还能找到" },
+                  { label: "标为已读", description: "不再算作未读" },
+                ],
+              },
+              {
+                question: "以后收到 Acme Cloud 的账单也这样处理吗？",
+                header: "范围",
+                multiSelect: false,
+                options: [
+                  { label: "是，建一条规则", description: "" },
+                  { label: "只处理现有的", description: "" },
+                ],
+              },
+            ],
+          },
+          {},
+        ),
+      ],
+      "Acme Cloud 最近 4 封都是月度账单。动手之前，想先确认两件事：",
+    ),
+    mcp: ask(
+      "1",
+      "把这周三场会议的纪要整理成一页，放到 Notion 里",
+      [
+        one(
+          "m1",
+          "mcp_notion_create_page",
+          {},
+          {
+            form: JSON.stringify({
+              server: "Notion",
+              round: 1,
+              message: "要在 Notion 里新建这页会议纪要，需要你确认放在哪里。",
+              questions: [
+                {
+                  question: "放在哪个页面下？",
+                  header: "",
+                  kind: "choice",
+                  multiSelect: false,
+                  options: [
+                    { label: "团队空间 / 会议纪要", description: "" },
+                    { label: "我的页面", description: "" },
+                  ],
+                },
+              ],
+            }),
+          },
+        ),
+      ],
+      "三场会议的纪要已经整理好了。Notion 那边需要你确认放在哪里：",
+      { elapsed: 4000 },
+    ),
+    egress: ask("1", "把 Lena 的来信翻译成中文", [
+      on(call("g1", "get_message", { id: 41 }), ok({ id: "g1", name: "get_message" })),
+      one(
+        "g2",
+        "plugin_deepl_translate",
+        { text: "把 Lena 的来信翻译成中文" },
+        { summary: "DeepL 翻译", destinations: ["api-free.deepl.com"] },
+      ),
+    ]),
+    batch: ask("1", "把 Acme Cloud 以前的账单都归档", [
+      on(
+        call("b0", "search_mail", { query: "from:billing@acmecloud.com" }),
+        ok({ id: "b0", name: "search_mail" }, { count: 3 }),
+      ),
+      one(
+        "b1",
+        "archive_mail",
+        {
+          action: "archive_mail",
+          ids: [1, 2, 3],
+          selected_ids: [1, 2, 3],
+          items: [
+            {
+              id: 1,
+              msg_id: 101,
+              subject: "10 月账单：¥ 680.00",
+              from: "Acme Cloud",
+              date: 1760000000,
+            },
+            {
+              id: 2,
+              msg_id: 102,
+              subject: "9 月账单：¥ 560.00",
+              from: "Acme Cloud",
+              date: 1757000000,
+            },
+            {
+              id: 3,
+              msg_id: 103,
+              subject: "8 月账单：¥ 560.00",
+              from: "Acme Cloud",
+              date: 1754000000,
+            },
+          ],
+        },
+        { summary: "归档 3 封" },
+      ),
+    ]),
+    rule: ask(
+      "1",
+      "Acme Cloud 的账单以后自动处理一下",
+      [
+        one(
+          "q1",
+          "ask_user_question",
+          {
+            questions: [
+              {
+                question: "这些账单要怎么处理？",
+                header: "",
+                multiSelect: true,
+                options: [
+                  { label: "打上「账单」标签", description: "" },
+                  { label: "归档", description: "" },
+                ],
+              },
+              {
+                question: "以后收到 Acme Cloud 的账单也这样处理吗？",
+                header: "",
+                multiSelect: false,
+                options: [{ label: "是，建一条规则", description: "" }],
+              },
+            ],
+            answers: [["打上「账单」标签", "归档"], ["是，建一条规则"]],
+          },
+          { state: "done" },
+        ),
+        one(
+          "p1",
+          "propose_rule",
+          {
+            rule: {
+              version: 1,
+              name: "Acme Cloud 账单",
+              trigger: "receive",
+              match: "all",
+              conditions: [{ field: "from", op: "contains", value: "billing@acmecloud.com" }],
+              actions: [{ kind: "label", label: 1 }, { kind: "archive" }],
+            },
+            background: false,
+            first_time: [],
+            matches: 4,
+            mail: [
+              { id: 5, from: "Acme Cloud <billing@acmecloud.com>", subject: "10 月账单", date: "" },
+            ],
+            labels: { "1": "账单" },
+          },
+          { summary: "创建规则" },
+        ),
+      ],
+      "好的。按你的选择起草了一条规则，保存后，以后收到的 Acme Cloud 账单会自动打上「账单」标签并归档：",
+    ),
+  };
+  const q = "这周还有谁在等我回复？";
+  turns.thinking = ask("1", q, [], "", { elapsed: 0 });
+  turns.answering = ask(
+    "1",
+    q,
+    [],
+    "有 3 封邮件在等你回复，其中 1 封有明确的期限：\n\n1. Lena 发来修订提案（11 月联合发布，再加一场联合研讨会），请你周五前确认时间",
+    { elapsed: 0 },
+  );
+  turns.error = ask("1", q, [], "", { elapsed: 0, failed: "error.unknown" });
+  return history({
+    turns: [turns[kind]],
+    running: kind === "thinking" || kind === "answering" ? 1 : 0,
+  });
+};
+
 export const witPage = (mode: "light" | "dark", conversation: number): WitPageState => ({
   conversation,
   version: 1,

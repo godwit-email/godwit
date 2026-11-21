@@ -63,28 +63,30 @@ func (v *labelsView) view(c *ui.Context, p *settingsPage) {
 	}
 	settingsSection(c, i18n.T("settings.labels.display"), "",
 		func() {
-			settingRow(c, i18n.T("settings.labels.display.style"), i18n.T("settings.labels.display.style.help"), func() {
+			settingRow(c, i18n.T("settings.labels.display.style"), i18n.T("settings.labels.display.style.help"), func() ui.Element {
 				opts := []kit.Option[string]{
 					{Value: core.LabelDisplayBoth, Label: i18n.T("settings.labels.display.both")},
 					{Value: core.LabelDisplayIcon, Label: i18n.T("settings.labels.display.icon")},
 					{Value: core.LabelDisplayText, Label: i18n.T("settings.labels.display.text")},
 				}
-				settingSelect(c, i18n.T("settings.labels.display.style"), &display, opts)
+				sel := settingSelect(c, i18n.T("settings.labels.display.style"), &display, opts)
 				p.st.LabelDisplay = display
+				return sel
 			})
 		})
 	settingsSection(c, i18n.T("settings.labels.auto"), "",
 		func() {
-			kit.SwitchRow(c, &p.st.AutoLabel, i18n.T("settings.labels.auto.on"), i18n.T("settings.labels.auto.on.help"))
+			kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &p.st.AutoLabel}, i18n.T("settings.labels.auto.on"), i18n.T("settings.labels.auto.on.help"), "", nil)
 		},
 		func() {
-			settingRow(c, i18n.T("settings.labels.model"), i18n.T("settings.labels.model.help"), func() {
+			settingRow(c, i18n.T("settings.labels.model"), i18n.T("settings.labels.model.help"), func() ui.Element {
 				value := i18n.T("settings.labels.model.value")
 				if !a.taskModels["labels"] {
 					value = i18n.T("settings.labels.model.none")
 				}
 				kit.Text(c, value, theme.Of(c).Text.Sm).TextColor(theme.Of(c).Muted)
-				settingButton(c, i18n.T("settings.labels.model.go"), kit.Outline, false).OnClick(func() { a.navigate(Route{Page: PageSettings, Settings: "models"}) })
+				rowButton(c, i18n.T("settings.labels.model.go"), kit.Outline, false).OnClick(func() { a.navigate(Route{Page: PageSettings, Settings: "models"}) })
+				return ui.Element{}
 			})
 		})
 	v.rescan(c)
@@ -185,7 +187,7 @@ func (v *labelsView) dialog(c *ui.Context) {
 	case long:
 		nameErr = i18n.Tf("settings.labels.name.long", core.MaxLabelName)
 	}
-	kit.Dialog(c, &v.dlg, title, kit.DialogOpts{Desc: i18n.T("settings.labels.dialog.sub"), Close: i18n.T("common.close")}, func() {
+	kit.Dialog(c, &v.dlg, title, kit.DialogOpts{Desc: i18n.T("settings.labels.dialog.sub"), Close: i18n.T("common.close"), Top: true}, func() {
 		preview := cmpName(v.name)
 		kit.Block(c, ui.Row(c), kit.ToneCard).Gap(th.Space(6)).Padding(th.Space(3)).Children(func() {
 			for _, auto := range []bool{false, true} {
@@ -275,7 +277,7 @@ func (v *labelsView) dialog(c *ui.Context) {
 		})
 	}, func() {
 		if v.editID != 0 {
-			kit.Button(c, i18n.T("settings.labels.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() { v.confirm = true })
+			kit.Button(c, i18n.T("settings.labels.delete"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).OnClick(func() { v.confirm = true })
 			ui.Spacer(c)
 		}
 		kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { v.dlg = false })
@@ -288,7 +290,7 @@ func (v *labelsView) dialog(c *ui.Context) {
 	kit.Dialog(c, &v.confirm, i18n.Tf("settings.labels.delete.confirm", l.Name),
 		kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.Tf("settings.labels.delete.confirm.help", l.Count), Close: i18n.T("common.close")}, nil, func() {
 			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { v.confirm = false })
-			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
+			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).OnClick(func() {
 				id := v.editID
 				v.confirm, v.dlg = false, false
 				a.writes.Chain("labels", func(ctx context.Context) error { return a.svc.DeleteLabel(ctx, id) }, a.toastErr)
@@ -334,13 +336,13 @@ func (v *labelsView) rescan(c *ui.Context) {
 	}
 	settingsSection(c, i18n.T("settings.labels.rescan"), i18n.T("settings.labels.rescan.sub"),
 		func() {
-			settingRow(c, i18n.T("settings.labels.rescan.range"), "", func() {
-				settingSelect(c, i18n.T("settings.labels.rescan.range"), &v.days, opts)
+			settingRow(c, i18n.T("settings.labels.rescan.range"), "", func() ui.Element {
+				return settingSelect(c, i18n.T("settings.labels.rescan.range"), &v.days, opts)
 			})
 		},
 		func() {
-			settingRow(c, i18n.T("settings.labels.rescan.mode"), help, func() {
-				kit.Tabs(c, &v.mode, i18n.T("settings.labels.rescan.missing"), i18n.T("settings.labels.rescan.redo"))
+			settingRow(c, i18n.T("settings.labels.rescan.mode"), help, func() ui.Element {
+				return kit.Tabs(c, &v.mode, kit.TabsOpts{}, kit.TabLabels(i18n.T("settings.labels.rescan.missing"), i18n.T("settings.labels.rescan.redo")))
 			})
 		},
 		func() {

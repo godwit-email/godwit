@@ -2,6 +2,8 @@ package kit
 
 import (
 	"hash/fnv"
+	"math"
+	"runtime"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -103,47 +105,39 @@ func badge(c *ui.Context, e ui.Element, text string, o BadgeOpts) ui.Element {
 	})
 }
 
-// AlertKind is an Alert's look.
-type AlertKind int
+// Alert is the design's one colored message bar, with optional actions after
+// the text: tone is ToneWarning, ToneDanger or ToneInfo. Its actions are
+// small Outline buttons of the same tone.
+func Alert(c *ui.Context, tone Tone, text string, actions func()) ui.Element {
+	return TitledAlert(c, tone, "", text, actions)
+}
 
-const (
-	Warning AlertKind = iota
-	Danger
-	Info
-)
-
-// Alert is a bordered message bar with optional actions after the text: a
-// Block of the kind's tone. Its actions are AlertActions, which follow it.
-func Alert(c *ui.Context, kind AlertKind, text string, actions func()) ui.Element {
+// TitledAlert is the design's Alert: its tone's mark level with the first
+// line, however tall the actions make the bar; title in medium weight over
+// text (either may be ""); the actions at the end, centred.
+func TitledAlert(c *ui.Context, tone Tone, title, text string, actions func()) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	return Block(c, ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), th.Space(2.5)), alertTone(kind)).
+	mark := "circle-alert"
+	if tone == ToneInfo {
+		mark = "info"
+	}
+	return Block(c, ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4)), tone).Radius(t.Radius.Xl).
 		FontSize(t.Text.Sm).Children(func() {
-		ui.Text(c, text).Grow(1).Shrink(1) // the text wraps; the actions stay on its right
+		ui.Row(c).Grow(1).Shrink(1).Gap(th.Space(3)).Children(func() { // the mark tops the text, not the bar
+			ui.Icon(c, icons.Get(mark)).Size(theme.IconSm, theme.IconSm).Shrink(0).Margin(th.Space(0.5), 0, 0, 0).Role(ui.RoleNone)
+			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() { // the text wraps; the actions stay on its right
+				if title != "" {
+					ui.Text(c, title).FontWeight(500).Selectable() // what it names (an address, a host) can be copied
+				}
+				if text != "" {
+					ui.Text(c, text).Selectable()
+				}
+			})
+		})
 		if actions != nil {
 			actions()
 		}
 	})
-}
-
-// alertTone is the Block tone of an Alert of kind.
-func alertTone(kind AlertKind) Tone {
-	switch kind {
-	case Warning:
-		return ToneWarning
-	case Danger:
-		return ToneDanger
-	}
-	return ToneInfo
-}
-
-// AlertAction is a button for an Alert's actions, in the kind's tone
-// (ButtonOpts.Tone): a fill a step deeper than the alert's, under its text.
-func AlertAction(c *ui.Context, kind AlertKind, label string, onClick func()) ui.Element {
-	b := Button(c, label, ButtonOpts{Size: SizeSm, Tone: alertTone(kind)}).Shrink(0)
-	if onClick != nil {
-		b.OnClick(onClick)
-	}
-	return b
 }
 
 // Status is what a StatusDot tells.
@@ -176,6 +170,37 @@ func Spinner(c *ui.Context) ui.Element {
 	return ui.Spinner(c).TextColor(theme.Of(c).Muted)
 }
 
+// ThinkingDots shows three horizontal dots pulsing in sequence while AI
+// prepares its output, taking one reading line's height so the first line of
+// streamed text arrives without a vertical jump. It stays still under
+// ReduceMotion, which Loop does not honor itself.
+func ThinkingDots(c *ui.Context) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	reduce := c.Preferences().ReduceMotion
+	row := ui.Row(c).Gap(th.Space(1.25)).Height(t.BodyFontSize * theme.LineReading).AlignItems(ui.Center)
+	var phase float32
+	if !reduce {
+		phase = row.Loop("dots", theme.ThinkingPulse, ui.Linear)
+	}
+	return row.Children(func() {
+		for i := range 3 {
+			a := float32(0.5)
+			if !reduce {
+				p := phase - float32(i)*0.18
+				if p < 0 {
+					p += 1
+				}
+				a = 0.25
+				if p < 0.6 {
+					a = 0.25 + 0.65*0.5*(1-float32(math.Cos(float64(p/0.6)*2*math.Pi)))
+				}
+			}
+			ui.Box(c).Size(theme.ThinkingDot, theme.ThinkingDot).Shrink(0).
+				Radius(t.Radius.Full).Background(t.Muted).Opacity(a)
+		}
+	})
+}
+
 // Kbd shows a key or shortcut, a keycap each key: ⇧⌘K is three, Esc one.
 func Kbd(c *ui.Context, text string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
@@ -188,8 +213,12 @@ func Kbd(c *ui.Context, text string) ui.Element {
 	})
 }
 
+// goos is a var so tests can pose as another platform.
+var goos = runtime.GOOS
+
 // kbdKeys splits a shortcut into its keys: each modifier and arrow is one,
-// the rest of the text the last.
+// the rest of the text the last. On Windows and Linux, macOS modifier symbols
+// are rendered as their platform names (Ctrl, Alt, Shift) with Ctrl first.
 func kbdKeys(text string) []string {
 	var keys []string
 	rest := text
@@ -198,7 +227,21 @@ func kbdKeys(text string) []string {
 		if !strings.ContainsRune("⌘⇧⌥⌃←→↑↓", r) {
 			break
 		}
-		keys, rest = append(keys, string(r)), rest[n:]
+		k := string(r)
+		if goos != "darwin" {
+			switch r {
+			case '⌘', '⌃':
+				k = "Ctrl"
+			case '⌥':
+				k = "Alt"
+			case '⇧':
+				k = "Shift"
+			}
+		}
+		keys, rest = append(keys, k), rest[n:]
+	}
+	if goos != "darwin" && len(keys) >= 2 && keys[0] == "Shift" && keys[1] == "Ctrl" {
+		keys[0], keys[1] = keys[1], keys[0]
 	}
 	if rest != "" {
 		keys = append(keys, rest)
@@ -221,12 +264,12 @@ func Avatar(c *ui.Context, name string) ui.Element {
 	return AvatarSized(c, name, c.Theme().Space(8))
 }
 
-// AvatarSized is Avatar size wide, its initial grown in step.
+// AvatarSized is Avatar size wide, its initial grown in step (at least Text.Xs).
 func AvatarSized(c *ui.Context, name string, size float32) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	col := avatarColor(t, name)
 	return ui.Box(c).Size(size, size).Shrink(0).Radius(t.Radius.Lg).Background(col.Fill).Center().Label(name).Children(func() {
-		ui.Text(c, initial(name)).FontWeight(600).FontSize(t.Text.Sm * size / th.Space(8)).LineHeight(theme.LineTight).TextColor(col.Text)
+		ui.Text(c, initial(name)).FontWeight(500).FontSize(max(t.Text.Xs, t.Text.Sm*size/th.Space(8))).LineHeight(theme.LineTight).TextColor(col.Text)
 	})
 }
 
@@ -239,29 +282,53 @@ func MenuAvatar(c *ui.Context, name string, image ui.ImageSource) ui.Element {
 	}
 	t, th := theme.Of(c), c.Theme()
 	return ui.Box(c).Size(th.Space(8), th.Space(8)).Shrink(0).Radius(t.Radius.Lg).Background(avatarColor(t, name).Text).Center().Label(name).Children(func() {
-		ui.Text(c, initial(name)).FontWeight(600).FontSize(t.Text.Sm).LineHeight(theme.LineTight).TextColor(t.Background)
+		ui.Text(c, initial(name)).FontWeight(500).FontSize(t.Text.Sm).LineHeight(theme.LineTight).TextColor(t.Background)
 	})
 }
 
-// avatarColor is one of the label colors but gray, by a hash of name.
+// avatarColor is one of the label colors, gray too, by a hash of name.
 func avatarColor(t theme.Tokens, name string) theme.LabelColor {
 	h := fnv.New32a()
 	h.Write([]byte(name))
-	colors := t.Labels[1:]
-	return colors[h.Sum32()%uint32(len(colors))]
+	return t.Labels[h.Sum32()%uint32(len(t.Labels))]
 }
 
 // AvatarImage shows an image in its own colors, with the same labelled
 // square and size as the initial placeholder.
 func AvatarImage(c *ui.Context, name string, image ui.ImageSource) ui.Element {
+	return AvatarImageSized(c, name, image, c.Theme().Space(8))
+}
+
+// AvatarImageSized is AvatarImage at size × size.
+func AvatarImageSized(c *ui.Context, name string, image ui.ImageSource, size float32) ui.Element {
 	if image == nil {
-		return Avatar(c, name)
+		return AvatarSized(c, name, size)
 	}
-	t, th := theme.Of(c), c.Theme()
+	t := theme.Of(c)
 	// On the mark tile: a logo with a transparent background (a dark favicon, say)
 	// would vanish on the dark theme.
-	return ui.Box(c).Size(th.Space(8), th.Space(8)).Shrink(0).Radius(t.Radius.Lg).Clip().Background(t.MarkTile).Label(name).Children(func() {
-		ui.Image(c, image).Size(th.Space(8), th.Space(8)).Fit(ui.Cover)
+	return ui.Box(c).Size(size, size).Shrink(0).Radius(t.Radius.Lg).Clip().Background(t.MarkTile).Label(name).Children(func() {
+		ui.Image(c, image).Size(size, size).Fit(ui.Cover)
+	})
+}
+
+// AvatarStackItem is one participant in an AvatarStack.
+type AvatarStackItem struct {
+	Name  string
+	Image ui.ImageSource
+}
+
+// AvatarStack draws overlapping avatars of size, each ringed by Background
+// so overlapping edges separate cleanly on paper cards.
+func AvatarStack(c *ui.Context, items []AvatarStackItem, size float32) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	return ui.Row(c).AlignItems(ui.Center).Shrink(0).Children(func() {
+		for i, it := range items {
+			av := AvatarImageSized(c.Key(i), it.Name, it.Image, size).Border(theme.SelectedBorder, t.Background)
+			if i > 0 {
+				av.Margin(0, 0, 0, -th.Space(1))
+			}
+		}
 	})
 }
 

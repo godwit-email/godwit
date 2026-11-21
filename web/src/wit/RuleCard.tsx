@@ -19,8 +19,8 @@ import {
 } from "@remixicon/react";
 import { cn } from "cn";
 import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/badge";
+import { Button } from "@/components/button";
 import type { Approval } from "@/mygo";
 import type { T } from "@/shared/i18n";
 import { citeDate } from "./Citations";
@@ -185,10 +185,7 @@ export function RuleCard({
   const firstBadge = (to?: string) =>
     to &&
     first(to) && (
-      <Badge
-        variant="outline"
-        className="ml-auto shrink-0 border-(--warning-border) bg-(--warning-bg) text-(--warning-text)"
-      >
+      <Badge tone="warning" className="ml-auto shrink-0">
         {t("settings.rules.confirm.first")}
       </Badge>
     );
@@ -196,18 +193,11 @@ export function RuleCard({
   return (
     <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)">
       <div className="flex flex-wrap items-center gap-2 border-b-[0.5px] bg-sidebar px-3.5 py-2.5 leading-5">
-        <span className="font-semibold">{t("wit.approval.wants", t("wit.tool.propose_rule"))}</span>
+        <span className="font-medium">{t("wit.approval.wants", t("wit.tool.propose_rule"))}</span>
         <span className="font-mono text-muted-foreground text-xs">{a.tool}</span>
         <span className="ml-auto flex gap-1.5">
-          {a.destinations.length > 0 && (
-            <Badge variant="secondary">{t("settings.rules.egress")}</Badge>
-          )}
-          <Badge
-            variant="outline"
-            className="border-(--warning-border) bg-(--warning-bg) text-(--warning-text)"
-          >
-            {t("wit.approval.pending")}
-          </Badge>
+          {a.destinations.length > 0 && <Badge>{t("settings.rules.egress")}</Badge>}
+          <Badge tone="warning">{t("wit.approval.pending")}</Badge>
         </span>
       </div>
       <div className="grid grid-cols-[minmax(4.5rem,auto)_minmax(0,1fr)] gap-x-3 gap-y-2 px-3.5 py-3 text-sm">
@@ -333,7 +323,7 @@ export function RuleCard({
           className="flex min-w-0 flex-col gap-2.5 border-(--warning-border) border-t-[0.5px] bg-(--warning-bg) px-3.5 py-3 text-sm"
         >
           <span className="flex flex-col gap-0.5 text-(--warning-text)">
-            <span className="font-semibold">{t("settings.rules.confirm.title")}</span>
+            <span className="font-medium">{t("settings.rules.confirm.title")}</span>
             <span className="text-xs">{t("wit.rule.confirm_desc")}</span>
           </span>
           {rcpts.map((to) => (
