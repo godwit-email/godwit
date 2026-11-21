@@ -407,7 +407,7 @@ func (v *rulesView) hitList(c *ui.Context, r core.Rule) {
 }
 
 // hit is a run: the message, each action's result in a line (a failure in red),
-// then right-aligned time and a fixed-width action slot (retry, undo, or empty)
+// then right-aligned time and an action slot at least as wide as one action (retry, undo, both, or empty)
 // so every row's time column stays aligned.
 func (v *rulesView) hit(c *ui.Context, r core.Rule, h core.RuleHit, now time.Time) {
 	t, th := theme.Of(c), c.Theme()
@@ -435,15 +435,19 @@ func (v *rulesView) hit(c *ui.Context, r core.Rule, h core.RuleHit, now time.Tim
 			})
 		})
 		kit.Text(c, listTime(now, h.At), t.Text.Xs).TextColor(t.Muted).TextAlign(ui.End).MinWidth(th.Space(10)).Shrink(0)
-		ui.Row(c).Width(th.Space(11)).Justify(ui.End).AlignItems(ui.Center).Shrink(0).Children(func() {
-			switch {
-			case h.State == core.RuleRunFailed && h.MessageID != 0:
-				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Flat: true, Size: kit.SizeXs}).Shrink(0).OnClick(func() { v.retry(h.RunID) })
-			case h.State == core.RuleRunUndone:
+		// usually one action; a failed run whose earlier actions are done offers both, and the slot widens
+		ui.Row(c).MinWidth(th.Space(11)).Gap(th.Space(1)).Justify(ui.End).AlignItems(ui.Center).Shrink(0).Children(func() {
+			if h.State == core.RuleRunUndone {
 				kit.Text(c, i18n.T("settings.rules.hits.undone"), t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(0)
-			case h.MessageID != 0 && slices.ContainsFunc(h.Actions, func(x core.RuleActionResult) bool {
+				return
+			}
+			if h.State == core.RuleRunFailed && h.MessageID != 0 {
+				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Flat: true, Size: kit.SizeXs}).Shrink(0).OnClick(func() { v.retry(h.RunID) })
+			}
+			// a done action stays undoable after a later one fails or the message is gone (a block, by sender)
+			if slices.ContainsFunc(h.Actions, func(x core.RuleActionResult) bool {
 				return x.State == core.RuleActionDone && core.RuleUndoable(x.Kind)
-			}):
+			}) {
 				kit.IconButton(c, "undo-2", i18n.T("settings.rules.hits.undo"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).Shrink(0).OnClick(func() { v.undo(h.RunID) })
 			}
 		})

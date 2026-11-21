@@ -43,3 +43,40 @@ test("native hears where the bar and its input are, once they mount", () => {
   );
   spy.mockRestore();
 });
+
+// As WitPage: the dock's refs outlive the keyed Conversation that attaches them.
+function Remounting({ api, k }: { api: ReturnType<typeof bridge>; k: number }) {
+  const dock = useRef({
+    bar: { current: null as HTMLDivElement | null },
+    input: { current: null as HTMLDivElement | null },
+  });
+  return (
+    <>
+      <div key={k} ref={dock.current.bar} data-w={String(100 * k)}>
+        <div ref={dock.current.input} data-w={String(100 * k)} />
+      </div>
+      <NativeToasts api={api} bar={dock.current.bar} input={dock.current.input} />
+    </>
+  );
+}
+
+test("native follows the bar and input to a remounted conversation", () => {
+  const api = bridge();
+  const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    const w = Number(this.dataset.w ?? 0);
+    return { left: 0, top: 500, width: w, height: 60, right: w, bottom: 560 } as DOMRect;
+  });
+  const { rerender } = render(<Remounting api={api} k={1} />);
+  expect(api.toastBar).toHaveBeenLastCalledWith(
+    { X: 0, Y: 500, W: 100, H: 60 },
+    { X: 0, Y: 500, W: 100, H: 60 },
+  );
+  rerender(<Remounting api={api} k={2} />);
+  expect(api.toastBar).toHaveBeenLastCalledWith(
+    { X: 0, Y: 500, W: 200, H: 60 },
+    { X: 0, Y: 500, W: 200, H: 60 },
+  );
+  spy.mockRestore();
+});

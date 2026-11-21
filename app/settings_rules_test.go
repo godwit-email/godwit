@@ -658,3 +658,37 @@ func TestSettingsRulesHoverEdit(t *testing.T) {
 		t.Fatal("clicking hover 编辑 did not open editor")
 	}
 }
+
+// TestSettingsRulesHitActions: a done undoable action keeps its undo when a
+// later action fails (beside retry) and when the message is gone since (a
+// block, undone by sender), as UndoRuleRun allows.
+func TestSettingsRulesHitActions(t *testing.T) {
+	done := core.RuleActionResult{Kind: core.ActionStar, State: core.RuleActionDone}
+	failed := core.RuleActionResult{Kind: core.ActionJunk, State: core.RuleActionFailed, Failure: core.RuleFailNoFolder}
+	block := core.RuleActionResult{Kind: core.ActionBlock, State: core.RuleActionDone}
+	for _, tc := range []struct {
+		name        string
+		hit         core.RuleHit
+		retry, undo bool
+	}{
+		{"failed after a done action", core.RuleHit{MessageID: 1, State: core.RuleRunFailed, Actions: []core.RuleActionResult{done, failed}}, true, true},
+		{"failed with nothing done", core.RuleHit{MessageID: 1, State: core.RuleRunFailed, Actions: []core.RuleActionResult{failed}}, true, false},
+		{"block, message gone", core.RuleHit{State: core.RuleRunDone, Actions: []core.RuleActionResult{block}}, false, true},
+		{"undone", core.RuleHit{MessageID: 1, State: core.RuleRunUndone, Actions: []core.RuleActionResult{done}}, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := &rulesView{}
+			tt := ui.NewTester(func(c *ui.Context) {
+				theme.Apply(c, theme.Light())
+				v.hit(c, core.Rule{}, tc.hit, time.Now())
+			}, 600, 100)
+			tt.Frame()
+			if _, ok := tt.Find(i18n.T("common.retry")); ok != tc.retry {
+				t.Errorf("retry shown = %v, want %v", ok, tc.retry)
+			}
+			if _, ok := tt.Find(i18n.T("settings.rules.hits.undo")); ok != tc.undo {
+				t.Errorf("undo shown = %v, want %v", ok, tc.undo)
+			}
+		})
+	}
+}
