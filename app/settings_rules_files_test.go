@@ -62,9 +62,10 @@ func TestFileReadyNeedsAbsoluteFolder(t *testing.T) {
 // TestFileFollowerKeepsNamingUntilSaved: a folder typed through another
 // action's keeps the action's own naming; saving gives a follower its leader's.
 func TestFileFollowerKeepsNamingUntilSaved(t *testing.T) {
+	dir := t.TempDir() // absolute on every platform, as fileReady needs
 	d := &core.RuleDoc{Actions: []core.RuleAction{
-		{Kind: core.ActionPDF, Dir: "/a/b", Subfolder: true, Naming: core.NamingPresets[0]},
-		{Kind: core.ActionEML, Dir: "/a/b", Subfolder: false, Naming: "{subject}"},
+		{Kind: core.ActionPDF, Dir: dir, Subfolder: true, Naming: core.NamingPresets[0]},
+		{Kind: core.ActionEML, Dir: dir, Subfolder: false, Naming: "{subject}"},
 	}}
 	if !fileReady(d) {
 		t.Fatal("a follower's own naming should not block saving")
