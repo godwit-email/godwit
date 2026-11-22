@@ -3,6 +3,7 @@ package i18n
 
 import (
 	"encoding/json"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -10,6 +11,44 @@ import (
 
 	mygoi18n "github.com/egoist/mygo/i18n"
 )
+
+// goos is a var so tests can pose as another platform.
+var goos = runtime.GOOS
+
+var (
+	winKeychainZhHans = strings.NewReplacer("系统钥匙串", "系统凭据管理器", "钥匙串", "凭据管理器")
+	winKeychainZhHant = strings.NewReplacer("系統鑰匙圈", "系統認證管理員", "鑰匙圈", "認證管理員")
+	winKeychainEn     = strings.NewReplacer("system keychain", "Windows Credential Manager", "Keychain", "Credential Manager", "keychain", "Credential Manager")
+	linKeychainZhHans = strings.NewReplacer("系统钥匙串", "系统密钥环", "钥匙串", "密钥环")
+	linKeychainZhHant = strings.NewReplacer("系統鑰匙圈", "系統金鑰環", "鑰匙圈", "金鑰環")
+	linKeychainEn     = strings.NewReplacer("system keychain", "system keyring", "Keychain", "Keyring", "keychain", "keyring")
+)
+
+// localizePlatform adapts OS-specific store names (keychain on macOS,
+// Credential Manager on Windows, keyring on Linux) without duplicating keys.
+func localizePlatform(lang, s string) string {
+	switch goos {
+	case "windows":
+		switch lang {
+		case "zh-Hans":
+			return winKeychainZhHans.Replace(s)
+		case "zh-Hant":
+			return winKeychainZhHant.Replace(s)
+		case "en":
+			return winKeychainEn.Replace(s)
+		}
+	case "linux":
+		switch lang {
+		case "zh-Hans":
+			return linKeychainZhHans.Replace(s)
+		case "zh-Hant":
+			return linKeychainZhHant.Replace(s)
+		case "en":
+			return linKeychainEn.Replace(s)
+		}
+	}
+	return s
+}
 
 var lang, locale atomic.Value
 var messageKey = strings.NewReplacer(".", "_", "-", "_")
@@ -57,7 +96,21 @@ func Tf(key string, args ...any) string {
 			values["arg"+strconv.Itoa(i+1)] = v
 		}
 	}
-	return Catalog.Format(Language(), k, values)
+	// The platform wording adapts Godwit's text, never a caller's value (an
+	// address, a subject): strings go in as stand-ins and come back after.
+	var back []string
+	for name, v := range values {
+		if s, ok := v.(string); ok {
+			mark := "\uE000" + name + "\uE001"
+			values[name] = mark
+			back = append(back, mark, s)
+		}
+	}
+	s := localizePlatform(Language(), Catalog.Format(Language(), k, values))
+	if len(back) > 0 {
+		s = strings.NewReplacer(back...).Replace(s)
+	}
+	return s
 }
 
 // TIn is T in lang, whatever the UI's language, for text a model reads.
@@ -66,7 +119,7 @@ func TIn(lang, key string) string {
 	if _, _, ok := Catalog.Message(lang, k); !ok {
 		return key
 	}
-	return Catalog.Format(lang, k, nil)
+	return localizePlatform(lang, Catalog.Format(lang, k, nil))
 }
 
 // Plural uses the language's ICU plural rules.

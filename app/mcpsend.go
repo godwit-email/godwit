@@ -148,7 +148,7 @@ func (a *App) mcpSendDialog(c *ui.Context) {
 			field(l.label, func() {
 				for _, addr := range l.addrs {
 					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, addr).FontWeight(600).Selectable()
+						ui.Text(c, addr).FontWeight(500).Selectable()
 						if slices.ContainsFunc(r.FirstTime, func(f string) bool { return mail.AddrKey(f) == mail.AddrKey(addr) }) {
 							kit.Badge(c, i18n.T("mcp_send.first"))
 						}

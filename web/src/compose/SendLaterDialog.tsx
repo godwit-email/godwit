@@ -18,6 +18,7 @@ import {
   zhCN,
   zhTW,
 } from "react-day-picker/locale";
+import { Button } from "@/components/button";
 import {
   Dialog,
   DialogCancel,
@@ -27,7 +28,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/dialog";
-import { Button } from "@/components/ui/button";
 import { Calendar, CalendarDayButton } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
 import { currentLocale, type T } from "@/shared/i18n";
@@ -147,6 +147,13 @@ export function SendLaterDialog({
               components={{ DayButton }}
               aria-label={t("compose.send_later.date")}
               className="bg-transparent p-0 [--cell-size:inherit]"
+              // the design's grid: the caption, the weekdays (28) and the weeks (a cell each) touch
+              classNames={{
+                month: "flex w-full flex-col",
+                weekdays: "flex h-7",
+                weekday: "flex-1 select-none pt-1 font-normal text-muted-foreground text-xs",
+                week: "flex w-full",
+              }}
             />
             <Clock
               mins={mins}
@@ -268,7 +275,7 @@ export function Clock({
             const [hh, mm] = e.target.value.split(":").map(Number);
             if (Number.isInteger(hh) && Number.isInteger(mm)) put(hh * 60 + mm);
           }}
-          className="w-auto tabular-nums"
+          className="w-auto bg-background tabular-nums"
         />
       </div>
       <div
@@ -300,14 +307,14 @@ export function Clock({
         onPointerCancel={() => setGrab(null)}
       >
         <svg viewBox="0 0 100 100" aria-hidden="true" className="block size-full">
-          {/* The rim and the ticks in CSS pixels whatever the face's size: a hairline (kit's
-              Hairline) and, every five minutes, a control's border (theme.Stroke). */}
+          {/* The rim and the ticks in CSS pixels whatever the face's size: the rim and the minutes a
+              control's border (theme.Stroke), every five minutes twice that. */}
           <circle
             cx={FACE.c}
             cy={FACE.c}
             r={FACE.c}
-            className={pm ? "fill-muted" : "fill-background stroke-border"}
-            strokeWidth={0.5}
+            className={pm ? "fill-muted stroke-border" : "fill-(--raised) stroke-border"}
+            strokeWidth={1}
             vectorEffect="non-scaling-stroke"
           />
           {[...Array(60).keys()].map((i) => {
@@ -322,7 +329,7 @@ export function Clock({
                 x2={x2}
                 y2={y2}
                 className={major ? "stroke-foreground" : "stroke-muted-foreground"}
-                strokeWidth={major ? 1 : 0.5}
+                strokeWidth={major ? 2 : 1}
                 vectorEffect="non-scaling-stroke"
               />
             );

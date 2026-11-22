@@ -3,6 +3,8 @@ package app
 import (
 	"cmp"
 	"fmt"
+	"net"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -21,18 +23,18 @@ func (m *modelsView) empty() bool {
 	return m.loaded && len(m.services) == 0 && !slices.ContainsFunc(m.plugins, func(p core.PluginModels) bool { return len(p.Models) > 0 })
 }
 
-// view is the Intelligence page's 模型 tab, under the page's heading (aiView).
+// view is the 模型 page, under its heading (modelsPage).
 func (m *modelsView) view(c *ui.Context) {
 	if m.empty() {
-		kit.Empty(c, kit.EmptyOpts{Icon: "cpu", Title: i18n.T("settings.models.empty.title"), Desc: i18n.T("settings.models.empty.desc"), Dashed: true, Actions: func() {
-			kit.EmptyAction(c, i18n.T("settings.models.add"), kit.ButtonOpts{}).OnClick(m.add)
+		emptyCard(c, kit.EmptyOpts{Icon: "cpu", Title: i18n.T("settings.models.empty.title"), Desc: i18n.T("settings.models.empty.desc"), Actions: func() {
+			kit.EmptyAction(c, i18n.T("settings.models.add"), kit.ButtonOpts{Icon: "plus"}).OnClick(m.add)
 			kit.EmptyAction(c, i18n.T("settings.models.local"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(m.addLocal)
 		}})
 	}
 	if st := m.a.settings; len(m.services) > 0 || len(m.plugins) > 0 || isPluginRef(st.DefaultModel) || isPluginRef(st.SmallModel) || isPluginRef(st.JudgeService) {
 		u := deriveUsage(m.a.settings, m.services, m.plugins, m.pluginStatus)
 		m.usage(c, u)
-		m.list(c, u)
+		m.list(c)
 	}
 	m.localSection(c)
 	if m.form != nil {
@@ -47,21 +49,44 @@ func (m *modelsView) close() {
 }
 
 // svcMark is a service's avatar: its provider's glyph, else the favicon of
-// the site it talks to, else its initial, as a sender's in mail.
+// the site it talks to, else its initial, as a sender's in mail; a gateway on
+// this Mac without a favicon is a router, as the design's 本地网关.
 func (m *modelsView) svcMark(c *ui.Context, s core.ModelService) {
 	t, th := theme.Of(c), c.Theme()
-	if glyph := icons.BrandIcon(s.Provider); glyph != nil {
-		kit.Tile(c, th.Space(8), th.Space(8), kit.ToneRaised).AlignSelf(ui.Start).Margin(theme.ServiceMarkOffset, 0, 0, 0).Label(s.Name).Children(func() {
-			ui.Icon(c, glyph).Size(theme.IconLg, theme.IconLg).TextColor(t.Foreground)
+	glyph := icons.BrandIcon(s.Provider)
+	if glyph == nil {
+		m.loadAvatar(s)
+		if u, err := url.Parse(s.BaseURL); m.avatars[s.BaseURL] == nil && err == nil && (u.Hostname() == "localhost" || net.ParseIP(u.Hostname()).IsLoopback()) {
+			glyph = icons.Get("router")
+		}
+	}
+	if glyph != nil {
+		kit.Tile(c, th.Space(8), th.Space(8), kit.ToneTint).Label(s.Name).Children(func() {
+			ui.Icon(c, glyph).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
 		})
 		return
 	}
-	m.loadAvatar(s)
-	kit.AvatarImage(c, s.Name, m.avatars[s.BaseURL]).AlignSelf(ui.Start).Margin(theme.ServiceMarkOffset, 0, 0, 0)
+	kit.AvatarImage(c, s.Name, m.avatars[s.BaseURL])
 }
 
-// list is the services, one card row each.
-func (m *modelsView) list(c *ui.Context, u usage) {
+// svcLine is a service's second line: where it talks to and what it does.
+func svcLine(s core.ModelService) string {
+	parts := []string{svcSubtitle(s)}
+	if u, err := url.Parse(s.BaseURL); err == nil && u.Host != "" && core.ModelProviderLogin(s.Provider) != "oauth" {
+		parts[0] = u.Host
+	}
+	if s.Kind != "" && len(s.Models) > 0 {
+		parts = append(parts, i18n.Plural("settings.models.gen", len(s.Models)))
+	}
+	if s.JudgeFormat != "" && s.JudgeModel != "" {
+		parts = append(parts, i18n.Tf("settings.models.judge_chip", s.JudgeModel))
+	}
+	return strings.Join(parts, " · ")
+}
+
+// list is the services, one card row each: its mark, name and line, how its
+// last test went, and a chevron to its form.
+func (m *modelsView) list(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	var rows []func()
 	for _, s := range m.services {
@@ -74,27 +99,21 @@ func (m *modelsView) list(c *ui.Context, u usage) {
 				m.svcMark(c, s)
 				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
 					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, s.Name).FontWeight(500).SingleLine().Shrink(1)
-						l, label := svcLook(s)
-						statusLine(c, line{label, l})
-					})
-					kit.Text(c, svcSubtitle(s), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted).SingleLine()
-					ui.Row(c).Wrap().Gap(th.Space(1.5)).Children(func() {
-						if s.Kind != "" && len(s.Models) > 0 {
-							capChip(c, i18n.Plural("settings.models.gen", len(s.Models)), u.genSvc != nil && u.genSvc.ID == s.ID)
-						}
-						if s.JudgeFormat != "" && s.JudgeModel != "" {
-							capChip(c, i18n.Tf("settings.models.judge_chip", s.JudgeModel), u.judgeSvc != nil && u.judgeSvc.ID == s.ID)
-						}
+						ui.Text(c, s.Name).SingleLine().Shrink(1)
 						if s.ManagedBy != "" {
-							capChip(c, i18n.Tf("settings.managed_by", s.ManagedBy), false)
+							kit.BadgeWith(c, i18n.Tf("settings.managed_by", s.ManagedBy), kit.BadgeOpts{Tone: kit.BadgeSurface, Muted: true}).Shrink(0)
 						}
 					})
+					kit.Text(c, svcLine(s), t.Text.Xs).TextColor(t.Muted).SingleLine()
 				})
+				l, label := svcLook(s)
+				statusLine(c, line{label, l})
 				if edit != nil {
 					ui.Icon(c, icons.Get("chevron-right")).Size(theme.Icon, theme.Icon).TextColor(t.Muted).Shrink(0)
+				} else {
+					ui.Box(c).Size(theme.Icon, theme.Icon).Shrink(0)
 				}
-			}).Padding(th.Space(2), th.Space(4)).ContextMenu(func(menu *ui.Menu) {
+			}).AlignItems(ui.Center).Padding(th.Space(2), th.Space(4)).ContextMenu(func(menu *ui.Menu) {
 				if menu.Item(i18n.T("settings.models.test")).Chosen() {
 					m.testRow(s)
 				}
@@ -105,28 +124,11 @@ func (m *modelsView) list(c *ui.Context, u usage) {
 		p := m.plugins[i]
 		rows = append(rows, func() {
 			// The system runs it, with nothing to edit: no chevron, just its menu's test.
-			ui.Row(c.Key("apple-intelligence")).Gap(th.Space(3)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(4)).Children(func() {
-				kit.Tile(c, th.Space(8), th.Space(8), kit.ToneRaised).AlignSelf(ui.Start).Margin(theme.ServiceMarkOffset, 0, 0, 0).Label("Apple Intelligence").Children(func() {
-					ui.Icon(c, icons.Get("sparkles")).Size(theme.IconLg, theme.IconLg).TextColor(t.Foreground)
-				})
-				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
-					ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, "Apple Intelligence").FontWeight(500).SingleLine().Shrink(1)
-						statusLine(c, pluginLook(p, m.pluginStatus))
-					})
-					kit.Text(c, i18n.T("settings.models.apple_intelligence.sub"), t.Text.Xs).Font(theme.Mono).TextColor(t.Muted).SingleLine()
-					ui.Row(c).Wrap().Gap(th.Space(1.5)).Children(func() {
-						st := m.a.settings
-						var genOn, judgeOn bool
-						for _, mod := range p.Models {
-							ref := pluginRef(p.Plugin, mod.ID)
-							judgeOn = judgeOn || mod.Judges() && st.JudgeService == ref
-							genOn = genOn || !mod.Judges() && (st.DefaultModel == ref || st.SmallModel == ref)
-						}
-						capChip(c, i18n.Plural("settings.models.gen", 1), genOn)
-						capChip(c, i18n.Tf("settings.models.judge_chip", "Apple Intelligence"), judgeOn)
-					})
-				})
+			iconRowGap(c.Key("apple-intelligence"), 1, func() {
+				ui.Icon(c, icons.BrandIcon("apple")).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
+			}, "Apple Intelligence", strings.Join([]string{i18n.T("settings.models.apple_intelligence.sub"), i18n.T("settings.models.cap.gen"), i18n.T("settings.models.cap.judge")}, " · "), func() {
+				statusLine(c, pluginLook(p, m.pluginStatus))
+				ui.Box(c).Size(theme.Icon, theme.Icon).Shrink(0)
 			}).ContextMenu(func(menu *ui.Menu) {
 				if menu.Item(i18n.T("settings.models.test")).Chosen() {
 					m.testPluginRow(p)
@@ -134,7 +136,7 @@ func (m *modelsView) list(c *ui.Context, u usage) {
 			})
 		})
 	}
-	settingsSection(c, i18n.T("settings.models.services"), i18n.T("settings.models.foot"), rows...)
+	settingsSection(c, i18n.T("settings.models.services"), "", rows...)
 }
 
 // statusLine is a dot and a text in the look's colors.
@@ -147,15 +149,6 @@ func statusLine(c *ui.Context, l line) ui.Element {
 	})
 }
 
-// capChip is a capability chip; the one in use as the default carries a check.
-func capChip(c *ui.Context, text string, check bool) {
-	o := kit.BadgeOpts{Tone: kit.BadgeSurface, Muted: !check}
-	if check {
-		o.Icon, o.IconLabel = "check", i18n.T("settings.models.default_badge")
-	}
-	kit.BadgeWith(c, text, o).Shrink(0)
-}
-
 // usage is the 用途 card: the generate, small-task and judge defaults with
 // their last tests, an alert when the generator is broken, and a hint when
 // generation answers the judge.
@@ -166,7 +159,7 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 		m.defModel, m.smallModel, m.judge = a.settings.DefaultModel, a.settings.SmallModel, a.settings.JudgeService
 	}() // what the next frame shows
 	sel := func(label string, v *string, opts []kit.Option[string], set func(*core.Settings, string), managed bool) {
-		s := kit.SelectWith(c, kit.SelectOpts{Flat: true}, v, opts).Width(theme.UsageSelectMin).Label(label).Disabled(u.disabled || managed)
+		s := kit.SelectWith(c, kit.SelectOpts{Flat: true}, v, opts).Width(theme.SettingsControlWidth).Label(label).Disabled(u.disabled || managed)
 		if s.Changed() {
 			val := *v
 			m.setModel(func(st *core.Settings) { set(st, val) })
@@ -177,13 +170,13 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 		sectionTitle(c, i18n.T("settings.models.usage"))
 		if u.alert != "" {
 			svc := *u.genSvc
-			kit.Alert(c, kit.Danger, u.alert, func() {
-				kit.AlertAction(c, kit.Danger, i18n.T("settings.models.use.fix"), func() { m.openEdit(svc) })
+			kit.Alert(c, kit.ToneDanger, u.alert, func() {
+				kit.Button(c, i18n.T("settings.models.use.fix"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneDanger}).Shrink(0).OnClick(func() { m.openEdit(svc) })
 			})
 		}
 		settingsCard(c,
 			func() {
-				desc, by := i18n.T("settings.models.use.gen.desc"), a.settings.DefaultModelBy
+				desc, by := strings.TrimRight(i18n.T("settings.models.use.gen.desc"), "。."), a.settings.DefaultModelBy
 				if by != "" { // its file chooses the default: changed there (ADR 0041)
 					desc += " · " + i18n.Tf("settings.managed_by", by)
 				}
@@ -197,7 +190,7 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 				})
 			},
 			func() {
-				usageRow(c, judge, i18n.T("settings.models.use.judge.desc"), &u.judge, func() {
+				usageRow(c, judge, strings.TrimRight(i18n.T("settings.models.use.judge.desc"), "。."), &u.judge, func() {
 					sel(judge, &m.judge, u.judgeOpts, func(st *core.Settings, v string) { st.JudgeService = v }, false)
 				})
 			},
@@ -206,35 +199,37 @@ func (m *modelsView) usage(c *ui.Context, u usage) {
 				if u.judgeSvc == nil && !u.pluginJudge {
 					help += " " + i18n.T("settings.models.threshold.binary")
 				}
-				settingRow(c, i18n.T("settings.models.threshold"), help, func() {
+				settingRow(c, i18n.T("settings.models.threshold"), help, func() ui.Element {
 					threshold := a.settings.JudgeThreshold
-					ui.Row(c).Width(theme.UsageSelectMin).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
-						slider := ui.Slider(c, &threshold, core.MinJudgeThreshold, core.MaxJudgeThreshold).Step(0.01).Grow(1).Shrink(1).Label(i18n.T("settings.models.threshold"))
+					var slider ui.Element
+					ui.Row(c).Width(theme.SettingsControlWidth).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
+						slider = ui.Slider(c, &threshold, core.MinJudgeThreshold, core.MaxJudgeThreshold).Step(0.01).Grow(1).Shrink(1).Label(i18n.T("settings.models.threshold"))
 						if slider.Changed() {
 							m.setModel(func(st *core.Settings) { st.JudgeThreshold = threshold })
 						}
 						kit.Text(c, fmt.Sprintf("%.0f%%", threshold*100), t.Text.Xs).Width(th.Space(10)).TextAlign(ui.End).TextColor(t.Muted)
 					})
+					return slider
 				})
 			})
 	})
 	if u.suggest {
 		ui.Row(c).Wrap().AlignItems(ui.Center).Children(func() {
 			kit.Text(c, i18n.T("settings.models.use.suggest"), t.Text.Xs).TextColor(t.Muted)
-			kit.TextLink(c, i18n.T("settings.models.add"), t.Foreground, t.Text.Xs).OnClick(m.add)
+			kit.Button(c, i18n.T("settings.models.add"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).OnClick(m.add)
 		})
 	}
 }
 
-// usageRow is a row of the 用途 card: label, description and status line
-// on the left, the select on the right.
+// usageRow is a row of the 用途 card: label, description and, when its last
+// test found something, a status line on the left, the select on the right.
 func usageRow(c *ui.Context, label, desc string, l *line, control func()) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-			kit.Text(c, label, t.Text.Sm).FontWeight(500)
+			kit.Text(c, label, t.Text.Sm)
 			kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted)
-			if l != nil {
+			if l != nil && l.look != lookOK && l.look != lookNone { // a passed test is the services' row to show
 				statusLine(c, *l).Margin(th.Space(1), 0, 0, 0)
 			}
 		})
@@ -252,9 +247,6 @@ func (m *modelsView) dialog(c *ui.Context) {
 	f.follow()
 	f.edited()
 	title, desc := i18n.T("settings.models.dialog.add"), i18n.T("settings.models.dialog.desc")
-	if m.group == 0 {
-		desc = i18n.T("settings.models.dialog.desc.sub")
-	}
 	if f.id != 0 {
 		title, desc = i18n.Tf("settings.models.edit", f.name), svcProvider(f.provider)+" · "+cmp.Or(f.email, f.baseURL)
 	}
@@ -271,12 +263,12 @@ func (m *modelsView) footer(c *ui.Context, f *modelForm) {
 		ui.Row(c).Grow(1).Gap(c.Theme().Space(2)).AlignItems(ui.Center).Label(i18n.T("settings.models.del_title")).Children(func() {
 			ui.Text(c, i18n.Tf("settings.models.del_confirm", f.name)).TextColor(t.DangerText).Grow(1).Shrink(1)
 			footButton(c, i18n.T("common.cancel"), kit.Outline, false).OnClick(func() { f.confirmDel = false })
-			footButton(c, i18n.T("common.delete"), kit.Default, f.busy).Background(t.Danger).TextColor(t.OnSolid).OnClick(func() { m.remove(f) })
+			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger, Disabled: f.busy}).OnClick(func() { m.remove(f) })
 		})
 		return
 	}
 	if f.id != 0 {
-		footButton(c, i18n.T("settings.models.remove"), kit.Ghost, f.busy).TextColor(t.Danger).OnClick(func() { f.confirmDel = true })
+		kit.Button(c, i18n.T("settings.models.remove"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger, Disabled: f.busy}).OnClick(func() { f.confirmDel = true })
 	}
 	kit.Text(c, f.hint(), t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
 	label := i18n.T("settings.models.test")
@@ -327,15 +319,23 @@ func formRow(c *ui.Context, label string, control func() ui.Element, extra func(
 func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 	t, th := theme.Of(c), c.Theme()
 	if f.id == 0 {
-		ui.Row(c).Children(func() { // a row, so the tabs hug their labels instead of stretching
-			kit.Tabs(c, &m.group, i18n.T("settings.models.group.sub"), i18n.T("settings.models.group.api"))
-		})
-		if providerGroup(f.provider) != m.group { // another group starts the form over on its first tile
-			m.cancelForm()
-			f = newForm(providerGroups[m.group][0])
-			m.form = f
+		access := i18n.T("settings.models.access.api")
+		if m.group == 0 {
+			access = i18n.T("settings.models.access.sub")
 		}
-		m.tiles(c, f)
+		ui.Column(c).Gap(th.Space(3)).Children(func() {
+			formRow(c, i18n.T("settings.models.access"), func() ui.Element {
+				return ui.Row(c).Children(func() { // a row, so the tabs hug their labels instead of stretching
+					kit.Tabs(c, &m.group, kit.TabsOpts{}, kit.TabLabels(i18n.T("settings.models.group.sub"), i18n.T("settings.models.group.api")))
+				})
+			}, func() { kit.Text(c, access, t.Text.Xs).TextColor(t.Muted) })
+			if providerGroup(f.provider) != m.group { // another group starts the form over on its first tile
+				m.cancelForm()
+				f = newForm(providerGroups[m.group][0])
+				m.form = f
+			}
+			formRow(c, i18n.T("settings.models.provider"), func() ui.Element { return m.tiles(c, f) }, nil)
+		})
 	}
 	ui.Column(c).Gap(th.Space(3)).Children(func() {
 		formRow(c, i18n.T("settings.models.name"), func() ui.Element {
@@ -374,15 +374,15 @@ func (m *modelsView) formView(c *ui.Context, f *modelForm) {
 			m.keyField(c, f)
 		}
 	})
-	ui.Column(c).Gap(th.Space(2)).Children(func() {
-		ui.Row(c).Justify(ui.SpaceBetween).AlignItems(ui.End).Gap(th.Space(3)).Children(func() {
-			ui.Text(c, i18n.T("settings.models.caps")).FontWeight(600)
-			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-				if core.ModelProviderLogin(f.provider) != "oauth" { // a subscription has no key, and no judge to share it with
-					kit.Text(c, i18n.T("settings.models.caps.note"), t.Text.Xs).TextColor(t.Muted)
-				}
-				m.refreshButton(c, f)
-			})
+	kit.Separator(c, false)
+	ui.Column(c).Gap(th.Space(4)).Children(func() {
+		ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Children(func() {
+			caps := i18n.T("settings.models.caps")
+			if core.ModelProviderLogin(f.provider) != "oauth" { // a subscription has no key, and no judge to share it with
+				caps += " · " + i18n.T("settings.models.caps.note")
+			}
+			kit.Text(c, caps, t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
+			m.refreshButton(c, f)
 		})
 		genWarn, judgeWarn := offWarns(f, m.a.settings, m.services)
 		gen, judge := core.ProviderFormats(f.provider)
@@ -439,35 +439,30 @@ func (m *modelsView) accountRow(c *ui.Context, f *modelForm) {
 	})
 }
 
-// capCard is a capability: its switch (or 不支持), and while on, body; warn
-// says what turning it off does to the defaults.
+// capCard is a capability as a form row: its name in the label column, then
+// its switch (or 不支持) beside what it does, and while on, body; warn says
+// what turning it off does to the defaults.
 func capCard(c *ui.Context, title, desc, unsupported, switchLabel string, supported bool, on *bool, warn string, body func()) {
 	t, th := theme.Of(c), c.Theme()
-	card := kit.Card(c, ui.Column(c), kit.ToneOutline).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4))
-	if !supported {
-		card.Background(t.Sidebar)
-		desc = unsupported
-	}
-	card.Children(func() {
-		ui.Row(c).AlignItems(ui.Start).Gap(th.Space(3)).Children(func() {
-			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-				ui.Text(c, title).FontWeight(600)
-				kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted)
+	ui.Row(c).AlignItems(ui.Start).Gap(th.Space(4)).Children(func() {
+		ui.Text(c, title).Width(theme.FormLabelWidth).Shrink(0).Margin(th.Space(1), 0, 0, 0)
+		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(1.5)).Children(func() {
+			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+				if supported {
+					kit.Switch(c, on).Label(switchLabel).Shrink(0)
+				} else {
+					kit.BadgeWith(c, i18n.T("settings.models.unsupported"), kit.BadgeOpts{Muted: true}).Shrink(0)
+					desc = unsupported
+				}
+				kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
 			})
-			if supported {
-				kit.Switch(c, on).Label(switchLabel)
-			} else {
-				kit.BadgeWith(c, i18n.T("settings.models.unsupported"), kit.BadgeOpts{Muted: true}).Shrink(0)
+			if supported && *on {
+				body()
+			}
+			if warn != "" {
+				kit.Alert(c, kit.ToneWarning, warn, nil)
 			}
 		})
-		if supported && *on {
-			body()
-		}
-		if warn != "" {
-			kit.Block(c, ui.Box(c).Padding(th.Space(2), th.Space(2.5)).Label(warn), kit.ToneWarning).Children(func() {
-				kit.Text(c, warn, t.Text.Xs)
-			})
-		}
 	})
 }
 
@@ -482,7 +477,7 @@ func formatSegments(c *ui.Context, label string, list []string, sel *string) (ch
 		labels[i] = formats[id].label
 	}
 	i := max(0, slices.Index(list, *sel))
-	kit.Tabs(c, &i, labels...).Label(label).AlignSelf(ui.Start)
+	kit.Tabs(c, &i, kit.TabsOpts{}, kit.TabLabels(labels...)).Label(label).AlignSelf(ui.Start)
 	if list[i] != *sel {
 		*sel, changed = list[i], true
 	}
@@ -511,7 +506,7 @@ func (m *modelsView) capStatus(c *ui.Context, r capTest) {
 	dot, fg, text := kit.Idle, t.Muted, i18n.T("settings.models.testing")
 	switch r.state {
 	case "ok":
-		dot, fg, text = kit.OK, t.SuccessText, r.text
+		dot, text = kit.OK, r.text
 	case "fail":
 		dot, fg, text = kit.Error, t.DangerText, cmp.Or(r.text, i18n.T("settings.models.fail.error"))
 	}
@@ -519,15 +514,15 @@ func (m *modelsView) capStatus(c *ui.Context, r capTest) {
 		kit.StatusDot(c, dot)
 		kit.Text(c, text, t.Text.Xs).LineHeight(theme.LineProse).TextColor(fg) // CJK beside Latin digits: the design's line is that tall
 		if r.usage {
-			kit.TextLink(c, i18n.T("settings.models.manage_usage"), fg, t.Text.Xs).OnClick(func() { m.openURL(chatGPTUsageURL) })
+			kit.Button(c, i18n.T("settings.models.manage_usage"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).OnClick(func() { m.openURL(chatGPTUsageURL) })
 		}
 	})
 }
 
 // tiles are the providers, with what each can do.
-func (m *modelsView) tiles(c *ui.Context, f *modelForm) {
+func (m *modelsView) tiles(c *ui.Context, f *modelForm) ui.Element {
 	t, th := theme.Of(c), c.Theme()
-	ui.RadioGroup(c, func() {
+	return ui.RadioGroup(c, func() {
 		for _, p := range providerGroups[m.group] {
 			sub := i18n.T("settings.models.tile." + p)
 			if core.ModelProviderLogin(p) != "oauth" {
@@ -542,19 +537,18 @@ func (m *modelsView) tiles(c *ui.Context, f *modelForm) {
 				sub = strings.Join(caps, " · ")
 			}
 			name := svcProvider(p)
-			b := kit.Choice(c, ui.RadioBase(c.Key(p), &f.provider, p).Label(name).Grow(1).Basis(0).MinWidth(0).Radius(t.Radius.Xl).Padding(th.Space(2.5), th.Space(3)), f.provider == p, kit.ChoiceOpts{})
-			if b.Changed() { // another provider starts the form over
-				m.cancelForm()
-				m.form = newForm(p)
-			}
-			b.Children(func() {
+			b := kit.ChoiceCard(c, ui.RadioBase(c.Key(p), &f.provider, p).Label(name).Grow(1).Basis(0).MinWidth(0).Radius(t.Radius.Xl).Padding(th.Space(2.5), th.Space(3)), kit.ChoiceCardOpts{Selected: f.provider == p}, func() {
 				ui.Column(c).Gap(th.Space(0.5)).Children(func() {
 					ui.Text(c, name).FontWeight(500).SingleLine() // the row's CJK caption sets its line
 					kit.Text(c, sub, t.Text.Xs).TextColor(t.Muted).SingleLine()
 				})
 			})
+			if b.Changed() { // another provider starts the form over
+				m.cancelForm()
+				m.form = newForm(p)
+			}
 		}
-	}).Row().Label(i18n.T("settings.models.provider")).Gap(th.Space(2))
+	}).Row().Gap(th.Space(2))
 }
 
 // gatewayChips are the usual compatible services, to fill the address (and
@@ -566,7 +560,7 @@ func (m *modelsView) gatewayChips(c *ui.Context, f *modelForm) {
 		for _, g := range gateways {
 			name := cmp.Or(g.name, i18n.T("settings.models.local.name"))
 			on := f.baseURL == g.url
-			kit.ToggleChip(c.Key(g.url), name, on, kit.ChoiceOpts{}).Label(name + " " + i18n.T("settings.models.common")).
+			kit.ToggleChip(c.Key(g.url), name, on, kit.ChoiceDefault).Label(name + " " + i18n.T("settings.models.common")).
 				OnClick(func() { f.pickGateway(name, g.url) })
 		}
 	})
@@ -642,7 +636,7 @@ func (m *modelsView) modelPicker(c *ui.Context, f *modelForm, p picker) {
 		ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
 			kit.Input(c, p.manual, kit.InputOpts{Mono: true, Placeholder: i18n.T("settings.models.manual"), Flat: true, Size: kit.SizeSm}).Label(i18n.T("settings.models.manual")).
 				Width(theme.ModelIDInputWidth).OnSubmit(p.add)
-			kit.IconButton(c, "plus", i18n.T("settings.models.manual.add"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Flat: true}).OnClick(p.add)
+			kit.IconButton(c, "plus", i18n.T("settings.models.manual.add"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(p.add)
 		})
 	}
 	if many { // the filter, its toggle and the hand-typed ID stay above the scrolling chips
@@ -650,7 +644,7 @@ func (m *modelsView) modelPicker(c *ui.Context, f *modelForm, p picker) {
 			ph := i18n.Tf("settings.models.filter", len(p.offered))
 			kit.Input(c, &p.view.query, kit.InputOpts{Placeholder: ph, Flat: true, Size: kit.SizeSm}).Label(ph).Grow(1).MinWidth(theme.ModelIDInputWidth)
 			label := i18n.T("settings.models.only_on")
-			kit.ToggleChip(c, label, p.view.onlyOn, kit.ChoiceOpts{}).OnClick(func() { p.view.onlyOn = !p.view.onlyOn })
+			kit.ToggleChip(c, label, p.view.onlyOn, kit.ChoiceDefault).OnClick(func() { p.view.onlyOn = !p.view.onlyOn })
 			manual()
 		})
 	}
@@ -662,7 +656,7 @@ func (m *modelsView) modelPicker(c *ui.Context, f *modelForm, p picker) {
 				if n := f.names[name]; n != "" {
 					label, font = n, "" // a display name reads as prose, an ID as code
 				}
-				b := kit.ToggleChipFrame(c.Key(name), on, kit.ChoiceOpts{Dashed: true}).Label(label) // offered, in dashes, until it is added
+				b := kit.ToggleChipFrame(c.Key(name), on, kit.ChoiceDefault).Label(label) // offered, plain until it is chosen: then tinted in a primary outline
 				r := f.modelTests[p.cap+"\n"+name]
 				b.Children(func() {
 					if r.state != "" { // its test from the menu
@@ -766,16 +760,16 @@ func (m *modelsView) keyField(c *ui.Context, f *modelForm) {
 	}
 	formRow(c, label, func() ui.Element {
 		var in ui.Element
-		box := kit.InputGroup(c, kit.InputOpts{Invalid: f.keyErr != "", Flat: true}).Padding(0, th.Space(0.5), 0, 0)
-		box.Children(func() {
-			in = kit.Input(c, &f.key, kit.InputOpts{Password: !f.showKey, Placeholder: ph, Bare: true}).Grow(1).Shrink(1).PaddingX(th.Space(2.5)).OnSubmit(func() { m.fetch(f) })
-			icon, tip := "eye", i18n.T("settings.models.key.show")
-			if f.showKey {
-				icon, tip = "eye-off", i18n.T("settings.models.key.hide")
-			}
+		icon, tip := "eye", i18n.T("settings.models.key.show")
+		if f.showKey {
+			icon, tip = "eye-off", i18n.T("settings.models.key.hide")
+		}
+		in = kit.Input(c, &f.key, kit.InputOpts{Invalid: f.keyErr != "", Flat: true, Password: !f.showKey, Placeholder: ph,
 			// only what was typed this session: a stored key is never read into the form
-			kit.IconButton(c, icon, tip, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(func() { f.showKey = !f.showKey })
-		})
+			Trailing: func() {
+				kit.IconButton(c, icon, tip, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs}).OnClick(func() { f.showKey = !f.showKey })
+			},
+		}).OnSubmit(func() { m.fetch(f) })
 		focused := in.Focused()
 		if f.keyFocus && !focused {
 			m.fetch(f)
@@ -791,7 +785,7 @@ func (m *modelsView) keyField(c *ui.Context, f *modelForm) {
 		if f.hasKey && f.key == "" && f.moved() {
 			ui.Column(c).Gap(th.Space(2)).Children(func() {
 				if !f.noKey {
-					kit.Alert(c, kit.Warning, i18n.T("settings.models.key_moved"), nil)
+					kit.Alert(c, kit.ToneWarning, i18n.T("settings.models.key_moved"), nil)
 				}
 				kit.Checkbox(c, &f.noKey, i18n.T("settings.models.no_key"))
 			})

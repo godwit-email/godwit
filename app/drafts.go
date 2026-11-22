@@ -35,7 +35,7 @@ func (p *mailPage) draftsView(c *ui.Context) {
 	kit.List(c, p.draftList, len(drafts), func(i int) {
 		d := drafts[i]
 		b := kit.Pressable(c, kit.PressableOpts{Selected: d.ID == p.draftSel, OnClick: func() { p.draftSel = d.ID }}).
-			Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5))
+			Padding(th.Space(2.5), th.Space(2))
 		b.Children(func() { p.draftRow(c, d) }).ContextMenu(func(m *ui.Menu) {
 			if m.Item(i18n.T("mail.draft.delete")).Chosen() {
 				p.deleteDraft(d.ID)
@@ -89,13 +89,19 @@ func (p *mailPage) accountEmail(id int64) string {
 	return acc.Email
 }
 
-// draftRow is the inbox row's lines: who it goes to (names only) and when,
-// the subject, the start of the text, and 编辑中 while a compose window has it.
+// draftRow is the inbox row's lines, beside the avatar of who it goes to
+// (names only; "?" for none): who and when, the subject, the start of the
+// text, and 编辑中 while a compose window has it.
 func (p *mailPage) draftRow(c *ui.Context, d core.Draft) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
+	to := recipients(d.To)
+	var img ui.ImageSource
+	if len(d.To) > 0 {
+		img = p.addrAvatar(d.To[0], 0)
+	}
+	withAvatar(c, to, img, func() {
 		ui.Row(c).Gap(th.Space(1.5)).Children(func() {
-			ui.Text(c, cmp.Or(recipients(d.To), i18n.T("mail.no_recipient"))).FontWeight(500).SingleLine().Grow(1).Shrink(1) // the lead line, as a list row's
+			ui.Text(c, cmp.Or(to, i18n.T("mail.no_recipient"))).FontWeight(500).SingleLine().Grow(1).Shrink(1) // the lead line, as a list row's
 			kit.Text(c, listTime(p.a.clock.Now(), d.UpdatedAt), t.Text.Xs).TextColor(t.Muted)
 		})
 		ui.Text(c, cmp.Or(d.Subject, i18n.T("mail.no_subject"))).SingleLine()
@@ -118,28 +124,6 @@ func (p *mailPage) draftRow(c *ui.Context, d core.Draft) {
 // draftChip is a small bordered label on a draft: 编辑中, 来自程序的草稿.
 func draftChip(c *ui.Context, text string) {
 	kit.BadgeWith(c, text, kit.BadgeOpts{Tone: kit.BadgeOutline}).AlignSelf(ui.Start)
-}
-
-// programNotice is what heads a draft a program wrote (ADR 0043): its label
-// and the ask to check it before 批准并发送; cut says the body is too long to
-// show whole, so it is checked and sent from the compose window instead.
-func programNotice(c *ui.Context, cut bool) {
-	t := theme.Of(c)
-	draftNotice(c, kit.ToneInfo).Children(func() {
-		kit.Text(c, i18n.T("mail.draft.from_program"), t.Text.Sm).FontWeight(500)
-		kit.Text(c, i18n.T("mail.draft.from_program_help"), t.Text.Xs)
-		if cut {
-			kit.Text(c, i18n.T("mail.draft.too_long"), t.Text.Xs).FontWeight(600)
-		}
-	})
-}
-
-// draftNotice is a notice over a draft in the pane, of tone: every one as
-// wide, outset by its padding so its text lines up with the subject and
-// fields under it. Give it its Children.
-func draftNotice(c *ui.Context, tone kit.Tone) ui.Element {
-	th := c.Theme()
-	return kit.Block(c, ui.Column(c), tone).AlignSelf(ui.Stretch).Margin(0, -th.Space(3.5)).Gap(th.Space(0.5)).Padding(th.Space(2.5), th.Space(3.5))
 }
 
 // recipients are the display names of addresses, joined.
@@ -166,42 +150,12 @@ func (p *mailPage) draftPane(c *ui.Context) {
 	}
 	d := p.drafts[i]
 	info := p.draftView[d.ID]
-	editing := info.editing
-	sendTip := i18n.T("compose.send")
-	cut := d.FromProgram && info.cut // an approval would send text the pane does not show
-	if d.FromProgram {
-		sendTip = i18n.T("mail.draft.approve")
-	}
-	if cut {
-		sendTip = i18n.T("mail.draft.too_long")
-	}
-	if editing {
-		sendTip = i18n.T("mail.draft.send_disabled")
-	}
-	saved := d.UpdatedAt.In(p.a.clock.Now().Location()).Format("15:04")
 	col.Children(func() {
 		p.sendDialog(c)
-		ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2), th.Space(4)).BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
-			kit.ButtonGroup(c,
-				kit.GroupItem{Icon: "square-pen", Tip: i18n.T("mail.draft.edit"), OnClick: func() { p.a.OpenDraft(d.ID) }},
-				kit.GroupItem{Icon: "send", Tip: sendTip, Disabled: editing || cut || p.sending.busy, OnClick: func() { p.sendDraft(d) }},
-				kit.GroupItem{Icon: "trash-2", Tip: i18n.T("mail.draft.delete"), OnClick: func() { p.deleteDraft(d.ID) }})
-			ui.Spacer(c)
-			status := i18n.Tf("mail.draft.saved", saved)
-			if editing {
-				status = i18n.Tf("mail.draft.saved_editing", saved)
-			}
-			kit.Text(c, status, t.Text.Xs).TextColor(t.Muted)
-		})
+		p.draftBar(c, d, info)
 		ui.Scroll(c).Grow(1).Children(func() {
 			ui.Column(c).FillWidth().Padding(th.Space(5), th.Space(7)).Children(func() {
 				ui.Column(c).FillWidth().MaxWidth(p.a.readerMaxWidth()).AlignSelf(ui.Center).Gap(th.Space(4)).Children(func() { // the reader's column
-					if editing {
-						draftNotice(c, kit.ToneTint).Children(func() { kit.Text(c, i18n.T("mail.draft.notice"), t.Text.Xs) })
-					}
-					if d.FromProgram {
-						programNotice(c, cut)
-					}
 					kit.Text(c, cmp.Or(d.Subject, i18n.T("mail.no_subject")), t.Text.Xl).FontWeight(600)
 					p.draftFields(c, d)
 					ui.Column(c).Padding(th.Space(4), 0, 0, 0).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
@@ -211,6 +165,56 @@ func (p *mailPage) draftPane(c *ui.Context) {
 				})
 			})
 		})
+	})
+}
+
+// draftBar heads the pane as the design's notice bar: the sidebar's fill over
+// a hairline. A program's draft (ADR 0043) says so beside an icon, with what
+// to check; every draft says when it was saved, and that a compose window
+// has it, or that it is too long to show whole, so it is checked and sent
+// from the compose window instead. 继续编辑 and the send are at its end, the
+// send named by why it cannot be pressed when it cannot.
+func (p *mailPage) draftBar(c *ui.Context, d core.Draft, info draftInfo) {
+	t, th := theme.Of(c), c.Theme()
+	editing, cut := info.editing, d.FromProgram && info.cut // an approval would send text the pane does not show
+	send := i18n.T("compose.send")
+	if d.FromProgram {
+		send = i18n.T("mail.draft.approve")
+	}
+	sendTip := send
+	if cut {
+		sendTip = i18n.T("mail.draft.too_long")
+	}
+	if editing {
+		sendTip = i18n.T("mail.draft.send_disabled")
+	}
+	saved := d.UpdatedAt.In(p.a.clock.Now().Location()).Format("15:04")
+	status := i18n.Tf("mail.draft.saved", saved)
+	if editing {
+		status = i18n.Tf("mail.draft.saved_editing", saved)
+	}
+	ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(2.5), th.Space(4)).Background(t.Sidebar).
+		BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
+		if d.FromProgram {
+			ui.Icon(c, icons.Get("info")).Size(theme.Icon, theme.Icon).Shrink(0).TextColor(t.Muted)
+		}
+		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(0.5)).Children(func() {
+			if d.FromProgram {
+				ui.Text(c, i18n.T("mail.draft.from_program")).FontWeight(500)
+				status = i18n.T("mail.draft.from_program_help") + " · " + status
+			}
+			kit.Text(c, status, t.Text.Xs).TextColor(t.Muted)
+			if editing {
+				kit.Text(c, i18n.T("mail.draft.notice"), t.Text.Xs).TextColor(t.Muted)
+			}
+			if cut {
+				kit.Text(c, i18n.T("mail.draft.too_long"), t.Text.Xs).FontWeight(500)
+			}
+		})
+		kit.Button(c, i18n.T("mail.draft.edit"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Icon: "square-pen"}).Shrink(0).OnClick(func() { p.a.OpenDraft(d.ID) })
+		sendBtn := kit.Button(c, send, kit.ButtonOpts{Size: kit.SizeSm, Icon: "send", Disabled: editing || cut || p.sending.busy}).Label(sendTip).Shrink(0).OnClick(func() { p.sendDraft(d) })
+		kit.TooltipLabelled(c, sendBtn, sendTip)
+		kit.IconButton(c, "trash-2", i18n.T("mail.draft.delete"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).Shrink(0).OnClick(func() { p.deleteDraft(d.ID) })
 	})
 }
 
@@ -227,10 +231,10 @@ func (p *mailPage) draftFields(c *ui.Context, d core.Draft) {
 	}
 	fields = append(fields, [2]string{i18n.T("compose.subject"), cmp.Or(d.Subject, i18n.T("mail.no_subject"))},
 		[2]string{i18n.T("compose.from"), p.accountEmail(d.AccountID)})
-	ui.Column(c).Gap(th.Space(1)).Children(func() {
+	ui.Column(c).Gap(th.Space(2)).Children(func() {
 		for _, f := range fields {
 			ui.Row(c).Gap(th.Space(3)).Children(func() {
-				ui.Text(c, f[0]).TextColor(t.Muted).MinWidth(th.Space(12)).Shrink(0)
+				ui.Text(c, f[0]).TextColor(t.Muted).MinWidth(th.Space(14)).Shrink(0)
 				ui.Text(c, f[1]).Grow(1).Shrink(1)
 			})
 		}

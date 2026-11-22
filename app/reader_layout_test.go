@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"sync"
@@ -220,7 +221,8 @@ func TestShownAvatar(t *testing.T) {
 	}
 }
 
-// A message's avatar stays where it is as the message folds and opens.
+// A message's avatar stays horizontally aligned as the message folds and opens;
+// an open borderless message adds 6 px of top breathing room over its folded card.
 func TestReaderAvatarStill(t *testing.T) {
 	h, acc, _ := aiHarness(t, false, noAuto)
 	msgs := h.thread2(acc)
@@ -229,7 +231,7 @@ func TestReaderAvatarStill(t *testing.T) {
 	h.seeBody(msgs[1].ID)
 	initial := func() ui.Rect { // bob's: the first message's avatar
 		h.t.Helper()
-		box, ok := h.tt.Find("B")
+		box, ok := h.tt.Find("bob@example.com") // its avatar's box: the list's avatar has no label
 		if !ok {
 			t.Fatalf("no avatar: %q", h.tt.Texts())
 		}
@@ -241,18 +243,18 @@ func TestReaderAvatarStill(t *testing.T) {
 	if r.open[msgs[0].ID] {
 		t.Fatal("not folded")
 	}
-	if folded := initial(); folded.X != open.X || folded.Y != open.Y {
+	if folded := initial(); math.Abs(float64(folded.X-open.X)) > 1 || math.Abs(float64(open.Y-folded.Y-6)) > 1 {
 		t.Fatalf("avatar at %v folded, %v open", folded, open)
 	}
 	h.click("first words")
 	h.tt.Frame()
-	if opening := initial(); opening.X != open.X || opening.Y != open.Y {
+	if opening := initial(); math.Abs(float64(opening.X-open.X)) > 1 || math.Abs(float64(opening.Y-open.Y)) > 1 {
 		t.Fatalf("avatar at %v opening, %v open", opening, open)
 	}
 }
 
-// A message's header keeps to the column its subject does: the avatar's
-// left edge under the subject's.
+// The header column shares the message's 12 px side inset so the subject left
+// edge lines up directly with the message avatar.
 func TestReaderMessageAligned(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	h.resize(2400, 900) // the pane wider than its column, which centers in it
@@ -262,9 +264,107 @@ func TestReaderMessageAligned(t *testing.T) {
 	h.tt.Advance(2 * theme.MotionBase)
 	subject, _ := h.tt.Find("Plan")
 	avatar, ok := h.tt.Find("bob@example.com") // the avatar first, its pressable labelled by the address
-	if !ok || avatar.X != subject.X {
-		t.Fatalf("avatar at x %v, subject at x %v", avatar.X, subject.X)
+	if !ok || math.Abs(float64(avatar.X-subject.X)) > 1 {
+		t.Fatalf("avatar at x %v, subject at x %v: want them aligned", avatar.X, subject.X)
 	}
+}
+
+// Scrolling smoothly collapses the reading header from its full height down to
+// the 44 px slim bar, shrinking the subject, hiding the label/AI row, and
+// bringing the thread count up beside the subject; scrolling back expands it.
+func TestReaderStickyHeader(t *testing.T) {
+	h, acc, _ := aiHarness(t, false, noAuto)
+	msgs := h.thread2(acc)
+	r := h.app.mail.reader
+	h.openThread(msgs[0].ThreadID)
+	v := h.seeBody(msgs[1].ID)
+	h.app.BodyHeight(v, msgs[1].ID, 2000)
+	h.tt.Frame()
+	h.tt.Advance(2 * theme.MotionBase)
+	fullH := r.headerH
+	if fullH <= 44 || r.barTop != fullH {
+		t.Fatalf("at top: barTop=%v headerH=%v", r.barTop, fullH)
+	}
+	subjFull, ok := h.tt.Find("Plan")
+	if !ok {
+		t.Fatal("subject not found at top")
+	}
+	// Touchpad scrolling while the pointer is directly over the sticky header scrolls the pane.
+	h.tt.Scroll(subjFull.X+4, subjFull.Y+4, 0, 20)
+	h.tt.Frame()
+	if r.scroll.Y <= 0 {
+		t.Fatalf("scrolling over sticky header did not scroll: scroll.Y=%v", r.scroll.Y)
+	}
+	// Halfway through the collapse distance: barTop and subject height are smoothly mid-transition.
+	r.scroll.Y = (fullH - 44) / 2
+	h.tt.Frame()
+	h.tt.Frame()
+	wantMid := (fullH + 44) / 2
+	if math.Abs(float64(r.barTop-wantMid)) > 2 {
+		t.Fatalf("halfway scrolled: barTop=%v, want ~%v", r.barTop, wantMid)
+	}
+	subjMid, ok := h.tt.Find("Plan")
+	if !ok {
+		t.Fatal("subject not found halfway")
+	}
+	// Fully collapsed past the collapse distance: pinned at 44 px with thread count beside subject.
+	r.scroll.Y = fullH + 40
+	h.tt.Frame()
+	h.tt.Frame()
+	if math.Abs(float64(r.barTop-44)) > 1 {
+		t.Fatalf("scrolled past header: barTop=%v, want 44", r.barTop)
+	}
+	subjSlim, ok := h.tt.Find("Plan")
+	if !ok {
+		t.Fatal("subject not found collapsed")
+	}
+	if !(subjFull.H > subjMid.H && subjMid.H > subjSlim.H) {
+		t.Fatalf("subject height did not shrink continuously: full=%v mid=%v slim=%v", subjFull.H, subjMid.H, subjSlim.H)
+	}
+	if !h.tt.HasText("2 封往来") || h.tt.HasText("添加标签") {
+		t.Fatalf("collapsed bar state: %q", h.tt.Texts())
+	}
+	// Back at top: expanded again.
+	r.scroll.Y = 0
+	h.tt.Frame()
+	h.tt.Frame()
+	if math.Abs(float64(r.barTop-fullH)) > 1 {
+		t.Fatalf("back at top: barTop=%v, want %v", r.barTop, fullH)
+	}
+}
+
+// Folded messages are papers of a height: one after the other they are that
+// and the gap apart, with no hairline between; a click opens one into its
+// paper, which the fold button folds again.
+func TestReaderFoldedPapers(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	h.setSettings(func(s *core.Settings) { s.ThreadCollapse = false })
+	base := h.clock.Now()
+	h.put(acc, "INBOX", coretest.Msg("bob@example.com", acc.Email, "Plan", "first words", coretest.MessageID("a@x"), at(base, 3)))
+	h.put(acc, "INBOX", coretest.Msg("carol@example.com", acc.Email, "Re: Plan", "second words", coretest.MessageID("b@x"), coretest.InReplyTo("a@x"), at(base, 2)))
+	h.put(acc, "INBOX", coretest.Msg("dave@example.com", acc.Email, "Re: Plan", "third words", coretest.MessageID("c@x"), coretest.InReplyTo("b@x"), at(base, 1)))
+	h.syncNow(acc)
+	h.waitMail("the thread", func() bool { return len(h.items()) == 1 })
+	msgs := h.messages(h.items()[0].ID)
+	r := h.app.mail.reader
+	h.openThread(msgs[0].ThreadID)
+	h.seeBody(msgs[2].ID)
+	h.tt.Advance(2 * theme.MotionBase)
+	first, _ := h.tt.Find("first words")
+	second, _ := h.tt.Find("second words")
+	const folded, gap = 44, 8 // Space(11), Space(2)
+	if got := second.Y - first.Y; math.Abs(float64(got-(folded+gap))) > 2 {
+		t.Fatalf("folded rows %v apart, want %d", got, folded+gap)
+	}
+	if r.open[msgs[0].ID] || r.open[msgs[1].ID] || !r.open[msgs[2].ID] {
+		t.Fatalf("open %v: want only the newest", r.open)
+	}
+	h.click("first words")
+	h.until("the first open", func() bool { return r.open[msgs[0].ID] })
+	h.tt.Advance(2 * theme.MotionBase)
+	h.click("收起")
+	h.until("the first folded again", func() bool { return !r.open[msgs[0].ID] })
 }
 
 // A folded message shows its AI gist, marked, in place of the start of its
@@ -409,5 +509,79 @@ func TestReaderSummaryFollowsTarget(t *testing.T) {
 	defer mu.Unlock()
 	if !slices.Equal(kinds, []string{"message", "thread"}) {
 		t.Fatalf("summaries ran on %q", kinds)
+	}
+}
+
+// Switching from a short single-line subject to a very long subject wraps the
+// long title across multiple lines in the expanded header (never truncated to
+// one line), and attaches a hover tooltip on the truncated 44 px slim bar once
+// scrolled.
+func TestReaderLongSubjectWrapsAndSlimTooltip(t *testing.T) {
+	h, acc, _ := aiHarness(t, false, noAuto)
+	h.tt.SetSize(1600, 820) // wide enough that the 720 px reading column is horizontally centered
+	shortMsg := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Short title", "body"))
+	longSubj := "Quarterly engineering architecture review and cross-team release readiness checklist with extended deployment milestones and post-launch follow-up action items"
+	longMsg := h.deliverOne(acc, coretest.Msg("carol@example.com", acc.Email, longSubj, "body"))
+
+	h.openThread(shortMsg.ThreadID)
+	h.seeBody(shortMsg.ID)
+	h.tt.Frame()
+	shortH := h.app.mail.reader.headerH
+
+	h.openThread(longMsg.ThreadID)
+	v := h.seeBody(longMsg.ID)
+	h.app.BodyHeight(v, longMsg.ID, 2000)
+	h.tt.Frame()
+	h.tt.Frame()
+	r := h.app.mail.reader
+	if r.headerH <= shortH+20 {
+		t.Fatalf("long subject headerH = %.1f, shortH = %.1f: want expanded subject wrapped onto multiple lines", r.headerH, shortH)
+	}
+	leftmostInk := func(y0, y1 float32) int {
+		img := h.tt.Image()
+		for x := int(r.pane.X + 10); x < int(r.pane.X+r.pane.W-10); x++ {
+			for y := int(y0); y < int(y1); y++ {
+				px := img.RGBAAt(x, y)
+				if px.R < 180 || px.G < 180 || px.B < 180 {
+					return x
+				}
+			}
+		}
+		return -1
+	}
+	expandedInkX := leftmostInk(r.pane.Y+24, r.pane.Y+54)
+	if expandedInkX < int(r.pane.X+60) {
+		t.Fatalf("expected centered expanded subject ink in wide pane (pane.X=%.1f, pane.W=%.1f), got x=%d", r.pane.X, r.pane.W, expandedInkX)
+	}
+
+	// Scroll past collapse range: slim 44 px bar shows truncated single-line subject
+	// aligned to the exact same centered X as the expanded title, with full tooltip on hover.
+	r.scroll.Y = 300
+	h.tt.Frame()
+	h.tt.Frame()
+	if math.Abs(float64(r.barTop-44)) > 1 {
+		t.Fatalf("barTop = %.1f when scrolled, want 44", r.barTop)
+	}
+	slimInkX := leftmostInk(r.pane.Y+6, r.pane.Y+38)
+	if math.Abs(float64(slimInkX-expandedInkX)) > 3 {
+		t.Fatalf("slim bar ink starts at x=%d, expanded title starts at x=%d (pane.X=%.1f): slim bar is not centered with expanded title", slimInkX, expandedInkX, r.pane.X)
+	}
+	// Hover the slim bar title at its centered X to verify the full-title tooltip appears.
+	before := 0
+	for _, s := range h.tt.Texts() {
+		if s == longSubj {
+			before++
+		}
+	}
+	h.tt.Move(float32(slimInkX+40), r.pane.Y+22)
+	h.tt.Advance(time.Second)
+	after := 0
+	for _, s := range h.tt.Texts() {
+		if s == longSubj {
+			after++
+		}
+	}
+	if after <= before {
+		t.Fatalf("expected hover tooltip on truncated slim bar at centered x=%d (occurrences before=%d, after=%d)", slimInkX+40, before, after)
 	}
 }

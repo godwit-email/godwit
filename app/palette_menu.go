@@ -6,6 +6,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -17,6 +18,7 @@ type palAct struct {
 	run   func()
 	mods  ui.Modifiers
 	key   ui.Key
+	icon  string // the line icon before the title, "" for none
 }
 
 // kbd is a's key as the menu shows it: ⇧R, ⌘S.
@@ -102,6 +104,9 @@ func (p *palette) menuView(c *ui.Context, row ui.Element) {
 			kit.MenuLabel(c, title)
 			for i, act := range p.m.acts {
 				kit.MenuItem(c.Key(i), i == p.m.sel).Label(act.title).OnClick(func() { p.runAct(i) }).Children(func() {
+					if act.icon != "" {
+						ui.Icon(c, icons.Get(act.icon)).Size(theme.IconSm, theme.IconSm).Shrink(0)
+					}
 					ui.Text(c, act.title).SingleLine().Shrink(1)
 					if k := act.kbd(); k != "" {
 						ui.Spacer(c)
@@ -126,7 +131,7 @@ func (p *palette) menuFrame(c *ui.Context) {
 	kit.Dialog(c, &p.m.delAsk, i18n.T("palette.delete.title"),
 		kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("palette.delete.desc"), Close: i18n.T("common.close")}, nil, func() {
 			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { p.m.delAsk = false })
-			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
+			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).OnClick(func() {
 				p.m.delAsk = false
 				p.a.deleteConversation(p.m.delID)
 				p.refreshAfterWrites()
@@ -176,18 +181,18 @@ func (p *palette) mailActs(m core.MessageSummary, unread bool) func() []palAct {
 				a.draft(m, 0, mode)
 			}
 		}
-		read := i18n.T("mail.action.read")
+		read, readIcon := i18n.T("mail.action.read"), mailActionIcons["read"]
 		if !unread {
-			read = i18n.T("mail.action.unread")
+			read, readIcon = i18n.T("mail.action.unread"), mailActionIcons["unread"]
 		}
 		acts := []palAct{
-			{i18n.T("reader.reply"), reply("reply"), 0, ui.KeyR},
-			{i18n.T("reader.reply_all"), reply("reply_all"), ui.Shift, ui.KeyR},
-			{i18n.T("mail.action.archive"), batch("archive"), 0, ui.KeyE},
-			{read, batch("toggle_read"), 0, ui.KeyU},
+			{title: i18n.T("reader.reply"), run: reply("reply"), key: ui.KeyR, icon: mailActionIcons["reply"]},
+			{title: i18n.T("reader.reply_all"), run: reply("reply_all"), mods: ui.Shift, key: ui.KeyR, icon: mailActionIcons["reply_all"]},
+			{title: i18n.T("mail.action.archive"), run: batch("archive"), key: ui.KeyE, icon: mailActionIcons["archive"]},
+			{title: read, run: batch("toggle_read"), key: ui.KeyU, icon: readIcon},
 		}
 		if len(a.labels) > 0 {
-			acts = append(acts, palAct{i18n.T("reader.labels.add_label"), func() { p.m.open, p.m.labeling, p.m.sel = true, true, 0 }, 0, ui.KeyL})
+			acts = append(acts, palAct{title: i18n.T("reader.labels.add_label"), run: func() { p.m.open, p.m.labeling, p.m.sel = true, true, 0 }, key: ui.KeyL, icon: "tag"})
 		}
 		return acts
 	}
@@ -225,7 +230,7 @@ func (p *palette) contactActs(addr string) func() []palAct {
 		return []palAct{
 			{title: i18n.T("palette.action.compose"), run: func() { p.open = false; p.a.composeTo(addr) }},
 			{title: i18n.T("palette.act.contact_mail"), run: func() { p.open = false; p.a.mail.mailFrom(addr) }},
-			{i18n.T("palette.act.copy_address"), func() { p.m.clip = addr }, ui.Cmd, ui.KeyC},
+			{title: i18n.T("palette.act.copy_address"), run: func() { p.m.clip = addr }, mods: ui.Cmd, key: ui.KeyC},
 		}
 	}
 }
@@ -237,7 +242,7 @@ func (p *palette) attachmentActs(at core.AttachmentInfo, open func()) func() []p
 		a := p.a
 		return []palAct{
 			{title: i18n.T("palette.act.preview"), run: func() { a.openAttachment(at) }},
-			{i18n.T("reader.save_as"), func() { a.saveAttachment(at) }, ui.Cmd, ui.KeyS},
+			{title: i18n.T("reader.save_as"), run: func() { a.saveAttachment(at) }, mods: ui.Cmd, key: ui.KeyS},
 			{title: i18n.T("palette.act.open_mail"), run: func() { p.open = false; open() }},
 		}
 	}

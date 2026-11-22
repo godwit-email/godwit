@@ -1,4 +1,5 @@
-import { RiAlertLine } from "@remixicon/react";
+import { Alert } from "@/components/alert";
+import { Button } from "@/components/button";
 import {
   Dialog,
   DialogContent,
@@ -7,21 +8,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/dialog";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import type { SendWarning } from "@/mygo";
 import type { T } from "@/shared/i18n";
 
 function From({ w, t }: { w: SendWarning; t: T }) {
-  return (
-    <AlertDescription className="text-sm">{t("compose.warn.from", w.plugin)}</AlertDescription>
-  );
+  return <p>{t("compose.warn.from", w.plugin)}</p>;
 }
-
-// The design's notice: a filled box, no outline; a warning in the theme's warning colours.
-const box = "gap-1 border-0 px-3.5 py-3 text-sm";
-const warn = `${box} bg-(--warning-bg) text-(--warning-text) **:data-[slot=alert-description]:text-(--warning-text)`;
-const danger = `${box} bg-destructive/10`;
 
 /** Plugin warnings (Send then reads 仍然发送), a blocking refusal, and the save conflict as a dialog. */
 export function Notices({
@@ -48,18 +40,17 @@ export function Notices({
   return (
     <div className="flex flex-col gap-2">
       {blocked && (
-        <Alert variant="destructive" className={danger}>
-          <AlertTitle>{blocked.message}</AlertTitle>
+        <Alert tone="danger">
+          <p className="font-medium">{blocked.message}</p>
           <From w={blocked} t={t} />
         </Alert>
       )}
       {warnings.length > 0 && (
         // what the plugins found, one notice; Send itself reads 仍然发送 (SendBar's anyway)
-        <Alert className={warn}>
-          <RiAlertLine />
+        <Alert tone="warning">
           {warnings.map((w) => (
-            <div key={`${w.plugin}:${w.message}`} className="flex flex-col gap-0.5">
-              <AlertTitle>{t("compose.warn", w.message)}</AlertTitle>
+            <div key={`${w.plugin}:${w.message}`}>
+              <p className="font-medium">{t("compose.warn", w.message)}</p>
               <From w={w} t={t} />
             </div>
           ))}

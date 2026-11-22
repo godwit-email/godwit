@@ -35,20 +35,29 @@ func ThemeOf(st core.Settings) Theme {
 }
 
 // ThemeVars maps tokens to shadcn's CSS variables, plus Wit's review marks
-// (--ins-* and --del-*), the warning colours (--warning-*) and the floating
+// (--ins-* and --del-*), the notice colours (--warning-*, --info-*, --success-*,
+// and --danger-bg, --danger-border and --danger-text), the button's greys (--hover-tint, the
+// tint a ghost or secondary button takes on hover, and --idle, a disabled
+// label) and the floating
 // input's shadow (--shadow-float: ShadowFloat in the light appearance, the
 // FloatInset inner edge in the dark), the window material's colour (--window)
 // and a card's shadow (--shadow-xs: ShadowXs, black in both), and kit.Dialog's
 // look for web/src/components/dialog.tsx: the panel (--raised), the scrims
 // (--scrim, --alert-scrim), ShadowX2l (--shadow-dialog), the widths
 // (--dialog-sm/md/lg) and the place (--dialog-centre: the panel's centre,
-// --dialog-min-top: its least distance from the top). --radius is Radius.Lg; styles.css
-// derives sm…4xl from it by fixed offsets, landing on the native 4/6/8/12/16/24/32.
+// --dialog-min-top: its least distance from the top), and the design's frosted
+// materials: --popover and --material-popover (MaterialPopover: popovers, menus, toasts),
+// --material-dialog, --material-bar, the blur behind them (--material-blur), their drop
+// (--shadow-popover: ShadowPopover) and a toast's width (--toast-width). --radius is
+// Radius.Lg; styles.css derives sm…4xl from it by fixed offsets, landing on the native
+// 4/6/8/12/16/24/32 (2xl, a popover card's and a dialog's, is Radius.X2l), and each mail
+// label colour of theme.LabelNames as --label-<name>-dot, -fill, -edge and -text (the
+// picker's dot, the fill under an avatar or chip, its edge, and the text on it).
 func ThemeVars(t theme.Tokens) map[string]string {
-	return map[string]string{
+	vars := map[string]string{
 		"--background": css(t.Background), "--foreground": css(t.Foreground),
 		"--card": css(t.Background), "--card-foreground": css(t.Foreground),
-		"--popover": css(t.Background), "--popover-foreground": css(t.Foreground),
+		"--popover": css(t.MaterialPopover), "--popover-foreground": css(t.Foreground),
 		"--primary": css(t.Primary), "--primary-foreground": css(t.PrimaryText),
 		"--secondary": css(t.Hover), "--secondary-foreground": css(t.Foreground),
 		"--muted": css(t.Hover), "--muted-foreground": css(t.Muted),
@@ -62,19 +71,33 @@ func ThemeVars(t theme.Tokens) map[string]string {
 		"--sidebar":       css(t.Sidebar),
 		"--settings-card": css(t.Card), // a settings section's fill, under a page shown in one
 		"--warning-bg":    css(t.WarningBg), "--warning-border": css(t.WarningBorder), "--warning-text": css(t.WarningText),
+		"--info-bg": css(t.InfoBg), "--info-border": css(t.InfoBorder), "--info-text": css(t.InfoText),
+		"--success-bg": css(t.SuccessBg), "--success-border": css(t.SuccessBorder), "--success-text": css(t.SuccessText),
+		"--danger-bg": css(t.DangerBg), "--danger-border": css(t.DangerBorder), "--danger-text": css(t.DangerText),
+		"--hover-tint": css(t.HoverTint), "--idle": css(t.Idle),
 		"--shadow-float": floatShadow(t),
-		"--window":       css(t.Window), "--shadow-xs": shadow(theme.ShadowXs),
+		"--window":       css(t.Window), "--shadow-xs": shadow(theme.ShadowXs, t),
 		"--window-material": windowMaterial(t),
 		"--glass-bg":        css(t.GlassBg),
 		"--glass-border":    css(t.GlassBorder),
 		"--glass-hover":     css(t.GlassHover),
 		"--raised":          css(t.Raised),
 		"--scrim":           css(t.Scrim), "--alert-scrim": css(t.AlertScrim),
-		"--shadow-dialog": shadow(theme.ShadowX2l),
-		"--dialog-sm":     px(theme.DialogSmWidth), "--dialog-md": px(theme.SheetWidth), "--dialog-lg": px(theme.DialogWideWidth),
+		"--shadow-dialog":    shadow(theme.ShadowX2l, t),
+		"--material-popover": css(t.MaterialPopover), "--material-dialog": css(t.MaterialDialog), "--material-bar": css(t.MaterialBar),
+		"--material-blur":  px(theme.MaterialBlur),
+		"--shadow-popover": shadow(theme.ShadowPopover, t),
+		"--toast-width":    px(theme.ToastWidth),
+		"--dialog-sm":      px(theme.DialogSmWidth), "--dialog-md": px(theme.SheetWidth), "--dialog-lg": px(theme.DialogWideWidth),
 		"--dialog-centre":  fmt.Sprintf("%gvh", 100*(0.5-theme.DialogLift/2)),
 		"--dialog-min-top": px(theme.DialogMinTop),
 	}
+	for i, name := range theme.LabelNames {
+		c := t.Labels[i]
+		vars["--label-"+name+"-dot"], vars["--label-"+name+"-fill"] = css(c.Dot), css(c.Fill)
+		vars["--label-"+name+"-edge"], vars["--label-"+name+"-text"] = css(c.Edge), css(c.Text)
+	}
+	return vars
 }
 
 // windowMaterial is a page's background over the window's material: the
@@ -86,20 +109,22 @@ func windowMaterial(t theme.Tokens) string {
 	return css(t.Window.Alpha(theme.MaterialTint))
 }
 
-// floatShadow is a floating input's box-shadow: ShadowFloat's layers of
-// black in the light appearance; FloatInset's inner edge in the dark.
+// floatShadow is a floating input's box-shadow: ShadowFloat's layers in the
+// light appearance; FloatInset's inner edge in the dark.
 func floatShadow(t theme.Tokens) string {
 	if t.Dark {
 		return fmt.Sprintf("inset 0 0 %dpx %s", theme.FloatInsetBlur, css(t.FloatInset))
 	}
-	return shadow(theme.ShadowFloat)
+	return shadow(theme.ShadowFloat, t)
 }
 
-// shadow writes e as a CSS box-shadow of black layers.
-func shadow(e theme.Elevation) string {
+// shadow writes e as a CSS box-shadow of layers in t's ShadowInk, as
+// kit.Elevate draws it.
+func shadow(e theme.Elevation, t theme.Tokens) string {
+	ink := t.ShadowInk()
 	ls := make([]string, len(e))
 	for i, l := range e {
-		ls[i] = fmt.Sprintf("0 %gpx %gpx %gpx rgb(0 0 0 / %.3f)", l.Y, l.Blur, l.Spread, l.Alpha)
+		ls[i] = fmt.Sprintf("0 %gpx %gpx %gpx rgb(%d %d %d / %.3f)", l.Y, l.Blur, l.Spread, ink.R, ink.G, ink.B, l.Alpha)
 	}
 	return strings.Join(ls, ", ")
 }

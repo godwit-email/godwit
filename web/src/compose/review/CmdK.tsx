@@ -1,8 +1,9 @@
 import { RiSparkling2Line } from "@remixicon/react";
 import { useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/button";
 import { Input } from "@/components/ui/input";
 import type { T } from "@/shared/i18n";
+import { isMac } from "@/shared/shortcuts";
 
 /**
  * ⌘K's popover, under the selection's block at the body's width: what to change (Enter or 生成 ↵ submits the trimmed text; an
@@ -30,7 +31,7 @@ export function CmdK({
   return (
     <form
       ref={box}
-      className="flex flex-col gap-1.5 rounded-xl border border-glass-border bg-glass-bg px-2.5 py-2 text-sm leading-normal text-popover-foreground shadow-md backdrop-blur-2xl outline-none"
+      className="material-popover flex flex-col gap-1.5 rounded-2xl px-2.5 py-2 text-sm leading-normal text-popover-foreground outline-none"
       onSubmit={(e) => {
         e.preventDefault();
         const s = text.trim();
@@ -62,7 +63,9 @@ export function CmdK({
         />
       </div>
       <div className="flex items-center gap-2">
-        <span className="flex-1 text-muted-foreground text-xs">{t("wit.compose.cmdk")}</span>
+        <span className="flex-1 text-muted-foreground text-xs">
+          {isMac() ? t("wit.compose.cmdk") : t("wit.compose.cmdk").replace("⌘K", "Ctrl+K")}
+        </span>
         <Button type="button" size="xs" variant="outline" onClick={onClose}>
           {t("wit.compose.cmdk.esc")}
         </Button>

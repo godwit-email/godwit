@@ -136,8 +136,7 @@ func TestSettingsRulesConditionGroups(t *testing.T) {
 	}
 
 	h.click("编辑规则")
-	h.click("添加")
-	h.click("添加一组条件")
+	h.click(i18n.T("settings.rules.cond_group.add"))
 	h.see("删除这组") // the condition so far is one group, the two new rows another
 	h.click("取消")
 	if d := h.rules()[0].Doc; len(d.Conditions) != 1 {
@@ -154,8 +153,7 @@ func TestSettingsRulesConditionGroupNeedsRoom(t *testing.T) {
 	h.app.EditRule(core.Rule{Enabled: true, Doc: core.RuleDoc{Version: core.RuleVersion, Name: "满", Trigger: core.TriggerReceive, Match: core.MatchAll,
 		Conditions: conds, Actions: []core.RuleAction{{Kind: core.ActionStar}}}}, 0, 0, "")
 	h.openSettings("rules")
-	h.click("添加")
-	h.click("添加一组条件")
+	h.click(i18n.T("settings.rules.cond_group.add"))
 	if h.tt.HasText("删除这组") {
 		t.Fatal("a group added past the limit")
 	}
@@ -164,7 +162,7 @@ func TestSettingsRulesConditionGroupNeedsRoom(t *testing.T) {
 	h.app.pages[PageSettings].(*settingsPage).rules.openEditor(core.Rule{Enabled: true, Doc: core.RuleDoc{Version: core.RuleVersion, Name: "满", Trigger: core.TriggerReceive, Match: core.MatchAll,
 		Conditions: grouped, Actions: []core.RuleAction{{Kind: core.ActionStar}}}})
 	h.tt.Frame()
-	h.click("添加一组条件")
+	h.click(i18n.T("settings.rules.cond_group.add"))
 	if d := h.app.pages[PageSettings].(*settingsPage).rules.edit.Doc; len(d.Conditions) != 2 {
 		t.Fatalf("a group added past the limit: %d groups", len(d.Conditions))
 	}
@@ -223,6 +221,7 @@ func TestSettingsRulesHistoryUndo(t *testing.T) {
 	h.waitMail("the hit counted", func() bool { return h.tt.HasText("近 7 天 1 封") })
 	h.click("展开最近命中")
 	h.see("Your bill")
+	h.see(i18n.T("settings.rules.hits.note")) // what the hits allow, beside 删除规则 and 编辑规则
 	h.see("标为已读")
 	h.click("撤销")
 	h.see("已撤销")
@@ -263,6 +262,35 @@ func TestSettingsRulesForwardConfirm(t *testing.T) {
 	h.see("转发给 carol@example.com")
 }
 
+// The confirmation says which account a forward goes out from: for a rule
+// on all accounts, the one that received the mail; for one account, it.
+func TestSettingsRulesForwardConfirmSender(t *testing.T) {
+	for _, scoped := range []bool{false, true} {
+		t.Run(map[bool]string{false: "all", true: "scoped"}[scoped], func(t *testing.T) {
+			h, acc := withAccount(t)
+			h.openSettings("rules")
+			h.click("新建规则")
+			h.click("值")
+			h.typeText("billing@")
+			if scoped {
+				h.click("所有账户")
+				h.click(accountName(acc))
+			}
+			h.click("动作 1")
+			h.click("转发给")
+			h.click("收件人邮箱")
+			h.typeText("carol@example.com")
+			h.click("保存")
+			h.see("确认转发收件人")
+			fromReceiver, fromAccount := "从收到邮件的账户发出", "从 "+acc.Email+" 发出"
+			h.see(map[bool]string{false: fromReceiver, true: fromAccount}[scoped])
+			if h.tt.HasText(map[bool]string{false: fromAccount, true: fromReceiver}[scoped]) {
+				t.Errorf("scoped=%v: the confirmation names the other scope's sender", scoped)
+			}
+		})
+	}
+}
+
 // The editor lists the existing mail its conditions match once typing
 // pauses; saving can run the rule once over it.
 func TestSettingsRulesPreviewRunsOnExisting(t *testing.T) {
@@ -278,6 +306,9 @@ func TestSettingsRulesPreviewRunsOnExisting(t *testing.T) {
 	h.see("有 2 封符合")
 	h.see("最近 30 天")
 	h.see("Your bill")
+	if r, ok := h.tt.Find("Your bill"); !ok || r.W <= 0 || r.H <= 0 {
+		t.Fatalf("preview message row not visible: ok=%v bounds=%+v", ok, r)
+	}
 	if h.tt.HasText("Hello") || h.tt.HasText("Old bill") {
 		t.Error("other mail, or mail older than 30 days, is listed")
 	}
@@ -427,11 +458,8 @@ func TestSettingsRulesAccountScope(t *testing.T) {
 	h.see("所有账户")
 	h.click("值")
 	h.typeText("billing@")
-	h.click("收信账户")
-	h.see(accountName(acc)) // the option; the sidebar has the name too, so the keys choose it
-	h.tt.Key(0, ui.KeyDown)
-	h.tt.Key(0, ui.KeyEnter)
-	h.tt.Frame()
+	h.click("所有账户")
+	h.click(accountName(acc)) // the option is an item of the system menu, which takes no keys here
 	h.saveRule()
 	h.until("the rule saved", func() bool { return len(h.rules()) == 1 })
 	if d := h.rules()[0].Doc; d.Account != acc.ID {
@@ -525,29 +553,173 @@ func TestSettingsRulesListHeight(t *testing.T) {
 	}
 }
 
-// Every language's logic button fits its word with padding, at least 28 wide,
-// and centers on the bracket's line.
+// Every language's inter-group connector pill and group match toggle fit their
+// labels with room for the chevron and flip match mode on click.
 func TestSettingsRulesLogicButtonFitsAllLocales(t *testing.T) {
 	t.Cleanup(func() { i18n.SetLanguage("zh-CN") })
 	for _, lang := range i18n.Catalog.Languages() {
 		i18n.SetLanguage(lang)
 		for _, m := range []string{core.MatchAll, core.MatchAny} {
-			match := m
-			var textW, btnW, railW float32
+			outer, inner := m, m
+			var wordW, matchW float32
 			tt := ui.NewTester(func(c *ui.Context) {
-				word := i18n.T("settings.rules.logic." + match)
-				textW, _ = c.MeasureText(0, ui.Span{Text: word})
-				btnW, railW = condRailWidth(c)
-				condRail(c, true, false, true, &match, true)
-			}, 200, 100)
-			word := i18n.T("settings.rules.logic." + match)
+				word := i18n.T("settings.rules.logic." + outer)
+				wordW, _ = c.MeasureText(0, ui.Span{Text: word})
+				match := i18n.T("settings.rules.match." + inner)
+				matchW, _ = c.MeasureText(0, ui.Span{Text: match})
+				ui.Column(c).FillWidth().Gap(8).Children(func() {
+					condGroupConnector(c, &outer)
+					condMatchButton(c, &inner)
+				})
+			}, 400, 120)
+			word := i18n.T("settings.rules.logic." + m)
 			r, ok := tt.Find(i18n.Tf("settings.rules.logic.flip", word))
 			if !ok {
-				t.Fatalf("%s/%s: button %q not found", lang, match, word)
+				t.Fatalf("%s/%s: connector %q not found", lang, m, word)
 			}
-			if r.W < 28 || r.W < textW+12 || r.X+r.W/2 != btnW/2 || railW != btnW+8 {
-				t.Errorf("%s/%s (%q): button=%+v textW=%v btnW=%v railW=%v", lang, match, word, r, textW, btnW, railW)
+			if r.W < wordW+16 {
+				t.Errorf("%s/%s (%q): connector=%+v wordW=%v", lang, m, word, r, wordW)
+			}
+			match := i18n.T("settings.rules.match." + m)
+			mr, ok := tt.Find(i18n.Tf("settings.rules.logic.flip", match))
+			if !ok {
+				t.Fatalf("%s/%s: match button %q not found", lang, m, match)
+			}
+			if mr.W < matchW+16 {
+				t.Errorf("%s/%s (%q): matchBtn=%+v matchW=%v", lang, m, match, mr, matchW)
+			}
+			tt.ClickAt(r.X+r.W/2, r.Y+r.H/2)
+			tt.ClickAt(mr.X+mr.W/2, mr.Y+mr.H/2)
+			if outer == m || inner == m {
+				t.Errorf("%s/%s: clicking did not flip outer=%q inner=%q", lang, m, outer, inner)
 			}
 		}
+	}
+}
+
+// Dragging an action's grip handle reorders the actions inside the 就 card.
+func TestSettingsRulesActionDragReorder(t *testing.T) {
+	h, _ := withAccount(t)
+	h.resize(1280, 650) // The action rows can start below the viewport.
+	h.openSettings("rules")
+	h.click("新建规则")
+	h.click("值")
+	h.typeText("billing@")
+	h.click("添加动作")
+	h.click("归档")
+	rv := h.app.pages[PageSettings].(*settingsPage).rules
+	if len(rv.edit.Doc.Actions) != 2 || rv.edit.Doc.Actions[0].Kind != core.ActionLabel || rv.edit.Doc.Actions[1].Kind != core.ActionArchive {
+		t.Fatalf("initial actions %+v", rv.edit.Doc.Actions)
+	}
+	second := i18n.Tf("settings.rules.action.n", 2)
+	r, ok := h.tt.Find(second)
+	if !ok {
+		t.Fatalf("action select %q not found", second)
+	}
+	midY := float32(h.size[1]) / 2
+	h.tt.Scroll(r.X+1, midY, 0, r.Y-midY)
+	h.tt.Frame()
+
+	a1, ok1 := h.tt.Find(i18n.Tf("settings.rules.action.n", 1))
+	a2, ok2 := h.tt.Find(second)
+	if !ok1 || !ok2 || a1.W <= 0 || a1.H <= 0 || a2.W <= 0 || a2.H <= 0 {
+		t.Fatalf("action selects not visible after scrolling: first=%+v second=%+v", a1, a2)
+	}
+	// Grip sits directly left of the action select (gap 8 + grip center 10).
+	sx, sy := a1.X-18, a1.Y+a1.H/2
+	dx, dy := a2.X-18, a2.Y+a2.H/2
+	h.tt.Move(sx, sy)
+	h.tt.Press(sx, sy)
+	h.tt.Move(sx, (sy+dy)/2)
+	h.tt.Move(dx, dy)
+	h.tt.Release(dx, dy)
+	h.tt.Frame()
+	if rv.edit.Doc.Actions[0].Kind != core.ActionArchive || rv.edit.Doc.Actions[1].Kind != core.ActionLabel {
+		t.Fatalf("after drag reorder: %+v", rv.edit.Doc.Actions)
+	}
+}
+
+// Hovering a collapsed rule row offers a direct 编辑 button to open the editor
+// without expanding its 7-day hit history first.
+func TestSettingsRulesHoverEdit(t *testing.T) {
+	h, _ := withAccount(t)
+	doc := core.RuleDoc{Version: core.RuleVersion, Name: "账单归档", Trigger: core.TriggerReceive, Match: core.MatchAll,
+		Actions: []core.RuleAction{{Kind: core.ActionStar}}}
+	if _, err := h.env.Svc.SaveRule(context.Background(), core.Rule{Doc: doc, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	h.openSettings("rules")
+	h.see("账单归档")
+	if _, shown := h.tt.AccessByRole(ui.RoleButton, i18n.T("settings.rules.edit")); shown {
+		t.Fatal("hover edit shown before hovering")
+	}
+	r, ok := h.tt.Find("账单归档")
+	if !ok {
+		t.Fatal("rule row not found")
+	}
+	h.tt.Move(r.X+r.W/2, r.Y+r.H/2)
+	h.tt.Frame()
+	if _, shown := h.tt.AccessByRole(ui.RoleButton, i18n.T("settings.rules.edit")); !shown {
+		t.Fatal("hover edit not shown on hover")
+	}
+	h.click(i18n.T("settings.rules.edit"))
+	h.see("保存")
+	if !h.app.pages[PageSettings].(*settingsPage).rules.editing {
+		t.Fatal("clicking hover 编辑 did not open editor")
+	}
+}
+
+// TestSettingsRulesHitActions: a done undoable action keeps its undo when a
+// later action fails (beside retry) and when the message is gone since (a
+// block, undone by sender), as UndoRuleRun allows.
+func TestSettingsRulesHitActions(t *testing.T) {
+	done := core.RuleActionResult{Kind: core.ActionStar, State: core.RuleActionDone}
+	failed := core.RuleActionResult{Kind: core.ActionJunk, State: core.RuleActionFailed, Failure: core.RuleFailNoFolder}
+	block := core.RuleActionResult{Kind: core.ActionBlock, State: core.RuleActionDone}
+	for _, tc := range []struct {
+		name        string
+		hit         core.RuleHit
+		retry, undo bool
+	}{
+		{"failed after a done action", core.RuleHit{MessageID: 1, State: core.RuleRunFailed, Actions: []core.RuleActionResult{done, failed}}, true, true},
+		{"failed with nothing done", core.RuleHit{MessageID: 1, State: core.RuleRunFailed, Actions: []core.RuleActionResult{failed}}, true, false},
+		{"block, message gone", core.RuleHit{State: core.RuleRunDone, Actions: []core.RuleActionResult{block}}, false, true},
+		{"undone", core.RuleHit{MessageID: 1, State: core.RuleRunUndone, Actions: []core.RuleActionResult{done}}, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := &rulesView{}
+			tt := ui.NewTester(func(c *ui.Context) {
+				theme.Apply(c, theme.Light())
+				v.hit(c, core.Rule{}, tc.hit, time.Now())
+			}, 600, 100)
+			tt.Frame()
+			if _, ok := tt.Find(i18n.T("common.retry")); ok != tc.retry {
+				t.Errorf("retry shown = %v, want %v", ok, tc.retry)
+			}
+			if _, ok := tt.Find(i18n.T("settings.rules.hits.undo")); ok != tc.undo {
+				t.Errorf("undo shown = %v, want %v", ok, tc.undo)
+			}
+		})
+	}
+}
+
+// TestSettingsRulesActionMoveButtons: 上移/下移 reorder actions without the
+// pointer, as keyboard and screen-reader users must.
+func TestSettingsRulesActionMoveButtons(t *testing.T) {
+	h, _ := withAccount(t)
+	h.openSettings("rules")
+	h.click("新建规则")
+	h.click("值")
+	h.typeText("billing@")
+	h.click("添加动作")
+	h.click("归档")
+	rv := h.app.pages[PageSettings].(*settingsPage).rules
+	if a := rv.edit.Doc.Actions; len(a) != 2 || a[0].Kind != core.ActionLabel {
+		t.Fatalf("initial actions %+v", a)
+	}
+	h.click(i18n.T("settings.rules.action.down")) // the first's: the last's is disabled
+	h.tt.Frame()
+	if a := rv.edit.Doc.Actions; a[0].Kind != core.ActionArchive || a[1].Kind != core.ActionLabel {
+		t.Fatalf("after 下移: %+v", a)
 	}
 }

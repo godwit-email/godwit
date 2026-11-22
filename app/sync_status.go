@@ -26,7 +26,7 @@ type syncFail struct {
 // before the status turns red and asks the user to look.
 const syncGiveUp = 30 * time.Minute
 
-// syncLevel orders accounts in the sync status: the top bar names the worst.
+// syncLevel orders accounts in the sync status: its row names the worst.
 type syncLevel int
 
 const (
@@ -41,7 +41,6 @@ type syncHealth struct {
 	acc     core.Account
 	level   syncLevel
 	status  string // 自动重试中, 需要重新登录…
-	short   string // the top bar's word for it; empty: status
 	reason  string // what happened, in plain words
 	err     string // the raw error, on hover over the reason
 	actions []syncButton
@@ -78,13 +77,13 @@ func (a *App) syncHealth(acc core.Account) syncHealth {
 	case acc.Status != "ok": // the keychain is unavailable
 		h.level, h.status, h.reason, h.actions = syncAction, i18n.T("shell.sync.keychain"), i18n.T("shell.sync.keychain.reason"), []syncButton{retry}
 	case failed && f.kind == "tls": // a bad certificate does not fix itself
-		h.level, h.status, h.short = syncAction, i18n.T("shell.sync.tls"), i18n.T("shell.sync.failed")
+		h.level, h.status = syncAction, i18n.T("shell.sync.tls")
 		h.reason, h.actions = i18n.Tf("shell.sync.tls.reason", host), []syncButton{retry, servers}
 	case failed && a.clock.Now().Sub(f.since) >= syncGiveUp:
 		h.level, h.status = syncAction, i18n.T("shell.sync.failed")
 		h.reason, h.actions = i18n.Tf("shell.sync.stuck.reason", a.ago(f.since), failCause(f.kind, host)), []syncButton{retry, servers}
 	case failed:
-		h.level, h.status, h.short = syncRetrying, i18n.T("shell.sync.retrying"), i18n.T("shell.sync.retrying.short")
+		h.level, h.status = syncRetrying, i18n.T("shell.sync.retrying")
 		h.reason, h.actions = i18n.Tf("shell.sync.retrying.reason", failCause(f.kind, host)), []syncButton{retry}
 	case a.syncBusy(id):
 		h.level, h.status = syncBusy, i18n.T("shell.sync.syncing")
@@ -148,44 +147,105 @@ func syncDot(l syncLevel) (s kit.Status, ok bool) {
 	return 0, false
 }
 
-// syncStatus is the top bar's sync status: the worst account by name when
-// one fails, else syncing or how long ago the last sync finished. A click
-// lists every account's state.
-func (a *App) syncStatus(c *ui.Context) {
-	hs := a.syncHealths()
+// syncAlertCard renders a full-width status card directly above the Settings
+// row when one or more accounts are retrying or need user action, giving the
+// full reason and account name room to read without truncating beside Settings.
+func (a *App) syncAlertCard(c *ui.Context, hs []syncHealth) (ui.Element, bool) {
+	if len(hs) == 0 || a.syncBatch != nil {
+		return ui.Element{}, false
+	}
+	w := hs[0]
+	if w.level != syncAction && w.level != syncRetrying {
+		return ui.Element{}, false
+	}
+	t, th := theme.Of(c), c.Theme()
+	tone, fg, dot := kit.ToneWarning, t.WarningText, kit.Attention
+	if w.level == syncAction {
+		tone, fg, dot = kit.ToneDanger, t.DangerText, kit.Error
+	}
+	title, sub := w.status, accountName(w.acc)
+	if w.level == syncAction {
+		errCount := 0
+		for _, h := range hs {
+			if h.level == syncAction {
+				errCount++
+			}
+		}
+		if errCount > 1 {
+			title = i18n.Tf("shell.sync.multi_error", errCount)
+			sub = i18n.Tf("shell.sync.multi_accounts", accountName(w.acc), errCount)
+		}
+	}
+	label := i18n.Tf("shell.sync.account", sub, title)
+	card := kit.Block(c, kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { a.syncOpen = !a.syncOpen }}), tone).
+		Radius(t.Radius.Xl).FillWidth().Padding(th.Space(2), th.Space(2.5)).Gap(th.Space(2)).Margin(0, 0, th.Space(1.5), 0).
+		AlignItems(ui.Center).Expanded(a.syncOpen).Label(label)
+	chevColor := fg.Alpha(0.75)
+	if card.Hovered() {
+		chevColor = fg
+	}
+	card.Children(func() {
+		kit.StatusDot(c, dot).AlignSelf(ui.Start).Margin(th.Space(1.5), 0, 0, 0)
+		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(0.5)).Children(func() {
+			kit.Text(c, title, t.Text.Xs).FontWeight(500).TextColor(fg).SingleLine().Role(ui.RoleNone)
+			kit.Text(c, sub, t.Text.Xs).TextColor(t.Muted).SingleLine().Role(ui.RoleNone)
+		})
+		ui.Icon(c, icons.Get("chevron-right")).Size(theme.IconSm, theme.IconSm).TextColor(chevColor).Shrink(0)
+	})
+	return card, true
+}
+
+// syncStatus sits on the right end of the sidebar's footer row beside Settings:
+// syncing or how long ago the last sync finished, or a quiet trigger when
+// syncAlertCard shows above it.
+func (a *App) syncStatus(c *ui.Context, hs []syncHealth, hasAlert bool) (ui.Element, bool) {
 	if len(hs) == 0 {
-		return
+		return ui.Element{}, false
 	}
 	t, th := theme.Of(c), c.Theme()
 	w := hs[0]
-	text, color := "", t.Muted
+	text := ""
 	dotLevel := w.level
+	showDot := true
 	switch {
+	case hasAlert:
+		text, showDot = i18n.T("shell.sync.title"), false
 	case a.syncBatch != nil: // a Sync All shows syncing until its last account returns
 		text, dotLevel = i18n.T("shell.sync.syncing"), syncBusy
-	case w.level == syncAction:
-		text, color = i18n.Tf("shell.sync.account", accountName(w.acc), cmp.Or(w.short, w.status)), t.DangerText
-	case w.level == syncRetrying:
-		text, color = i18n.Tf("shell.sync.account", accountName(w.acc), w.short), t.WarningText
 	case w.level == syncBusy:
 		text = w.status
-	default:
-		if a.syncedAt.IsZero() {
-			return
+	case a.syncedAt.IsZero():
+		if w.level != syncAction && w.level != syncRetrying {
+			return ui.Element{}, false
 		}
+		text = i18n.T("shell.sync.title") // a trouble before any sync: its dot says which
+	default:
 		text = a.syncedAgo()
 	}
-	chip := kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).FontSize(t.Text.Xs).TextColor(color).
-		Gap(th.Space(1.5)).Expanded(a.syncOpen).Label(text)
-	chip.OnClick(func() { a.syncOpen = !a.syncOpen })
+	chip := kit.SidebarItem(c, kit.SidebarItemOpts{Small: true, OnClick: func() { a.syncOpen = !a.syncOpen }}).
+		Padding(0, th.Space(1.5)).Gap(th.Space(1.5)).TextColor(t.Muted).Expanded(a.syncOpen).Label(text).Shrink(1).MinWidth(0)
 	chip.Children(func() {
-		if s, ok := syncDot(dotLevel); ok {
-			kit.StatusDot(c, s)
+		if showDot {
+			if s, ok := syncDot(dotLevel); ok {
+				kit.StatusDot(c, s)
+			}
 		}
-		ui.Text(c, text).SingleLine().Shrink(1)
-		ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconXs, theme.IconXs)
+		kit.Text(c, text, t.Text.Xs).SingleLine().Shrink(1)
+		ui.Icon(c, icons.Get("chevron-down")).Size(theme.IconXs, theme.IconXs).Shrink(0)
 	})
-	kit.PopoverAt(c, chip, &a.syncOpen, ui.AnchorBottomEnd, ui.AnchorTopEnd, theme.PopupOffset, func() { a.syncMenu(c, hs) })
+	return chip, true
+}
+
+// titleSync is the sync chip at the title bar's end while the sidebar, whose
+// foot holds it, is folded: a failing account stays in sight, its menu below.
+func (a *App) titleSync(c *ui.Context) {
+	if !a.sidebarHidden || a.route.Page == PageSettings {
+		return
+	}
+	hs := a.syncHealths()
+	if chip, ok := a.syncStatus(c, hs, false); ok {
+		kit.PopoverAt(c, chip, &a.syncOpen, ui.AnchorBottomEnd, ui.AnchorTopEnd, theme.PopupOffset, func() { a.syncMenu(c, hs) })
+	}
 }
 
 // syncMenu lists each account: its state, why, and what to do about it.
@@ -200,7 +260,7 @@ func (a *App) syncMenu(c *ui.Context, hs []syncHealth) {
 	maxH := winH - c.TitleBar().Height - theme.PopupOffset - 2*th.Space(3) - th.Space(2)
 	ui.Column(c).Width(theme.SyncMenuWidth).MaxHeight(maxH).Gap(th.Space(3)).Children(func() {
 		ui.Row(c).Shrink(0).AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(th.Space(2)).Children(func() {
-			kit.Text(c, i18n.T("shell.sync.title"), small).FontWeight(600).Shrink(0)
+			kit.Text(c, i18n.T("shell.sync.title"), small).FontWeight(500).Shrink(0)
 			kit.Button(c, i18n.T("shell.sync.all"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "refresh-cw"}).
 				FontSize(xs).Height(th.Space(6)).PaddingX(th.Space(2)).Shrink(0).OnClick(act(a.SyncAll))
 		})
@@ -334,7 +394,8 @@ func decodeIcon(ct string, data []byte) ui.ImageSource {
 }
 
 // accountIcon is an account's icon: its uploaded image, the label icon or
-// provider logo it chose, or else its own provider's mark.
+// provider logo it chose, or else its own provider's mark (a local
+// archive's, an archive box).
 func (a *App) accountIcon(c *ui.Context, acc core.Account, size float32) {
 	if strings.HasPrefix(acc.Icon, "image:") {
 		if img := a.accountImage(acc); img != nil {
@@ -357,6 +418,10 @@ func (a *App) accountIcon(c *ui.Context, acc core.Account, size float32) {
 		ui.Box(c).Size(size, size).Shrink(0).Center().Children(func() {
 			ui.Icon(c, icons.Get("label-"+name)).Size(iconSize, iconSize).TextColor(t.Foreground)
 		})
+		return
+	}
+	if isArchive(acc) { // a local archive has no mail provider: an archive box
+		iconMark(c, "archive", size)
 		return
 	}
 	mark(c, accountProvider(a, acc), size)

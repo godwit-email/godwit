@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/internal/i18n"
@@ -172,9 +173,9 @@ type PageDeps struct {
 	// PickFiles asks for files to attach, in a dialog on window winID; none
 	// picked is no error.
 	PickFiles func(ctx context.Context, winID int) ([]string, error)
-	// PopupMenu shows items ("" for a separator) as a native menu at x, y
-	// of window winID's page and returns the index chosen, -1 for none.
-	PopupMenu func(winID int, items []string, x, y int) int
+	// PopupMenu shows entries as a native menu at x, y of window winID's
+	// page and returns the ID chosen, "" for none.
+	PopupMenu func(winID int, entries []MenuEntry, x, y int) string
 	// Emit sends a Wit event to a window or page (WitStream.Emit or
 	// EmitPage in production).
 	Emit func(t Target, ev WitEvent)
@@ -186,6 +187,11 @@ type PageDeps struct {
 	// message id in its reader.
 	OpenModels  func()
 	OpenMessage func(id int64)
+	// Toast, ToastBar and TitleBar hand window winID's toasts, where its send
+	// bar is, and its title bar's text to native, which draws them.
+	Toast    func(winID int, kind, text string)
+	ToastBar func(winID int, bar, field ui.Rect)
+	TitleBar func(winID int, title, status string)
 }
 
 // ComposePage is what compose pages call (mygo.Bind); every method acts on
@@ -453,15 +459,20 @@ func (p *ComposePage) Send(ctx context.Context, revision int64, digest string, a
 	return res, err
 }
 
-// PopupMenu shows items ("" for a separator) as a native menu at x, y, CSS
-// pixels from the top-left of the calling window's page, and returns the
-// index chosen, -1 for none: the menus of the page's own controls.
-func (p *ComposePage) PopupMenu(ctx context.Context, items []string, x, y int) (int, error) {
+// PopupMenu shows entries as a native menu at x, y, CSS pixels from the
+// top-left of the calling window's page, and returns the ID of the entry
+// chosen, "" for none: the menus of the page's own controls, in the limits
+// the Wit page's are (WitPage.PopupMenu).
+func (p *ComposePage) PopupMenu(ctx context.Context, entries []MenuEntry, x, y int) (string, error) {
 	win, ok := p.d.WinOf(ctx)
 	if !ok || p.d.PopupMenu == nil {
-		return -1, ErrNoDraft
+		return "", ErrNoDraft
 	}
-	return p.d.PopupMenu(win, items, x, y), nil
+	left := maxMenuEntries
+	if err := checkMenu(entries, 0, &left); err != nil {
+		return "", err
+	}
+	return p.d.PopupMenu(win, entries, x, y), nil
 }
 
 // Closed is the page's final flush for the close attempt gen, the payload

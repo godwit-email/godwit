@@ -55,7 +55,7 @@ func TestDraftSelectShowsPane(t *testing.T) {
 	h.see("继续编辑")
 	h.see("删除草稿")
 	h.see("body of Draft hello")
-	h.see("草稿已保存 · " + ds[0].UpdatedAt.In(h.clock.Now().Location()).Format("15:04"))
+	h.see("草稿已保存 " + ds[0].UpdatedAt.In(h.clock.Now().Location()).Format("15:04"))
 	h.see("bob@example.com")
 	h.noCompose()
 }
@@ -184,7 +184,7 @@ func TestDraftPaneLabelsNoClip(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s: no box", label)
 		}
-		if lab.H > one.H {
+		if lab.H > one.H+0.5 { // a wrap adds a whole line; float rounding differs by platform
 			t.Errorf("%s label wraps: height %v, one line %v", label, lab.H, one.H)
 		}
 	}

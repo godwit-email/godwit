@@ -7,39 +7,23 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
-// TestThemeThumbTooltip: the theme name shows only as a tooltip on hover.
-func TestThemeThumbTooltip(t *testing.T) {
+// TestThemeThumbLabel: the theme name is always shown under its thumbnail.
+func TestThemeThumbLabel(t *testing.T) {
 	h, _ := withAccount(t)
 	h.openSettings("general")
-	count := func() (n int) { // the label counts once; the tip is a second text
-		for _, x := range h.tt.Texts() {
-			if x == "深色" {
-				n++
-			}
-		}
-		return
-	}
-	if count() > 1 {
-		t.Fatal("the theme name shows without hover")
-	}
+	h.see("深色")
 	r, ok := h.tt.Find("深色")
 	if !ok {
 		t.Fatal("no dark thumbnail")
 	}
 	if math.Abs(float64(r.W-76)) > 0.01 || math.Abs(float64(r.H-48)) > 0.01 { // float layout: the card's title line is fractional
 		t.Errorf("thumbnail %vx%v, want 76x48", r.W, r.H)
-	}
-	h.tt.Move(r.X+r.W/2, r.Y+r.H/2)
-	h.tt.Advance(900 * time.Millisecond)
-	if count() < 2 {
-		t.Errorf("no tooltip after hover: %q", h.tt.Texts())
 	}
 }
 
@@ -104,14 +88,13 @@ func TestThemeThumbsFit(t *testing.T) {
 func TestSettingsGeneralCopy(t *testing.T) {
 	h, _ := withAccount(t)
 	h.openSettings("general")
-	for _, s := range []string{"主题", "跟随系统时随 macOS 的外观切换", "登录后在后台启动 Godwit"} {
+	for _, s := range []string{"主题", "跟随系统时随系统外观切换", "登录后在后台启动 Godwit"} {
 		h.see(s)
 	}
 	if _, ok := h.tt.Find("总结、翻译和 Wit 的回答用这种语言"); ok {
-		t.Fatal("阅读语言 is on General; it belongs to the Intelligence page's 功能 tab")
+		t.Fatal("阅读语言 is on General; it belongs to the AI 功能 page")
 	}
-	h.openSettings("models")
-	h.click("功能")
+	h.openSettings("features")
 	h.see("总结、翻译和 Wit 的回答用这种语言")
 	h.see("为收到的邮件准备几条简短的回复")
 }
@@ -165,7 +148,6 @@ func TestSettingsProxyMode(t *testing.T) {
 	h.tt.ClickAt(dark.X+dark.W-8, (lab.Y+src.Y+src.H)/2)
 	h.drain()
 	h.tt.Frame()
-	h.see("不使用代理")
 	h.click("不使用代理")
 	h.until("proxy mode off", func() bool { return h.app.settings.ProxyMode == "off" })
 	st, err := h.env.Svc.GetSettings(context.Background())

@@ -13,6 +13,8 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/theme"
 )
 
 // The contacts page lists who the user exchanged mail with and chooses the
@@ -126,7 +128,7 @@ func TestContactsMailReadsOn(t *testing.T) {
 	}
 	h.syncNow(acc)
 	h.click("联系人")
-	h.see(fmt.Sprintf("往来邮件 · %d 封", n))
+	h.see(fmt.Sprintf("%d 封往来", n))
 	p := h.app.contacts()
 	h.until("the first page", func() bool { return len(p.mail) == contactMailPage && p.cursor != "" })
 	h.until("the rest, read on at the end", func() bool {
@@ -219,7 +221,7 @@ func TestContactsSidebarRefreshAndZeroMail(t *testing.T) {
 
 	// "通讯录" shows enabled address-book contacts and excludes mail-only Bob.
 	h.click("通讯录")
-	h.see("通讯录 · 1")
+	h.see("1 位")
 	h.click("zero@example.com")
 	h.until("Zero Person chosen and Bob gone from list and detail", func() bool {
 		return h.app.contacts().detailOf == "zero@example.com" && !h.app.contacts().read.loading && !h.tt.HasText("bob@example.com")
@@ -309,14 +311,14 @@ func TestContactsMultiAddressAndActions(t *testing.T) {
 
 	// Filter matches subtitle (ORG / TITLE) and secondary email address.
 	h.fill("按名字或地址筛选", "CTO")
-	h.see("全部联系人 · 1")
+	h.see("1 位")
 	if h.tt.HasText("other@example.com") {
 		t.Fatal("other@example.com matched CTO filter")
 	}
 	h.fill("按名字或地址筛选", "bob@work.com")
-	h.see("全部联系人 · 1")
+	h.see("1 位")
 	h.fill("按名字或地址筛选", "")
-	h.see("全部联系人 · 2")
+	h.see("2 位")
 
 	// Top 写邮件 opens popup menu with PREF address first.
 	h.click("写邮件")
@@ -372,7 +374,7 @@ func TestContactsMultiAddressAndActions(t *testing.T) {
 	h.tt.Key(0, ui.KeyEscape)
 	h.drain()
 	h.click("已屏蔽")
-	h.see("已屏蔽 · 1")
+	h.see("1 位")
 
 	// Whole-card block blocks every remaining address; whole-card unblock clears all of them.
 	h.click("屏蔽发件人")
@@ -383,7 +385,7 @@ func TestContactsMultiAddressAndActions(t *testing.T) {
 	h.until("all addresses unblocked", func() bool {
 		return !slices.Contains(h.app.blocked, "bob@home.com") && !slices.Contains(h.app.blocked, "bob@work.com")
 	})
-	h.see("已屏蔽 · 0")
+	h.see("0 位")
 }
 
 func TestContactsFilterHistoricalAndSecondaryMergedTerms(t *testing.T) {
@@ -410,14 +412,71 @@ func TestContactsFilterHistoricalAndSecondaryMergedTerms(t *testing.T) {
 	h.deliverOne(acc, coretest.Msg("Other <other@example.com>", acc.Email, "Other", "Hello"))
 
 	h.click("联系人")
-	h.see("全部联系人 · 2")
+	h.see("2 位")
 
 	for _, query := range []string{"Robert Legacy", "Bobby Studio", "Night Owl Labs", "Founder"} {
 		h.fill("按名字或地址筛选", query)
-		h.see("全部联系人 · 1")
+		h.see("1 位")
 		h.see("Bob Work")
 		if h.tt.HasText("other@example.com") {
 			t.Fatalf("unexpected match for query %q", query)
 		}
 	}
+}
+
+// TestContactsActionsAreInTheTitleBar: the chosen contact's write, archive
+// and block actions are icon buttons in the title bar, not in the page, and
+// none shows while no contact is chosen.
+func TestContactsActionsAreInTheTitleBar(t *testing.T) {
+	asMac(t)
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.deliverOne(accs[0], coretest.Msg("Bob <bob@example.com>", accs[0].Email, "Lunch?", "Noon?"))
+	labels := []string{i18n.T("palette.action.compose"), i18n.T("reader.block_sender")}
+	h.click("联系人")
+	h.until("bob chosen", func() bool { return h.app.route.Contact == "bob@example.com" })
+	for _, label := range labels {
+		r, ok := h.tt.Find(label)
+		if !ok || r.Y+r.H > theme.TopBarHeight {
+			t.Errorf("%q at %+v (found %v) is not in the title bar", label, r, ok)
+		}
+	}
+	if r, ok := h.tt.Find(i18n.T("contacts.archive_all") + " · " + i18n.T("contacts.archive.tip_none")); ok && r.Y+r.H > theme.TopBarHeight {
+		t.Errorf("archive at %+v is not in the title bar", r)
+	}
+}
+
+// TestContactsBlockNeedsAContact: with no contact chosen, 屏蔽发件人 is
+// disabled and blocks nothing, rather than reporting a block that did not happen.
+func TestContactsBlockNeedsAContact(t *testing.T) {
+	asMac(t)
+	h, _ := mailHarness(t, nil, "alice@example.com")
+	h.click("联系人")
+	h.until("the contacts page", func() bool { return h.app.route.Page == PageContacts })
+	label := i18n.T("reader.block_sender")
+	if _, ok := h.tt.Find(label); !ok {
+		t.Fatalf("no %q in the title bar", label)
+	}
+	_ = h.tt.Click(label)
+	for range 10 {
+		h.drain()
+		h.tt.Frame()
+	}
+	if h.tt.HasText(i18n.T("reader.sender_blocked")) {
+		t.Fatal("a block with no contact reported success")
+	}
+}
+
+// TestContactMailRowsShowState: a contact's mail says which messages are
+// unread, starred or replied to and where each is, on screen and in its label.
+func TestContactMailRowsShowState(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	m := h.deliverOne(accs[0], coretest.Msg("Bob <bob@example.com>", accs[0].Email, "Lunch?", "Noon?"))
+	if err := h.env.Svc.SetFlags(context.Background(), []int64{m.ID}, []string{`\Flagged`}, nil); err != nil {
+		t.Fatal(err)
+	}
+	h.click("联系人")
+	h.until("bob chosen", func() bool { return h.app.route.Contact == "bob@example.com" })
+	label := "Lunch? · " + i18n.Tf("mail.row.unread", 1) + " · " + i18n.T("mail.unified.starred") + " · " + i18n.T("mail.folder.inbox")
+	h.until("the row with its state", func() bool { _, ok := h.tt.Find(label); return ok })
+	h.see(i18n.T("mail.unified.starred"))
 }

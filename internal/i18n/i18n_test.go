@@ -15,6 +15,58 @@ func TestPseudoLocale(t *testing.T) {
 	}
 }
 
+// TestLocalizePlatformKeepsArguments: the wording swap leaves the caller's
+// values alone, as a forward rule's recipient on its confirmation.
+func TestLocalizePlatformKeepsArguments(t *testing.T) {
+	oldOS := goos
+	t.Cleanup(func() {
+		goos = oldOS
+		SetLanguage("zh-Hans")
+	})
+	for _, tc := range []struct{ osName, lang string }{{"windows", "en"}, {"linux", "en"}, {"windows", "zh-Hans"}, {"linux", "zh-Hans"}} {
+		goos = tc.osName
+		SetLanguage(tc.lang)
+		for _, arg := range []string{"it-keychain@corp.example", "Keychain Team", "iCloud 钥匙串"} {
+			if got := Tf("settings.rules.confirm.to", arg); !strings.Contains(got, arg) {
+				t.Errorf("%s/%s: %q lost the argument %q", tc.osName, tc.lang, got, arg)
+			}
+		}
+	}
+}
+
+func TestLocalizePlatformKeychainAndThemeHelp(t *testing.T) {
+	oldOS := goos
+	t.Cleanup(func() {
+		goos = oldOS
+		SetLanguage("zh-Hans")
+	})
+
+	SetLanguage("zh-Hans")
+	if got := T("settings.theme.help"); strings.Contains(got, "macOS") {
+		t.Errorf("zh-Hans theme help still names macOS: %q", got)
+	}
+	SetLanguage("en")
+	if got := T("settings.theme.help"); strings.Contains(got, "macOS") {
+		t.Errorf("en theme help still names macOS: %q", got)
+	}
+
+	for _, tc := range []struct {
+		osName, lang, key, want string
+	}{
+		{"darwin", "zh-Hans", "onboarding.promise.keychain", "密码只存在系统钥匙串"},
+		{"windows", "zh-Hans", "onboarding.promise.keychain", "密码只存在系统凭据管理器"},
+		{"linux", "zh-Hans", "onboarding.promise.keychain", "密码只存在系统密钥环"},
+		{"windows", "en", "onboarding.promise.keychain", "Passwords live only in the Windows Credential Manager"},
+		{"linux", "en", "onboarding.promise.keychain", "Passwords live only in the system keyring"},
+	} {
+		goos = tc.osName
+		SetLanguage(tc.lang)
+		if got := T(tc.key); got != tc.want {
+			t.Errorf("%s/%s %s = %q, want %q", tc.osName, tc.lang, tc.key, got, tc.want)
+		}
+	}
+}
+
 func TestReorderedArgumentsAndPercent(t *testing.T) {
 	t.Cleanup(func() { SetLanguage("zh-CN") })
 	SetLanguage("en")

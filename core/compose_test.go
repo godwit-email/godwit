@@ -856,3 +856,24 @@ func TestProgramDraftShownRestored(t *testing.T) {
 	assert.Equal(t, "Card "+p, back[0].Subject, "the program never gets the value back")
 	assert.Equal(t, []string{"Card " + p + " <hidden@example.net>"}, back[0].Bcc)
 }
+
+// An outbox item names who it is to as its To header does, names kept and Bcc
+// left out; with its raw copy gone, the envelope's addresses stand in.
+func TestOutboxItemTo(t *testing.T) {
+	e := newSendEnv(t, false)
+	d, err := e.s.NewDraft(bg, e.acc.ID, "new", 0)
+	require.NoError(t, err)
+	d.To, d.Bcc, d.Subject, d.HTML = []string{"李雷 <lei@example.com>", "bob@example.com"}, []string{"dave@example.com"}, "hello", "<p>hi</p>"
+	d, err = e.s.SaveDraft(bg, d)
+	require.NoError(t, err)
+	require.NoError(t, e.s.Send(bg, d.ID))
+	out, err := e.s.ListOutbox(bg, e.acc.ID)
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	assert.Equal(t, []string{"李雷 <lei@example.com>", "bob@example.com"}, out[0].To)
+
+	require.NoError(t, os.Remove(store.Str(e.rows(t, "SELECT raw_path FROM outbox")[0][0])))
+	out, err = e.s.ListOutbox(bg, e.acc.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"lei@example.com", "bob@example.com", "dave@example.com"}, out[0].To)
+}

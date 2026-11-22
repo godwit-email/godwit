@@ -161,7 +161,7 @@ Layout:
 | `cmd/godwit/` | the executable: GUI, headless, `call`, `mcp` |
 | `mcpserver/`, `rpc/` | the MCP server and the Local API |
 | `sdk/` | plugin types |
-| `docs/` | design specs and plans |
+| `docs/` | ADRs, agent guides, research and benchmarks |
 | `site/` | [godwit.email](https://godwit.email), a Cloudflare Worker (`mise run site:dev`) |
 
 The homepage's demo window and main download button share browser-platform detection. macOS shows traffic lights; Windows shows the app caption and right-hand window controls; Linux also uses right-hand controls. The window controls are decorative, not actions that close or resize the website.

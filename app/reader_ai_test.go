@@ -94,6 +94,10 @@ func TestSummaryStreams(t *testing.T) {
 	h.openThread(m.ThreadID)
 	h.see("m1")
 	h.see("第一点要点")
+	h.see("生成中")
+	if h.tt.HasText("思考中") {
+		t.Fatalf("thinking phase still shown after first token: %q", h.tt.Texts())
+	}
 	if h.tt.HasText("**") {
 		t.Fatalf("streaming summary shows Markdown markers: %q", h.tt.Texts())
 	}
@@ -103,6 +107,9 @@ func TestSummaryStreams(t *testing.T) {
 	release()
 	h.see("第二点要点")
 	h.until("the summary done", func() bool { s := r.ai[m.ID]; return s != nil && s.summary.done })
+	if h.tt.HasText("生成中") || h.tt.HasText("思考中") {
+		t.Fatalf("active status still shown after summary finished: %q", h.tt.Texts())
+	}
 	clickAIOutputLink(h, "第二点要点")
 	if !h.app.linkOpen || h.app.link != "https://summary.example/plan" {
 		t.Fatalf("summary link did not use the link dialog: %v %q", h.app.linkOpen, h.app.link)
@@ -134,11 +141,15 @@ func TestSkillMarkdownStreams(t *testing.T) {
 	h.seeBody(m.ID)
 	h.skillMenu("Brief")
 	h.see("Progress")
+	h.see("生成中")
 	if h.tt.HasText("##") || h.tt.HasText("**") || !r.ai[m.ID].result.run.running {
 		t.Fatalf("unfinished Markdown was not rendered while streaming: %q", h.tt.Texts())
 	}
 	release()
 	h.until("the skill done", func() bool { return r.ai[m.ID].result.run.done })
+	if h.tt.HasText("生成中") || h.tt.HasText("思考中") {
+		t.Fatalf("active status still shown after skill finished: %q", h.tt.Texts())
+	}
 	h.see("Private image")
 	if h.tt.HasText("##") || h.tt.HasText("**") || h.tt.HasText("![") {
 		t.Fatalf("completed output shows Markdown markers: %q", h.tt.Texts())
@@ -890,5 +901,69 @@ func TestSummaryAutolinkEndsAtCJK(t *testing.T) {
 	}
 	if !slices.Equal(dests, []string{"https://vishnuai.in/mediakit"}) {
 		t.Errorf("links = %q", dests)
+	}
+}
+
+// Before the first token arrives, a summary shows "思考中" and the pulsing
+// thinking dots; once streaming starts, it switches to "生成中" with no dots;
+// once done, both active-phase labels disappear.
+func TestSummaryThinkingBeforeFirstToken(t *testing.T) {
+	h, acc, llm := aiHarness(t, true, noQuick)
+	llm.Script(coretest.Turn{Text: []string{"- 第一点要点\n", "- 第二点要点\n"}})
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Plan", "the plan body"))
+	r := h.app.mail.reader
+
+	beforeFirst := make(chan struct{})
+	afterFirst := make(chan struct{})
+	var closeBefore, closeAfter sync.Once
+	t.Cleanup(func() {
+		closeBefore.Do(func() { close(beforeFirst) })
+		closeAfter.Do(func() { close(afterFirst) })
+	})
+	real := r.runSkill
+	r.runSkill = func(ctx context.Context, name string, tg core.Target) (<-chan ai.Event, error) {
+		in, err := real(ctx, name, tg)
+		if err != nil {
+			return nil, err
+		}
+		out := make(chan ai.Event)
+		go func() {
+			defer close(out)
+			first := true
+			for ev := range in {
+				if ev.Kind == "text" && first {
+					<-beforeFirst
+					out <- ev
+					first = false
+					<-afterFirst
+					continue
+				}
+				out <- ev
+			}
+		}()
+		return out, nil
+	}
+
+	h.openThread(m.ThreadID)
+	h.see("思考中")
+	if _, ok := h.tt.Find("思考中"); !ok {
+		t.Fatalf("thinking dots/label missing before first token: %q", h.tt.Texts())
+	}
+	if h.tt.HasText("生成中") {
+		t.Fatalf("generating shown before first token: %q", h.tt.Texts())
+	}
+
+	closeBefore.Do(func() { close(beforeFirst) })
+	h.see("第一点要点")
+	h.see("生成中")
+	if h.tt.HasText("思考中") {
+		t.Fatalf("thinking still shown after first token: %q", h.tt.Texts())
+	}
+
+	closeAfter.Do(func() { close(afterFirst) })
+	h.see("第二点要点")
+	h.until("summary done", func() bool { s := r.ai[m.ID]; return s != nil && s.summary.done })
+	if h.tt.HasText("生成中") || h.tt.HasText("思考中") {
+		t.Fatalf("phase label lingered after done: %q", h.tt.Texts())
 	}
 }

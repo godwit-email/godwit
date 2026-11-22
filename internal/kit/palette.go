@@ -58,8 +58,8 @@ func Palette(c *ui.Context, open *bool, query *string, o PaletteOpts, head, body
 		// a dialog's scrim, but fixed near the top: as hits come and go the panel only grows down
 		backdrop.Background(t.Scrim.Alpha(k)).Justify(ui.Start).Padding(th.Space(16), 0, 0, 0).Transition(leave(c))
 		panel.Label(o.Label).Opacity(k).Margin(rise(k), 0, 0, 0).Width(theme.DialogWideWidth).MaxHeight(theme.SheetMaxHeight).
-			Radius(t.Radius.Xl).Clip().Border(theme.Hairline, t.Border)
-		glassPanel(panel, t)
+			Radius(t.Radius.X2l).Clip().Border(theme.Hairline, t.GlassBorder)
+		glassPanel(c, panel)
 		Elevate(c, panel, theme.ShadowX2l)
 		var in ui.Element
 		if o.Send != "" {
@@ -103,7 +103,7 @@ func Palette(c *ui.Context, open *bool, query *string, o PaletteOpts, head, body
 			})
 		}
 		if head != nil {
-			ui.Row(c).Role(ui.RoleTabList).KeepFocus().Shrink(0).Gap(th.Space(1)).Padding(0, th.Space(3), th.Space(2), th.Space(3)).Children(head)
+			ui.Row(c).KeepFocus().Shrink(0).Padding(0, th.Space(3), th.Space(2), th.Space(3)).Children(head)
 		}
 		if body != nil {
 			paletteSel = ui.Element{}
@@ -135,17 +135,6 @@ func Palette(c *ui.Context, open *bool, query *string, o PaletteOpts, head, body
 	})
 }
 
-// PaletteTab is a kind tab of a Palette's head, tinted while chosen.
-func PaletteTab(c *ui.Context, label string, chosen bool) ui.Element {
-	t, th := theme.Of(c), c.Theme()
-	b := ui.ButtonBase(c).Role(ui.RoleTab).Selected(chosen).Height(th.Space(7)).PaddingX(th.Space(2.5)).Radius(t.Radius.Md).
-		FontSize(t.Text.Xs).TextColor(t.Muted).Transition(colors(theme.MotionFast))
-	if chosen {
-		b.Background(t.HoverTint).TextColor(t.Foreground)
-	}
-	return b.Children(func() { ui.Text(c, label) })
-}
-
 // PalettePreview is a card 8px off a Palette's right edge, level with the
 // selected PaletteRow, which it follows as the list scrolls; body builds
 // its content. Build it after the Palette in the same frame, while open.
@@ -154,14 +143,13 @@ func PalettePreview(c *ui.Context, body func()) {
 	if row == (ui.Element{}) {
 		return
 	}
-	t, th := theme.Of(c), c.Theme()
+	th := c.Theme()
 	ui.Overlay(c, func() {
 		// The row stops the list's 8px padding short of the panel's edge.
 		card := ui.Column(c).AttachTo(row, ui.AnchorTopEnd, ui.AnchorTopStart).MarginStart(th.Space(4)).
-			Width(th.Space(72)).Gap(th.Space(2)).Padding(th.Space(4)).Radius(t.Radius.Xl).Clip().
-			Material(LiquidGlass(t.GlassBg)).
-			Border(theme.Hairline, t.GlassBorder)
-		Elevate(c, card, theme.ShadowLg)
+			Width(th.Space(72))
+		popoverCard(c, card)
+		card.Gap(th.Space(2)) // the design's 8, not a popover card's 10
 		card.Children(body)
 	})
 }
@@ -192,4 +180,16 @@ func PaletteChip(c *ui.Context, label, remove string) ui.Element {
 		x = IconButton(c, "x", remove, ButtonOpts{Variant: Ghost, Size: SizeMini})
 	})
 	return x
+}
+
+// PaletteAvatar is the 24 avatar leading a PaletteRow: image, once its sender's
+// is read and allowed, else the initial of name.
+func PaletteAvatar(c *ui.Context, name string, image ui.ImageSource) ui.Element {
+	t, size := theme.Of(c), c.Theme().Space(6)
+	if image == nil {
+		return AvatarSized(c, name, size)
+	}
+	return ui.Box(c).Size(size, size).Shrink(0).Radius(t.Radius.Lg).Clip().Background(t.MarkTile).Label(name).Children(func() {
+		ui.Image(c, image).Size(size, size).Fit(ui.Cover)
+	})
 }

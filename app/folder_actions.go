@@ -40,7 +40,7 @@ func (p *mailPage) emptyFolderDialog(c *ui.Context) {
 			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() {
 				p.emptyFolderAsk = false
 			})
-			kit.Button(c, btn, kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
+			kit.Button(c, btn, kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).OnClick(func() {
 				p.emptyFolderAsk = false
 				p.doEmptyFolder(p.emptyFolderID, p.emptyFolderRole, p.emptyFolderAcc)
 			})

@@ -29,22 +29,6 @@ func Switch(c *ui.Context, on *bool) ui.Element {
 	return ui.SwitchBase(c, on).Radius(theme.Of(c).Radius.Full).Children(func() { switchTrack(c, *on) })
 }
 
-// SwitchRow is a full-width switch named label in the settings row shape
-// (8/16 padding, at least 48 high): label and help on the left, the track
-// on the right; a click anywhere on the row toggles it.
-func SwitchRow(c *ui.Context, on *bool, label, help string) ui.Element {
-	t, th := theme.Of(c), c.Theme()
-	return ui.SwitchBase(c, on).FillWidth().Gap(th.Space(6)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center).Label(label).Children(func() {
-		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-			Text(c, label, t.Text.Sm).FontWeight(500)
-			if help != "" {
-				Text(c, help, t.Text.Xs).TextColor(t.Muted)
-			}
-		})
-		switchTrack(c, *on)
-	})
-}
-
 // Checkbox is a 16×16 check box before its label.
 func Checkbox(c *ui.Context, on *bool, label string) ui.Element {
 	t, th := theme.Of(c), c.Theme()
@@ -75,20 +59,33 @@ func Radio[T comparable](c *ui.Context, sel *T, v T, label string) ui.Element {
 	})
 }
 
-// ChoiceOpts say how a Choice looks while it is not the one chosen: Dashed
-// in a dashed outline, as a model on offer but not added; Card on the card
-// gray with no outline, as a tile among others on a card.
-type ChoiceOpts struct{ Dashed, Card bool }
+// ChoiceLook is how a ChoiceCard looks while it is not the one chosen:
+// ChoiceDefault the background in the border's outline; ChoiceOnCard the card
+// gray with no outline, as a tile among others on a card; ChoiceDashed in a
+// dashed outline, as a model on offer but not added.
+type ChoiceLook uint8
 
-// Choice makes e one of several the user picks among and returns it, drawn
-// the one way a choice is: chosen, the hover gray in a primary outline;
-// else the background in the border's (or as o says), half way to the hover
-// gray under the pointer. e is the caller's control, a RadioBase or a
-// Pressable: its role, state and corner are its own.
-func Choice(c *ui.Context, e ui.Element, on bool, o ChoiceOpts) ui.Element {
+const (
+	ChoiceDefault ChoiceLook = iota
+	ChoiceOnCard
+	ChoiceDashed
+)
+
+// ChoiceCardOpts say how a ChoiceCard looks. Radio draws a radio dot before
+// the content, filled while Selected.
+type ChoiceCardOpts struct {
+	Selected bool
+	Look     ChoiceLook
+	Radio    bool
+}
+
+// choiceFace draws e the one way a choice is: chosen, the hover gray in a
+// primary outline; else the background in the border's (or as look says),
+// half way to the hover gray under the pointer.
+func choiceFace(c *ui.Context, e ui.Element, on bool, look ChoiceLook) ui.Element {
 	t := theme.Of(c)
 	fill, edge := t.Background, t.Border
-	if o.Card {
+	if look == ChoiceOnCard {
 		fill, edge = t.Card, t.Border.Alpha(0)
 	}
 	switch {
@@ -98,43 +95,56 @@ func Choice(c *ui.Context, e ui.Element, on bool, o ChoiceOpts) ui.Element {
 		fill = t.Hover.Mix(fill, 0.5)
 	}
 	e.Background(fill).Border(theme.Stroke, edge).Transition(colors(theme.MotionFast))
-	if o.Dashed && !on {
+	if look == ChoiceDashed && !on {
 		e.Border(theme.Stroke, t.DividerHover).BorderStyle(ui.BorderDashed)
 	}
 	return e
 }
 
+// ChoiceCard makes e a card one of several is picked from, or a tile that
+// acts on a click (selected is then false), around content. e is the
+// caller's control, a RadioBase or a Pressable{Bare}: its role, state and
+// corner are its own, and so are the padding and gap of a card that has no
+// radio dot (the radio card is full width, 8 padded, 8 apart, in corners of
+// Lg).
+func ChoiceCard(c *ui.Context, e ui.Element, o ChoiceCardOpts, content func()) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	choiceFace(c, e, o.Selected, o.Look)
+	if o.Radio {
+		e.FillWidth().AlignItems(ui.Start).Gap(th.Space(2)).Padding(th.Space(2)).Radius(t.Radius.Lg)
+	}
+	return e.Children(func() {
+		if o.Radio {
+			radioDot(c, o.Selected)
+		}
+		content()
+	})
+}
+
+// ChoiceText is a ChoiceCard's usual content: label, and help under it.
+func ChoiceText(c *ui.Context, label, help string) {
+	t, th := theme.Of(c), c.Theme()
+	ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
+		ui.Text(c, label)
+		Text(c, help, t.Text.Xs).TextColor(t.Muted)
+	})
+}
+
 // ToggleChipFrame is a chip that is on or off without its content: 28 high
 // in xs text, muted while off. Give it its Label, Children and OnClick.
-func ToggleChipFrame(c *ui.Context, on bool, o ChoiceOpts) ui.Element {
+func ToggleChipFrame(c *ui.Context, on bool, look ChoiceLook) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	b := ui.ButtonBase(c).Height(th.Space(7)).PaddingX(th.Space(2.5)).Gap(th.Space(1.5)).Radius(controlRadius(c, th.Space(7))).FontSize(t.Text.Xs).TextColor(t.Muted)
 	if on {
 		b.TextColor(t.Foreground)
 	}
-	return Choice(c, b, on, o)
+	return choiceFace(c, b, on, look)
 }
 
 // ToggleChip is a ToggleChipFrame showing label: a filter that is on or
 // off, a model added or not.
-func ToggleChip(c *ui.Context, label string, on bool, o ChoiceOpts) ui.Element {
-	return ToggleChipFrame(c, on, o).Label(label).Children(func() { ui.Text(c, label) })
-}
-
-// RadioCard is a radio whose whole card clicks: the dot, label and help
-// under it, drawn as a Choice on a card.
-func RadioCard[T comparable](c *ui.Context, sel *T, v T, label, help string) ui.Element {
-	t, th := theme.Of(c), c.Theme()
-	on := *sel == v
-	card := ui.RadioBase(c, sel, v).FillWidth().AlignItems(ui.Start).Gap(th.Space(2)).Padding(th.Space(2)).
-		Radius(t.Radius.Lg).Label(label)
-	return Choice(c, card, on, ChoiceOpts{Card: true}).Children(func() {
-		radioDot(c, on)
-		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-			ui.Text(c, label)
-			Text(c, help, t.Text.Xs).TextColor(t.Muted)
-		})
-	})
+func ToggleChip(c *ui.Context, label string, on bool, look ChoiceLook) ui.Element {
+	return ToggleChipFrame(c, on, look).Label(label).Children(func() { ui.Text(c, label) })
 }
 
 func radioDot(c *ui.Context, on bool) {
@@ -189,39 +199,25 @@ func Select[T comparable](c *ui.Context, sel *T, opts []Option[T]) ui.Element {
 	return SelectWith(c, SelectOpts{}, sel, opts)
 }
 
-// SelectWith is Select styled by o.
+// SelectWith is Select styled by o. Its options open as the system's menu
+// under the trigger, the current one checked; Changed reports a new choice.
 func SelectWith[T comparable](c *ui.Context, o SelectOpts, sel *T, opts []Option[T]) ui.Element {
-	t, th := theme.Of(c), c.Theme()
-	s := ui.SelectBase(c, sel)
 	current := ""
-	for _, o := range opts {
-		if o.Value == *sel {
-			current = o.Label
+	for _, opt := range opts {
+		if opt.Value == *sel {
+			current = opt.Label
 		}
 	}
-	selectFace(c, s.Trigger, current, o)
-	s.Popup(func(panel ui.Element) {
-		panel.Margin(theme.PopupOffset, 0, 0, 0).Padding(th.Space(1)).
-			Radius(t.Radius.Lg).Clip().
-			Material(LiquidGlass(t.GlassBg)).
-			Border(theme.Hairline, t.GlassBorder)
-		Elevate(c, panel, theme.ShadowMd)
-		for _, o := range opts {
-			item := s.Item(o.Value).Height(th.Space(7)).PaddingX(th.Space(1.5)).Gap(th.Space(1.5)).Radius(t.Radius.Md) // as a MenuItem
-			if o.Disabled {
-				item.Disabled(true).TextColor(t.Muted)
+	trigger := selectFace(c, ui.ButtonBase(c).Justify(ui.Start), current, o)
+	// a pop-up button whose value is the choice, as ui.SelectBase is: Menu keeps a role set before it
+	trigger.Role(ui.RolePopUpButton).Value(current)
+	trigger.Menu(func(m *ui.Menu) {
+		for _, opt := range opts {
+			if m.Item(opt.Label).Checked(opt.Value == *sel).Disabled(opt.Disabled).Chosen() && opt.Value != *sel {
+				*sel = opt.Value
+				trigger.SetChanged()
 			}
-			if item.Highlighted() { // on the popup's glass, as a MenuItem
-				item.Background(t.HoverTint)
-			}
-			item.Children(func() {
-				ui.Text(c, o.Label).Grow(1)
-				check := ui.Icon(c, icons.Get("check")).Size(theme.Icon, theme.Icon)
-				if o.Value != *sel {
-					check.Opacity(0)
-				}
-			})
 		}
 	})
-	return s.Trigger
+	return trigger
 }

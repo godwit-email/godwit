@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -41,7 +42,7 @@ func (h *harness) seeExactly(text string) {
 
 func TestRegistrySectionInstallNative(t *testing.T) {
 	h, _, _ := registryHarness(t)
-	h.openSettings("extensions")
+	h.openSettings("plugins")
 	h.click("浏览插件目录")
 	h.seeExactly("插件目录")
 	h.see("Summary of dlx")
@@ -72,7 +73,7 @@ func TestRegistryNativeChangedFilesShowRisk(t *testing.T) {
 	if err := os.WriteFile(files[0], []byte("damaged"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	p := h.openSettings("extensions")
+	p := h.openSettings("plugins")
 	h.until("integrity error", func() bool {
 		info, ok := h.plugin("dlx")
 		return ok && info.Trust == "listed" && info.Error != ""
@@ -89,7 +90,7 @@ func TestRegistryInstallLoading(t *testing.T) {
 	for _, fail := range []bool{false, true} {
 		t.Run(map[bool]string{false: "success", true: "failure"}[fail], func(t *testing.T) {
 			h, rs, _ := registryHarness(t)
-			h.openSettings("extensions")
+			h.openSettings("plugins")
 			h.click("浏览插件目录")
 			if fail {
 				rs.Serve("/files/hello-0.1.0-any", nil)
@@ -147,7 +148,7 @@ func TestRegistryDownloadProgress(t *testing.T) {
 	rel := rs.ScriptRelease("hello", "0.2.0", `{}`, code)
 	rel["artifacts"].(map[string]any)["any"].(map[string]any)["url"] = server.URL
 	rs.Publish(t, coretest.Registry(regT0.Add(time.Hour), regPlugin("hello", rel)))
-	h.openSettings("extensions")
+	h.openSettings("plugins")
 	h.click("浏览插件目录")
 	h.see("脚本 · 0.2.0")
 	h.click("安装 hello")
@@ -165,7 +166,7 @@ func TestRegistryDownloadProgress(t *testing.T) {
 
 func TestRegistrySectionInstallScript(t *testing.T) {
 	h, _, _ := registryHarness(t)
-	h.openSettings("extensions")
+	h.openSettings("plugins")
 	h.click("浏览插件目录")
 	h.click("安装 hello")
 	h.see("api.example.com") // the dialog names where it can send data before the user allows it
@@ -186,7 +187,7 @@ func TestRegistryDialogShowsAllPermissions(t *testing.T) {
 	rs.Publish(t, coretest.Registry(regT0, regPlugin("hello", rs.ScriptRelease("hello", "0.1.0", `{"mail":["read","write"],"llm":true}`, `export default function () {}`))))
 	h := newHarnessWith(t, []coretest.Option{coretest.WithRegistry(rs.Src)}, func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") })
 	h.until("initial load", func() bool { return h.app.loaded })
-	h.openSettings("extensions")
+	h.openSettings("plugins")
 	h.click("浏览插件目录")
 	h.click("安装 hello")
 	for _, tag := range []string{"mail:read", "mail:write", "llm"} {
@@ -198,7 +199,7 @@ func TestRegistryDialogShowsAllPermissions(t *testing.T) {
 // user never saw: it installs, but the consent was not for this.
 func TestRegistryConsentBoundToShownRelease(t *testing.T) {
 	h, rs, dlx := registryHarness(t)
-	h.openSettings("extensions")
+	h.openSettings("plugins")
 	h.click("浏览插件目录")
 	h.click("安装 hello")
 	h.see("api.example.com")
@@ -220,7 +221,7 @@ func TestRegistryConsentBoundToShownRelease(t *testing.T) {
 
 func TestRegistryDialogCancelInstallsNothing(t *testing.T) {
 	h, _, _ := registryHarness(t)
-	h.openSettings("extensions")
+	h.openSettings("plugins")
 	h.click("浏览插件目录")
 	h.click("安装 hello")
 	h.click("取消")
@@ -239,7 +240,7 @@ func TestRegistryConfigurableScriptStaysPending(t *testing.T) {
 	rs.Publish(t, coretest.Registry(regT0, regPlugin("hello", rel)))
 	h := newHarnessWith(t, []coretest.Option{coretest.WithRegistry(rs.Src)}, func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") })
 	h.until("initial load", func() bool { return h.app.loaded })
-	h.openSettings("extensions")
+	h.openSettings("plugins")
 	h.click("浏览插件目录")
 	h.click("安装 hello")
 	if h.tt.HasText("允许并安装") {
@@ -283,7 +284,7 @@ func TestRegistryDialogReadme(t *testing.T) {
 	rs.Src.Client = &http.Client{Transport: raw}
 	h := newHarnessWith(t, []coretest.Option{coretest.WithRegistry(rs.Src)}, func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") })
 	h.until("initial load", func() bool { return h.app.loaded })
-	h.openSettings("extensions")
+	h.openSettings("plugins")
 	h.click("浏览插件目录")
 	h.see("Godwit Community")
 	h.see("仅在本机")
@@ -304,7 +305,7 @@ func TestRegistryDirectoryOffline(t *testing.T) {
 	rs := coretest.NewRegistryServer(t)
 	h := newHarnessWith(t, []coretest.Option{coretest.WithRegistry(rs.Src)}, func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") })
 	h.until("initial load", func() bool { return h.app.loaded })
-	p := h.openSettings("extensions")
+	p := h.openSettings("plugins")
 	h.click("浏览插件目录")
 	p.ext.reg.Stale, p.ext.reg.Entries = "offline", nil
 	h.see("暂时读取不到插件目录")
@@ -321,7 +322,7 @@ func TestRegistrySectionUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	rs.Publish(t, coretest.Registry(regT0.Add(time.Hour), regPlugin("dlx", dlx, rs.NativeRelease(t, "dlx", "0.2.0", nil))))
-	h.openSettings("extensions")
+	h.openSettings("plugins")
 	release := h.block("plugins")
 	h.click("更新到 0.2.0 dlx")
 	if !h.tt.HasText("正在安装…") {
@@ -344,16 +345,37 @@ func TestRegistryRevokedNotice(t *testing.T) {
 		t.Fatal(err)
 	}
 	rs.Publish(t, coretest.Registry(regT0.Add(time.Hour)))
-	h.openSettings("extensions")
+	h.openSettings("plugins")
 	h.until("revoked", func() bool { p, _ := h.plugin("dlx"); return p.DisabledReason == "trust_revoked" }) // it needs a grant again: its row opens
 	h.see("Godwit 插件目录已撤销对这个文件的信任。")
 }
 
 func TestRegistrySectionHiddenWhenOff(t *testing.T) {
 	h, _ := withAccount(t)
-	h.openSettings("extensions")
-	h.see("插件 · 1") // the built-in plugin: the list has loaded
+	h.openSettings("plugins")
+	h.see("验证码与登录链接") // the built-in plugin: the list has loaded
 	if _, ok := h.tt.Find("浏览插件目录"); ok {
 		t.Fatal("the plugin directory is offered without a registry")
+	}
+}
+
+// Opening Skill reads the skills alone: the plugin directory is fetched by 插件.
+func TestSkillsPageLeavesTheDirectory(t *testing.T) {
+	h, rs, _ := registryHarness(t)
+	h.openSettings("plugins")
+	h.click("浏览插件目录")
+	h.see("dlx")
+	var fetched atomic.Int32
+	rs.Intercept(func(_ http.ResponseWriter, req *http.Request, _ []byte) bool {
+		if strings.Contains(req.URL.Path, "registry.json") {
+			fetched.Add(1)
+		}
+		return false
+	})
+	h.openSettings("skills")
+	h.see("Summarize")
+	h.drain()
+	if n := fetched.Load(); n != 0 {
+		t.Errorf("Skill fetched the plugin directory %d times", n)
 	}
 }

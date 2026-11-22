@@ -1,6 +1,7 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -30,18 +31,15 @@ type viewEditor struct {
 	exceptions []core.ViewException
 	templates  []core.ViewTemplate
 	iconOpen   bool
-	menus      map[string]*bool // each list of conditions' 添加 menu
 
 	prev       *core.ViewContents
 	prevKey    string
 	prevStop   func()
 	prevCancel func()
-
-	viewTop, asideTop float32
 }
 
 func newViewEditor(p *mailPage) *viewEditor {
-	return &viewEditor{p: p, menus: map[string]*bool{}, box: core.SavedView{Icon: "folder-3", Doc: core.SavedViewDoc{Match: core.MatchAll, Conditions: []core.RuleCondition{}}}}
+	return &viewEditor{p: p, box: core.SavedView{Icon: "folder-3", Doc: core.SavedViewDoc{Match: core.MatchAll, Conditions: []core.RuleCondition{}}}}
 }
 
 // openViewEditor shows e in place of the list and loads what it lists.
@@ -120,7 +118,7 @@ func (p *mailPage) viewLeaveDialog(c *ui.Context) {
 	p.viewLeaveOpen = p.viewLeave != nil
 	kit.Dialog(c, &p.viewLeaveOpen, i18n.T("close.unsaved.title"), kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("view.leave.desc"), Close: i18n.T("common.close")}, nil, func() {
 		kit.Button(c, i18n.T("view.leave.keep"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { p.viewLeave = nil })
-		kit.Button(c, i18n.T("view.leave.discard"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
+		kit.Button(c, i18n.T("view.leave.discard"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).OnClick(func() {
 			then := p.viewLeave
 			p.viewLeave = nil
 			p.closeViewEditor()
@@ -255,8 +253,8 @@ func (e *viewEditor) save() {
 	})
 }
 
-// view is the page: its heading and buttons, the form, and the preview beside
-// it, which stays in view as the form scrolls.
+// view is the page: its heading, buttons and form, which scroll, and the
+// live preview the panel's height at its end, as the list it previews.
 func (e *viewEditor) view(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	title, sub, primary := i18n.T("view.new"), i18n.T("view.editor.sub.new"), i18n.T("view.editor.create")
@@ -265,11 +263,9 @@ func (e *viewEditor) view(c *ui.Context) {
 	}
 	e.schedulePreview()
 	problem := e.problem()
-	scroll := ui.Scroll(c).Grow(1)
-	e.viewTop = scroll.LayoutBounds().Y
-	scroll.Children(func() {
-		ui.Column(c).FillWidth().Padding(th.Space(8)).Children(func() {
-			ui.Column(c).FillWidth().MaxWidth(theme.ContentMaxWidth).AlignSelf(ui.Center).Gap(th.Space(6)).Children(func() {
+	ui.Row(c).Grow(1).FillWidth().AlignItems(ui.Stretch).Children(func() {
+		ui.Scroll(c).Grow(1).Shrink(1).MinWidth(0).Children(func() {
+			ui.Column(c).FillWidth().MaxWidth(theme.ContentMaxWidth).Padding(th.Space(8)).Gap(th.Space(6)).Children(func() {
 				pageHeading(c, title, sub, func() {
 					ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2)).Children(func() {
 						if problem != "" {
@@ -279,22 +275,10 @@ func (e *viewEditor) view(c *ui.Context) {
 						settingButton(c, primary, kit.Default, problem != "").OnClick(e.save)
 					})
 				})
-				grid := ui.Row(c).FillWidth().Gap(th.Space(6)).AlignItems(ui.Start)
-				top := grid.LayoutBounds().Y
-				grid.Children(func() {
-					form := ui.Column(c).Grow(1).Shrink(1).Basis(0).MinWidth(0).Gap(th.Space(6))
-					formH := form.LayoutBounds().H
-					form.Children(func() { e.form(c) })
-					aside := ui.Column(c).Width(theme.RuleAsideWidth).Shrink(0).Label(i18n.T("view.preview"))
-					off := max(0, min(e.viewTop+th.Space(4)-top, formH-aside.LayoutBounds().H))
-					if off != e.asideTop {
-						e.asideTop = off
-						c.Invalidate()
-					}
-					aside.Margin(e.asideTop, 0, 0, 0).Children(func() { e.preview(c) })
-				})
+				e.form(c)
 			})
 		})
+		ui.Column(c).Width(theme.RuleAsideWidth).Shrink(0).Label(i18n.T("view.preview")).Children(func() { e.preview(c) })
 	})
 }
 
@@ -309,27 +293,25 @@ func (e *viewEditor) form(c *ui.Context) {
 			kit.Text(c, e.note, t.Text.Sm).Grow(1).Shrink(1)
 		})
 	}
-	settingsCard(c, func() {
-		settingRow(c, i18n.T("view.editor.name"), "", func() {
-			kit.Input(c, &e.box.Name, kit.InputOpts{Placeholder: i18n.T("view.editor.name.placeholder")}).Label(i18n.T("view.editor.name")).Width(theme.SettingsSelectMin)
+	settingsCard(c, func() { // the icon and the name, in one row as a label's
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).Children(func() {
+			e.iconButton(c)
+			kit.Input(c, &e.box.Name, kit.InputOpts{Placeholder: i18n.T("view.editor.name.placeholder")}).Label(i18n.T("view.editor.name")).Grow(1)
 		})
 	}, func() {
-		settingRow(c, i18n.T("view.editor.icon"), "", func() { e.iconButton(c) })
-	}, func() {
-		settingRow(c, i18n.T("view.editor.account"), "", func() {
+		settingRow(c, i18n.T("view.editor.account"), "", func() ui.Element {
 			accts := []kit.Option[int64]{{Value: 0, Label: i18n.T("settings.rules.account.all")}}
 			for _, acc := range a.accounts {
 				accts = append(accts, kit.Option[int64]{Value: acc.ID, Label: accountName(acc)})
 			}
-			settingSelect(c, i18n.T("view.editor.account"), &d.Account, accts)
+			return settingSelect(c, i18n.T("view.editor.account"), &d.Account, accts)
 		})
 	})
-	ui.Column(c).FillWidth().Gap(theme.SectionGap).Children(func() {
-		sectionTitle(c, i18n.T("view.editor.conditions"))
-		settingsCard(c, func() { e.conditionRows(c, &d.Conditions, &d.Match, "view") })
-		if note := e.conditionsNote(); note != "" {
-			kit.Text(c, note, t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(4))
-		}
+	condEditor(c, &d.Conditions, &d.Match, condEditorOpts{
+		title:     i18n.T("view.editor.conditions"),
+		emptyText: i18n.T("view.editor.conditions.empty"),
+		footnote:  e.conditionsNote(),
+		row:       func(cd *core.RuleCondition) { e.condRow(c, cd) },
 	})
 	ui.Column(c).FillWidth().Gap(theme.SectionGap).Children(func() {
 		sectionTitle(c, i18n.T("view.editor.groups"))
@@ -355,7 +337,7 @@ func (e *viewEditor) form(c *ui.Context) {
 	}
 	if e.box.ID != 0 {
 		ui.Row(c).FillWidth().Gap(th.Space(2)).Children(func() {
-			settingButton(c, i18n.T("common.delete"), kit.Destructive, false).OnClick(func() { b := e.box; e.p.viewDelete = &b })
+			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).OnClick(func() { b := e.box; e.p.viewDelete = &b })
 		})
 	}
 }
@@ -368,8 +350,6 @@ func usesField(conds []core.RuleCondition, fields ...string) bool {
 func (e *viewEditor) conditionsNote() string {
 	conds := e.box.Doc.Conditions
 	switch {
-	case len(conds) == 0:
-		return i18n.T("view.editor.conditions.empty")
 	case usesField(conds, core.FieldReply):
 		return i18n.T("view.editor.groups.days")
 	case usesField(conds, core.FieldRead):
@@ -394,7 +374,7 @@ func (e *viewEditor) groupsNote() string {
 // iconButton is the icon chosen, opening the grid of the icons labels use.
 func (e *viewEditor) iconButton(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	b := kit.IconButton(c, labelIcon(e.box.Icon), i18n.T("view.editor.icon"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeLg, Flat: true}).
+	b := kit.IconButton(c, labelIcon(e.box.Icon), i18n.T("view.editor.icon"), kit.ButtonOpts{Variant: kit.Outline, Flat: true}).
 		OnClick(func() { e.iconOpen = !e.iconOpen })
 	if !e.iconOpen {
 		return
@@ -450,14 +430,6 @@ func (e *viewEditor) fieldChanged(cd *core.RuleCondition, was string) {
 	case cd.Field == core.FieldStarred || cd.Field == core.FieldWrote:
 		cd.Op, cd.Value = core.OpIs, core.RuleYes
 	}
-}
-
-// conditionRows is a list of conditions, as a rule's are; key keeps its 添加 menu.
-func (e *viewEditor) conditionRows(c *ui.Context, conds *[]core.RuleCondition, match *string, key string) {
-	th := c.Theme()
-	ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(2.5), th.Space(4)).Children(func() {
-		condEditor(c, conds, match, boolAt(e.menus, key, false), func(cd *core.RuleCondition) { e.condRow(c, cd) })
-	})
 }
 
 // condRow is one condition's controls.
@@ -547,28 +519,52 @@ func (e *viewEditor) condRow(c *ui.Context, cd *core.RuleCondition) {
 	}
 }
 
-// groupCard is group i: its name, how its conditions combine, moves and
-// removal, then its conditions.
+// viewGroupDrag is a group's index in Doc.Groups while its grip drags it.
+type viewGroupDrag int
+
+// groupCard is conversation group i: drag grip, name input, × remove, and its
+// conditions rendered inline inside the card.
 func (e *viewEditor) groupCard(c *ui.Context, i int) {
 	t, th := theme.Of(c), c.Theme()
 	d := &e.box.Doc
 	g := &d.Groups[i]
-	settingsCard(c, func() {
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2), th.Space(4)).Children(func() {
-			kit.Input(c, &g.Name, kit.InputOpts{Placeholder: i18n.T("view.editor.group.name")}).Label(i18n.T("view.editor.group.name")).Width(theme.SettingsSelectMin)
-			ui.Spacer(c)
-			kit.IconButton(c, "arrow-up", i18n.T("view.editor.group.up"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Disabled: i == 0}).
-				OnClick(func() { d.Groups[i-1], d.Groups[i] = d.Groups[i], d.Groups[i-1] })
-			kit.IconButton(c, "arrow-down", i18n.T("view.editor.group.down"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Disabled: i == len(d.Groups)-1}).
-				OnClick(func() { d.Groups[i], d.Groups[i+1] = d.Groups[i+1], d.Groups[i] })
-			kit.IconButton(c, "trash-2", i18n.T("view.editor.group.remove"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-				OnClick(func() { d.Groups = slices.Delete(slices.Clone(d.Groups), i, i+1) })
+	wrap := ui.Column(c).FillWidth()
+	if from, ok := ui.DragOver[viewGroupDrag](wrap); ok && int(from) != i {
+		drawDropLine(wrap, int(from) < i, th.Accent)
+	}
+	if from, ok := ui.Drop[viewGroupDrag](wrap); ok && int(from) != i && int(from) >= 0 && int(from) < len(d.Groups) {
+		f := int(from)
+		moved := d.Groups[f]
+		next := slices.Delete(slices.Clone(d.Groups), f, f+1)
+		d.Groups = slices.Insert(next, i, moved)
+	}
+	wrap.Children(func() {
+		settingsCard(c, func() {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2), th.Space(4), th.Space(2), th.Space(2.5)).Children(func() {
+				grip := ui.Box(c).Size(th.Space(5), th.Space(8)).Center().Shrink(0).Drag(viewGroupDrag(i))
+				if grip.Dragging() {
+					wrap.Opacity(0.4)
+				}
+				grip.Children(func() {
+					ui.Icon(c, icons.Get("grip")).Size(theme.Icon, theme.Icon).TextColor(t.Idle)
+				})
+				kit.Input(c, &g.Name, kit.InputOpts{Placeholder: i18n.T("view.editor.group.name")}).Label(i18n.T("view.editor.group.name")).Width(theme.ViewGroupNameWidth)
+				ui.Spacer(c)
+				// the grip is the pointer's; these move a group from the keyboard and screen readers
+				kit.IconButton(c, "arrow-up", i18n.T("view.editor.group.up"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs, Disabled: i == 0}).
+					Shrink(0).OnClick(func() { d.Groups[i-1], d.Groups[i] = d.Groups[i], d.Groups[i-1] })
+				kit.IconButton(c, "arrow-down", i18n.T("view.editor.group.down"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs, Disabled: i == len(d.Groups)-1}).
+					Shrink(0).OnClick(func() { d.Groups[i], d.Groups[i+1] = d.Groups[i+1], d.Groups[i] })
+				kit.IconButton(c, "x", i18n.T("view.editor.group.remove"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs}).
+					Shrink(0).OnClick(func() { d.Groups = slices.Delete(slices.Clone(d.Groups), i, i+1) })
+			})
+		}, func() {
+			condEditor(c, &g.Conditions, &g.Match, condEditorOpts{
+				inline:    true,
+				emptyText: i18n.T("view.editor.group.empty"),
+				row:       func(cd *core.RuleCondition) { e.condRow(c, cd) },
+			})
 		})
-	}, func() {
-		e.conditionRows(c, &g.Conditions, &g.Match, g.ID)
-		if len(g.Conditions) == 0 {
-			kit.Text(c, i18n.T("view.editor.group.empty"), t.Text.Xs).TextColor(t.Muted).Padding(0, th.Space(4), th.Space(2.5), th.Space(4))
-		}
 	})
 }
 
@@ -629,63 +625,45 @@ func (e *viewEditor) undoException(thread int64) {
 // preview is 实时预览: what the document shows, as the list will show it.
 func (e *viewEditor) preview(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	kit.Card(c, ui.Column(c), kit.ToneTint).FillWidth().Gap(th.Space(2)).Padding(th.Space(3)).Children(func() {
-		total := 0
+	total := 0
+	if e.prev != nil {
+		for _, g := range e.prev.Groups {
+			total += g.Total
+		}
+	}
+	ui.Row(c).FillWidth().AlignItems(ui.Baseline).Gap(th.Space(2)).Padding(th.Space(8), th.Space(6), th.Space(2), th.Space(4)).Children(func() {
+		kit.Text(c, i18n.T("view.preview"), t.Text.Sm).FontWeight(500).Grow(1)
 		if e.prev != nil {
-			for _, g := range e.prev.Groups {
-				total += g.Total
-			}
+			kit.Text(c, i18n.Tf("view.count", total), t.Text.Xs).TextColor(t.Muted)
 		}
-		ui.Row(c).FillWidth().AlignItems(ui.Baseline).Gap(th.Space(2)).PaddingX(th.Space(1)).Children(func() {
-			kit.Text(c, i18n.T("view.preview"), t.Text.Sm).FontWeight(600).Grow(1)
-			if e.prev != nil {
-				kit.Text(c, i18n.Tf("view.count", total), t.Text.Xs).TextColor(t.Muted)
-			}
+	})
+	note := func(title, desc string) {
+		kit.Block(c, ui.Column(c), kit.ToneOutline).Margin(0, th.Space(6), 0, th.Space(4)).Gap(th.Space(1)).Padding(th.Space(4), th.Space(3)).
+			AlignItems(ui.Center).Children(func() {
+			kit.Text(c, title, t.Text.Xs).FontWeight(500).TextAlign(ui.Center)
+			kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted).TextAlign(ui.Center)
 		})
-		note := func(title, desc string) {
-			kit.Block(c, ui.Column(c), kit.ToneOutline).FillWidth().Gap(th.Space(1)).Padding(th.Space(4), th.Space(3)).
-				AlignItems(ui.Center).Children(func() {
-				kit.Text(c, title, t.Text.Xs).FontWeight(500).TextAlign(ui.Center)
-				kit.Text(c, desc, t.Text.Xs).TextColor(t.Muted).TextAlign(ui.Center)
-			})
-		}
-		switch {
-		case e.prev == nil && (e.prevStop != nil || e.prevCancel != nil):
-			note(i18n.T("settings.rules.preview.wait"), "")
-		case e.prev == nil:
-			note(i18n.T("view.preview.none"), i18n.T("view.preview.none.desc"))
-		case total == 0:
-			note(i18n.T("view.empty"), i18n.T("view.preview.empty.desc"))
-		default:
-			now := e.p.a.clock.Now()
-			kit.Block(c, ui.Column(c), kit.ToneOutline).FillWidth().Clip().Children(func() {
+	}
+	switch {
+	case e.prev == nil && (e.prevStop != nil || e.prevCancel != nil):
+		note(i18n.T("settings.rules.preview.wait"), "")
+	case e.prev == nil:
+		note(i18n.T("view.preview.none"), i18n.T("view.preview.none.desc"))
+	case total == 0:
+		note(i18n.T("view.empty"), i18n.T("view.preview.empty.desc"))
+	default: // the list's own group headings and rows
+		ui.Scroll(c).Grow(1).Children(func() {
+			ui.Column(c).FillWidth().Padding(0, th.Space(4), th.Space(6), th.Space(2)).Children(func() {
 				grouped := len(e.box.Doc.Groups) > 0
-				for gi, g := range e.prev.Groups {
+				for _, g := range e.prev.Groups {
 					if grouped {
-						if gi > 0 {
-							kit.Separator(c.Key("sep:"+g.ID), false)
-						}
-						ui.Row(c.Key("head:"+g.ID)).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(1.5), th.Space(3)).Children(func() {
-							name := g.Name
-							if name == "" {
-								name = i18n.T("view.other")
-							}
-							kit.Text(c, name, t.Text.Xs).FontWeight(500).TextColor(t.Muted).Grow(1).Shrink(1).SingleLine()
-							kit.Text(c, strconv.Itoa(g.Total), t.Text.Xs).TextColor(t.Muted).Shrink(0)
-						})
+						viewHeading(c.Key("head:"+g.ID), listEntry{head: cmp.Or(g.Name, i18n.T("view.other")), group: g.ID, count: g.Total})
 					}
 					for _, r := range g.Items {
-						kit.Separator(c.Key(fmt.Sprintf("s:%d", r.ID)), false)
-						ui.Column(c.Key(r.ID)).FillWidth().Gap(th.Space(0.5)).Padding(th.Space(2), th.Space(3)).Children(func() {
-							ui.Row(c).FillWidth().Gap(th.Space(2)).Children(func() {
-								kit.Text(c, strings.Join(r.Participants, ", "), t.Text.Xs).FontWeight(500).SingleLine().Grow(1).Shrink(1)
-								kit.Text(c, listTime(now, r.LastDate), t.Text.Xs).TextColor(t.Muted).Shrink(0)
-							})
-							kit.Text(c, cmpSubject(r.Subject), t.Text.Xs).SingleLine()
-						})
+						e.p.row(c.Key(r.ID), viewItem(r, g.ID), nil) // a preview: no star to toggle
 					}
 				}
 			})
-		}
-	})
+		})
+	}
 }

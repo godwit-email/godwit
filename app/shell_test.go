@@ -126,8 +126,8 @@ func TestSyncRetryTurnsRed(t *testing.T) {
 	h.post(func() {
 		h.app.onEvent(events.Event{Type: events.SyncFailed, AccountID: acc.ID, Error: "dial tcp: connection refused", Kind: "connect"})
 	})
-	h.see("alice@example.com · 重试中")
-	h.click("alice@example.com · 重试中")
+	h.see("alice@example.com · 自动重试中")
+	h.click("alice@example.com · 自动重试中")
 	h.see("自动重试中")
 	h.see("会自动重试，一般不用处理")
 	h.post(func() { // a later failure keeps when the failures began
@@ -151,7 +151,7 @@ func TestSyncWorstFirst(t *testing.T) {
 		h.app.onEvent(events.Event{Type: events.SyncFailed, AccountID: b.ID, Kind: "tls"})
 		h.app.onEvent(events.Event{Type: events.SyncStarted, AccountID: a.ID}) // syncing does not hide a failure
 	})
-	h.see("bob@example.com · 同步失败")
+	h.see("bob@example.com · 证书有问题")
 	if hs := h.app.syncHealths(); hs[0].acc.ID != b.ID || hs[0].level != syncAction || hs[1].level != syncRetrying {
 		t.Fatalf("healths %+v", hs)
 	}
@@ -463,8 +463,8 @@ func TestToasts(t *testing.T) {
 	h.app.toastErr(core.ErrTooLarge)
 	h.app.toastErr(context.Canceled)
 	h.tt.Frame()
+	h.hoverOn(humanize(core.ErrTooLarge)) // the newest is in front; the older shows once the stack opens
 	h.see("已保存")
-	h.see(humanize(core.ErrTooLarge))
 	if _, ok := h.tt.Find("报告问题"); ok {
 		t.Fatal("a known error offers a report")
 	}
@@ -819,6 +819,58 @@ func TestSidebarDragDuringCollapse(t *testing.T) {
 	}
 }
 
+// TestSidebarScrollbarFlushWithContentBorder: the sidebar's scroll container
+// reaches the content panel's left border so its scroll bar runs flush along
+// that border rather than floating beside the sidebar items.
+func TestSidebarScrollbarFlushWithContentBorder(t *testing.T) {
+	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) {
+		for i := 1; i <= 14; i++ {
+			e.AddAccount(t, fmt.Sprintf("account-%02d@example.com", i))
+		}
+	})
+	h.until("initial load", func() bool { return h.app.loaded })
+	h.resize(1280, 620)
+	h.see(i18n.T("mail.compose"))
+	compose, ok := h.tt.Find(i18n.T("mail.compose"))
+	if !ok {
+		t.Fatal("compose row not found")
+	}
+	h.tt.Move(compose.X+compose.W/2, compose.Y+compose.H/2)
+	h.tt.Wheel(compose.X+compose.W/2, compose.Y+compose.H/2, 0, -40)
+	h.tt.Advance(60 * time.Millisecond)
+	h.tt.Frame()
+
+	img := h.tt.Image()
+	bg := img.RGBAAt(2, int(compose.Y)) // sidebar background outside items
+	y := int(compose.Y + compose.H/2)
+	// Locate the white content panel's left border pixel on the same row.
+	panelLeft := -1
+	for x := int(compose.X + compose.W); x < img.Bounds().Dx(); x++ {
+		if px := img.RGBAAt(x, y); px.R >= 254 && px.G >= 254 && px.B >= 254 {
+			panelLeft = x
+			break
+		}
+	}
+	if panelLeft < 0 {
+		t.Fatalf("content panel border not found at y=%d", y)
+	}
+	// Find the rightmost pixel of the scrollbar thumb to the left of the panel border.
+	thumbRight := -1
+	for x := panelLeft - 2; x >= int(compose.X+compose.W); x-- {
+		px := img.RGBAAt(x, y)
+		if int(bg.R)-int(px.R) > 30 {
+			thumbRight = x
+			break
+		}
+	}
+	if thumbRight < 0 {
+		t.Fatalf("sidebar scrollbar thumb not visible at y=%d between x=%v and panelLeft=%d", y, compose.X+compose.W, panelLeft)
+	}
+	if gap := panelLeft - thumbRight; gap > 5 {
+		t.Errorf("sidebar scrollbar thumb ends at x=%d (%d px from panel border x=%d), want flush within 5 px", thumbRight, gap, panelLeft)
+	}
+}
+
 // TestVibrancyShowsThroughTopBar: with the window's material on, the top
 // bar is drawn transparent, with the sidebar beside the content.
 func TestVibrancyShowsThroughTopBar(t *testing.T) {
@@ -858,6 +910,123 @@ func TestWindowsChromeRadius(t *testing.T) {
 		if bar != tc.barH || r != tc.radius {
 			t.Errorf("%s: bar %v radius %v, want %v %v", tc.goos, bar, r, tc.barH, tc.radius)
 		}
+	}
+}
+
+func TestWindowsOnboardingOmitsDuplicateCaption(t *testing.T) {
+	old := goos
+	goos = "windows"
+	t.Cleanup(func() { goos = old })
+	h := newHarness(t)
+	h.until("onboarding", func() bool { return h.app.loaded && h.app.route.Page == PageOnboarding })
+	r, ok := h.tt.Find("Godwit")
+	if !ok {
+		t.Fatal("missing Godwit brand heading on onboarding")
+	}
+	if r.Y < theme.TopBarHeight {
+		t.Fatalf("Godwit caption rendered inside title bar at %+v; onboarding already shows it in the left column", r)
+	}
+}
+
+// TestSplitChromeLayout: Windows and Linux split the global title bar (brand
+// menu, nav, centered search, clear right-side caption space) from the 40 px
+// Mica context bar (page switch, list title + All/Unread filter, right-aligned
+// mail actions). Settings keeps the global search in the title bar and moves
+// its search field + breadcrumb into the context bar.
+func TestSplitChromeLayout(t *testing.T) {
+	for _, plat := range []string{"windows", "linux"} {
+		t.Run(plat, func(t *testing.T) {
+			old := goos
+			goos = plat
+			t.Cleanup(func() { goos = old })
+
+			h, accs := mailHarness(t, nil, "alice@example.com")
+			bar := ui.TitleBar{Height: 40, Right: 138}
+			if plat == "linux" {
+				bar = ui.TitleBar{Height: 44, Right: 206}
+			}
+			h.tt.SetTitleBar(bar)
+			h.resize(1280, 820)
+			m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Plan", "body"))
+			h.openThread(m.ThreadID)
+			h.seeBody(m.ID)
+
+			barH, _ := chromeMetrics(bar.Height, theme.Light())
+			ctxBottom := barH + theme.ContextBarHeight
+
+			// Global title bar holds brand menu, nav, and centered search (clear of right window controls).
+			brand, ok := h.tt.Find("Godwit")
+			if !ok || brand.Y+brand.H > barH {
+				t.Fatalf("brand menu at %+v (found %v), want in title bar (y <= %v)", brand, ok, barH)
+			}
+			search, ok := h.tt.Find(i18n.T("mail.search"))
+			if !ok || search.Y+search.H > barH {
+				t.Fatalf("global search at %+v (found %v), want in title bar (y <= %v)", search, ok, barH)
+			}
+			if search.X <= brand.X+brand.W || search.X+search.W >= 1280-bar.Right {
+				t.Errorf("global search at %+v is not centered clear of brand %+v and right controls %v", search, brand, bar.Right)
+			}
+
+			// Context bar holds page switch, All/Unread filter, and mail actions on one aligned row below the title bar.
+			for _, label := range []string{i18n.T("shell.nav.mail"), i18n.T("mail.filter.unread"), i18n.T("reader.reply"), i18n.T("reader.more")} {
+				r, ok := h.tt.Find(label)
+				if !ok || r.Y < barH || r.Y+r.H > ctxBottom {
+					t.Errorf("%q at %+v (found %v), want in context bar [%v, %v]", label, r, ok, barH, ctxBottom)
+				}
+			}
+
+			// Clicking the Godwit brand button opens the compact app menu.
+			h.click("Godwit")
+			if err := h.tt.ChooseMenuItem(i18n.T("settings.about")); err != nil {
+				t.Fatalf("brand menu choose About: %v; menu %q", err, h.tt.Menu())
+			}
+			h.drain()
+			h.until("opened about from brand menu", func() bool {
+				return h.app.route.Page == PageSettings && h.app.route.Settings == "about"
+			})
+
+			// Settings keeps global search in the title bar and puts Settings search in the context bar.
+			sSearch, ok := h.tt.Find(i18n.T("mail.search"))
+			if !ok || sSearch.Y+sSearch.H > barH {
+				t.Errorf("settings global search at %+v (found %v), want in title bar", sSearch, ok)
+			}
+			cfgSearch, ok := h.tt.Find(i18n.T("settings.search"))
+			if !ok || cfgSearch.Y < barH || cfgSearch.Y+cfgSearch.H > ctxBottom {
+				t.Errorf("settings filter at %+v (found %v), want in context bar [%v, %v]", cfgSearch, ok, barH, ctxBottom)
+			}
+
+			// Settings sub-pages retain the "设置" root segment before parent › current, and parent clicks back up.
+			h.openSettings("masklog")
+			rootSeg, okRoot := h.tt.Find(i18n.T("settings.heading"))
+			parentSeg, okParent := h.tt.Find(i18n.T("settings.masking"))
+			curSeg, okCur := h.tt.Find(i18n.T("settings.masking.log"))
+			if !okRoot || !okParent || !okCur ||
+				rootSeg.Y < barH || rootSeg.Y+rootSeg.H > ctxBottom ||
+				parentSeg.Y < barH || parentSeg.Y+parentSeg.H > ctxBottom ||
+				curSeg.Y < barH || curSeg.Y+curSeg.H > ctxBottom ||
+				!(rootSeg.X < parentSeg.X && parentSeg.X < curSeg.X) {
+				t.Errorf("3-level breadcrumb misaligned: root=%+v(%v) parent=%+v(%v) cur=%+v(%v)", rootSeg, okRoot, parentSeg, okParent, curSeg, okCur)
+			}
+			h.click(i18n.T("settings.masking"))
+			h.until("breadcrumb navigated up to masking", func() bool {
+				return h.app.route.Page == PageSettings && h.app.route.Settings == "masking"
+			})
+
+			// Narrow 960x600 window keeps mail actions clear and unclipped in the context bar.
+			h.post(func() { h.app.navigate(Route{Page: PageMail, View: core.View{Unified: "inbox"}}) })
+			h.until("back in mail", func() bool { return h.app.route.Page == PageMail })
+			h.resize(960, 600)
+			h.openThread(m.ThreadID)
+			h.seeBody(m.ID)
+			var prev ui.Rect
+			for _, label := range titleActionLabels() {
+				r, ok := h.tt.Find(label)
+				if !ok || r.Y < barH || r.Y+r.H > ctxBottom || r.X < prev.X+prev.W || r.X+r.W > 960 {
+					t.Errorf("960x600 %q at %+v (found %v) clipped or misaligned vs prev %+v", label, r, ok, prev)
+				}
+				prev = r
+			}
+		})
 	}
 }
 
@@ -928,4 +1097,24 @@ func TestReportMasksHostsOutsideTrace(t *testing.T) {
 			t.Fatalf("主机 %q 的报告遮罩错误：%v", host, q)
 		}
 	}
+}
+
+// TestSyncTroubleWithSidebarFolded: with the sidebar folded, whose foot holds
+// the sync status, the title bar shows it, its menu opening below.
+func TestSyncTroubleWithSidebarFolded(t *testing.T) {
+	asMac(t)
+	var acc core.Account
+	h := newHarnessWith(t, []coretest.Option{coretest.WithoutAutoSync()}, func(e *coretest.Env) { acc = e.AddAccount(t, "alice@example.com") })
+	h.until("initial load", func() bool { return h.app.loaded })
+	h.post(func() {
+		h.app.sidebarHidden = true
+		h.app.onEvent(events.Event{Type: events.SyncFailed, AccountID: acc.ID, Error: "dial tcp: connection refused", Kind: "connect"})
+	})
+	title := i18n.T("shell.sync.title")
+	h.until("the sync chip in the title bar", func() bool {
+		r, ok := h.tt.Find(title)
+		return ok && r.Y+r.H <= theme.TopBarHeight
+	})
+	h.click(title)
+	h.see("会自动重试，一般不用处理")
 }

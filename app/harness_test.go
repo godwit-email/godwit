@@ -256,6 +256,14 @@ func (h *harness) see(text string) {
 // window, then clicks it.
 func (h *harness) click(label string) {
 	h.t.Helper()
+	if slices.Contains(h.tt.Menu(), label) { // a select's options are the system menu's items
+		if err := h.tt.ChooseMenuItem(label); err != nil {
+			h.t.Fatal(err)
+		}
+		h.drain()
+		h.tt.Frame()
+		return
+	}
 	h.until(fmt.Sprintf("an element %q", label), func() bool { _, ok := h.tt.Find(label); return ok })
 	// Out of the panel (inset 8 from the window's bottom), or clipped to nothing by a scroller: scroll it to the middle.
 	if r, _ := h.tt.Find(label); r.Y < 0 || r.Y+r.H > 820-8 || r.H == 0 {
@@ -489,7 +497,7 @@ type fakeBodyView struct {
 	message      int64
 	closed       bool
 	translations map[string]string
-	glass        [2]int // the last BodyGlass
+	glass        bodyGlass // the last BodyGlass
 }
 
 // NewBodyView records "NewBodyView <message>" and makes a fake page;
@@ -527,11 +535,11 @@ func (p *fakePlatform) NewBodyView(message int64) (ui.NativeWebView, func(), err
 
 func (p *fakePlatform) AllowImages(message int64) { p.record("AllowImages", message) }
 
-func (p *fakePlatform) BodyGlass(view ui.NativeWebView, top, bottom int) {
+func (p *fakePlatform) BodyGlass(view ui.NativeWebView, top, bottom BodyGlassRect) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if v, ok := view.(*fakeBodyView); ok {
-		v.glass = [2]int{top, bottom}
+		v.glass = bodyGlass{top: top, bottom: bottom}
 	}
 }
 

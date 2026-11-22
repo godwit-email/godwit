@@ -85,29 +85,35 @@ func filePreview(ac core.RuleAction) string {
 	return filepath.Join(append(parts, name)...)
 }
 
-// fileReady reports whether the editor's file actions can be saved.
+// fileReady reports whether the editor's file actions can be saved: each
+// has an absolute folder (core takes no other), and each leader a naming.
 func fileReady(d *core.RuleDoc) bool {
-	return !slices.ContainsFunc(d.Actions, func(ac core.RuleAction) bool {
-		return fileAction(ac.Kind) && (ac.Dir == "" || namingError(ac.Naming) != "")
-	})
+	for i, ac := range d.Actions {
+		if fileAction(ac.Kind) && (!filepath.IsAbs(ac.Dir) || leader(d, i) == i && namingError(ac.Naming) != "") {
+			return false
+		}
+	}
+	return true
 }
 
-// fileDir is action i's folder, a button that picks another.
-func (v *rulesView) fileDir(c *ui.Context, d *core.RuleDoc, i int) {
-	t, th := theme.Of(c), c.Theme()
-	dir := d.Actions[i].Dir
-	b := kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { v.pickDir(d, i) }}).
-		Label(i18n.T("settings.rules.files.choose")).Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(1.5)).
-		Radius(t.Radius.Lg).AlignItems(ui.Center).Grow(1).Shrink(1).Basis(0).MinWidth(0)
-	b.Children(func() {
-		ui.Icon(c, icons.Get("folder")).Size(theme.Icon, theme.Icon).TextColor(t.Muted).Shrink(0)
-		if dir == "" {
-			kit.Text(c, i18n.T("settings.rules.files.choose"), t.Text.Xs).TextColor(t.Muted).SingleLine().Grow(1).Shrink(1).MinWidth(0)
-			return
+// syncFollowers gives every file action its leader's subfolder and naming,
+// as core requires of actions to one folder. Saving does it once: a folder
+// being typed may pass through another's on the way.
+func syncFollowers(d *core.RuleDoc) {
+	for i := range d.Actions {
+		if l := leader(d, i); l != i && fileAction(d.Actions[i].Kind) {
+			d.Actions[i].Subfolder, d.Actions[i].Naming = d.Actions[l].Subfolder, d.Actions[l].Naming
 		}
-		kit.Text(c, dir, t.Text.Xs).Font(theme.Mono).SingleLine().Grow(1).Shrink(1).MinWidth(0)
-		kit.Text(c, i18n.T("settings.rules.files.change"), t.Text.Xs).TextColor(t.Muted).Shrink(0)
-	})
+	}
+}
+
+// fileDir is action i's folder: an editable path input beside a button that
+// opens the directory picker.
+func (v *rulesView) fileDir(c *ui.Context, d *core.RuleDoc, i int) {
+	kit.Input(c, &d.Actions[i].Dir, kit.InputOpts{Placeholder: i18n.T("settings.rules.files.choose")}).
+		Label(i18n.T("settings.rules.folder")).Grow(1).Shrink(1).Basis(0).MinWidth(0)
+	kit.Button(c, i18n.T("settings.rules.files.change"), kit.ButtonOpts{Variant: kit.Outline, Flat: true}).
+		Label(i18n.T("settings.rules.files.choose")).Shrink(0).OnClick(func() { v.pickDir(d, i) })
 }
 
 // pickDir asks for action i's folder off the UI thread; a folder another
@@ -134,13 +140,16 @@ func (v *rulesView) fileOptions(c *ui.Context, d *core.RuleDoc, i int) {
 	t, th := theme.Of(c), c.Theme()
 	ac := &d.Actions[i]
 	pathRow := func() {
+		shown := *ac
+		if l := leader(d, i); l != i { // shown as it will save (syncFollowers), its own kept meanwhile
+			shown.Subfolder, shown.Naming = d.Actions[l].Subfolder, d.Actions[l].Naming
+		}
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(1.5)).TextColor(t.Muted).Children(func() {
 			ui.Icon(c, icons.Get("folder")).Size(theme.IconSm, theme.IconSm).Shrink(0)
-			kit.Text(c, filePreview(*ac), t.Text.Xs).Font(theme.Mono).SingleLine().Shrink(1)
+			kit.Text(c, filePreview(shown), t.Text.Xs).Font(theme.Mono).SingleLine().Shrink(1)
 		})
 	}
 	if l := leader(d, i); l != i {
-		ac.Subfolder, ac.Naming = d.Actions[l].Subfolder, d.Actions[l].Naming
 		pathRow()
 		return
 	}
@@ -162,7 +171,10 @@ func (v *rulesView) fileOptions(c *ui.Context, d *core.RuleDoc, i int) {
 	}
 	opts = append(opts, kit.Option[string]{Value: namingCustom, Label: i18n.T("settings.rules.files.custom")})
 	was := sel
-	ui.Row(c).Children(func() { settingSelect(c, i18n.T("settings.rules.files.naming"), &sel, opts) })
+	ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2.5)).Children(func() {
+		kit.Text(c, i18n.T("settings.rules.files.naming"), t.Text.Sm).Shrink(0)
+		settingSelect(c, i18n.T("settings.rules.files.naming"), &sel, opts)
+	})
 	if sel != was {
 		if v.custom[ac.Dir] = sel == namingCustom; sel != namingCustom {
 			ac.Naming = sel

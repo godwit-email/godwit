@@ -13,6 +13,7 @@ import (
 	"github.com/godwit-email/godwit/backend/jmap"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -26,14 +27,14 @@ type outboxEntry struct {
 // outboxAction is a button of an outbox item.
 type outboxAction struct {
 	key string // under outbox.
-	v   kit.Variant
+	o   kit.ButtonOpts
 	do  func()
 }
 
 // outboxView lists items under title, note ("" for none) above them: the
-// outbox's mail not yet sent and filed, with its state (mail that may or may
-// not have gone out, or failed, waits for the user's decision), or the
-// scheduled mail waiting for its time.
+// outbox's mail not yet sent and filed, or the scheduled mail waiting for its
+// time. Each is who it goes to, its subject and its state (mail that may or
+// may not have gone out, or failed, waits for the user's decision).
 func (p *mailPage) outboxView(c *ui.Context, title string, items []outboxEntry, note string) {
 	t := theme.Of(c)
 	th, small := c.Theme(), t.Text.Xs
@@ -46,31 +47,62 @@ func (p *mailPage) outboxView(c *ui.Context, title string, items []outboxEntry, 
 		if len(items) == 0 {
 			listEmpty(c, kit.EmptyOpts{Icon: "outbox", Title: i18n.T("mail.empty")})
 		}
-		ui.Column(c).Padding(0, th.Space(4)).Gap(th.Space(3)).Children(func() {
+		ui.Column(c).Padding(0, th.Space(2)).Children(func() {
 			for _, it := range items {
-				kit.Block(c, ui.Column(c.Key(it.ID)), kit.ToneOutline).Gap(th.Space(1)).Padding(th.Space(2.5)).Children(func() {
-					ui.Text(c, subjectOf(it.OutboxItem)).FontWeight(500).SingleLine()
-					kit.Text(c, it.Account, small).TextColor(t.Muted).SingleLine()
-					kit.Text(c, outboxStatus(it.OutboxItem, now), small).TextColor(t.Muted)
-					if it.State == "failed" {
-						why, server := failureText(it.OutboxItem)
-						kit.Text(c, why, small).TextColor(t.Danger)
-						if server != "" {
-							kit.Text(c, server, small).TextColor(t.Muted)
+				ui.Row(c.Key(it.ID)).AlignItems(ui.Start).Gap(th.Space(3)).Padding(th.Space(3), th.Space(2)).
+					BorderWidth(0, 0, theme.Hairline, 0).BorderColor(t.Border).Children(func() {
+					outboxTile(c, it.OutboxItem, now)
+					ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(0.5)).Children(func() {
+						ui.Text(c, cmp.Or(recipients(it.To), i18n.T("mail.no_recipient"))).FontWeight(500).SingleLine() // who it goes to leads, as the design's row
+						ui.Text(c, subjectOf(it.OutboxItem)).SingleLine()
+						status, color := outboxStatus(it.OutboxItem, now), t.Muted
+						var server string
+						switch {
+						case it.State == "failed":
+							status, server = failureText(it.OutboxItem)
+							color = t.Danger
+						case it.State == "send_uncertain" || it.State == "archive_uncertain":
+							color = t.WarningText
 						}
-					} else if it.LastError != "" {
-						kit.Text(c, it.LastError, small).TextColor(t.Danger)
-					}
-					if acts := p.outboxActions(it.OutboxItem, now); len(acts) > 0 {
-						ui.Row(c).Wrap().Gap(th.Space(1.5)).Margin(th.Space(1), 0, 0, 0).Children(func() {
-							for _, act := range acts {
-								kit.Button(c, i18n.T("outbox."+act.key), kit.ButtonOpts{Variant: act.v, Size: kit.SizeSm}).OnClick(act.do)
-							}
-						})
-					}
+						if it.State != "failed" && it.LastError != "" {
+							status += " · " + it.LastError
+						}
+						ui.RichText(c, ui.Span{Text: status, Color: color}, ui.Span{Text: " · " + it.Account, Color: t.Muted}).FontSize(small)
+						if server != "" {
+							kit.Text(c, server, small).Font(theme.Mono).FontWeight(500).TextColor(t.Muted)
+						}
+						if acts := p.outboxActions(it.OutboxItem, now); len(acts) > 0 {
+							ui.Row(c).Wrap().Gap(th.Space(2)).Margin(th.Space(1.5), 0, 0, 0).Children(func() {
+								for _, act := range acts {
+									o := act.o
+									o.Size = kit.SizeSm
+									kit.Button(c, i18n.T("outbox."+act.key), o).OnClick(act.do)
+								}
+							})
+						}
+					})
 				})
 			}
 		})
+	})
+}
+
+// outboxTile is the 28 tile leading an item, by its state: a failure in the
+// danger tint, mail that may have gone out in the warning one, and what waits
+// (an undo window, a retry, its time) in the neutral one.
+func outboxTile(c *ui.Context, it core.OutboxItem, now time.Time) {
+	t, th := theme.Of(c), c.Theme()
+	icon, fill, ink := "time", t.Hover, t.Muted
+	switch {
+	case it.State == "failed":
+		icon, fill, ink = "triangle-alert", t.DangerBg, t.DangerText
+	case it.State == "send_uncertain" || it.State == "archive_uncertain":
+		icon, fill, ink = "question", t.WarningBg, t.WarningText
+	case it.State == "queued" && it.NextAttempt.After(now):
+		icon = "refresh-cw"
+	}
+	kit.Tile(c, th.Space(7), th.Space(7), kit.ToneCard).Background(fill).Children(func() {
+		ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon).TextColor(ink)
 	})
 }
 
@@ -80,8 +112,13 @@ func (p *mailPage) outboxView(c *ui.Context, title string, items []outboxEntry, 
 // that may have gone out confirmed, sent again or discarded.
 func (p *mailPage) outboxActions(it core.OutboxItem, now time.Time) []outboxAction {
 	var acts []outboxAction
-	add := func(key string, v kit.Variant, do func()) { acts = append(acts, outboxAction{key, v, do}) }
+	add := func(key string, v kit.Variant, do func()) {
+		acts = append(acts, outboxAction{key, kit.ButtonOpts{Variant: v}, do})
+	}
 	resolve := func(action string, then func()) func() { return func() { p.resolve(it.ID, action, then) } }
+	discard := func() {
+		acts = append(acts, outboxAction{"discard", kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}, resolve("discard", nil)})
+	}
 	switch it.State {
 	case "queued":
 		if it.NextAttempt.After(now) {
@@ -98,13 +135,13 @@ func (p *mailPage) outboxActions(it core.OutboxItem, now time.Time) []outboxActi
 			add("edit", kit.Outline, resolve("edit", func() { p.a.plat.OpenCompose(it.DraftID) }))
 		}
 		add("resend", kit.Outline, resolve("resend", nil))
-		add("discard", kit.Destructive, resolve("discard", nil))
+		discard()
 	case "send_uncertain", "archive_uncertain":
 		add("confirm_sent", kit.Outline, resolve("confirm_sent", nil))
 		if it.State == "send_uncertain" { // archive_uncertain was accepted: sending again delivers it twice
 			add("resend", kit.Outline, resolve("resend", nil))
 		}
-		add("discard", kit.Destructive, resolve("discard", nil))
+		discard()
 	}
 	return acts
 }
@@ -235,10 +272,10 @@ func (a *App) offerUndo() {
 				continue
 			}
 			a.undoToasts[e.ID] = true
+			window := min(e.SendAfter.Sub(now), core.UndoSendWindow) // the window, should the clocks disagree
 			a.toasts = append(a.toasts, ui.Toast{ID: undoToastID(e.ID), Title: i18n.T("outbox.undo.sending"),
 				Description: subjectOf(e.OutboxItem) + " · " + e.Account, Action: i18n.T("outbox.undo"),
-				OnAction: func() { a.undoSend(e) },
-				Timeout:  min(e.SendAfter.Sub(now), core.UndoSendWindow)}) // the window, should the clocks disagree
+				OnAction: func() { a.undoSend(e) }, Timeout: window, Data: kit.ToastData{Deadline: now.Add(window)}})
 		}
 		for id, showing := range a.undoToasts {
 			if showing && !open[id] {

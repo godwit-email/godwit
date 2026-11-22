@@ -342,7 +342,7 @@
     }
   },
   "mail_draft_notice": "This draft is being edited in its compose window; this is what was last saved. Choose “Continue editing” to switch to that window.",
-  "mail_draft_saved": "Draft saved · {arg1}",
+  "mail_draft_saved": "Draft saved {arg1}",
   "mail_draft_in_outbox": "This message is in the outbox. Cancel sending to edit it.",
   "@mail_draft_saved": {
     "placeholders": {
@@ -361,7 +361,8 @@
   },
   "mail_draft_send_disabled": "Being edited in the compose window; send it there",
   "mail_draft_from_program": "Draft from a program",
-  "mail_draft_from_program_help": "A program (an agent, a script, a plugin or Wit) wrote or changed this draft. Check the recipients and the text before you send it.",
+  "mail_draft_from_program_help": "Written or changed by an AI tool, script, plugin or Wit; check the recipients and text before sending",
+  "mail_draft_from_program_detail": "A program (an agent, a script, a plugin or Wit) wrote or changed this draft. Check the recipients and the text before you send it.",
   "mail_draft_approve": "Approve and send",
   "mail_draft_too_long": "This draft is too long to show in full here. Open Continue editing to check all of it and send it from there.",
   "mail_empty": "No mail",
@@ -443,6 +444,7 @@
   "mail_older_loading": "Loading older mail…",
   "mail_outbox": "Outbox",
   "mail_purge_desc": "The selected mail will be removed from the server. This cannot be undone.",
+  "mail_purge_confirm": "Delete permanently",
   "mail_purge_title": "Delete permanently?",
   "mail_resize_list": "Resize the list",
   "mail_row_unread": "{arg1, number, ::group-off} unread",
@@ -918,6 +920,7 @@
   },
   "reader_ai_close_result": "Close result",
   "reader_ai_copied": "Copied",
+  "reader_ai_generating": "Writing",
   "reader_ai_more_skills": "More skills",
   "reader_ai_no_translation": "Already in {arg1}; no translation needed",
   "@reader_ai_no_translation": {
@@ -931,6 +934,7 @@
   "reader_ai_show_original": "Show original",
   "reader_ai_summarize": "Summary",
   "reader_ai_summary": "Summary",
+  "reader_ai_thinking": "Thinking",
   "reader_ai_todo": "Waiting on you",
   "reader_ai_translate": "Translate",
   "reader_ai_translated": "Translated into {arg1} · {arg2}",
@@ -1209,7 +1213,6 @@
   },
   "reader_unsubscribe_title": "Unsubscribe from this list?",
   "settings_about": "About",
-  "settings_about_build": "Version",
   "settings_about_updates_check": "Check for Updates",
   "settings_about_upgrade": "Update to {arg1}",
   "@settings_about_upgrade": {
@@ -1219,7 +1222,6 @@
       }
     }
   },
-  "settings_about_links": "Links",
   "settings_about_site": "Website",
   "settings_about_source": "Source code",
   "settings_about_star": "Star",
@@ -1253,14 +1255,14 @@
   "settings_account_clear_cache_title": "Clear the attachment cache?",
   "settings_account_client_secret_help": "Leave blank to keep the saved secret. If it has changed, paste the new one.",
   "settings_account_client_title": "Sign in again with your OAuth client",
-  "settings_account_default": "Default",
+  "settings_account_default": "Default sending account",
   "settings_account_detail_auth_rejected": "The server refused the sign-in",
   "settings_account_detail_client_rejected": "The provider refused the OAuth client",
   "settings_account_detail_credentials_missing": "No credentials in the keychain",
   "settings_account_detail_keychain_unavailable": "The keychain is unavailable",
   "settings_account_detail_token_revoked": "The sign-in was revoked",
   "settings_account_edit_servers": "Edit",
-  "settings_account_export": "Export accounts",
+  "settings_account_export": "Export and delete",
   "settings_account_export_button": "Export…",
   "settings_account_export_done": "Accounts exported",
   "settings_account_export_help": "Includes servers, sender names, signatures and sync ranges, without passwords, tokens or mail",
@@ -1322,7 +1324,7 @@
   "settings_account_purge_junk_help": "Junk older than this is deleted for good",
   "settings_account_purge_trash": "Purge deleted mail",
   "settings_account_purge_trash_help": "Deleted mail older than this is deleted for good",
-  "settings_account_reauth": "The sign-in has expired and syncing stopped {arg1}. Mail on this computer can still be read and searched; mail you write stays in the outbox and goes out once you sign in again.",
+  "settings_account_reauth": "Syncing stopped {arg1}. Mail on this computer can still be read and searched; mail you write stays in the outbox and goes out once you sign in again.",
   "@settings_account_reauth": {
     "placeholders": {
       "arg1": {
@@ -1332,7 +1334,8 @@
   },
   "settings_account_reauth_browser": "Sign in again in the browser",
   "settings_account_reauth_done": "Signed in again",
-  "settings_account_reauth_unknown": "The sign-in has expired and syncing has stopped. Mail on this computer can still be read and searched; mail you write stays in the outbox and goes out once you sign in again.",
+  "settings_account_reauth_unknown": "Syncing has stopped. Mail on this computer can still be read and searched; mail you write stays in the outbox and goes out once you sign in again.",
+  "settings_account_reauth_title": "Sign-in expired",
   "settings_account_reauth_waiting": "Waiting for the browser…",
   "settings_account_receive_only": "Receive only",
   "settings_account_receive_only_help": "Sending didn’t pass: this account can’t send. Fix the servers or sign in again, or check sending again once it works.",
@@ -1361,6 +1364,10 @@
   },
   "settings_account_servers": "Server settings",
   "settings_account_servers_help": "Change the addresses, ports and encryption by hand",
+  "settings_account_server": "Server",
+  "settings_account_servers_host": "Server",
+  "settings_account_servers_port": "Port",
+  "settings_account_servers_security": "Encryption",
   "settings_account_signature": "Signature",
   "settings_account_signature_default": "Default signature",
   "settings_account_signature_default_help": "Added to new mail, replies and forwards",
@@ -1417,7 +1424,6 @@
   "settings_add_account": "Add account",
   "settings_ai": "AI features",
   "settings_ai_tab_apps": "AI apps",
-  "settings_ai_tab_features": "Features",
   "settings_ai_tab_models": "Models",
   "settings_masking": "Privacy masking",
   "settings_masking_on": "Mask before sending to the cloud",
@@ -1547,6 +1553,8 @@
   "settings_masking_allow_too_many": "At most {arg1} values on the allowlist",
   "settings_masking_preview": "Preview",
   "settings_masking_preview_help": "Paste some text to see how it would be sent. Nothing here is saved.",
+  "settings_masking_preview_source": "Original",
+  "settings_masking_preview_sent": "As sent",
   "settings_app": "App",
   "settings_appearance": "Appearance",
   "settings_body_font_size": "Mail body font size",
@@ -1561,7 +1569,7 @@
   "settings_ext_builtin": "Built-in",
   "settings_ext_config": "Settings",
   "settings_ext_config_required": "Required",
-  "settings_ext_config_sub": "· form generated from the plugin''s config declaration",
+  "settings_ext_config_sub": "Form generated from the plugin''s config declaration",
   "settings_ext_dialog_allow_install": "Allow and install",
   "settings_ext_dialog_flow": "Where data goes",
   "settings_ext_dialog_foot_native": "A native plugin is someone else''s code, and Godwit can''t restrict it.",
@@ -1776,31 +1784,6 @@
   "settings_ext_status_error": "Error",
   "settings_ext_status_needs_grant": "Needs approval",
   "settings_ext_status_pending": "Pending approval",
-  "settings_ext_sub": "Skills are just prompts; script plugins run in a sandbox with only the permissions you approve, native plugins have all of Godwit''s. MCP servers are under AI.",
-  "settings_ext_tab_mcp": "MCP · {arg1, number, ::group-off}",
-  "@settings_ext_tab_mcp": {
-    "placeholders": {
-      "arg1": {
-        "type": "int"
-      }
-    }
-  },
-  "settings_ext_tab_plugins": "Plugins · {arg1, number, ::group-off}",
-  "@settings_ext_tab_plugins": {
-    "placeholders": {
-      "arg1": {
-        "type": "int"
-      }
-    }
-  },
-  "settings_ext_tab_skills": "Skills · {arg1, number, ::group-off}",
-  "@settings_ext_tab_skills": {
-    "placeholders": {
-      "arg1": {
-        "type": "int"
-      }
-    }
-  },
   "settings_ext_login": "Sign in",
   "settings_ext_login_cancel": "Cancel sign-in",
   "settings_ext_login_title": "Sign in to {arg1}?",
@@ -1987,6 +1970,8 @@
   "settings_local_api_client_on_session": "Connected {arg1}. A new session can use Godwit.",
   "settings_local_api_client_opened": "Opened {arg1}. Click Install there to finish.",
   "settings_local_api_client_other": "Connected to another Godwit; click to connect this one",
+  "settings_local_api_client_connected": "Connected",
+  "settings_local_api_client_not_connected": "Not connected",
   "settings_local_api_client_remove": "Remove Godwit in {arg1}'s Settings › Extensions.",
   "settings_local_api_connect": "Apps",
   "settings_local_api_connect_help": "The apps you pick can read your mail and draft replies. For any other app, copy the config and add it there.",
@@ -2062,8 +2047,10 @@
   },
   "settings_models_del_title": "Confirm deletion",
   "settings_models_dialog_add": "Add a model service",
-  "settings_models_dialog_desc": "Pick a provider, enter its key, then decide whether it generates, judges, or both. A service can offer several formats; pick one for each capability.",
-  "settings_models_dialog_desc_sub": "Sign in with a ChatGPT or SuperGrok plan you already have; no API key needed. The generating model judges too.",
+  "settings_models_dialog_desc": "Connect a model service, then decide whether it generates, judges, or both.",
+  "settings_models_access": "Access",
+  "settings_models_access_api": "Connect with the provider's API key. A service can offer several formats; pick one for each capability.",
+  "settings_models_access_sub": "Sign in with a ChatGPT or SuperGrok plan you already have; no API key needed. The generating model judges too.",
   "settings_models_edit": "Edit {arg1}",
   "@settings_models_edit": {
     "placeholders": {
@@ -2129,7 +2116,6 @@
   "settings_models_files_redownload": "Download again",
   "settings_models_files_remove": "Remove files",
   "settings_models_files_verifying": "{arg1} · {arg2} · Checking files",
-  "settings_models_foot": "Capabilities marked ✓ are the ones used by default.",
   "settings_models_gen_formats": "Generate format",
   "settings_models_gen_switch": "Turn on generate",
   "settings_models_gen_unsupported": "{arg1} has no generate API.",
@@ -2220,7 +2206,6 @@
   "settings_models_status_bad": "Key invalid",
   "settings_models_status_ok": "OK",
   "settings_models_status_untested": "Untested",
-  "settings_models_sub": "Model services, the AI features that use them, and MCP.",
   "settings_models_test": "Test connection",
   "settings_models_test_busy": "Testing…",
   "settings_models_test_ok": "Connected · {arg1, number, ::group-off} ms",
@@ -2282,7 +2267,7 @@
   "settings_notify_preview": "Show a preview in notifications",
   "settings_notify_preview_help": "Off, notifications say only that new mail arrived",
   "settings_privacy": "Privacy & security",
-  "settings_privacy_sub": "Your mail and credentials stay on this computer.",
+  "settings_privacy_sub": "Choose what happens to sensitive details before they go to a cloud model.",
   "settings_px": "{arg1, number, ::group-off} px",
   "@settings_px": {
     "placeholders": {
@@ -2314,6 +2299,7 @@
   "settings_remote_images_mode": "Load remote images",
   "settings_remote_images_mode_help": "Images in Junk never load by themselves",
   "settings_remote_images_sub": "Godwit downloads a message’s images for you, without cookies or a referrer, so senders cannot tell when you read it when the images were fetched as the mail arrived (they still see this computer’s IP address when an image is fetched)",
+  "settings_remote_images_page_sub": "When remote images in mail load, and the image cache.",
   "settings_remote_images_trusted": "Trusted senders only",
   "settings_reply_language": "Reply language",
   "settings_reply_language_help": "Used when Wit and quick replies draft mail. Defaults to the incoming mail''s language; new mail follows the recipient''s earlier mail",
@@ -2400,7 +2386,7 @@
   "settings_summary_help": "Summarize mail as you open it; needs a model service",
   "settings_theme": "Theme",
   "settings_theme_dark": "Dark",
-  "settings_theme_help": "Follows macOS appearance when set to System",
+  "settings_theme_help": "Follows system appearance when set to System",
   "settings_theme_light": "Light",
   "settings_theme_system": "System",
   "settings_thread_view": "Conversation view",
@@ -2841,6 +2827,25 @@
     }
   },
   "shell_sync_title": "Sync status",
+  "shell_sync_multi_error": "{arg1} accounts need attention",
+  "@shell_sync_multi_error": {
+    "placeholders": {
+      "arg1": {
+        "type": "int"
+      }
+    }
+  },
+  "shell_sync_multi_accounts": "{arg1} · {arg2} accounts",
+  "@shell_sync_multi_accounts": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "int"
+      }
+    }
+  },
   "shell_sync_all": "Sync all now",
   "shell_sync_retry": "Retry now",
   "shell_sync_servers": "Check server settings",
@@ -3084,7 +3089,8 @@
   "reader_sender_blocked": "Sender blocked",
   "reader_sender_unblocked": "Sender unblocked",
   "settings_blocked": "Blocked Senders",
-  "settings_blocked_sub": "Incoming messages from blocked senders are automatically moved to Junk.",
+  "settings_blocked_sub": "Senders you have blocked.",
+  "settings_blocked_foot": "Incoming messages from blocked senders are automatically moved to Junk.",
   "settings_blocked_none": "No blocked senders.",
   "settings_blocked_remove": "Unblock",
   "settings_blocked_remove_label": "Unblock {arg1}",
@@ -3302,7 +3308,8 @@
   "contacts_stat_received": "Received",
   "contacts_stat_sent": "Sent",
   "contacts_stat_last": "Last Exchanged",
-  "contacts_mail": "Mail Exchanged · {arg1, number, ::group-off}",
+  "contacts_exchanged": "{arg1, number, ::group-off} exchanged",
+  "contacts_group_none": "No mail yet",
   "contacts_replied": "Replied",
   "reader_view_contact": "View Contact",
   "mail_menu_labels": "Labels",
@@ -3332,6 +3339,7 @@
   "settings_rules_group_files": "Save to This Computer",
   "settings_rules_group_wit": "Wit",
   "settings_rules_hits_count": "Last 7 days: {arg1, number, ::group-off}",
+  "settings_rules_hits_note": "Local actions can be undone; forwards and exports have already happened and can only be viewed.",
   "@settings_rules_hits_count": {
     "placeholders": {
       "arg1": {
@@ -3559,7 +3567,7 @@
   "settings_rules_condition_remove": "Remove this condition",
   "settings_rules_condition_add": "Add condition",
   "settings_rules_add": "Add",
-  "settings_rules_cond_group_add": "Add a group of conditions",
+  "settings_rules_cond_group_add": "Add condition group",
   "settings_rules_cond_group_remove": "Remove this group",
   "settings_rules_cond_group": "Group of conditions",
   "settings_rules_logic_all": "AND",
@@ -3623,14 +3631,6 @@
   "settings_rules_action_remove": "Remove this action",
   "settings_rules_hits_show": "Show recent hits",
   "settings_rules_hits_hide": "Hide recent hits",
-  "settings_rules_hits_head": "Last 7 days: {arg1, number, ::group-off}. Local actions can be undone; forwards and exports have already happened and can only be viewed.",
-  "@settings_rules_hits_head": {
-    "placeholders": {
-      "arg1": {
-        "type": "int"
-      }
-    }
-  },
   "settings_rules_hits_none": "No mail matched in the last 7 days",
   "settings_rules_hits_undo": "Undo",
   "settings_rules_hits_undone": "Undone",
@@ -3703,7 +3703,7 @@
       }
     }
   },
-  "settings_rules_confirm_to": "Forwards to",
+  "settings_rules_confirm_to": "Forwards to {arg1}",
   "settings_rules_confirm_outbox": "Sent from the account that received it; each goes to the Outbox first and can be undone for 10 seconds",
   "settings_rules_confirm_new_only": "Only mail that arrives after saving is forwarded; existing mail is not",
   "settings_rules_confirm_again": "If you change the recipient later, you’ll be asked again",
@@ -3847,7 +3847,7 @@
   "view_save_search": "Save as view",
   "view_added": "Added to “{arg1}”",
   "view_removed": "Removed from “{arg1}”",
-  "view_archived": "Archived",
+  "view_archived_n": "{arg1, plural, one {Archived {arg1, number, ::group-off} email} other {Archived {arg1, number, ::group-off} emails}}",
   "view_follow_up": "Write a follow-up",
   "view_band_new_reply": "New reply, back in your inbox.",
   "view_band_unreplied": "Sent directly to you, not replied yet.",
@@ -3880,12 +3880,12 @@
   "view_editor_conditions": "Conditions",
   "view_editor_conditions_empty": "With no conditions, it shows all mail.",
   "view_editor_conditions_note": "Includes past mail. Matching conversations stay after you reply or archive.",
-  "view_editor_groups": "Groups",
+  "view_editor_groups": "Conversation groups",
   "view_editor_groups_none": "With no groups, conversations show as a flat list.",
   "view_editor_groups_first": "A conversation goes in the first group it matches.",
   "view_editor_groups_other": "Conversations in no group show under Other.",
   "view_editor_groups_days": "Reply status only reads the last 30 days of mail.",
-  "view_editor_group_add": "Add group",
+  "view_editor_group_add": "Add conversation group",
   "view_editor_group_name": "Group name",
   "view_editor_group_up": "Move group up",
   "view_editor_group_down": "Move group down",
@@ -3933,6 +3933,7 @@
   "mail_archive_import_files": "Import .eml files…",
   "mail_archive_import_folder": "Import folder…",
   "mail_archive_importing": "Importing {arg1, number, ::group-off} of {arg2, number, ::group-off}",
+  "mail_archive_import_cancel": "Cancel import",
   "mail_archive_import_done": "{arg1, plural, one {Imported {arg1, number, ::group-off} message} other {Imported {arg1, number, ::group-off} messages}}",
   "mail_archive_import_canceled": "Import canceled after {arg1, number, ::group-off} imported",
   "mail_archive_import_duplicates": "{arg1, number, ::group-off} already in the archive, skipped",
@@ -4146,5 +4147,21 @@
   "error_mcp_send_no_ui": "Godwit cannot ask you to confirm right now: no Godwit window is open and it cannot show a notification.",
   "settings_account_import_ai_instructions": "AI instructions",
   "settings_account_import_signature": "Signature: {arg1}",
-  "settings_account_import_username": "Signs in as {arg1}"
+  "settings_account_import_username": "Signs in as {arg1}",
+  "settings_group_ai": "Intelligence & extensions",
+  "settings_mcp": "MCP",
+  "settings_plugins": "Plugins",
+  "settings_models_desc": "Model services, and which model each kind of task uses.",
+  "settings_ai_sub": "The features that use a model, and the languages for reading and replying.",
+  "settings_skills_sub": "Skills are just prompts: use them in the reader and in Wit.",
+  "settings_plugins_sub": "Script plugins run in a sandbox with only the permissions you approve; native plugins have all the permissions of Godwit.",
+  "settings_mcp_sub": "The MCP servers you connect, and the tools they give Wit.",
+  "settings_clients_sub": "Let local AI apps like Claude and Codex, and your scripts, use Godwit through the Local API or MCP.",
+  "settings_security_sub": "Spot phishing and spoofed senders.",
+  "mail_other_folders": "Other folders",
+  "reader_thread_earlier": "{arg1, plural, one {{arg1, number, ::group-off} earlier email} other {{arg1, number, ::group-off} earlier emails}}",
+  "reader_thread_expand_action": "Expand",
+  "settings_rules_match_all": "Match all conditions",
+  "settings_rules_match_any": "Match any condition",
+  "settings_rules_edit": "Edit"
 }

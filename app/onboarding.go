@@ -695,22 +695,24 @@ func (o *onboarding) finish(again bool) {
 func (o *onboarding) Content(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
 	ui.Row(c).Grow(1).AlignItems(ui.Stretch).Gap(th.Space(2)).Margin(0, th.Space(2), th.Space(2), th.Space(2)).Children(func() {
-		ui.Column(c).Width(theme.AsideWidth).Shrink(0).Padding(th.Space(12), th.Space(11)).Gap(th.Space(7)).Children(func() {
+		ui.Column(c).Width(theme.AsideWidth).Shrink(0).Padding(th.Space(12), th.Space(10)).Gap(th.Space(7)).Children(func() {
 			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				ui.Icon(c, logo).Size(theme.BrandLogo, theme.BrandLogo)
+				ui.Box(c).Size(th.Space(11), th.Space(6.5)).Shrink(0).Center().Children(func() { // the mark's box is square: its bird is the width of this one
+					ui.Icon(c, logo).Size(th.Space(12.5), th.Space(12.5)).Shrink(0)
+				})
 				kit.Text(c, i18n.T("onboarding.brand"), t.Text.Xl).FontWeight(600)
 			})
 			ui.Column(c).Gap(th.Space(2.5)).Children(func() {
 				kit.Text(c, i18n.T("onboarding.headline"), t.Text.X3l).FontWeight(600)
-				ui.Text(c, i18n.T("onboarding.lede")).TextColor(t.Muted).LineHeight(theme.LineLede)
+				lineText(c, i18n.T("onboarding.lede"), t.Text.Sm).TextColor(t.Muted)
 			})
-			ui.Column(c).Gap(th.Space(4.5)).Children(func() {
+			ui.Column(c).Gap(th.Space(4)).Children(func() {
 				for _, p := range []struct{ icon, key string }{{"lock", "keychain"}, {"monitor", "local"}, {"sparkles", "ai"}} {
 					ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Start).Children(func() {
 						ui.Icon(c, icons.Get(p.icon)).Size(theme.IconMd, theme.IconMd).Margin(th.Space(0.5), 0, 0, 0).TextColor(t.Subdued)
 						ui.Column(c).Gap(th.Space(0.5)).Shrink(1).Children(func() {
 							lineText(c, i18n.T("onboarding.promise."+p.key), t.Text.Sm).FontWeight(500)
-							kit.Text(c, i18n.T("onboarding.promise."+p.key+".sub"), t.Text.Xs).TextColor(t.Muted).LineHeight(theme.LineProse)
+							kit.Text(c, i18n.T("onboarding.promise."+p.key+".sub"), t.Text.Xs).TextColor(t.Muted)
 						})
 					})
 				}
@@ -721,7 +723,7 @@ func (o *onboarding) Content(c *ui.Context) {
 		kit.Panel(c, panelRadius(c)).Grow(1).Shrink(1).Children(func() { // Windows rounds 8, as the main window
 			ui.Scroll(c).Grow(1).Children(func() {
 				ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() {
-					ui.Column(c).FillWidth().MaxWidth(theme.FormMaxWidth).Padding(th.Space(14), th.Space(8)).Gap(th.Space(5.5)).Children(func() { o.body(c) })
+					ui.Column(c).FillWidth().MaxWidth(theme.FormMaxWidth).Padding(th.Space(12), th.Space(8)).Gap(th.Space(5)).Children(func() { o.body(c) })
 				})
 			})
 		})
@@ -730,29 +732,53 @@ func (o *onboarding) Content(c *ui.Context) {
 
 // sheetView is the add-account dialog; closing it cancels the sign-in.
 func (o *onboarding) sheetView(c *ui.Context) {
-	opts := kit.DialogOpts{Close: i18n.T("common.close"), Top: true} // each step is its own height
-	if o.step == stepPick {                                          // the dialog's header says what the pick step's heading would
+	opts := kit.DialogOpts{Close: i18n.T("common.close")}
+	switch {
+	case o.step == stepPick: // the dialog's header says what the pick step's heading would
 		opts.Desc = i18n.T("onboarding.pick.sub")
+	case o.step == stepPassword && o.hintInDesc():
+		opts.Desc = strings.TrimSpace(o.email) + " · " + o.hintTitle()
 	}
 	kit.Dialog(c, &o.open, i18n.T("onboarding.sheet.title"), opts, func() {
-		ui.Column(c).Gap(c.Theme().Space(5.5)).Children(func() { o.body(c) })
+		ui.Column(c).Gap(c.Theme().Space(4)).Children(func() { o.body(c) })
 	}, nil)
 	if !o.open {
 		o.a.closeAddAccount()
 	}
 }
 
+// hintTitle is the sign-in hint's headline for the provider, "" when it has none.
+func (o *onboarding) hintTitle() string {
+	if hint := tr("onboarding.hint." + o.prov.ID); hint != "" {
+		return hint
+	}
+	if login := loginOf(o.prov); tr("onboarding.hint."+login) != "" {
+		return i18n.Tf("onboarding.hint."+login, o.provName())
+	}
+	return ""
+}
+
+// hintInDesc: the sheet's header carries the address and the hint's headline,
+// so the provider row is left out.
+func (o *onboarding) hintInDesc() bool {
+	return o.sheet && !o.askEmail && !o.ownClient() && strings.TrimSpace(o.email) != "" && o.hintTitle() != ""
+}
+
 func (o *onboarding) body(c *ui.Context) {
 	th := c.Theme()
+	gap := th.Space(5) // the window's; the sheet's body is one step tighter
+	if o.sheet {
+		gap = th.Space(4)
+	}
 	switch o.step {
 	case stepPick:
 		o.pickView(c)
 	case stepPassword:
-		ui.Column(c).Gap(th.Space(5)).Children(func() { o.passwordView(c) })
+		ui.Column(c).Gap(gap).Children(func() { o.passwordView(c) })
 	case stepOAuth:
-		ui.Column(c).Gap(th.Space(5)).Children(func() { o.oauthView(c) })
+		ui.Column(c).Gap(gap).Children(func() { o.oauthView(c) })
 	case stepChecking:
-		ui.Column(c).Gap(th.Space(5)).Children(func() { o.checkView(c) })
+		ui.Column(c).Gap(gap).Children(func() { o.checkView(c) })
 	case stepDone:
 		o.doneView(c)
 	}
@@ -791,7 +817,7 @@ func mark(c *ui.Context, p auth.Provider, size float32) {
 		fs = t.Text.Sm
 	}
 	ui.Box(c).Size(size, size).Center().Children(func() {
-		kit.Text(c, text, fs).FontWeight(600).LineHeight(theme.LineTight).TextColor(t.Subdued)
+		kit.Text(c, text, fs).FontWeight(500).LineHeight(theme.LineTight).TextColor(t.Subdued)
 	})
 }
 
@@ -846,11 +872,29 @@ func (o *onboarding) pickView(c *ui.Context) {
 		heading(c, i18n.T("onboarding.pick.title"), i18n.T("onboarding.pick.sub"))
 	}
 	ui.Column(c).Gap(th.Space(1.5)).Children(func() {
-		box := kit.InputGroup(c, kit.InputOpts{Invalid: o.emailErr != "", Size: kit.SizeLg}).Gap(th.Space(2)).PaddingX(th.Space(3))
-		box.Children(func() {
-			in := ui.Autocomplete(c, &o.email, o.emailSuggestions()).Placeholder(i18n.T("onboarding.email.placeholder")).
-				Padding(0).Border(0, t.Input).Background(t.Background).FocusRing(false).
-				Label(i18n.T("onboarding.email")).Grow(1).MinWidth(0).AlignSelf(ui.Stretch)
+		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Start).Children(func() {
+			var box ui.Element
+			var detected func()
+			var leading func()
+			if o.sheet { // the sheet names its field inside it
+				leading = func() { // a click on the name focuses the field
+					kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { o.focusEmail = true }}).Children(func() {
+						kit.Text(c, i18n.T("onboarding.email"), t.Text.Sm).TextColor(t.Muted)
+					})
+				}
+			}
+			if o.detectedFor == o.email && o.email != "" && o.detected.ID != "other" {
+				detected = func() {
+					kit.Badge(c, i18n.Tf("onboarding.detected", providerName(o.detected))).Margin(0, th.Space(2), 0, 0)
+				}
+			}
+			in := kit.Input(c, &o.email, kit.InputOpts{Placeholder: i18n.T("onboarding.email.placeholder"), Size: kit.SizeLg, Invalid: o.emailErr != "",
+				Autocomplete: true, Suggest: o.emailSuggestions(), Leading: leading, Trailing: detected, Box: &box}).Label(i18n.T("onboarding.email"))
+			box.Grow(1).MinWidth(0)
+			if o.focusEmail {
+				in.Focus()
+				o.focusEmail = false
+			}
 			if in.Changed() {
 				o.emailErr = ""
 				o.scheduleDetect()
@@ -858,72 +902,94 @@ func (o *onboarding) pickView(c *ui.Context) {
 			if in.Submitted() {
 				o.next()
 			}
-			if o.detectedFor == o.email && o.email != "" && o.detected.ID != "other" {
-				kit.Badge(c, i18n.Tf("onboarding.detected", providerName(o.detected)))
+			if !o.sheet {
+				kit.Button(c, i18n.T("common.continue"), kit.ButtonOpts{Size: kit.SizeLg, Disabled: strings.TrimSpace(o.email) == ""}).Shrink(0).OnClick(o.next)
 			}
 		})
 		if o.emailErr != "" {
 			kit.Text(c, o.emailErr, t.Text.Xs).TextColor(t.Danger)
 		}
 	})
-	primary(c, i18n.T("common.continue"), strings.TrimSpace(o.email) == "").OnClick(o.next)
-	ui.Row(c).Gap(th.Space(3)).TextColor(t.Muted).Children(func() {
-		kit.Separator(c, false).Grow(1)
-		lineText(c, i18n.T("onboarding.or_pick"), t.Text.Xs)
-		kit.Separator(c, false).Grow(1)
-	})
+	sp := o.a.pages[PageSettings].(*settingsPage)
+	if o.sheet { // the sheet: a full-width continue, then the rule the providers hang under
+		primary(c, i18n.T("common.continue"), strings.TrimSpace(o.email) == "").OnClick(o.next)
+		ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
+			kit.Separator(c, false).Grow(1)
+			lineText(c, i18n.T("onboarding.or_pick"), t.Text.Xs).TextColor(t.Muted)
+			kit.Separator(c, false).Grow(1)
+		})
+	}
 	ui.Column(c).Gap(th.Space(2)).Children(func() {
-		var ps []auth.Provider
-		for _, p := range o.providers {
-			if listed(p) {
-				ps = append(ps, p)
-			}
+		if !o.sheet { // the window's providers hang under their title and the import button
+			ui.Row(c).AlignItems(ui.Center).Children(func() {
+				lineText(c, i18n.T("onboarding.or_pick"), t.Text.Xs).FontWeight(500).Grow(1)
+				kit.Button(c, i18n.T("settings.import_accounts"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Disabled: sp.importing}).OnClick(sp.importAccounts)
+			})
 		}
-		for i := 0; i < len(ps); i += 2 {
+		type tile struct {
+			name, how string
+			mark      func(size float32)
+			click     func()
+		}
+		var tiles []tile
+		for _, p := range o.providers {
+			if !listed(p) {
+				continue
+			}
+			how := i18n.T("onboarding.login." + loginOf(p))
+			if p.ID == "other" {
+				how = i18n.T("onboarding.login.manual")
+			}
+			tiles = append(tiles, tile{tileName(p), how, func(size float32) { mark(c, p, size) }, func() { o.choose(p) }})
+		}
+		if o.sheet { // an address book with no mail account: Nextcloud, Radicale and the like
+			tiles = append(tiles, tile{i18n.T("onboarding.contacts_only"), i18n.T("onboarding.contacts_only.sub"),
+				func(size float32) { presetMark(c, core.PresetCustom, size) }, func() { o.a.openAddressBook(core.PresetCustom, "", "") }})
+		}
+		for i := 0; i < len(tiles); i += 2 {
 			ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Stretch).Children(func() {
-				for _, p := range ps[i:min(i+2, len(ps))] {
-					how := i18n.T("onboarding.login." + loginOf(p))
-					if p.ID == "other" {
-						how = i18n.T("onboarding.login.manual")
+				for _, tl := range tiles[i:min(i+2, len(tiles))] {
+					card := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: tl.click}).Label(tl.name).Grow(1).Basis(0).Gap(th.Space(2.5))
+					markSize := float32(theme.MarkMd)
+					if o.sheet { // the sheet's tiles are a fixed 48; the window's grow round a larger mark
+						card.Height(th.Space(12)).PaddingX(th.Space(3))
+					} else {
+						card.Padding(th.Space(2))
+						markSize = th.Space(8)
 					}
-					kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { o.choose(p) }}).Label(tileName(p)).
-						Grow(1).Basis(0).Height(th.Space(12)).PaddingX(th.Space(3)).Gap(th.Space(2.5)).Children(func() {
-						mark(c, p, theme.MarkMd)
+					kit.ChoiceCard(c, card, kit.ChoiceCardOpts{}, func() {
+						tl.mark(markSize)
 						ui.Column(c).Shrink(1).Children(func() {
-							lineText(c, tileName(p), t.Text.Sm).SingleLine()
-							lineText(c, how, t.Text.Xs).TextColor(t.Muted).SingleLine()
+							lineText(c, tl.name, t.Text.Sm).SingleLine()
+							lineText(c, tl.how, t.Text.Xs).TextColor(t.Muted).SingleLine()
 						})
 					})
 				}
 			})
 		}
-		if o.sheet { // an address book with no mail account: Nextcloud, Radicale and the like
-			name := i18n.T("onboarding.contacts_only")
-			kit.Pressable(c, kit.PressableOpts{Bordered: true, OnClick: func() { o.a.openAddressBook(core.PresetCustom, "", "") }}).Label(name).
-				Height(th.Space(12)).PaddingX(th.Space(3)).Gap(th.Space(2.5)).Children(func() {
-				presetMark(c, core.PresetCustom, theme.MarkMd)
-				ui.Column(c).Shrink(1).Children(func() {
-					lineText(c, name, t.Text.Sm).SingleLine()
-					lineText(c, i18n.T("onboarding.contacts_only.sub"), t.Text.Xs).TextColor(t.Muted).SingleLine()
-				})
-			})
-		}
 	})
-	sp := o.a.pages[PageSettings].(*settingsPage)
-	kit.Button(c, i18n.T("settings.import_accounts"), kit.ButtonOpts{Variant: kit.Link, Disabled: sp.importing}).
-		AlignSelf(ui.Center).OnClick(sp.importAccounts)
+	if o.sheet {
+		ui.Row(c).FillWidth().Justify(ui.Center).Children(func() {
+			kit.Button(c, i18n.T("settings.import_accounts"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeSm, Disabled: sp.importing}).OnClick(sp.importAccounts)
+		})
+	}
 }
 
 func (o *onboarding) backLink(c *ui.Context) {
-	kit.Button(c, i18n.T("onboarding.change"), kit.ButtonOpts{Variant: kit.Link}).AlignSelf(ui.Start).OnClick(o.toPick)
+	// The arrow is an icon; the accessible name keeps the catalog's "← …".
+	kit.Button(c, strings.TrimPrefix(i18n.T("onboarding.change"), "← "), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeSm, Icon: "arrow-left"}).
+		Label(i18n.T("onboarding.change")).AlignSelf(ui.Start).OnClick(o.toPick)
 }
 
-func (o *onboarding) providerHeader(c *ui.Context, sub string) {
+func (o *onboarding) providerHeader(c *ui.Context, sub string) { o.titledHeader(c, o.provName(), sub) }
+
+// titledHeader is the provider's mark beside title and the line under it.
+func (o *onboarding) titledHeader(c *ui.Context, title, sub string) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Row(c).Gap(th.Space(3)).Children(func() {
+	ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
 		mark(c, o.prov, theme.MarkLg)
 		ui.Column(c).Children(func() {
-			lineText(c, o.provName(), t.Text.Xl).FontWeight(600)
+			lineText(c, title, t.Text.Xl).FontWeight(600)
 			if sub != "" {
 				lineText(c, sub, t.Text.Sm).TextColor(t.Muted)
 			}
@@ -940,18 +1006,13 @@ func tr(key string) string {
 }
 
 func secretInput(c *ui.Context, secret *string, shown *bool) ui.Element {
-	th := c.Theme()
-	var in ui.Element
-	row := kit.InputGroup(c, kit.InputOpts{Size: kit.SizeLg}).Padding(0, th.Space(0.5), 0, 0)
-	row.Children(func() {
-		in = kit.Input(c, secret, kit.InputOpts{Password: !*shown, Bare: true}).AlignSelf(ui.Stretch).Grow(1).Shrink(1).PaddingX(th.Space(2.5))
-		icon, tip := "eye", i18n.T("onboarding.secret.show")
-		if *shown {
-			icon, tip = "eye-off", i18n.T("onboarding.secret.hide")
-		}
+	icon, tip := "eye", i18n.T("onboarding.secret.show")
+	if *shown {
+		icon, tip = "eye-off", i18n.T("onboarding.secret.hide")
+	}
+	return kit.Input(c, secret, kit.InputOpts{Size: kit.SizeLg, Password: !*shown, Trailing: func() {
 		kit.IconButton(c, icon, tip, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(func() { *shown = !*shown })
-	})
-	return in
+	}})
 }
 
 func secretWhitespaceHint(c *ui.Context, secret *string) {
@@ -964,8 +1025,8 @@ func secretWhitespaceHint(c *ui.Context, secret *string) {
 	if cleaned == *secret {
 		return
 	}
-	kit.Alert(c, kit.Warning, i18n.T("onboarding.secret.whitespace"), func() {
-		kit.AlertAction(c, kit.Warning, i18n.T("onboarding.secret.clean"), func() { *secret = cleaned })
+	kit.Alert(c, kit.ToneWarning, i18n.T("onboarding.secret.whitespace"), func() {
+		kit.Button(c, i18n.T("onboarding.secret.clean"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneWarning}).Shrink(0).OnClick(func() { *secret = cleaned })
 	})
 }
 
@@ -975,7 +1036,9 @@ func (o *onboarding) passwordView(c *ui.Context) {
 	if o.askEmail {
 		sub = ""
 	}
-	o.providerHeader(c, sub)
+	if !o.hintInDesc() {
+		o.providerHeader(c, sub)
+	}
 	if o.askEmail {
 		ui.Field(c, i18n.T("onboarding.email"), func() {
 			placeholder := i18n.T("onboarding.email.placeholder")
@@ -997,7 +1060,7 @@ func (o *onboarding) passwordView(c *ui.Context) {
 	}
 	if ownClientOffered(o.prov) {
 		tab := o.tab
-		kit.TabsFill(c, &o.tab, o.secretName(), i18n.T("onboarding.tab.browser"))
+		kit.Tabs(c, &o.tab, kit.TabsOpts{Fill: true}, kit.TabLabels(o.secretName(), i18n.T("onboarding.tab.browser")))
 		if o.tab != tab {
 			o.showSecret = false
 		}
@@ -1007,10 +1070,7 @@ func (o *onboarding) passwordView(c *ui.Context) {
 		return
 	}
 	name, login := o.provName(), loginOf(o.prov)
-	hint := tr("onboarding.hint." + o.prov.ID)
-	if hint == "" && tr("onboarding.hint."+login) != "" {
-		hint = i18n.Tf("onboarding.hint."+login, name)
-	}
+	hint := o.hintTitle()
 	if hint != "" {
 		steps := tr("onboarding.steps." + o.prov.ID)
 		if steps == "" {
@@ -1024,8 +1084,16 @@ func (o *onboarding) passwordView(c *ui.Context) {
 		}
 	}).Description(i18n.T("onboarding.secret.help")) // the label's line; the description's is the same
 	secretWhitespaceHint(c, &o.secret)
-	primary(c, i18n.T("onboarding.connect"), o.secret == "" || !validEmail(o.email)).OnClick(o.connect)
+	disabled := o.secret == "" || !validEmail(o.email)
+	if o.sheet {
+		primary(c, i18n.T("onboarding.connect"), disabled).OnClick(o.connect)
+		o.manualView(c)
+		return
+	}
 	o.manualView(c)
+	ui.Row(c).FillWidth().Justify(ui.End).Children(func() {
+		kit.Button(c, i18n.T("onboarding.connect"), kit.ButtonOpts{Size: kit.SizeLg, Disabled: disabled}).OnClick(o.connect)
+	})
 }
 
 // contactsPreset is the address book o.prov's sign-in also reaches, "" for none.
@@ -1100,7 +1168,7 @@ func (o *onboarding) ownClientView(c *ui.Context) {
 		labels := []string{"IMAP", i18n.T("onboarding.protocol.gmailapi")}
 		ui.Field(c, i18n.T("onboarding.protocol"), func() {
 			sel := max(slices.Index(protos, o.proto), 0)
-			kit.TabsFill(c, &sel, labels...)
+			kit.Tabs(c, &sel, kit.TabsOpts{Fill: true}, kit.TabLabels(labels...))
 			if protos[sel] != o.proto {
 				o.proto = protos[sel]
 			}
@@ -1131,20 +1199,22 @@ const ownClientHelpURL = "https://developers.google.com/workspace/guides/create-
 // optional note under them and a help link.
 func (o *onboarding) hintBox(c *ui.Context, hint, steps, note, help, helpURL string) {
 	t, th := theme.Of(c), c.Theme()
-	kit.Card(c, ui.Column(c), kit.ToneCard).Gap(th.Space(2.5)).Padding(th.Space(3.5), th.Space(4)).Children(func() {
+	box := ui.Column(c)
+	if o.sheet { // the window's hint sits bare on its panel
+		box = kit.Block(c, box, kit.ToneTint).Padding(th.Space(3))
+	}
+	box.Gap(th.Space(2.5)).Children(func() {
 		lineText(c, hint, t.Text.Sm).FontWeight(500)
 		ui.Column(c).Gap(th.Space(1)).Padding(0, 0, 0, th.Space(1.5)).Children(func() {
 			for i, line := range strings.Split(steps, "\n") {
-				ui.Text(c, strconv.Itoa(i+1)+". "+line).TextColor(t.Subdued).LineHeight(theme.LineProse)
+				lineText(c, strconv.Itoa(i+1)+". "+line, t.Text.Sm).TextColor(t.Subdued)
 			}
 		})
 		if note != "" {
 			kit.Text(c, note, t.Text.Xs).TextColor(t.Muted).LineHeight(theme.LineProse)
 		}
 		if helpURL != "" {
-			kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { o.openURL(helpURL) }}).Label(help).AlignSelf(ui.Start).Children(func() {
-				lineText(c, help, t.Text.Xs).Underline()
-			})
+			kit.Button(c, help, kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).AlignSelf(ui.Start).OnClick(func() { o.openURL(helpURL) })
 		}
 	})
 }
@@ -1157,7 +1227,7 @@ var securities = []kit.Option[core.Security]{
 // manualView is the collapsible server form: hosts, ports and TLS or STARTTLS.
 func (o *onboarding) manualView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).Gap(th.Space(2.5)).Children(func() {
+	ui.Column(c).Gap(th.Space(3)).Children(func() {
 		label := i18n.T("onboarding.manual")
 		// Pulled left by its padding, so the chevron lines up with the fields.
 		kit.Collapsible(c, &o.manual, func() { lineText(c, label, t.Text.Xs) }, func() { o.serversForm(c) }).AlignSelf(ui.Start).Margin(0, 0, 0, -th.Space(2))
@@ -1186,16 +1256,16 @@ func (o *onboarding) setProto(p string) {
 
 // serversForm is manualView's fields.
 func (o *onboarding) serversForm(c *ui.Context) {
-	t, th := theme.Of(c), c.Theme()
+	th := c.Theme()
 	opts := make([]kit.Option[core.Security], len(securities))
 	for i, s := range securities {
 		opts[i] = kit.Option[core.Security]{Value: s.Value, Label: i18n.T(s.Label)}
 	}
 	server := func(proto string, host, port *string, sec *core.Security) {
 		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Start).Children(func() {
-			ui.Field(c, i18n.T("onboarding."+proto+".host"), func() { kit.Input(c, host, kit.InputOpts{}) }).Grow(1).FontSize(t.Text.Xs).TextColor(t.Muted)
-			ui.Field(c, i18n.T("onboarding.port"), func() { kit.Input(c, port, kit.InputOpts{}).Label(i18n.T("onboarding." + proto + ".port")) }).Width(theme.PortWidth).FontSize(t.Text.Xs).TextColor(t.Muted)
-			ui.Field(c, i18n.T("onboarding."+proto+".security"), func() { kit.Select(c, sec, opts) }).FontSize(t.Text.Xs).TextColor(t.Muted)
+			ui.Field(c, i18n.T("onboarding."+proto+".host"), func() { kit.Input(c, host, kit.InputOpts{}) }).Grow(1)
+			ui.Field(c, i18n.T("onboarding.port"), func() { kit.Input(c, port, kit.InputOpts{}).Label(i18n.T("onboarding." + proto + ".port")) }).Width(theme.PortWidth)
+			ui.Field(c, i18n.T("onboarding."+proto+".security"), func() { kit.Select(c, sec, opts) })
 		})
 	}
 	ui.Column(c).Gap(th.Space(3)).Children(func() {
@@ -1212,31 +1282,31 @@ func (o *onboarding) serversForm(c *ui.Context) {
 		if len(protos) > 1 {
 			ui.Field(c, i18n.T("onboarding.protocol"), func() {
 				sel := max(slices.Index(protos, o.proto), 0)
-				kit.TabsFill(c, &sel, labels...)
+				kit.Tabs(c, &sel, kit.TabsOpts{Fill: true}, kit.TabLabels(labels...))
 				if protos[sel] != o.proto {
 					o.setProto(protos[sel])
 				}
-			}).FontSize(t.Text.Xs).TextColor(t.Muted)
+			})
 		}
 		if o.ews() { // one server for both, found by Autodiscover unless typed in; a login name that may not be the address
 			ui.Field(c, i18n.T("onboarding.ews.login"), func() {
 				kit.Input(c, &o.username, kit.InputOpts{Placeholder: i18n.T("onboarding.username.placeholder")})
-			}).Description(i18n.T("onboarding.ews.login.help")).FontSize(t.Text.Xs).TextColor(t.Muted)
+			}).Description(i18n.T("onboarding.ews.login.help"))
 			if !o.ewsAdvanced && o.ewsURL == "" {
 				kit.Button(c, i18n.T("onboarding.ews.advanced"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(func() { o.ewsAdvanced = true })
 				return
 			}
 			ui.Field(c, i18n.T("onboarding.ews.url"), func() {
 				kit.Input(c, &o.ewsURL, kit.InputOpts{Placeholder: "https://mail.example.com/EWS/Exchange.asmx"})
-			}).Description(i18n.T("onboarding.ews.url.help")).FontSize(t.Text.Xs).TextColor(t.Muted)
+			}).Description(i18n.T("onboarding.ews.url.help"))
 			return
 		}
 		if o.jmap() {
 			ui.Field(c, i18n.T("onboarding.jmap.url"), func() { kit.Input(c, &o.jmapURL, kit.InputOpts{Placeholder: "https://example.com/.well-known/jmap"}) }).
-				Description(i18n.T("onboarding.jmap.url.help")).FontSize(t.Text.Xs).TextColor(t.Muted)
+				Description(i18n.T("onboarding.jmap.url.help"))
 			ui.Field(c, i18n.T("onboarding.jmap.login"), func() {
-				kit.TabsFill(c, &o.jmapAuth, i18n.T("onboarding.login.password"), i18n.T("onboarding.login.api_token"))
-			}).FontSize(t.Text.Xs).TextColor(t.Muted)
+				kit.Tabs(c, &o.jmapAuth, kit.TabsOpts{Fill: true}, kit.TabLabels(i18n.T("onboarding.login.password"), i18n.T("onboarding.login.api_token")))
+			})
 		} else {
 			if o.pop3() {
 				sec := o.imapSec
@@ -1267,7 +1337,7 @@ func (o *onboarding) oauthView(c *ui.Context) {
 		protos := []string{"", auth.Graph}
 		ui.Field(c, i18n.T("onboarding.protocol"), func() {
 			sel := max(slices.Index(protos, o.proto), 0)
-			kit.TabsFill(c, &sel, "IMAP", i18n.T("onboarding.protocol.graph"))
+			kit.Tabs(c, &sel, kit.TabsOpts{Fill: true}, kit.TabLabels("IMAP", i18n.T("onboarding.protocol.graph")))
 			if protos[sel] != o.proto {
 				o.proto = protos[sel]
 			}
@@ -1279,8 +1349,8 @@ func (o *onboarding) oauthView(c *ui.Context) {
 	}
 	kit.Card(c, ui.Column(c), kit.ToneOutline).Gap(th.Space(3)).Padding(th.Space(5)).BorderStyle(ui.BorderDashed).AlignItems(ui.Center).Children(func() {
 		if o.oauthErr != nil {
-			kit.Alert(c, kit.Danger, humanize(o.oauthErr), func() {
-				kit.AlertAction(c, kit.Danger, i18n.T("common.retry"), o.startOAuth)
+			kit.Alert(c, kit.ToneDanger, humanize(o.oauthErr), func() {
+				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneDanger}).Shrink(0).OnClick(o.startOAuth)
 			})
 			return
 		}
@@ -1438,8 +1508,8 @@ func (o *onboarding) checkView(c *ui.Context) {
 	if failed {
 		title = i18n.T("onboarding.check.failed")
 	}
-	heading(c, title, strings.TrimSpace(o.email))
-	kit.Card(c, ui.Column(c), kit.ToneOutline).Clip().Children(func() {
+	o.titledHeader(c, title, strings.TrimSpace(o.email))
+	kit.Card(c, ui.Column(c), kit.ToneOutline).Padding(th.Space(4)).Children(func() {
 		for i, st := range steps {
 			text, detail, status := o.checkRow(st)
 			row := ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Start).Padding(th.Space(3), th.Space(3.5))
@@ -1459,12 +1529,18 @@ func (o *onboarding) checkView(c *ui.Context) {
 					dot.Background(t.Hover).TextColor(t.Muted).Children(func() { ui.Icon(c, icons.Get("ellipsis")).Size(theme.IconXs, theme.IconXs) })
 				}
 				ui.Column(c).Gap(th.Space(0.5)).Grow(1).Shrink(1).Children(func() {
-					lineText(c, text, t.Text.Sm)
+					title := lineText(c, text, t.Text.Sm)
+					if st.Skipped && !o.checking { // waiting for the step before it
+						title.TextColor(t.Muted)
+					}
 					if detail != "" {
 						lineText(c, detail, t.Text.Xs).TextColor(t.Muted)
 					}
 				})
 			})
+		}
+		if failed {
+			o.checkActions(c)
 		}
 	})
 	if failed && o.report.Confirm != "" {
@@ -1479,26 +1555,32 @@ func (o *onboarding) checkView(c *ui.Context) {
 				o.connect()
 			})
 	}
-	if failed {
-		ui.Row(c).Gap(th.Space(2)).Children(func() {
-			if o.oauth() {
-				kit.Button(c, i18n.T("onboarding.relogin"), kit.ButtonOpts{Size: kit.SizeLg}).OnClick(func() { o.retry(false) })
-				return
-			}
-			kit.Button(c, i18n.Tf("onboarding.retype", o.secretName()), kit.ButtonOpts{Size: kit.SizeLg}).OnClick(func() { o.retry(false) })
-			kit.Button(c, i18n.T("onboarding.manual"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeLg}).OnClick(func() { o.retry(true) })
-		})
+}
+
+// checkActions is the failed check's way on, at the foot of its card: add the
+// account to receive only when just sending failed, change the servers, or
+// sign in again.
+func (o *onboarding) checkActions(c *ui.Context) {
+	th := c.Theme()
+	ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Padding(th.Space(2), th.Space(3.5)).BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(theme.Of(c).Hover).Children(func() {
 		if o.report.OnlySendingFailed() { // mail can still come in: the account just never sends
-			kit.Button(c, i18n.T("onboarding.receive_only"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeLg}).
+			kit.Button(c, i18n.T("onboarding.receive_only"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).
 				OnClick(func() { o.receiveOnly = true; o.goTo(stepDone) })
 		}
-	}
+		ui.Spacer(c)
+		if o.oauth() {
+			kit.Button(c, i18n.T("onboarding.relogin"), kit.ButtonOpts{Size: kit.SizeSm}).OnClick(func() { o.retry(false) })
+			return
+		}
+		kit.Button(c, i18n.T("onboarding.manual"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).OnClick(func() { o.retry(true) })
+		kit.Button(c, i18n.Tf("onboarding.retype", o.secretName()), kit.ButtonOpts{Size: kit.SizeSm}).OnClick(func() { o.retry(false) })
+	})
 }
 
 func (o *onboarding) doneView(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).Gap(th.Space(1.5)).Children(func() {
-		badge := ui.Box(c).Size(theme.DoneBadge, theme.DoneBadge).Radius(t.Radius.Full).Background(t.SuccessBg).TextColor(t.SuccessText).Center().FontSize(t.Text.Xl).Children(func() {
+	ui.Row(c).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
+		badge := ui.Box(c).Size(theme.DoneBadge, theme.DoneBadge).Shrink(0).Radius(t.Radius.Full).Background(t.SuccessBg).TextColor(t.SuccessText).Center().FontSize(t.Text.Xl).FontWeight(600).Children(func() {
 			ui.Text(c, "✓")
 		})
 		if c.Preferences().ReduceMotion {
@@ -1508,15 +1590,17 @@ func (o *onboarding) doneView(c *ui.Context) {
 			x, y := badge.LocalToWindow(theme.DoneBadge/2, theme.DoneBadge/2)
 			ui.Overlay(c, func() { b.build(c, x, y) })
 		}
-		lineText(c, i18n.T("onboarding.done.title"), t.Text.Xl).FontWeight(600).Margin(th.Space(2), 0, 0, 0)
-		line := strings.TrimSpace(o.email)
-		if f := o.foldersText(); f != "" {
-			line += " · " + f
-		}
-		lineText(c, line, t.Text.Sm).TextColor(t.Muted)
+		ui.Column(c).Children(func() {
+			lineText(c, i18n.T("onboarding.done.title"), t.Text.Xl).FontWeight(600)
+			line := strings.TrimSpace(o.email)
+			if f := o.foldersText(); f != "" {
+				line += " · " + f
+			}
+			lineText(c, line, t.Text.Sm).TextColor(t.Muted)
+		})
 	})
 	if o.receiveOnly {
-		kit.Alert(c, kit.Warning, i18n.T("onboarding.receive_only.note"), nil)
+		kit.Alert(c, kit.ToneWarning, i18n.T("onboarding.receive_only.note"), nil)
 	}
 	ui.Field(c, i18n.T("onboarding.name"), func() {
 		kit.Input(c, &o.name, kit.InputOpts{Placeholder: i18n.T("onboarding.name.placeholder"), Size: kit.SizeLg}).Disabled(o.adding || o.addedID != 0) // the name saves with the account
@@ -1526,17 +1610,17 @@ func (o *onboarding) doneView(c *ui.Context) {
 	ui.Field(c, i18n.T("onboarding.sync"), func() { kit.SelectWith(c, kit.SelectOpts{Size: kit.SizeLg}, &o.sync, opts).Disabled(o.adding) }).
 		Description(i18n.T("onboarding.sync.help"))
 	if o.saveErr != nil {
-		kit.Alert(c, kit.Danger, humanize(o.saveErr), func() {
-			kit.AlertAction(c, kit.Danger, i18n.T("common.retry"), func() { o.finish(o.again) })
+		kit.Alert(c, kit.ToneDanger, humanize(o.saveErr), func() {
+			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneDanger}).Shrink(0).OnClick(func() { o.finish(o.again) })
 		})
 	}
-	ui.Column(c).Gap(th.Space(2)).Children(func() {
+	ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
 		label := i18n.T("onboarding.start")
 		if o.sheet {
 			label = i18n.T("common.done")
 		}
-		primary(c, label, o.adding).OnClick(func() { o.finish(false) })
-		kit.Button(c, i18n.T("onboarding.another"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeLg, Disabled: o.adding}).FillWidth().
-			OnClick(func() { o.finish(true) })
+		kit.Button(c, i18n.T("onboarding.another"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeLg, Disabled: o.adding}).OnClick(func() { o.finish(true) })
+		ui.Spacer(c)
+		kit.Button(c, label, kit.ButtonOpts{Size: kit.SizeLg, Disabled: o.adding}).OnClick(func() { o.finish(false) })
 	})
 }

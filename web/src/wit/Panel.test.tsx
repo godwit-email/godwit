@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { toast } from "sonner";
+import { toast } from "@/components/toast";
 import type { Approval, MailHit, WitEvent, WitHistory, WitInfo } from "@/mygo";
 import { makeT } from "@/shared/i18n";
 import { legacy as hist } from "./fixtures";
@@ -9,8 +9,7 @@ import type { SkillChoice } from "./Skills";
 import { WitTransport } from "./transport";
 
 vi.mock("@/mygo", () => ({ events: { wit: { on: () => () => {} } } }));
-vi.mock("sonner", async (orig) => ({
-  ...(await orig<typeof import("sonner")>()),
+vi.mock("@/components/toast", () => ({
   toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
 }));
 
@@ -947,7 +946,7 @@ describe("Panel", () => {
     // a ring alone: no percentage beside it; a click shows the details
     const meter = screen.getByRole("button", { name: "上下文" });
     expect(meter).toHaveTextContent(/^$/);
-    expect(meter.querySelector("svg")).not.toHaveClass("text-amber-500");
+    expect(meter.querySelector("svg")).not.toHaveClass("text-(--warning-text)");
     await user.click(meter);
     expect(await screen.findByText("已使用 42%")).toBeInTheDocument();
     // what takes it, as rows: the conversation, its summary, what is left
@@ -975,7 +974,7 @@ describe("Panel", () => {
       }),
     });
     expect(screen.getByRole("button", { name: "上下文" }).querySelector("svg")).toHaveClass(
-      "text-amber-500",
+      "text-(--warning-text)",
     );
   });
 
@@ -1325,7 +1324,7 @@ describe("Panel", () => {
       screen
         .getByText("来源 [2] 中包含疑似指令。它只被当作邮件内容处理，没有执行。")
         .closest("[role=status]"),
-    ).toHaveClass("bg-(--warning-bg)", "text-(--warning-text)", "rounded-lg");
+    ).toHaveClass("bg-(--warning-bg)", "text-(--warning-text)", "rounded-xl");
     expect(
       screen.getByText("来源 [2] 中包含疑似指令。它只被当作邮件内容处理，没有执行。"),
     ).toBeInTheDocument();
@@ -1426,6 +1425,8 @@ describe("Panel", () => {
       `来源 [5] 中包含疑似指令（「${quote}」）。它只被当作邮件内容处理，没有执行。`,
     );
     expect(banner.querySelector("b")).toBeNull();
+    // a note, not an interruption: polite, as before the house Alert
+    expect(banner.closest('[data-slot="alert"]')?.getAttribute("role")).toBe("status");
   });
 
   it("the reviewed edit shows a card with the page's summary and decisions", async () => {
@@ -2728,6 +2729,60 @@ describe("Panel", () => {
     expect(screen.queryByRole("button", { name: "本次对话都允许" })).toBeNull(); // not this tool
     await setup({ history, onDecide });
     expect(screen.queryByRole("button", { name: "本次对话都允许" })).toBeNull(); // not this host (compose)
+  });
+
+  it("本次对话都允许 never shows on a card with a destination, whatever the call allows", async () => {
+    const a: Approval = {
+      id: 5,
+      run: 7,
+      callId: "p1",
+      tool: "create_draft",
+      summary: "",
+      state: "pending",
+      error: "",
+      destinations: ["api.x.com"],
+      args: "{}",
+      draftEdit: false,
+      sessionAllow: true,
+      draft: 0,
+    };
+    await setup({
+      history: hist({
+        ...empty,
+        messages: [
+          {
+            id: "q0",
+            role: "user",
+            text: "Q",
+            reasoning: "",
+            quoted: [],
+            calls: [],
+            results: [],
+            citations: [],
+            runs: [7],
+            elapsed: 0,
+          },
+          {
+            id: "a1",
+            role: "assistant",
+            text: "",
+            reasoning: "",
+            quoted: [],
+            calls: [{ id: "p1", name: "create_draft", args: "{}" }],
+            results: [],
+            citations: [],
+            runs: [7],
+            elapsed: 0,
+          },
+        ],
+        approvals: [a],
+      }),
+      onSession: vi.fn().mockResolvedValue(true),
+      page: true,
+    });
+    expect(screen.getByText("api.x.com")).toBeInTheDocument(); // the host is named on the card
+    expect(screen.getByRole("button", { name: "允许" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "本次对话都允许" })).toBeNull();
   });
 });
 

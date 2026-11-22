@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -78,7 +79,7 @@ func TestKitButtonClick(t *testing.T) {
 		if Button(c, "Save", ButtonOpts{Variant: Default, Icon: "check"}).Clicked() {
 			n++
 		}
-		if Button(c, "Delete", ButtonOpts{Variant: Destructive, Disabled: true}).Clicked() {
+		if Button(c, "Delete", ButtonOpts{Variant: Ghost, Tone: ToneDanger, Disabled: true}).Clicked() {
 			n += 100
 		}
 	}), 300, 200)
@@ -135,10 +136,12 @@ func TestKitSwitchToggles(t *testing.T) {
 }
 
 func TestKitSelectChooses(t *testing.T) {
-	sel := 1
-	opts := []Option[int]{{Value: 1, Label: "Alpha"}, {Value: 2, Label: "Beta"}, {Value: 3, Label: "Gamma"}}
+	sel, changed := 1, 0
+	opts := []Option[int]{{Value: 1, Label: "Alpha"}, {Value: 2, Label: "Beta"}, {Value: 3, Label: "Gamma", Disabled: true}}
 	tt := ui.NewTester(themed(func(c *ui.Context) {
-		Select(c, &sel, opts).Label("Letter")
+		if Select(c, &sel, opts).Label("Letter").Changed() {
+			changed++
+		}
 	}), 300, 300)
 	if !tt.HasText("Alpha") || tt.HasText("Beta") {
 		t.Fatalf("closed select shows %q", tt.Texts())
@@ -146,11 +149,36 @@ func TestKitSelectChooses(t *testing.T) {
 	if err := tt.Click("Letter"); err != nil {
 		t.Fatal(err)
 	}
-	if err := tt.Click("Beta"); err != nil {
-		t.Fatalf("%v; texts %q", err, tt.Texts())
+	if menu := tt.Menu(); !slices.Equal(menu, []string{"Alpha", "Beta", "Gamma"}) {
+		t.Fatalf("the system menu lists %q", menu)
 	}
-	if sel != 2 {
-		t.Errorf("selected %d, want 2", sel)
+	if err := tt.ChooseMenuItem("Gamma"); err == nil || sel != 1 {
+		t.Errorf("a disabled option was chosen: err %v, selected %d", err, sel)
+	}
+	if err := tt.ChooseMenuItem("Alpha"); err != nil || changed != 0 {
+		t.Errorf("the current option reported a change: err %v, changed %d", err, changed)
+	}
+	if err := tt.Click("Letter"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.ChooseMenuItem("Beta"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	tt.Frame()
+	if sel != 2 || changed != 1 || !tt.HasText("Beta") {
+		t.Errorf("selected %d, changed %d times, texts %q; want 2, once, Beta shown", sel, changed, tt.Texts())
+	}
+	// a screen reader hears the choice, as of ui.SelectBase's pop-up button
+	if a, ok := tt.AccessByRole(ui.RolePopUpButton, "Letter"); !ok || a.Value != "Beta" {
+		t.Errorf("select access %+v (found %v), want a pop-up button valued Beta", a, ok)
+	}
+	if err := tt.Click("Letter"); err != nil {
+		t.Fatal(err)
+	}
+	tt.CloseMenu()
+	if tt.Menu() != nil || sel != 2 || changed != 1 {
+		t.Errorf("closing the menu changed things: menu %q, selected %d, changed %d", tt.Menu(), sel, changed)
 	}
 }
 
@@ -235,7 +263,7 @@ func TestKitDensityScales(t *testing.T) {
 func TestKitFontSizeFollows(t *testing.T) {
 	body := func(c *ui.Context) {
 		Badge(c, "BadgeText")
-		Alert(c, Warning, "AlertText", nil)
+		Alert(c, ToneWarning, "AlertText", nil)
 		Field(c, "FieldLabel", "HelpText", "", func() {})
 		Kbd(c, "KbdText")
 	}
@@ -294,6 +322,36 @@ func TestKitSidebarItem(t *testing.T) {
 	}
 }
 
+// TestKitSidebarItemSmallKeepsTextSize verifies nested Small sidebar rows are
+// shorter (28 vs 32) while keeping the same font size as top-level rows.
+func TestKitSidebarItemSmallKeepsTextSize(t *testing.T) {
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		ui.Column(c).Width(240).Children(func() {
+			SidebarItem(c, SidebarItemOpts{}).Label("level1").Children(func() { ui.Text(c, "Inbox") })
+			SidebarItem(c, SidebarItemOpts{Small: true, Muted: true, Indent: 4}).Label("level2").Children(func() { ui.Text(c, "Inbox2") })
+		})
+	}), 300, 200)
+	row1, ok := tt.Access("level1")
+	if !ok {
+		t.Fatal("missing level1")
+	}
+	row2, ok := tt.Access("level2")
+	if !ok {
+		t.Fatal("missing level2")
+	}
+	if row1.Bounds.H != 32 || row2.Bounds.H != 28 {
+		t.Fatalf("row heights = (%v, %v), want (32, 28)", row1.Bounds.H, row2.Bounds.H)
+	}
+	t1, ok1 := tt.Find("Inbox")
+	t2, ok2 := tt.Find("Inbox2")
+	if !ok1 || !ok2 {
+		t.Fatalf("missing text nodes: ok1=%v ok2=%v", ok1, ok2)
+	}
+	if t1.H != t2.H {
+		t.Errorf("text heights differ: level1=%v level2=%v, want same font size", t1.H, t2.H)
+	}
+}
+
 // TestKitSidebarItemHoverSoft verifies sidebar hover uses HoverTint and is distinct from Selected.
 func TestKitSidebarItemHoverSoft(t *testing.T) {
 	for _, dark := range []bool{false, true} {
@@ -334,6 +392,47 @@ func TestKitSidebarItemHoverSoft(t *testing.T) {
 				t.Errorf("background %v, hovered %v, selected %v: want selected further from background than hovered", bg, hoverPx, selPx)
 			}
 		})
+	}
+}
+
+// TestKitSidebarItemTints: a row is bare at rest, tint 1 hovered, 1.75
+// selected and 2.25 selected and hovered, over the background.
+func TestKitSidebarItemTints(t *testing.T) {
+	var th theme.Tokens
+	tt := ui.NewTester(themed(func(c *ui.Context) {
+		th = theme.Of(c)
+		ui.Column(c).Fill().Background(th.Background).Children(func() {
+			SidebarItem(c, SidebarItemOpts{Selected: true}).Children(func() { ui.Text(c, "Inbox") })
+			SidebarItem(c, SidebarItemOpts{}).Children(func() { ui.Text(c, "Sent") })
+			SidebarItem(c, SidebarItemOpts{}).Children(func() { ui.Text(c, "Trash") })
+		})
+	}), 300, 200)
+	rest := func(name string) color.RGBA { // right of the text, inside the row
+		r, ok := tt.Find(name)
+		if !ok {
+			t.Fatalf("no %s", name)
+		}
+		return tt.Image().RGBAAt(int(r.X)+100, int(r.Y+r.H/2))
+	}
+	hover := func(name string) {
+		r, _ := tt.Find(name)
+		tt.Move(r.X+100, r.Y+r.H/2)
+		tt.Frame()
+		tt.Advance(2 * theme.MotionFast)
+	}
+	if got := rest("Trash"); !near(got, th.Background) {
+		t.Errorf("row at rest %v, want the background %v", got, th.Background)
+	}
+	if got, want := rest("Inbox"), th.HoverTint.Alpha(1.75).Over(th.Background); !near(got, want) {
+		t.Errorf("selected row %v, want tint 1.75 %v", got, want)
+	}
+	hover("Sent")
+	if got, want := rest("Sent"), th.HoverTint.Over(th.Background); !near(got, want) {
+		t.Errorf("hovered row %v, want tint 1 %v", got, want)
+	}
+	hover("Inbox")
+	if got, want := rest("Inbox"), th.HoverTint.Alpha(2.25).Over(th.Background); !near(got, want) {
+		t.Errorf("selected hovered row %v, want tint 2.25 %v", got, want)
 	}
 }
 
@@ -434,15 +533,15 @@ func TestKitSelectedDoesNotClick(t *testing.T) {
 	var got []string
 	for _, sel := range []bool{false, true} {
 		sel := sel
-		tag := "off"
+		tag, tab := "off", 1
 		if sel {
-			tag = "on"
+			tag, tab = "on", 0
 		}
 		tt := ui.NewTester(themed(func(c *ui.Context) {
 			ui.Column(c).Children(func() {
 				Pressable(c, PressableOpts{Selected: sel, OnClick: func() { got = append(got, "p-"+tag) }}).Label("p-" + tag).Height(30).Children(func() { ui.Text(c, "pp") })
 				SidebarItem(c, SidebarItemOpts{Selected: sel, OnClick: func() { got = append(got, "s-"+tag) }}).Label("s-" + tag).Height(30).Children(func() { ui.Text(c, "ss") })
-				NavSwitch(c, NavItem{Icon: "mail", Label: "r-" + tag, Selected: sel, OnClick: func() { got = append(got, "r-"+tag) }})
+				Tabs(c, &tab, TabsOpts{}, TabLabels("r-"+tag, "other-"+tag)).OnChange(func() { got = append(got, "r-"+tag) })
 			})
 		}), 300, 300)
 		for _, l := range []string{"p-", "s-", "r-"} {
@@ -557,6 +656,28 @@ func TestKitSkeletonStillUnderReduceMotion(t *testing.T) {
 		tt.Advance(300 * time.Millisecond)
 		if same := before == px(); same != reduce {
 			t.Errorf("reduce=%v: pixel unchanged=%v", reduce, same)
+		}
+	}
+}
+
+func TestKitThinkingDotsStillUnderReduceMotion(t *testing.T) {
+	for _, reduce := range []bool{true, false} {
+		tt := ui.NewTester(themed(func(c *ui.Context) {
+			ui.Column(c).Padding(20).Children(func() { ThinkingDots(c).Label("dots") })
+		}), 200, 100)
+		tt.SetPreferences(ui.Preferences{ReduceMotion: reduce})
+		tt.Frame()
+		r, ok := tt.Find("dots")
+		if !ok {
+			t.Fatal("thinking dots not found")
+		}
+		// Sample center of the first dot: x = r.X + ThinkingDot/2, y = r.Y + r.H/2.
+		x, y := int(r.X+theme.ThinkingDot/2), int(r.Y+r.H/2)
+		px := func() [4]uint8 { c := tt.Image().RGBAAt(x, y); return [4]uint8{c.R, c.G, c.B, c.A} }
+		before := px()
+		tt.Advance(300 * time.Millisecond)
+		if same := before == px(); same != reduce {
+			t.Errorf("reduce=%v: dot pixel unchanged=%v", reduce, same)
 		}
 	}
 }
@@ -754,39 +875,6 @@ func TestShadowX2l(t *testing.T) {
 	}
 }
 
-func TestKitBareInputMatchesBase(t *testing.T) {
-	a, b, d := "", "", ""
-	var th theme.Tokens
-	tt := ui.NewTester(themed(func(c *ui.Context) {
-		th = theme.Of(c)
-		ui.Column(c).FillWidth().Background(th.Sidebar).Gap(8).Padding(8).Children(func() {
-			Input(c, &a, InputOpts{Bare: true}).Label("bare")
-			ui.TextInputBase(c, &b).Label("base")
-			Input(c, &d, InputOpts{}).Label("normal")
-		})
-	}), 400, 300)
-	rb, ok1 := tt.Find("bare")
-	rr, ok2 := tt.Find("base")
-	rn, ok3 := tt.Find("normal")
-	if !ok1 || !ok2 || !ok3 {
-		t.Fatalf("missing inputs in %q", tt.Texts())
-	}
-	if d := rb.H - rr.H; d < -0.01 || d > 0.01 { // a float's rounding apart
-		t.Errorf("bare height %v, base %v", rb.H, rr.H)
-	}
-	px := func(r ui.Rect) [3]uint8 {
-		c := tt.Image().RGBAAt(int(r.X), int(r.Y+r.H/2))
-		return [3]uint8{c.R, c.G, c.B}
-	}
-	rgb := func(c ui.Color) [3]uint8 { return [3]uint8{c.R, c.G, c.B} }
-	if px(rb) != rgb(th.Sidebar) {
-		t.Errorf("bare edge pixel %v, want sidebar %v", px(rb), rgb(th.Sidebar))
-	}
-	if px(rn) != rgb(th.Border) {
-		t.Errorf("normal edge pixel %v, want border %v", px(rn), rgb(th.Border))
-	}
-}
-
 func TestGalleryRendersInBothAppearances(t *testing.T) {
 	for _, dark := range []bool{false, true} {
 		var g GalleryState
@@ -794,9 +882,9 @@ func TestGalleryRendersInBothAppearances(t *testing.T) {
 		tt.SetDark(dark)
 		tt.Frame()
 		tt.Advance(2 * theme.MotionFast)
-		for _, s := range []string{"Button", "IconButton", "Input", "TextArea", "Field", "Select", "Checkbox", "Radio", "Switch", "Tabs", "ToggleGroup",
+		for _, s := range []string{"Button", "IconButton", "Input", "TextArea", "Field", "Select", "Checkbox", "Radio", "Switch", "Tabs",
 			"Dialog", "Confirm", "Popover", "Tooltip", "Collapsible", "Card", "Badge", "Alert", "Avatar", "Separator", "Skeleton", "Spinner", "Kbd",
-			"StatusDot", "SidebarItem", "NavSwitch", "Panel", "Pressable", "Toast"} {
+			"StatusDot", "SidebarItem", "Panel", "Pressable", "Toast"} {
 			if _, ok := tt.Find("section:" + s); !ok {
 				t.Errorf("dark=%v: no heading %q", dark, s)
 			}
@@ -886,56 +974,6 @@ func TestKitOverlayLeaves(t *testing.T) {
 	}
 }
 
-// TestKitToastTopCenter: toasts show at the top center, the oldest first.
-func TestKitToastTopCenter(t *testing.T) {
-	n := 0
-	tt := ui.NewTester(themed(func(c *ui.Context) {
-		for ; n < 2; n++ {
-			c.AddToast(ui.Toast{Title: []string{"older", "newer"}[n], Type: ToastSuccess, Timeout: -1})
-		}
-		ToastHost(c, "Close")
-	}), 800, 600)
-	tt.Frame()
-	older, ok1 := tt.Find("older")
-	newer, ok2 := tt.Find("newer")
-	if !ok1 || !ok2 {
-		t.Fatalf("toasts not shown: %q", tt.Texts())
-	}
-	if older.Y >= newer.Y || older.Y > 120 {
-		t.Errorf("newer at %v, older at %v: want the oldest on top, at the top", newer, older)
-	}
-	if mid := newer.X + newer.W/2; mid < 300 || mid > 500 {
-		t.Errorf("newer centered at x=%v, want near 400", mid)
-	}
-}
-
-func TestKitToastIcons(t *testing.T) {
-	tk := theme.Light()
-	for typ, want := range map[string]string{"": "", ToastSuccess: "circle-check", ToastWarning: "triangle-alert", ToastError: "circle-x"} {
-		if got := toastLook(tk, typ).icon; got != want {
-			t.Errorf("toastLook(%q).icon = %q, want %q", typ, got, want)
-		}
-	}
-}
-
-// TestKitToastTinted: a kind's toast takes its color's tint; a plain one stays white.
-func TestKitToastTinted(t *testing.T) {
-	tk := theme.Light()
-	for _, tc := range []struct {
-		typ            string
-		bg, border, fg ui.Color
-	}{
-		{"", tk.Background, tk.Border, tk.Foreground},
-		{ToastSuccess, tk.SuccessBg, tk.SuccessBorder, tk.SuccessText},
-		{ToastWarning, tk.WarningBg, tk.WarningBorder, tk.WarningText},
-		{ToastError, tk.DangerBg, tk.DangerBorder, tk.DangerText},
-	} {
-		if l := toastLook(tk, tc.typ); l.bg != tc.bg || l.border != tc.border || l.fg != tc.fg {
-			t.Errorf("toastLook(%q) = %v %v %v, want %v %v %v", tc.typ, l.bg, l.border, l.fg, tc.bg, tc.border, tc.fg)
-		}
-	}
-}
-
 // TestKitResizerPill: at rest the gap is clear; hovered, its middle is the
 // grip's line, the foreground at 20%; dragging it moves *size.
 func TestKitResizerPill(t *testing.T) {
@@ -943,7 +981,7 @@ func TestKitResizerPill(t *testing.T) {
 	changed := false
 	tt := ui.NewTester(themed(func(c *ui.Context) {
 		ui.Row(c).Fill().Children(func() {
-			if ch, _ := Resizer(c, &size, 8, false, "Resize", nil, func() { ui.Text(c, "left") }, func() { ui.Text(c, "right") }); ch {
+			if ch, _ := Resizer(c, &size, 8, "Resize", nil, func() { ui.Text(c, "left") }, func() { ui.Text(c, "right") }); ch {
 				changed = true
 			}
 		})
@@ -970,38 +1008,42 @@ func TestKitResizerPill(t *testing.T) {
 	}
 }
 
-// TestKitResizerOver: over, the panels touch and the grip rides second's
-// edge, 1 into each, taking the pointer there.
+// TestKitResizerOver: first reaches second's edge with no layout gap, and the
+// grip rides that edge without stealing pointer input from first's scroll bar
+// or second's interior.
 func TestKitResizerOver(t *testing.T) {
 	size := float32(160)
 	tt := ui.NewTester(themed(func(c *ui.Context) {
 		ui.Row(c).Fill().Children(func() {
-			Resizer(c, &size, 3, true, "Resize", nil, func() { ui.Box(c).Fill().Label("first") }, func() { ui.Box(c).Fill().Label("second") })
+			ResizerOver(c, &size, 4, "Resize", nil,
+				func() { ui.Box(c).Fill().Label("first") },
+				func() { ui.Box(c).Fill().Label("second") })
 		})
 	}), 400, 200)
 	tt.Frame()
 	first, _ := tt.Find("first")
-	grip, _ := tt.Find("Resize")
+	grip, _ := tt.Access("Resize")
 	second, _ := tt.Find("second")
-	if first.X != 0 || second.X != 160 || grip.X != 159 {
-		t.Errorf("first %v, grip %v, second %v: want them touching at 160, the grip from 159, on second's border", first, grip, second)
+	if first.X != 0 || second.X != 160 || grip.Bounds.X != 158 || grip.Bounds.W != 4 {
+		t.Errorf("first %v, grip %v, second %v: want them touching at 160 with a 4-wide grip centered on it", first, grip.Bounds, second)
 	}
+	// Dragging right on the border moves size.
 	tt.Press(160, 100)
 	tt.Move(180, 100)
 	tt.Release(180, 100)
 	tt.Frame()
 	if size < 179 || size > 181 {
-		t.Errorf("dragged 20 by first's edge: size %v, want 180", size)
+		t.Errorf("dragged 20 on border: size %v, want 180", size)
 	}
-	if _, ok := tt.Find("Resize"); !ok {
-		t.Fatal("grip gone")
-	}
-	tt.Press(190, 100) // second's, past the grip
-	tt.Move(205, 100)
-	tt.Release(205, 100)
-	tt.Frame()
-	if size < 179 || size > 181 {
-		t.Errorf("a drag in second moved the grip: size %v", size)
+	// Dragging inside first (where a flush scroll bar sits) or inside second does not move the grip.
+	for _, x := range []float32{175, 190} {
+		tt.Press(x, 100)
+		tt.Move(x+15, 100)
+		tt.Release(x+15, 100)
+		tt.Frame()
+		if size < 179 || size > 181 {
+			t.Errorf("drag at x=%v moved size to %v, want 180", x, size)
+		}
 	}
 }
 
@@ -1042,7 +1084,7 @@ func TestKitSidebarIconMuted(t *testing.T) {
 }
 
 // TestKitListSelectedGray: a List's selected row is the sidebar's selected
-// gray, not mygo's accent (the near-black primary).
+// tint (1.75 steps), not mygo's accent (the near-black primary).
 func TestKitListSelectedGray(t *testing.T) {
 	var th theme.Tokens
 	var s ui.ListState
@@ -1057,12 +1099,12 @@ func TestKitListSelectedGray(t *testing.T) {
 		t.Fatal("no row")
 	}
 	got := tt.Image().RGBAAt(int(r.X)+4, int(r.Y+r.H/2)) // in the text's padding
-	if want := th.Hover; got.R != want.R || got.G != want.G || got.B != want.B {
+	if want := th.HoverTint.Alpha(1.75).Over(th.Background); !near(got, want) {
 		t.Errorf("selected row %v, want %v", got, want)
 	}
 }
 
-// TestKitListHoverSoft: a List's hovered row uses softened hover contrast.
+// TestKitListHoverSoft: a List's hovered row is the hover tint, as a SidebarItem's.
 func TestKitListHoverSoft(t *testing.T) {
 	var th theme.Tokens
 	var s ui.ListState
@@ -1079,23 +1121,62 @@ func TestKitListHoverSoft(t *testing.T) {
 	tt.Move(r.X+r.W/2, r.Y+r.H/2)
 	tt.Advance(100 * time.Millisecond)
 	got := tt.Image().RGBAAt(int(r.X)+4, int(r.Y+r.H/2))
-	if want := th.Hover.Mix(th.Background, 0.5); got.R != want.R || got.G != want.G || got.B != want.B {
+	if want := th.HoverTint.Over(th.Background); !near(got, want) {
 		t.Errorf("hovered row %v, want %v", got, want)
 	}
 }
 
-// TestKitNavSwitchFillsSelected: the page shown in a NavSwitch has its
-// icon's fill style, which inks much more of the button than the line style.
-func TestKitNavSwitchFillsSelected(t *testing.T) {
-	ink := func(sel bool) int {
-		tt := ui.NewTester(themed(func(c *ui.Context) { NavSwitch(c, NavItem{Icon: "mail", Label: "r", Selected: sel}) }), 100, 100)
+// TestKitListInactiveSelectionSoft verifies an inactive window softens a
+// selected List row (tint 1.25) instead of darkening it into mygo's fallback
+// InactiveAccent gray.
+func TestKitListInactiveSelectionSoft(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		mode := "light"
+		if dark {
+			mode = "dark"
+		}
+		t.Run(mode, func(t *testing.T) {
+			var th theme.Tokens
+			var s ui.ListState
+			cur := 0
+			s.Selected = &cur
+			tt := ui.NewTester(func(c *ui.Context) {
+				th = theme.FromSettings(core.Settings{Theme: mode, Density: "standard", FontSize: 14}, dark)
+				theme.Apply(c, th)
+				ui.Box(c).Fill().Background(th.Background).Children(func() {
+					List(c, &s, 2, func(i int) { ui.Text(c, []string{"one", "two"}[i]).Padding(8) }).Height(100)
+				})
+			}, 300, 120)
+			tt.SetWindowActive(false)
+			tt.Frame()
+			r, ok := tt.Find("one")
+			if !ok {
+				t.Fatal("no row one")
+			}
+			got := tt.Image().RGBAAt(int(r.X)+4, int(r.Y+r.H/2))
+			want := tint(th, 1.25).Over(th.Background)
+			if !near(got, want) {
+				t.Errorf("inactive selected row %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+// TestKitTabsIconFillsSelected: the tab shown in a segmented list of icons
+// has its icon's fill style, which inks much more of the icon's box than the
+// line style.
+func TestKitTabsIconFillsSelected(t *testing.T) {
+	ink := func(sel int) int {
+		tt := ui.NewTester(themed(func(c *ui.Context) {
+			Tabs(c, &sel, TabsOpts{}, []TabItem{{Icon: "mail", Label: "r"}, {Icon: "sparkles", Label: "w"}})
+		}), 200, 100)
 		r, ok := tt.Find("r")
 		if !ok {
-			t.Fatal("no button")
+			t.Fatal("no tab")
 		}
 		n, img := 0, tt.Image()
 		for y := int(r.Y); y < int(r.Y+r.H); y++ {
-			for x := int(r.X); x < int(r.X+r.W); x++ {
+			for x := int(r.X); x < int(r.X)+28; x++ { // the icon's 28, the width of a tab without its name
 				if img.RGBAAt(x, y).R < 220 { // any ink, muted or not
 					n++
 				}
@@ -1105,7 +1186,7 @@ func TestKitNavSwitchFillsSelected(t *testing.T) {
 	}
 	// The line icon inks 176 px on macOS and 200 on Windows (heavier antialiasing);
 	// the fill icon 270 on both, a line icon in the selected colour about as few.
-	if off, on := ink(false), ink(true); on < off*6/5 {
+	if off, on := ink(1), ink(0); on < off*6/5 {
 		t.Errorf("selected inks %d px, unselected %d: want the fill style", on, off)
 	}
 }
@@ -1208,11 +1289,11 @@ func TestButtonGroupTooltips(t *testing.T) {
 	}
 }
 
-// TabsFill's tabs share the row evenly, whatever their labels' lengths.
+// A Fill list's tabs share the row evenly, whatever their labels' lengths.
 func TestTabsFill(t *testing.T) {
 	sel := 0
 	tt := ui.NewTester(themed(func(c *ui.Context) {
-		ui.Column(c).Width(300).Children(func() { TabsFill(c, &sel, "One", "A much longer label") })
+		ui.Column(c).Width(300).Children(func() { Tabs(c, &sel, TabsOpts{Fill: true}, TabLabels("One", "A much longer label")) })
 	}), 400, 100)
 	tt.Frame()
 	if err := tt.Click("A much longer label"); err != nil {
@@ -1239,7 +1320,7 @@ func TestTabsLook(t *testing.T) {
 	var tk theme.Tokens
 	tt := ui.NewTester(themed(func(c *ui.Context) {
 		tk = theme.Of(c)
-		ui.Column(c).Width(300).Children(func() { TabsFill(c, &sel, "One", "Two") })
+		ui.Column(c).Width(300).Children(func() { Tabs(c, &sel, TabsOpts{Fill: true}, TabLabels("One", "Two")) })
 	}), 400, 100)
 	tt.Frame()
 	tt.Advance(2 * theme.MotionBase)
@@ -1281,7 +1362,7 @@ func TestTintShowsOffWhite(t *testing.T) {
 	tt := ui.NewTester(themed(func(c *ui.Context) {
 		tk = theme.Of(c)
 		ui.Column(c).Fill().Background(tk.Hover).Children(func() { // the hover gray itself as the surface
-			ui.Column(c).Width(300).Children(func() { TabsFill(c, &sel, "One", "Two") })
+			ui.Column(c).Width(300).Children(func() { Tabs(c, &sel, TabsOpts{Fill: true}, TabLabels("One", "Two")) })
 		})
 	}), 400, 100)
 	tt.Frame()
@@ -1298,7 +1379,7 @@ func TestTabsUnderline(t *testing.T) {
 	var tk theme.Tokens
 	tt := ui.NewTester(themed(func(c *ui.Context) {
 		tk = theme.Of(c)
-		TabsUnderline(c, &sel, "One", "Two")
+		Tabs(c, &sel, TabsOpts{Look: TabsUnderline}, TabLabels("One", "Two"))
 	}), 300, 100)
 	if err := tt.Click("Two"); err != nil {
 		t.Fatal(err)
@@ -1313,10 +1394,9 @@ func TestTabsUnderline(t *testing.T) {
 	if one.H != r.H {
 		t.Errorf("tab heights differ: %v vs %v", one.H, r.H)
 	}
-	// the 32-high tab's bottom 2 px are Primary under the selected tab: look
-	// down from its label, whose box the platform's font metrics place
+	// the tab's bottom 2 px are Primary under the selected tab
 	img, found := tt.Image(), false
-	for y := int(r.Y + r.H); y <= int(r.Y+r.H/2)+17; y++ {
+	for y := int(r.Y + r.H - theme.TabUnderline); y < int(r.Y+r.H); y++ {
 		if p := img.RGBAAt(int(r.X+r.W/2), y); p.R == tk.Primary.R && p.G == tk.Primary.G {
 			found = true
 			break
@@ -1327,70 +1407,71 @@ func TestTabsUnderline(t *testing.T) {
 	}
 }
 
-func TestToastCap(t *testing.T) {
-	n := 0
-	tt := ui.NewTester(themed(func(c *ui.Context) {
-		for ; n < 4; n++ {
-			c.AddToast(ui.Toast{ID: string(rune('a' + n)), Title: []string{"first", "second", "third", "fourth"}[n], Timeout: -1})
-		}
-		ToastHost(c, "Close")
-	}), 800, 600)
-	tt.Frame()
-	tt.Frame()
-	if tt.HasText("first") || !tt.HasText("second") || !tt.HasText("fourth") {
-		t.Errorf("toasts = %q, want the oldest dropped", tt.Texts())
+// TestButtonTones checks the toned looks against the design's variables
+// (Figma theme collection, light / dark): an Outline of a tone rests on
+// Background and fills with the tone's -bg on hover; a Ghost danger rests
+// bare and fills with danger-bg. An Alert's action is an Outline of its tone.
+func TestButtonTones(t *testing.T) {
+	hex := func(s string) color.RGBA {
+		v, _ := strconv.ParseUint(s[1:], 16, 32)
+		return color.RGBA{uint8(v >> 16), uint8(v >> 8), uint8(v), 255}
 	}
-}
-
-func TestDestructiveOutline(t *testing.T) {
-	for _, dark := range []bool{false, true} {
-		var tk theme.Tokens
-		tt := ui.NewTester(themed(func(c *ui.Context) {
-			tk = theme.Of(c)
-			Button(c, "Delete", ButtonOpts{Variant: DestructiveOutline})
-		}), 200, 100)
-		tt.SetDark(dark)
-		tt.Frame()
-		tt.Advance(2 * theme.MotionFast)
-		r, _ := tt.Find("Delete")
-		same := func(p color.RGBA, c ui.Color) bool { return p.R == c.R && p.G == c.G && p.B == c.B }
-		if p := tt.Image().RGBAAt(int(r.X)+3, int(r.Y+r.H/2)); !same(p, tk.Background) {
-			t.Errorf("dark=%v rest bg %v, want %v", dark, p, tk.Background)
-		}
-		tt.Move(r.X+r.W/2, r.Y+r.H/2)
-		tt.Frame()
-		tt.Advance(2 * theme.MotionFast)
-		if p := tt.Image().RGBAAt(int(r.X)+3, int(r.Y+r.H/2)); !same(p, tk.DangerBg) {
-			t.Errorf("dark=%v hover bg %v, want %v", dark, p, tk.DangerBg)
-		}
+	near := func(p, want color.RGBA) bool {
+		d := func(a, b uint8) int { return max(int(a)-int(b), int(b)-int(a)) }
+		return d(p.R, want.R) <= 2 && d(p.G, want.G) <= 2 && d(p.B, want.B) <= 2
 	}
-}
-
-func TestAlertAction(t *testing.T) {
-	for _, dark := range []bool{false, true} {
-		for _, kind := range []AlertKind{Warning, Danger, Info} {
+	cases := []struct {
+		name        string
+		draw        func(c *ui.Context, onClick func())
+		rest, hover [2]string // light, dark; "" is the page behind (bare)
+	}{
+		{"info", func(c *ui.Context, f func()) {
+			Button(c, "Go", ButtonOpts{Variant: Outline, Size: SizeSm, Tone: ToneInfo}).OnClick(f)
+		}, [2]string{"#ffffff", "#0a0a0a"}, [2]string{"#edf5ff", "#101730"}},
+		{"warning", func(c *ui.Context, f func()) {
+			Button(c, "Go", ButtonOpts{Variant: Outline, Size: SizeSm, Tone: ToneWarning}).OnClick(f)
+		}, [2]string{"#ffffff", "#0a0a0a"}, [2]string{"#fffbeb", "#461901"}},
+		{"danger", func(c *ui.Context, f func()) {
+			Button(c, "Go", ButtonOpts{Variant: Outline, Size: SizeSm, Tone: ToneDanger}).OnClick(f)
+		}, [2]string{"#ffffff", "#0a0a0a"}, [2]string{"#fef2f2", "#460809"}},
+		{"success", func(c *ui.Context, f func()) {
+			Button(c, "Go", ButtonOpts{Variant: Outline, Tone: ToneSuccess}).OnClick(f)
+		}, [2]string{"#ffffff", "#0a0a0a"}, [2]string{"#f0fdf4", "#032e15"}},
+		{"ghost danger", func(c *ui.Context, f func()) {
+			Button(c, "Go", ButtonOpts{Variant: Ghost, Tone: ToneDanger}).OnClick(f)
+		}, [2]string{"", ""}, [2]string{"#fef2f2", "#460809"}},
+	}
+	for _, k := range cases {
+		for i, dark := range []bool{false, true} {
 			var tk theme.Tokens
 			n := 0
 			tt := ui.NewTester(themed(func(c *ui.Context) {
 				tk = theme.Of(c)
-				AlertAction(c, kind, "Fix", func() { n++ })
+				ui.Column(c).Grow(1).FillWidth().Background(tk.Background).Padding(20).Children(func() { k.draw(c, func() { n++ }) })
 			}), 200, 100)
 			tt.SetDark(dark)
 			tt.Frame()
 			tt.Advance(2 * theme.MotionFast)
-			r, ok := tt.Find("Fix")
+			r, ok := tt.Find("Go")
 			if !ok {
-				t.Fatal("no button")
+				t.Fatalf("%s: no button", k.name)
 			}
-			// a step deeper than its alert's fill: halfway from the tone's fill to its border
-			bg, border, _, _ := toneColors(tk, alertTone(kind))
-			want := bg.Mix(border, 0.5)
-			p := tt.Image().RGBAAt(int(r.X)+3, int(r.Y+r.H/2))
-			if p.R != want.R || p.G != want.G || p.B != want.B {
-				t.Errorf("dark=%v kind=%v fill %v, want %v", dark, kind, p, want)
+			at := func() color.RGBA { return tt.Image().RGBAAt(int(r.X)+3, int(r.Y+r.H/2)) }
+			rest := k.rest[i]
+			if rest == "" {
+				rest = []string{"#ffffff", "#0a0a0a"}[i] // bare on the page's Background
 			}
-			if err := tt.Click("Fix"); err != nil || n != 1 {
-				t.Errorf("click err=%v n=%d", err, n)
+			if p := at(); !near(p, hex(rest)) {
+				t.Errorf("%s dark=%v rest %v, want %s", k.name, dark, p, rest)
+			}
+			tt.Move(r.X+r.W/2, r.Y+r.H/2)
+			tt.Frame()
+			tt.Advance(2 * theme.MotionFast)
+			if p := at(); !near(p, hex(k.hover[i])) {
+				t.Errorf("%s dark=%v hover %v, want %s", k.name, dark, p, k.hover[i])
+			}
+			if err := tt.Click("Go"); err != nil || n != 1 {
+				t.Errorf("%s: click err=%v n=%d", k.name, err, n)
 			}
 		}
 	}
@@ -1564,6 +1645,63 @@ func TestDialogGlass(t *testing.T) {
 	}
 }
 
+// TestFrostedPopoverBlursTranslucentBackdrop: over a translucent vibrancy
+// surface (the sidebar), a frosted popover still blurs sharp strokes cleanly
+// instead of letting unblurred pixels bleed through partial backdrop alpha.
+func TestFrostedPopoverBlursTranslucentBackdrop(t *testing.T) {
+	BackdropBlur = true
+	t.Cleanup(func() { BackdropBlur = false })
+
+	for _, tc := range []struct {
+		name string
+		dark bool
+	}{{"light", false}, {"dark", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			open := true
+			tt := ui.NewTester(func(c *ui.Context) {
+				tok := theme.Light()
+				root := tok.Window.Alpha(theme.MaterialTint)
+				if tc.dark {
+					tok = theme.Dark()
+					root = ui.Transparent
+				}
+				theme.Apply(c, tok)
+				c.Root().Background(root)
+				ui.Column(c).Fill().Children(func() {
+					anchor := ui.Box(c).Width(20).Height(20)
+					// Sharp high-contrast 4 px stripe on the translucent surface,
+					// like sidebar text strokes.
+					ui.Box(c).Absolute().Left(80).Top(0).Width(4).Height(200).Background(tok.Foreground)
+					// Wide high-contrast block on the right so we also verify the
+					// backdrop actually blurs through instead of painting flat.
+					ui.Box(c).Absolute().Left(200).Top(0).Width(120).Height(200).Background(tok.Foreground)
+					PopoverAt(c, anchor, &open, ui.AnchorBottomStart, ui.AnchorTopStart, 4, func() {
+						ui.Box(c).Width(260).Height(120)
+					})
+				})
+			}, 360, 200)
+			tt.SetDark(tc.dark)
+			tt.Advance(2 * theme.MotionFast)
+			img := tt.Image()
+
+			onStripe := img.RGBAAt(82, 80)
+			besideStripe := img.RGBAAt(76, 80)
+			overBlock := img.RGBAAt(240, 80)
+			farClear := img.RGBAAt(25, 80)
+
+			if onStripe.A != 255 || besideStripe.A != 255 {
+				t.Fatalf("popover over translucent surface is not opaque: on=%v beside=%v", onStripe, besideStripe)
+			}
+			if d := diff(onStripe.R, besideStripe.R); d > 2 {
+				t.Errorf("sharp stripe bled through popover blur: on=%v beside=%v (diff %d > 2)", onStripe, besideStripe, d)
+			}
+			if d := diff(overBlock.R, farClear.R); d < 10 {
+				t.Errorf("popover did not show blurred backdrop: overBlock=%v farClear=%v (diff %d < 10)", overBlock, farClear, d)
+			}
+		})
+	}
+}
+
 func TestAvatarColorKeptPerNameNeverGray(t *testing.T) {
 	tk := theme.Light()
 	seen := map[theme.LabelColor]bool{}
@@ -1579,23 +1717,53 @@ func TestAvatarColorKeptPerNameNeverGray(t *testing.T) {
 	}
 }
 
-// A shortcut is a keycap each key.
+// A shortcut is a keycap each key, using platform modifier names off macOS.
 func TestKbdKeys(t *testing.T) {
+	old := goos
+	t.Cleanup(func() { goos = old })
+
+	goos = "darwin"
 	for in, want := range map[string]string{"⇧⌘K": "⇧ ⌘ K", "⌥↵": "⌥ ↵", "←→": "← →", "Esc": "Esc", "⌘,": "⌘ ,", "↵": "↵"} {
 		if got := strings.Join(kbdKeys(in), " "); got != want {
-			t.Errorf("%s: %q, want %q", in, got, want)
+			t.Errorf("darwin %s: %q, want %q", in, got, want)
+		}
+	}
+	for _, osName := range []string{"windows", "linux"} {
+		goos = osName
+		for in, want := range map[string]string{"⌘K": "Ctrl K", "⇧⌘K": "Ctrl Shift K", "⌥↵": "Alt ↵", "⌘↵": "Ctrl ↵", "⇧R": "Shift R", "←→": "← →", "Esc": "Esc"} {
+			if got := strings.Join(kbdKeys(in), " "); got != want {
+				t.Errorf("%s %s: %q, want %q", osName, in, got, want)
+			}
 		}
 	}
 }
 
-func TestGlassMaterialAndTokens(t *testing.T) {
+func TestFrostedMaterialAndTokens(t *testing.T) {
 	l := theme.Light()
-	mat := LiquidGlass(l.GlassBg).(GlassMaterial)
-	if mat.Blur != theme.GlassBlur {
-		t.Errorf("glass blur = %v, want %v", mat.Blur, theme.GlassBlur)
+	var mat scrim
+	var f *frost
+	ui.NewTester(themed(func(c *ui.Context) { f = frostOf(c); mat = frostedMaterial(c, l.MaterialPopover).(scrim) }), 100, 100)
+	if mat.blur != theme.MaterialBlur {
+		t.Errorf("material blur = %v, want %v", mat.blur, theme.MaterialBlur)
 	}
-	if mat.Tint != l.GlassBg {
-		t.Errorf("glass tint = %v, want %v", mat.Tint, l.GlassBg)
+	if mat.tint != l.MaterialPopover {
+		t.Errorf("material tint = %v, want %v", mat.tint, l.MaterialPopover)
+	}
+	if !f.now {
+		t.Error("a frosted material does not tell WebView")
+	}
+	if _, ok := mat.NativeGlass(); ok {
+		t.Error("frosted popover material should not claim native glass")
+	}
+	bar := Bar(l.MaterialBar).(scrim)
+	if bar.blur != theme.MaterialBlur || bar.tint != l.MaterialBar || !bar.native {
+		t.Errorf("bar = %+v, want the bar material", bar)
+	}
+	if _, ok := bar.NativeGlass(); !ok {
+		t.Error("translucent bar should request native glass")
+	}
+	if _, ok := Bar(l.Background).(scrim).NativeGlass(); ok {
+		t.Error("opaque bar should not request native glass")
 	}
 }
 
@@ -1618,28 +1786,6 @@ func TestFrostRoundsOneSide(t *testing.T) {
 		if top == round || bottom != round {
 			t.Errorf("%s: top-left corner filled %v, bottom-left %v", name, top, bottom)
 		}
-	}
-}
-
-// A RadioCard is chosen by a click anywhere on it, its help included.
-func TestRadioCardClicks(t *testing.T) {
-	bg := false
-	tt := ui.NewTester(themed(func(c *ui.Context) {
-		ui.Column(c).Fill().Padding(10).Gap(8).Children(func() {
-			RadioCard(c, &bg, false, "Window", "Only while the window is open.")
-			RadioCard(c, &bg, true, "Background", "Keeps running after the window closes.")
-		})
-	}), 320, 200)
-	r, ok := tt.Find("Keeps running after the window closes.")
-	if !ok {
-		t.Fatalf("no help text: %q", tt.Texts())
-	}
-	tt.Move(r.X+r.W-4, r.Y+r.H/2)
-	tt.Press(r.X+r.W-4, r.Y+r.H/2)
-	tt.Release(r.X+r.W-4, r.Y+r.H/2)
-	tt.Frame()
-	if !bg {
-		t.Fatal("a click on the help did not choose the card")
 	}
 }
 

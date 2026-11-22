@@ -2,6 +2,7 @@ import { AlertDialog as Primitive } from "@base-ui/react/alert-dialog";
 import { RiCloseLine } from "@remixicon/react";
 import { cn } from "cn";
 import type { ComponentProps } from "react";
+import { Button } from "@/components/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -11,7 +12,6 @@ import {
   AlertDialogPortal,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
 
 // A dialog as the native kit.Dialog draws it (internal/kit/overlay.go), on shadcn's generated
 // alert dialog (ADR 0012: generated files stay as generated, differences live here). Its
@@ -43,7 +43,8 @@ const widths = {
 
 /**
  * The panel: the centre at --dialog-centre of the window yet --dialog-min-top below its top, a
- * hairline border and ShadowX2l on the raised colour, over the scrim. An alert (one question)
+ * hairline border of GlassBorder and ShadowX2l on the dialog material (MaterialDialog over the
+ * blurred backdrop), over the scrim. An alert (one question)
  * has the alert's scrim and no close button; any other dialog has the dialog's scrim and a close
  * button in the top corner, labelled close.
  */
@@ -70,7 +71,7 @@ export function DialogContent({
         data-slot="alert-dialog-content"
         data-closable={!alert || undefined}
         className={cn(
-          "group/dialog fixed top-(--dialog-centre) left-1/2 z-50 grid w-full -translate-x-1/2 translate-y-[max(-50%,calc(var(--dialog-min-top)_-_var(--dialog-centre)))] gap-4 rounded-xl border-[0.5px] bg-(--raised) p-4 text-popover-foreground shadow-(--shadow-dialog) outline-none duration-100 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "group/dialog fixed top-(--dialog-centre) left-1/2 z-50 grid w-full -translate-x-1/2 translate-y-[max(-50%,calc(var(--dialog-min-top)_-_var(--dialog-centre)))] gap-4 rounded-2xl border-[0.5px] border-(--glass-border) bg-(--material-dialog) p-4 text-popover-foreground shadow-(--shadow-dialog) backdrop-blur-(--material-blur) outline-none duration-100 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           widths[size],
           className,
         )}
@@ -114,7 +115,7 @@ export function DialogFooter({ className, ...props }: ComponentProps<"div">) {
     <div
       data-slot="alert-dialog-footer"
       className={cn(
-        "-mx-4 -mb-4 flex items-center justify-end gap-2 rounded-b-xl border-t-[0.5px] bg-sidebar px-4 py-3",
+        "-mx-4 -mb-4 flex items-center justify-end gap-2 rounded-b-2xl border-t-[0.5px] bg-sidebar px-4 py-3",
         className,
       )}
       {...props}

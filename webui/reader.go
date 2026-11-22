@@ -59,12 +59,22 @@ type ReaderBody struct {
 // ReaderReload tells a reader page its body changed (加载图片, a retry).
 var ReaderReload = mygo.NewEvent[ReaderBody]("readerBody")
 
-// ReaderGlass is how much of a reader page, in CSS pixels, the reader's
-// bars cover: Top from its top, Bottom from its bottom. The page blurs there
-// itself, as the bars' blur cannot see a web view.
+// ReaderGlassRect is a frosted surface's visible overlap with a reader page, in
+// CSS pixels, rounded by R.
+type ReaderGlassRect struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+	W int `json:"w"`
+	H int `json:"h"`
+	R int `json:"r"`
+}
+
+// ReaderGlass is what the reader's frosted surfaces cover of a reader page, in
+// CSS pixels: Top for the collapsing sticky header, and Bottom for the floating
+// reply card. Used as the fallback when system native glass is unavailable.
 type ReaderGlass struct {
-	Top    int `json:"top"`
-	Bottom int `json:"bottom"`
+	Top    ReaderGlassRect `json:"top"`
+	Bottom ReaderGlassRect `json:"bottom"`
 }
 
 // ReaderGlassed tells a reader page what the bars cover, as it scrolls.

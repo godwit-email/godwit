@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -131,10 +132,20 @@ func TestSidebarAccountsAndViews(t *testing.T) {
 	for _, s := range []string{"写邮件", "全部收件箱", "已标星", "2"} {
 		h.see(s)
 	}
-	// Folders by role: inbox, flagged, sent, archive, trash (the fake server has no drafts or junk).
-	// The first 已标星 is the unified one, above the accounts: the order skips it.
+	// Per-account inboxes sit directly under All Inboxes; Other folders list
+	// the remaining roles in order (flagged, drafts, sent, archive, trash).
+	allIn, _ := h.tt.Find("全部收件箱")
+	workIn, ok1 := h.tt.Find("Work · 收件箱")
+	carolIn, ok2 := h.tt.Find("carol@example.com · 收件箱")
+	if !ok1 || !ok2 || !(allIn.Y < workIn.Y && workIn.Y < carolIn.Y) {
+		t.Fatalf("inbox rows under All Inboxes: all=%v work=%v(%v) carol=%v(%v)", allIn, workIn, ok1, carolIn, ok2)
+	}
+	h.click("carol@example.com · 收件箱")
+	if v := h.app.route.View; v.FolderID != h.folderOf(accs[1], "inbox").ID {
+		t.Fatalf("clicking carol's inbox sub-row navigated to %+v", v)
+	}
 	var ys []float32
-	for _, name := range []string{"收件箱", "已发送", "归档", "已删除"} {
+	for _, name := range []string{"草稿", "已发送", "归档", "已删除"} {
 		r, ok := h.tt.Find(name)
 		if !ok {
 			t.Fatalf("no folder %s: %q", name, h.tt.Texts())
@@ -159,18 +170,19 @@ func TestSidebarAccountsAndViews(t *testing.T) {
 	if n := count("已标星"); n != 2 {
 		t.Fatalf("%d 已标星, want the unified one and the first account's", n)
 	}
-	h.click("carol@example.com") // unfolds the second account, animated: wait for its end
+	other := i18n.T("mail.other_folders")
+	h.click("carol@example.com · " + other) // unfolds the second account, animated: wait for its end
 	h.until("both accounts' 已发送", func() bool { return count("已发送") == 2 })
-	h.click("Work")
+	h.click("Work · " + other)
 	h.until("one 已发送 folder after collapsing", func() bool { return count("已发送") == 1 })
 	h.click("已标星")
 	if v := h.app.route.View; v.Unified != "starred" {
 		t.Fatalf("view %+v", v)
 	}
-	// carol's 已标星 sits between her inbox and local drafts
-	in, _ := h.tt.Find("收件箱")
+	// carol's 已标星 sits right between her account row and local drafts
+	carolRow, _ := h.tt.Find("carol@example.com · " + other)
 	drafts, _ := h.tt.Find("草稿")
-	h.tt.ClickAt(in.X+in.W/2, (in.Y+in.H/2+drafts.Y+drafts.H/2)/2)
+	h.tt.ClickAt(drafts.X+drafts.W/2, (carolRow.Y+carolRow.H+drafts.Y)/2)
 	h.drain()
 	h.tt.Frame()
 	if v := h.app.route.View; v != accountStarred(accs[1].ID) {
@@ -180,7 +192,7 @@ func TestSidebarAccountsAndViews(t *testing.T) {
 	if v := h.app.route.View; v.FolderID != h.folderOf(accs[1], "archive").ID {
 		t.Fatalf("view %+v", v)
 	}
-	h.headerMenu(i18n.T("mail.accounts"), "添加账户")
+	h.headerMenu(i18n.T("mail.other_folders"), "添加账户")
 	if h.app.route.Page != PageSettings || h.app.addAccount == nil {
 		t.Fatalf("route %+v, sheet %v", h.app.route, h.app.addAccount != nil)
 	}
@@ -778,7 +790,7 @@ func TestContextMenuMoveRoleOptions(t *testing.T) {
 	// Closed, the reader's own Delete does not come before the dialog's.
 	h.post(func() { h.app.navigate(Route{Page: PageMail, View: h.app.route.View}) })
 	h.until("the reader closed", func() bool { return h.app.route.ThreadID == 0 && h.app.mail.purgeAsk })
-	h.click(i18n.T("common.delete"))
+	h.click(i18n.T("mail.purge.confirm"))
 	trash := h.folderOf(accs[0], "trash")
 	h.waitMail("trash empty at once", func() bool { return h.countIn(trash) == 0 && len(h.items()) == 0 })
 	// Its undo window over, the push expunges it and the fetch after it sees it gone.
@@ -819,7 +831,7 @@ func TestDeletePermanentlyOptimisticAndUndo(t *testing.T) {
 	h.until("the confirmation", func() bool { return h.app.mail.purgeAsk })
 	h.post(func() { h.app.navigate(Route{Page: PageMail, View: h.app.route.View}) })
 	h.until("the reader closed", func() bool { return h.app.route.ThreadID == 0 && h.app.mail.purgeAsk })
-	h.click(i18n.T("common.delete"))
+	h.click(i18n.T("mail.purge.confirm"))
 
 	// Optimistic: message disappears immediately from the list without sync!
 	h.waitMail("immediately hidden from trash without syncNow", func() bool {
@@ -986,6 +998,7 @@ func TestBatchAcrossAccounts(t *testing.T) {
 	h.until("both archives filled", func() bool {
 		return h.countIn(h.folderOf(accs[0], "archive")) == 1 && h.countIn(h.folderOf(accs[1], "archive")) == 1
 	})
+	h.hoverOn(i18n.T("compose.undo")) // the skip's toast is behind the undo's until the stack opens
 	h.until("the skip told", func() bool {
 		return slices.ContainsFunc(h.tt.Texts(), func(s string) bool {
 			return strings.Contains(s, "dave@example.com") && strings.Contains(s, "归档")
@@ -1302,7 +1315,8 @@ func TestAccountFoldPersists(t *testing.T) {
 	if *h.app.mail.accountOpen(accs[1].ID) {
 		t.Fatal("the second account starts unfolded")
 	}
-	h.click("alice@example.com")
+	aliceFolders := "alice@example.com · " + i18n.T("mail.other_folders")
+	h.click(aliceFolders)
 	if n := count(); n != 0 || *h.app.mail.accountOpen(accs[0].ID) {
 		t.Fatalf("%d 已发送 folders after folding alice, want 0", n)
 	}
@@ -1314,7 +1328,7 @@ func TestAccountFoldPersists(t *testing.T) {
 	if n := count(); n != 0 || *h.app.mail.accountOpen(accs[0].ID) {
 		t.Fatalf("%d 已发送 folders back on the mail page, want alice's still folded", n)
 	}
-	h.click("alice@example.com")
+	h.click(aliceFolders)
 	if n := count(); n != 1 {
 		t.Fatalf("%d 已发送 folders after unfolding alice, want 1", n)
 	}
@@ -1405,5 +1419,38 @@ func TestEmptyFolderLoadingOlder(t *testing.T) {
 		if s == "没有邮件" || strings.HasPrefix(s, "正在加载更早") {
 			t.Fatalf("%q while the empty folder loads: %q", s, h.tt.Texts())
 		}
+	}
+}
+
+// List row avatars align to the same 16 px left visual axis as the list header
+// ("今天"), with the unread dot pinned as a badge on the avatar's top-left corner.
+func TestMailListAvatarAlignsWithHeader(t *testing.T) {
+	h, accs := mailHarness(t, []coretest.Option{coretest.WithoutAutoSync()}, "alice@example.com")
+	base := h.clock.Now()
+	h.put(accs[0], "INBOX", coretest.Msg("Kraken <support@kraken.com>", "alice@example.com", "Ready to trade", "verify identity", at(base, 1)))
+	h.syncNow(accs[0])
+	h.waitMail("inbox mail", func() bool { return len(h.items()) == 1 })
+	h.tt.Frame()
+
+	today, ok := h.tt.Find(i18n.T("mail.group.today"))
+	if !ok {
+		t.Fatalf("missing group heading: %q", h.tt.Texts())
+	}
+	who, ok := h.tt.Find("Kraken")
+	if !ok {
+		t.Fatalf("missing sender row: %q", h.tt.Texts())
+	}
+	dot, ok := h.tt.Find(i18n.Tf("mail.row.unread", 1))
+	if !ok {
+		t.Fatalf("missing unread dot: %q", h.tt.Texts())
+	}
+	// Avatar (32 px) + gap (10 px) sits directly to the left of the sender column.
+	avatarX := who.X - 42
+	if math.Abs(float64(avatarX-today.X)) > 1 {
+		t.Fatalf("avatar left X = %.1f, group heading X = %.1f (who.X=%.1f): want aligned to 16 px axis", avatarX, today.X, who.X)
+	}
+	// Unread badge (12 px outer with 2 px ring) pins at (-5, -5) relative to avatar corner.
+	if math.Abs(float64(dot.X-(avatarX-5))) > 1 {
+		t.Fatalf("unread dot X = %.1f, want %.1f (corner badge on avatar at %.1f)", dot.X, avatarX-5, avatarX)
 	}
 }

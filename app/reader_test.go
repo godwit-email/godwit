@@ -105,7 +105,7 @@ func TestReaderAvatarLoadsWithoutLayoutJump(t *testing.T) {
 	release <- struct{}{}
 	h.until("avatar", func() bool { return h.app.mail.reader.bodies[m.ID].avatar != nil })
 	after, _ := h.tt.Find("Bob")
-	if before != after || slices.Contains(h.tt.Texts(), "B") {
+	if before != after || h.inReader("B") {
 		t.Fatalf("layout %v -> %v, texts %q", before, after, h.tt.Texts())
 	}
 	if px := h.tt.Image().RGBAAt(int(after.X+16), int(after.Y+16)); px.R < 250 || px.G > 5 || px.B > 5 {
@@ -212,7 +212,7 @@ func TestReaderAvatarPulsesUntilDone(t *testing.T) {
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
 	h.until("avatar started", func() bool { return r.bodies[m.ID].avatarRun.loading })
-	initial := func() bool { h.tt.Frame(); return slices.Contains(h.tt.Texts(), "B") }
+	initial := func() bool { h.tt.Frame(); return h.inReader("B") }
 	if initial() {
 		t.Fatal("the initial shows while the avatar loads")
 	}
@@ -230,7 +230,9 @@ func TestReaderAvatarParseFailure(t *testing.T) {
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
 	h.until("avatar completed", func() bool { b := r.bodies[m.ID]; return !b.avatarRun.loading })
-	h.see("B")
+	if !h.inReader("B") {
+		t.Fatalf("no initial in the reader: %q", h.tt.Texts())
+	}
 	if r.bodies[m.ID].avatar != nil {
 		t.Fatal("invalid SVG displayed")
 	}
@@ -423,6 +425,75 @@ func TestReaderAvatarManualPermissionSurvivesUnrelatedSettings(t *testing.T) {
 	}
 }
 
+// TestSidebarAccountFoldKeepsAvatarsWithoutFlash verifies toggling an account's
+// folder fold in the sidebar (which saves SidebarAccountsOpen) neither clears
+// cached list/reader avatars nor flashes the remote-images-blocked notice.
+func TestSidebarAccountFoldKeepsAvatarsWithoutFlash(t *testing.T) {
+	var hits atomic.Int64
+	h, acc := avatarHarness(t, "auto", func(w http.ResponseWriter, req *http.Request) {
+		hits.Add(1)
+		w.Write(readerAvatarSVG)
+	})
+	m := h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "Avatar", "plain"))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	b := h.app.mail.reader.bodies[m.ID]
+	h.until("initial reader and list avatars", func() bool {
+		h.tt.Frame()
+		return b.avatar != nil && h.app.mail.addrAvatar("bob@example.com", m.ID) != nil
+	})
+	hitsBefore := hits.Load()
+
+	// Block the settings save in flight so we can inspect the intermediate frame
+	// while the unrelated SidebarAccountsOpen write is pending.
+	started, release := make(chan struct{}), make(chan struct{}, 1)
+	t.Cleanup(func() { close(release) })
+	origSave := h.app.saveSettings
+	h.app.saveSettings = func(ctx context.Context, st core.Settings) (core.Settings, error) {
+		close(started)
+		select {
+		case <-ctx.Done():
+			return core.Settings{}, ctx.Err()
+		case <-release:
+		}
+		return origSave(ctx, st)
+	}
+
+	st := h.app.settings
+	st.SidebarAccountsOpen = map[int64]bool{acc.ID: false}
+	h.app.changeSettings(st)
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("save did not start")
+	}
+	h.tt.Frame()
+	if b.avatar == nil || b.avatarBlocked {
+		t.Fatalf("reader avatar flashed while saving fold: avatar=%v blocked=%v", b.avatar != nil, b.avatarBlocked)
+	}
+	if h.app.mail.addrAvatar("bob@example.com", m.ID) == nil {
+		t.Fatal("list avatar flashed to nil while saving fold")
+	}
+
+	before := h.app.events
+	release <- struct{}{}
+	h.until("settings saved and event handled", func() bool {
+		return h.app.settingsVer == h.app.settingsSavedVer && h.app.events > before
+	})
+	h.advance(refreshEvery)
+	h.until("reload finished", func() bool { return h.app.accountsGen == h.app.loads.Gen() })
+	h.tt.Frame()
+	if b.avatar == nil || b.avatarBlocked {
+		t.Fatalf("reader avatar cleared after SettingsChanged: avatar=%v blocked=%v", b.avatar != nil, b.avatarBlocked)
+	}
+	if h.app.mail.addrAvatar("bob@example.com", m.ID) == nil {
+		t.Fatal("list avatar cleared after SettingsChanged")
+	}
+	if hits.Load() != hitsBefore {
+		t.Fatalf("unrelated setting triggered %d extra avatar fetches", hits.Load()-hitsBefore)
+	}
+}
+
 func TestReaderAvatarLifecycleCancellation(t *testing.T) {
 	for _, action := range []string{"settings", "account", "close", "body replacement"} {
 		t.Run(action, func(t *testing.T) {
@@ -535,6 +606,25 @@ func (h *harness) countTexts(sub string) int {
 	return n
 }
 
+// inReader reports whether the reader shows a text s, as its avatar's initial:
+// the texts after its label row's button. The list's avatars show initials too.
+func (h *harness) inReader(s string) bool {
+	texts := h.tt.Texts()
+	from := slices.Index(texts, i18n.T("reader.labels.add.label"))
+	return from >= 0 && slices.Contains(texts[from:], s)
+}
+
+// countExact is how many texts of the last frame are s.
+func (h *harness) countExact(s string) int {
+	n := 0
+	for _, text := range h.tt.Texts() {
+		if text == s {
+			n++
+		}
+	}
+	return n
+}
+
 // called waits for a platform call starting with prefix and returns its argument.
 func (h *harness) callArg(prefix string) string {
 	h.t.Helper()
@@ -634,20 +724,20 @@ func TestReaderThreadHistoryCollapse(t *testing.T) {
 	// the newest five kept in sight (the fourth open among them); the
 	// first and second fold into a card above them
 	h.until("the oldest a card", func() bool {
-		return h.tt.HasText("展开历史邮件（2 封）") && !h.tt.HasText("msg one") && !h.tt.HasText("msg two") &&
+		return h.tt.HasText("2 封较早的邮件") && h.tt.HasText("展开") && !h.tt.HasText("msg one") && !h.tt.HasText("msg two") &&
 			h.tt.HasText("msg three") && h.tt.HasText("msg five") && h.tt.HasText("msg six")
 	})
-	if card, _ := h.tt.Find("展开历史邮件（2 封）"); func() bool { three, _ := h.tt.Find("msg three"); return card.Y > three.Y }() {
+	if card, _ := h.tt.Find("2 封较早的邮件"); func() bool { three, _ := h.tt.Find("msg three"); return card.Y > three.Y }() {
 		t.Fatal("the card is not above the messages kept")
 	}
 
-	h.click("展开历史邮件（2 封）")
+	h.click("2 封较早的邮件")
 	h.until("the oldest shown", func() bool {
 		return h.tt.HasText("msg one") && h.tt.HasText("msg two") && h.countTexts("折叠历史邮件") == 1
 	})
 	h.click("折叠历史邮件")
 	h.until("collapsed again", func() bool {
-		return h.tt.HasText("展开历史邮件（2 封）") && !h.tt.HasText("msg one")
+		return h.tt.HasText("2 封较早的邮件") && !h.tt.HasText("msg one")
 	})
 
 	// the threshold is how many stay in sight: 7 keeps all of 7
@@ -655,26 +745,26 @@ func TestReaderThreadHistoryCollapse(t *testing.T) {
 	st.ThreadCollapseThreshold = 7
 	h.app.changeSettings(st)
 	h.until("all kept", func() bool {
-		return !h.tt.HasText("展开历史邮件（2 封）") && h.tt.HasText("msg one") && h.tt.HasText("msg two")
+		return !h.tt.HasText("2 封较早的邮件") && h.tt.HasText("msg one") && h.tt.HasText("msg two")
 	})
 	// 6 leaves one older: a single message needs no card
 	st.ThreadCollapseThreshold = 6
 	h.app.changeSettings(st)
 	h.tt.Advance(2 * theme.MotionBase)
-	if h.tt.HasText("展开历史邮件") || !h.tt.HasText("msg one") {
+	if h.tt.HasText("封较早的邮件") || !h.tt.HasText("msg one") {
 		t.Fatalf("one message carded: %q", h.tt.Texts())
 	}
 	// 3 keeps the newest three; the open fourth ends the older run
 	st.ThreadCollapseThreshold = 3
 	h.app.changeSettings(st)
 	h.until("the older carded", func() bool {
-		return h.tt.HasText("展开历史邮件（3 封）") && !h.tt.HasText("msg one") && h.tt.HasText("msg five") && h.tt.HasText("msg six")
+		return h.tt.HasText("3 封较早的邮件") && !h.tt.HasText("msg one") && h.tt.HasText("msg five") && h.tt.HasText("msg six")
 	})
 
 	st.ThreadCollapse = false
 	h.app.changeSettings(st)
 	h.until("collapsing off", func() bool {
-		return !h.tt.HasText("展开历史邮件") && h.tt.HasText("msg one") && h.tt.HasText("msg two")
+		return !h.tt.HasText("封较早的邮件") && h.tt.HasText("msg one") && h.tt.HasText("msg two")
 	})
 }
 
@@ -716,8 +806,8 @@ func TestReaderHistoryKeepsShown(t *testing.T) {
 	r := h.app.mail.reader
 	h.openThread(msgs[0].ThreadID)
 	h.seeBody(msgs[6].ID)
-	h.until("the older a card", func() bool { return h.tt.HasText("展开历史邮件（5 封）") && h.tt.HasText("msg six") })
-	h.click("展开历史邮件（5 封）")
+	h.until("the older a card", func() bool { return h.tt.HasText("5 封较早的邮件") && h.tt.HasText("msg six") })
+	h.click("5 封较早的邮件")
 	h.until("the older shown", func() bool { return h.tt.HasText("msg one") })
 	h.tt.Advance(2 * theme.MotionBase) // the rows in place before one is clicked
 	h.click("msg three")
@@ -734,7 +824,7 @@ func TestReaderHistoryKeepsShown(t *testing.T) {
 
 	h.click("折叠历史邮件")
 	h.tt.Advance(2 * theme.MotionBase)
-	if r.open[msgs[2].ID] || !h.tt.HasText("展开历史邮件（5 封）") || h.tt.HasText("msg one") || !h.tt.HasText("msg six") {
+	if r.open[msgs[2].ID] || !h.tt.HasText("5 封较早的邮件") || h.tt.HasText("msg one") || !h.tt.HasText("msg six") {
 		t.Fatalf("not collapsed whole (open %v): %q", r.open, h.tt.Texts())
 	}
 
@@ -742,7 +832,7 @@ func TestReaderHistoryKeepsShown(t *testing.T) {
 	r.toggle(msgs[2].ID) // folded by the reader, the history collapsed
 	h.tt.Frame()
 	h.tt.Advance(2 * theme.MotionBase)
-	if !h.tt.HasText("msg three") || !h.tt.HasText("展开历史邮件（2 封）") {
+	if !h.tt.HasText("msg three") || !h.tt.HasText("2 封较早的邮件") {
 		t.Fatalf("a message folded went into the history: %q", h.tt.Texts())
 	}
 }
@@ -1101,6 +1191,25 @@ func TestReaderRefreshKeepsNewest(t *testing.T) {
 	}
 }
 
+// TestReaderSettles: an open message stops asking for frames once laid out.
+// The bars' measured heights flipped by float rounding (97.01, 97.009995) and
+// redrew the reader every frame.
+func TestReaderSettles(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Plan", "body"))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+	h.tt.Advance(5 * time.Second)
+	for range 30 {
+		h.drain()
+		h.tt.Frame()
+		h.tt.Advance(time.Second / 60)
+	}
+	if h.tt.FramePending() {
+		t.Fatal("the open reader still asks for frames")
+	}
+}
+
 func TestReaderNewReplyExpandsAndReads(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	acc := accs[0]
@@ -1316,8 +1425,8 @@ func TestRelativeSenderDate(t *testing.T) {
 	}
 }
 
-// TestReaderToolbarAt16: the toolbar's buttons fit the window, unclipped and
-// apart, at font 13 and 16.
+// TestReaderToolbarAt16: the title bar's buttons and the header's AI buttons
+// fit the window, unclipped and apart, at font 13 and 16.
 func TestReaderToolbarAt16(t *testing.T) {
 	for _, font := range []int{13, 16} {
 		t.Run(strconv.Itoa(font), func(t *testing.T) {
@@ -1549,13 +1658,13 @@ func TestReaderSaveAndPrint(t *testing.T) {
 		t.Fatal("cancelling SaveFile toasted reader.saved")
 	}
 
-	// 1. Save in the toolbar
+	// 1. Save in the title bar
 	h.plat.mu.Lock()
 	h.plat.savePath = savePath
 	h.plat.calls = nil
 	h.plat.mu.Unlock()
 
-	// Save and print sit in the toolbar's more menu.
+	// Save and print sit in the title bar's more menu.
 	choose := func(item string) {
 		t.Helper()
 		h.click(i18n.T("reader.more"))
@@ -1575,7 +1684,7 @@ func TestReaderSaveAndPrint(t *testing.T) {
 	})
 	h.see(i18n.T("reader.saved"))
 
-	// 2. Print in the toolbar
+	// 2. Print in the title bar
 	choose(i18n.T("reader.print"))
 	printArg := h.callArg("Print")
 	if printArg != fmt.Sprint(m.ID) {
@@ -1670,10 +1779,10 @@ func TestReaderPrintFocusedMessage(t *testing.T) {
 	print(msgs[0].ID, key)
 }
 
-// The header names who a message went to: "我" with one account; with more,
-// the address that got it, the others (To and Cc) counted; under Cc when the
-// user is only Cc'd; To's first when the user is in neither; the account's
-// address when the message names no one.
+// The header names who a message went to: "我" for the address that got it,
+// with more accounts too, the others (To and Cc) counted; under Cc when the
+// user is only Cc'd; To's first when the user is in neither; "我" when the
+// message names no one.
 func TestReaderRecipients(t *testing.T) {
 	h, accs := mailHarness(t, nil, "me@baran.wang", "work@company.example")
 	h.waitMail("the folders", func() bool { return len(h.app.mail.folders[accs[0].ID]) > 0 })
@@ -1683,12 +1792,12 @@ func TestReaderRecipients(t *testing.T) {
 		to, cc []string
 		want   string
 	}{
-		{to: []string{"Baran <me@baran.wang>"}, want: "发给 me@baran.wang"},
-		{to: []string{"Baran <me@baran.wang>", "Mia <mia@partner.example>"}, cc: []string{"team@partner.example", "ops@partner.example"}, want: "发给 me@baran.wang 等 3 人"},
-		{to: []string{"Lena Park <lena@partner.example>", "mia@partner.example", "joe@partner.example"}, cc: []string{"Work <WORK@company.example>"}, want: "发给 Lena Park 等 2 人 · 抄送 WORK@company.example"},
+		{to: []string{"Baran <me@baran.wang>"}, want: "发给 我"},
+		{to: []string{"Baran <me@baran.wang>", "Mia <mia@partner.example>"}, cc: []string{"team@partner.example", "ops@partner.example"}, want: "发给 我 等 3 人"},
+		{to: []string{"Lena Park <lena@partner.example>", "mia@partner.example", "joe@partner.example"}, cc: []string{"Work <WORK@company.example>"}, want: "发给 Lena Park 等 2 人 · 抄送 我"},
 		{to: []string{"subscribers@rust.example"}, cc: []string{"x@rust.example"}, want: "发给 subscribers@rust.example 等 1 人"},
 		{cc: []string{"Team <team@partner.example>"}, want: "抄送 Team"},
-		{want: "发给 me@baran.wang"},
+		{want: "发给 我"},
 	} {
 		if got := r.recipients(core.MessageSummary{FolderID: inbox, To: c.to, Cc: c.cc}); got != c.want {
 			t.Errorf("to %q cc %q: %q, want %q", c.to, c.cc, got, c.want)
@@ -2159,7 +2268,7 @@ func TestReaderCrossFolderJunkAndFraudDonorAvatars(t *testing.T) {
 	if r.open[mJunk.ID] {
 		t.Fatal("older junk message should start folded")
 	}
-	if !slices.Contains(h.tt.Texts(), "B") {
+	if !h.inReader("B") {
 		t.Fatalf("folded Junk message borrowed Inbox message's CardDAV PHOTO instead of showing initial B: %q", h.tt.Texts())
 	}
 
@@ -2180,7 +2289,7 @@ func TestReaderCrossFolderJunkAndFraudDonorAvatars(t *testing.T) {
 		return b != nil && b.avatarDone && b.avatar != nil
 	})
 	h.tt.Frame()
-	if !slices.Contains(h.tt.Texts(), "P") {
+	if !h.inReader("P") {
 		t.Fatalf("folded SecurityFraud message borrowed CardDAV PHOTO instead of showing initial P: %q", h.tt.Texts())
 	}
 
@@ -2204,7 +2313,7 @@ func TestReaderCrossFolderJunkAndFraudDonorAvatars(t *testing.T) {
 	})
 	h.until("folded SecurityFraud message reuses explicit non-CardDAV avatar", func() bool {
 		h.tt.Frame()
-		return !slices.Contains(h.tt.Texts(), "P")
+		return !h.inReader("P")
 	})
 }
 

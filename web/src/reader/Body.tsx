@@ -1,7 +1,13 @@
 import { RiRefreshLine } from "@remixicon/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { ReaderPage as api, events, type ReaderBody, type ReaderGlass, type Theme } from "@/mygo";
+import { Button } from "@/components/button";
+import {
+  ReaderPage as api,
+  events,
+  type ReaderBody,
+  type ReaderGlassRect,
+  type Theme,
+} from "@/mygo";
 import { useT } from "@/shared/i18n";
 import { forwardShortcuts } from "@/shared/shortcuts";
 import { applyTheme, type Theme as PageTheme } from "@/shared/theme";
@@ -83,30 +89,130 @@ export function ReaderApp() {
   );
 }
 
-// The blur of the native reader's frosted bars (kit.Bar: 2× theme.BackdropBlur), which cannot see
-// this page: what they cover of it blurs here, under their tint.
-const blur = { backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" };
+// The blur of the native reader's frosted header and floating reply card (kit.Bar)
+// when system native glass is unavailable: each visibly covered strip blurs here,
+// directly under its translucent native tint.
+const glassStyle = {
+  backdropFilter: "blur(16px)",
+  WebkitBackdropFilter: "blur(16px)",
+  display: "none",
+  opacity: "1",
+  willChange: "transform, opacity",
+  contain: "strict",
+} as const;
 
-/** Blurs what the reader's bars cover of the page, from its top and its bottom, as Go tells it. */
+const emptyRect: ReaderGlassRect = { x: 0, y: 0, w: 0, h: 0, r: 0 };
+const isVisible = (r?: ReaderGlassRect): r is ReaderGlassRect => !!r && r.w > 0 && r.h > 0;
+
+// During a fast scroll fling, async cross-process IPC lags behind the native
+// WKWebView frame by 1–2 frames. Fading the fallback blur while scrolling fast
+// prevents blurred strips from visibly sticking out past the native card/header
+// (whose translucent tint still tracks synchronously at 0 ms lag).
+const FAST_SCROLL_DY = 24;
+const FAST_SCROLL_VELOCITY = 1.5; // px/ms
+const GLASS_SETTLE_MS = 90;
+
+function applyBand(el: HTMLDivElement | null, r: ReaderGlassRect, prev: ReaderGlassRect) {
+  if (!el) return;
+  if (!isVisible(r)) {
+    if (el.style.display !== "none") el.style.display = "none";
+    return;
+  }
+  if (el.style.display !== "block") el.style.display = "block";
+  el.style.transform = `translate3d(${r.x}px, ${r.y}px, 0)`;
+  if (r.w !== prev.w) el.style.width = `${r.w}px`;
+  if (r.h !== prev.h) el.style.height = `${r.h}px`;
+  if (r.r !== prev.r) el.style.borderRadius = `${r.r}px`;
+}
+
+/**
+ * Blurs what the reader's frosted header and floating reply card cover of the page,
+ * mutating DOM refs directly via GPU translate3d (zero React re-renders during scroll)
+ * and fading briefly during fast flings so async IPC never leaves trailing ghosts.
+ */
 export function Glass() {
-  const [glass, setGlass] = useState<ReaderGlass>({ top: 0, bottom: 0 });
-  useEffect(() => events.readerGlass.on(setGlass), []);
+  const topRef = useRef<HTMLDivElement>(null);
+  const botRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let prevTop = emptyRect;
+    let prevBot = emptyRect;
+    let prevTime = 0;
+    let faded = false;
+    let settle: ReturnType<typeof setTimeout> | undefined;
+
+    const setOpacity = (opacity: string, transition: string) => {
+      for (const el of [topRef.current, botRef.current]) {
+        if (!el) continue;
+        el.style.transition = transition;
+        el.style.opacity = opacity;
+      }
+    };
+
+    const off = events.readerGlass.on((g) => {
+      const top = g.top ?? emptyRect;
+      const bot = g.bottom ?? emptyRect;
+      const now = performance.now();
+
+      let dy = 0;
+      if (isVisible(top) && isVisible(prevTop)) dy = Math.max(dy, Math.abs(top.y - prevTop.y));
+      if (isVisible(bot) && isVisible(prevBot)) dy = Math.max(dy, Math.abs(bot.y - prevBot.y));
+
+      const dt = prevTime > 0 ? Math.max(now - prevTime, 4) : 16;
+      const fast = dy >= FAST_SCROLL_DY || (dy > 0 && dy / dt >= FAST_SCROLL_VELOCITY);
+
+      applyBand(topRef.current, top, prevTop);
+      applyBand(botRef.current, bot, prevBot);
+      prevTop = top;
+      prevBot = bot;
+      prevTime = now;
+
+      if (!isVisible(top) && !isVisible(bot)) {
+        if (settle !== undefined) {
+          clearTimeout(settle);
+          settle = undefined;
+        }
+        if (faded) {
+          faded = false;
+          setOpacity("1", "none");
+        }
+        return;
+      }
+
+      if (fast) {
+        if (!faded) {
+          faded = true;
+          setOpacity("0", "opacity 40ms linear");
+        }
+        if (settle !== undefined) clearTimeout(settle);
+        settle = setTimeout(() => {
+          settle = undefined;
+          faded = false;
+          setOpacity("1", "opacity 120ms ease-out");
+        }, GLASS_SETTLE_MS);
+      }
+    });
+
+    return () => {
+      off();
+      if (settle !== undefined) clearTimeout(settle);
+    };
+  }, []);
+
   return (
     <>
-      {glass.top > 0 && (
-        <div
-          data-glass="top"
-          className="pointer-events-none fixed inset-x-0 top-0"
-          style={{ ...blur, height: glass.top }}
-        />
-      )}
-      {glass.bottom > 0 && (
-        <div
-          data-glass="bottom"
-          className="pointer-events-none fixed inset-x-0 bottom-0"
-          style={{ ...blur, height: glass.bottom }}
-        />
-      )}
+      <div
+        ref={topRef}
+        data-glass="top"
+        className="pointer-events-none fixed top-0 left-0 overflow-hidden"
+        style={glassStyle}
+      />
+      <div
+        ref={botRef}
+        data-glass="bottom"
+        className="pointer-events-none fixed top-0 left-0 overflow-hidden"
+        style={glassStyle}
+      />
     </>
   );
 }
@@ -223,6 +329,8 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
           border: 0,
           width: "100%",
           display: "block",
+          borderRadius: 12,
+          overflow: "hidden",
           colorScheme: frameScheme(body, theme, systemDark),
         }}
       />

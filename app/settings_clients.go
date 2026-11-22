@@ -93,53 +93,49 @@ func (p *settingsPage) toggleClient(id string) {
 	})
 }
 
-// clientsRow is 接入 AI 应用: a button per AI app on this computer, pressed
+// clientsSection is 应用: a row per AI app on this computer, its switch on
 // while it runs this Godwit, and the config to copy for any other app.
-func (p *settingsPage) clientsRow(c *ui.Context, copied func(string)) {
+func (p *settingsPage) clientsSection(c *ui.Context, copied func(string)) {
 	t, th, a := theme.Of(c), c.Theme(), p.a
-	settingBlock(c, func() {
-		ui.Row(c).FillWidth().Gap(th.Space(6)).AlignItems(ui.Start).Children(func() {
-			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
-				kit.Text(c, i18n.T("settings.local_api.connect"), t.Text.Sm).FontWeight(500)
-				kit.Text(c, i18n.T("settings.local_api.connect.help"), t.Text.Xs).TextColor(t.Muted)
-			})
-			if settingButton(c, i18n.T("settings.local_api.copy"), kit.Outline, false).Clicked() {
-				copied(a.mcpConfig())
-			}
-		})
-		ids := slices.DeleteFunc(slices.Clone(mcpclients.IDs), func(id string) bool { return p.clients[id] == mcpclients.Absent })
-		if len(ids) == 0 {
-			return
-		}
-		ui.Row(c).Wrap().Gap(th.Space(2)).Children(func() {
-			for _, id := range ids {
-				st := p.clients[id]
-				on := st == mcpclients.On
-				b := kit.Choice(c, kit.Pressable(c.Key(id), kit.PressableOpts{Bare: true, OnClick: func() { p.toggleClient(id) }}).
-					Height(th.Space(8)).PaddingX(th.Space(2.5)).Gap(th.Space(1.5)).AlignItems(ui.Center).Label(clientNames[id]), on, kit.ChoiceOpts{}) // a control's size
-				b.Children(func() {
-					// connected: the app's own colors; else its mark and name in gray
-					if on && (id == mcpclients.Codex || id == mcpclients.Grok) { // marks with no colors
-						ui.Icon(c, icons.BrandIcon(id+"-mono")).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
-						kit.Text(c, clientNames[id], t.Text.Sm)
-					} else if on {
-						ui.Image(c, icons.BrandIcon(id)).Size(theme.Icon, theme.Icon)
-						kit.Text(c, clientNames[id], t.Text.Sm)
-					} else {
-						ui.Icon(c, icons.BrandIcon(id+"-mono")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
-						kit.Text(c, clientNames[id], t.Text.Sm).TextColor(t.Muted)
-					}
-					switch st {
-					case mcpclients.On:
-						ui.Icon(c, icons.Get("check")).Size(theme.IconSm, theme.IconSm)
-					case mcpclients.Other: // another Godwit's, or this one's before it moved
-						kit.StatusDot(c, kit.Attention)
-					}
+	ids := slices.DeleteFunc(slices.Clone(mcpclients.IDs), func(id string) bool { return p.clients[id] == mcpclients.Absent })
+	rows := make([]func(), len(ids))
+	for i, id := range ids {
+		rows[i] = func() {
+			st, name := p.clients[id], clientNames[id]
+			on := st == mcpclients.On
+			row := ui.Row(c.Key(id)).FillWidth().Gap(th.Space(3)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)).AlignItems(ui.Center)
+			var label ui.Element
+			row.Children(func() {
+				kit.Tile(c, th.Space(8), th.Space(8), kit.ToneTint).Children(func() {
+					ui.Icon(c, icons.BrandIcon(id+"-mono")).Size(theme.Icon, theme.Icon).TextColor(t.Foreground)
 				})
-				if st == mcpclients.Other {
-					kit.Tooltip(c, b, i18n.T("settings.local_api.client.other"))
+				ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(0.5)).Children(func() {
+					label = kit.Text(c, name, t.Text.Sm)
+					ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+						switch st {
+						case mcpclients.On:
+							kit.Text(c, i18n.T("settings.local_api.client.connected"), t.Text.Xs).TextColor(t.Muted)
+						case mcpclients.Other: // another Godwit's, or this one's before it moved
+							kit.StatusDot(c, kit.Attention)
+							kit.Text(c, i18n.T("settings.local_api.client.other"), t.Text.Xs).TextColor(t.Muted)
+						default:
+							kit.Text(c, i18n.T("settings.local_api.client.not_connected"), t.Text.Xs).TextColor(t.Muted)
+						}
+					})
+				})
+				was := on
+				if kit.Switch(c, &on).Label(name).LabelledBy(label).Changed() && on != was {
+					p.toggleClient(id)
 				}
-			}
+			})
+		}
+	}
+	ui.Column(c).Gap(theme.SectionGap).Children(func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+			sectionTitle(c, i18n.T("settings.local_api.connect")).Grow(1)
+			kit.Button(c, i18n.T("settings.local_api.copy"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Icon: "copy"}).OnClick(func() { copied(a.mcpConfig()) })
 		})
+		settingsCard(c, rows...)
+		kit.Text(c, i18n.T("settings.local_api.connect.help"), t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(4))
 	})
 }

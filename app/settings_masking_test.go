@@ -18,11 +18,11 @@ import (
 	"github.com/godwit-email/godwit/internal/i18n"
 )
 
-// masking opens 隐私与安全 on its 隐私脱敏 tab, tall enough to show it whole.
+// masking opens 隐私脱敏, tall enough to show it whole.
 func (h *harness) masking() {
 	h.t.Helper()
 	h.resize(1440, 3000)
-	h.openSettings("privacy")
+	h.openSettings("masking")
 	h.see(i18n.T("settings.masking.foot"))
 }
 
@@ -87,7 +87,7 @@ func TestMaskingPreview(t *testing.T) {
 	h.masking()
 	h.typeUnder(i18n.T("settings.masking.words"), "Falcon")
 	r, _ := h.tt.Find(i18n.T("settings.masking.preview")) // the section's title; its card is the text area
-	h.tt.ClickAt(r.X+r.W/2, r.Y+r.H+40)
+	h.tt.ClickAt(r.X+r.W/2, r.Y+r.H+70)
 	h.typeText("Falcon card 4111 1111 1111 1111")
 	h.see("{{TERM_")
 	h.see("{{BANK_CARD_")
@@ -276,7 +276,7 @@ func TestRecognitionModelRowSaysWhyItFailed(t *testing.T) {
 	h.click(i18n.T("settings.masking.recognition_model"))
 	h.until("on", func() bool { return h.app.settings.RecognitionModel })
 	r, _ := h.tt.Find(i18n.T("settings.masking.preview")) // the preview reads with it
-	h.tt.ClickAt(r.X+r.W/2, r.Y+r.H+40)
+	h.tt.ClickAt(r.X+r.W/2, r.Y+r.H+70)
 	h.typeText("Sarah Thompson")
 	failed := i18n.Tf("settings.masking.recognition_model.error", humanize(err))
 	h.see(failed)
@@ -309,7 +309,7 @@ func TestRecognitionModelRowSaysItsFilesAreComingDownAgain(t *testing.T) {
 	err := errors.New("guard: no such file")
 	md.err.Store(&err)
 	r, _ := h.tt.Find(i18n.T("settings.masking.preview"))
-	h.tt.ClickAt(r.X+r.W/2, r.Y+r.H+40)
+	h.tt.ClickAt(r.X+r.W/2, r.Y+r.H+70)
 	h.typeText("Sarah Thompson")
 	h.see(i18n.T("settings.masking.recognition_model.redownloading"))
 }

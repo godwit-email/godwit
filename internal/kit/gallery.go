@@ -10,16 +10,19 @@ import (
 type GalleryState struct {
 	Switch, Switch2, Check                bool
 	Radio, Select, Tabs                   int
-	Toggle                                int
-	Input, Password, Mono, Bare, Area     string
+	Nav                                   int
+	Input, Password, Mono, Search, Area   string
 	InvalidIn, HelpIn, ErrorIn            string
 	Dialog, Confirm, Popover, Collapsible bool
+	Group                                 bool
 }
 
 var galleryVariants = []struct {
 	name string
 	v    Variant
-}{{"Default", Default}, {"Secondary", Secondary}, {"Outline", Outline}, {"Ghost", Ghost}, {"Destructive", Destructive}, {"Link", Link}}
+	tone Tone
+}{{"Default", Default, 0}, {"Secondary", Secondary, 0}, {"Outline", Outline, 0}, {"Ghost", Ghost, 0},
+	{"Ghost danger", Ghost, ToneDanger}, {"Outline danger", Outline, ToneDanger}, {"Link", Link, 0}}
 
 // Gallery shows every kit component, section by section. Dev builds only.
 func Gallery(c *ui.Context, g *GalleryState) {
@@ -37,13 +40,13 @@ func Gallery(c *ui.Context, g *GalleryState) {
 				for _, s := range []Size{SizeXs, SizeSm, SizeDefault, SizeLg} {
 					row(func() {
 						for _, v := range galleryVariants {
-							Button(c, v.name, ButtonOpts{Variant: v.v, Size: s})
+							Button(c, v.name, ButtonOpts{Variant: v.v, Tone: v.tone, Size: s})
 						}
 					})
 				}
 				row(func() {
 					for _, v := range galleryVariants {
-						Button(c, v.name+" off", ButtonOpts{Variant: v.v, Disabled: true})
+						Button(c, v.name+" off", ButtonOpts{Variant: v.v, Tone: v.tone, Disabled: true})
 					}
 				})
 			})
@@ -62,7 +65,11 @@ func Gallery(c *ui.Context, g *GalleryState) {
 					Input(c, &g.InvalidIn, InputOpts{Placeholder: "Invalid", Invalid: true})
 					Input(c, &g.Password, InputOpts{Placeholder: "Password", Password: true})
 					Input(c, &g.Mono, InputOpts{Placeholder: "Mono", Mono: true})
-					Input(c, &g.Bare, InputOpts{Placeholder: "Bare", Bare: true})
+					Input(c, &g.Search, InputOpts{Placeholder: "Search", Leading: func() { InputIcon(c, "search") }, Trailing: func() {
+						if g.Search != "" {
+							IconButton(c, "x", "Clear", ButtonOpts{Variant: Ghost, Size: SizeXs}).OnClick(func() { g.Search = "" })
+						}
+					}})
 				})
 			})
 			section("TextArea", func() {
@@ -86,24 +93,15 @@ func Gallery(c *ui.Context, g *GalleryState) {
 			})
 			section("Switch", func() {
 				Switch(c, &g.Switch).Label("Bare switch")
-				SwitchRow(c, &g.Switch2, "Switch row", "Help under the row")
+				FieldWith(c, FieldOpts{Horizontal: true, Switch: &g.Switch2}, "Switch row", "Help under the row", "", nil)
 			})
 			section("Tabs", func() {
-				Tabs(c, &g.Tabs, "Tab A", "Tab B", "Tab C")
-				TabsFill(c, &g.Tabs, "Fill A", "Fill B", "Fill C")
-			})
-			section("ToggleGroup", func() {
-				ToggleGroup(c, "Gallery toggles", func() {
-					for i, l := range []string{"Left", "Middle", "Right"} {
-						v := Ghost
-						if g.Toggle == i {
-							v = Secondary
-						}
-						if Button(c, l, ButtonOpts{Variant: v}).Clicked() {
-							g.Toggle = i
-						}
-					}
-				})
+				labels := TabLabels("Tab A", "Tab B", "Tab C")
+				Tabs(c, &g.Tabs, TabsOpts{}, labels)
+				Tabs(c, &g.Tabs, TabsOpts{Fill: true}, TabLabels("Fill A", "Fill B", "Fill C"))
+				Tabs(c, &g.Tabs, TabsOpts{Look: TabsUnderline}, labels)
+				Tabs(c, &g.Tabs, TabsOpts{Look: TabsPill}, labels)
+				Tabs(c, &g.Nav, TabsOpts{}, []TabItem{{Icon: "mail", Label: "Mail"}, {Icon: "sparkles", Label: "Wit"}})
 			})
 			section("Dialog", func() {
 				if Button(c, "Open Dialog", ButtonOpts{Variant: Outline}).Clicked() {
@@ -117,7 +115,7 @@ func Gallery(c *ui.Context, g *GalleryState) {
 				}
 				Dialog(c, &g.Confirm, "Confirm title", DialogOpts{Size: DialogSm, Desc: "Confirm sample text", Close: "Close confirm"}, nil, func() {
 					Button(c, "Cancel", ButtonOpts{Variant: Outline}).OnClick(func() { g.Confirm = false })
-					Button(c, "Delete", ButtonOpts{Variant: Destructive}).OnClick(func() { g.Confirm = false })
+					Button(c, "Delete", ButtonOpts{Variant: Ghost, Tone: ToneDanger}).OnClick(func() { g.Confirm = false })
 				})
 			})
 			section("Popover", func() {
@@ -150,17 +148,6 @@ func Gallery(c *ui.Context, g *GalleryState) {
 						Block(c, ui.Column(c).Padding(th.Space(3)).Width(th.Space(30)), ToneRaised).Children(func() { ui.Text(c, "Block · Raised") })
 					})
 				})
-				row(func() { // the colored tones, each with a button that follows it (ButtonOpts.Tone)
-					for _, k := range []struct {
-						name string
-						tone Tone
-					}{{"Info", ToneInfo}, {"Warning", ToneWarning}, {"Danger", ToneDanger}, {"Success", ToneSuccess}} {
-						Block(c, ui.Row(c).AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), th.Space(2), th.Space(2), th.Space(3)), k.tone).Children(func() {
-							ui.Text(c, "Block · "+k.name)
-							Button(c, "Action", ButtonOpts{Size: SizeSm, Tone: k.tone})
-						})
-					}
-				})
 			})
 			section("Tile", func() {
 				row(func() {
@@ -172,9 +159,16 @@ func Gallery(c *ui.Context, g *GalleryState) {
 			})
 			section("Choice", func() {
 				row(func() {
-					ToggleChip(c, "On", true, ChoiceOpts{})
-					ToggleChip(c, "Off", false, ChoiceOpts{})
-					ToggleChip(c, "Offered", false, ChoiceOpts{Dashed: true})
+					ToggleChip(c, "On", true, ChoiceDefault)
+					ToggleChip(c, "Off", false, ChoiceDefault)
+					ToggleChip(c, "Offered", false, ChoiceDashed)
+				})
+				ui.Column(c).Gap(th.Space(2)).Width(theme.SheetWidth).Children(func() {
+					for i, look := range []ChoiceLook{ChoiceDefault, ChoiceOnCard, ChoiceDashed} {
+						ChoiceCard(c, ui.RadioBase(c.Key(i), &g.Radio, i).Label("Card "+string(rune('1'+i))), ChoiceCardOpts{Selected: g.Radio == i, Look: look, Radio: true}, func() {
+							ChoiceText(c, "Card "+string(rune('1'+i)), "Help text")
+						})
+					}
 				})
 			})
 			section("Badge", func() {
@@ -195,9 +189,9 @@ func Gallery(c *ui.Context, g *GalleryState) {
 				ui.Column(c).Gap(th.Space(2)).MaxWidth(theme.ContentMaxWidth).Children(func() {
 					for _, k := range []struct {
 						name string
-						kind AlertKind
-					}{{"Warning", Warning}, {"Danger", Danger}, {"Info", Info}} {
-						Alert(c, k.kind, k.name+" alert", func() { AlertAction(c, k.kind, "Alert action", nil) })
+						tone Tone
+					}{{"Warning", ToneWarning}, {"Danger", ToneDanger}, {"Info", ToneInfo}} {
+						Alert(c, k.tone, k.name+" alert", func() { Button(c, "Alert action", ButtonOpts{Variant: Outline, Size: SizeSm, Tone: k.tone}) })
 					}
 				})
 			})
@@ -237,11 +231,9 @@ func Gallery(c *ui.Context, g *GalleryState) {
 						{"Small", SidebarItemOpts{Small: true}}, {"Indented", SidebarItemOpts{Indent: 4}}} {
 						SidebarItem(c, o.o).Children(func() { ui.Text(c, o.l+" item") })
 					}
-				})
-			})
-			section("NavSwitch", func() {
-				row(func() {
-					NavSwitch(c, NavItem{Icon: "mail", Label: "Mail", Selected: true}, NavItem{Icon: "sparkles", Label: "Wit"})
+					SidebarItem(c, SidebarItemOpts{Muted: true, Open: &g.Group, Count: "3",
+						Title: func() { ui.Text(c, "Group title") },
+						Group: func() { SidebarItem(c, SidebarItemOpts{Indent: 4}).Children(func() { ui.Text(c, "Grouped item") }) }})
 				})
 			})
 			section("Panel", func() {
@@ -254,7 +246,7 @@ func Gallery(c *ui.Context, g *GalleryState) {
 					for _, o := range []struct {
 						l string
 						o PressableOpts
-					}{{"Plain press", PressableOpts{}}, {"Bordered press", PressableOpts{Bordered: true}}, {"Selected press", PressableOpts{Selected: true}}} {
+					}{{"Plain press", PressableOpts{}}, {"Selected press", PressableOpts{Selected: true}}} {
 						Pressable(c, o.o).Padding(th.Space(2)).Children(func() { ui.Text(c, o.l) })
 					}
 				})

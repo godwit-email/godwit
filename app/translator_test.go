@@ -62,7 +62,7 @@ func TestTranslatorSetting(t *testing.T) {
 	if err := h.env.Svc.SetPluginEnabled(context.Background(), "dlx", false); err != nil {
 		t.Fatal(err)
 	}
-	h.openSettings("extensions")
+	h.openSettings("plugins")
 	h.aiTab(aiFeatures)
 	h.see("dlx（已停用）")
 }
@@ -89,7 +89,7 @@ func TestTranslatorSettingUsesRegistryTitle(t *testing.T) {
 	if err := h.env.Svc.SetPluginEnabled(ctx, "dlx", false); err != nil {
 		t.Fatal(err)
 	}
-	h.openSettings("extensions")
+	h.openSettings("plugins")
 	h.aiTab(aiFeatures)
 	h.see("DLX 翻译（已停用）")
 }
@@ -99,7 +99,7 @@ func TestScriptTranslatorPermissionLine(t *testing.T) {
 	if _, err := h.env.Svc.InstallPlugin(context.Background(), coretest.PluginFixture(t, "translate-demo")); err != nil {
 		t.Fatal(err)
 	}
-	h.openSettings("extensions")
+	h.openSettings("plugins")
 	h.see("待授权")
 	h.see("会收到你要翻译的邮件内容")
 }

@@ -111,8 +111,8 @@ func sidebarFolders(acc int64, fs []core.Folder) []sideFolder {
 	return out
 }
 
-// Sidebar: the page switch and search; Compose; the unified views; the label
-// and account groups, each foldable; the outbox and Scheduled while they hold mail.
+// Sidebar: the page switch; Compose; the unified views; the label and account
+// groups, each foldable; the outbox and Scheduled while they hold mail.
 func (p *mailPage) Sidebar(c *ui.Context) {
 	a := p.a
 	th := c.Theme()
@@ -125,6 +125,13 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 		})
 		ui.Box(c).Height(th.Space(2))
 		p.navItem(c, "inbox", i18n.T("mail.unified.inbox"), core.View{Unified: "inbox"}, p.inboxUnread())
+		for _, acc := range a.accounts {
+			if !isArchive(acc) {
+				if f, ok := p.inboxFolder(acc.ID); ok {
+					p.inboxAccountRow(c, acc, f)
+				}
+			}
+		}
 		p.navItem(c, "star", i18n.T("mail.unified.starred"), core.View{Unified: "starred"}, 0)
 		if n := len(p.outbox); n > 0 {
 			p.navItem(c, "outbox", i18n.T("mail.outbox"), core.View{Unified: "outbox"}, n)
@@ -132,9 +139,17 @@ func (p *mailPage) Sidebar(c *ui.Context) {
 		if n := len(p.scheduled); n > 0 {
 			p.navItem(c, "time", i18n.T("mail.scheduled"), core.View{Unified: "scheduled"}, n)
 		}
-		ui.Box(c).Height(th.Space(2))
+		ui.Box(c).Height(th.Space(3.5))
 		order := core.SidebarOrder(a.settings)
+		shown := 0
 		for _, section := range order {
+			if !p.sectionShown(section) {
+				continue
+			}
+			if shown > 0 {
+				ui.Box(c).Height(th.Space(3.5))
+			}
+			shown++
 			var head ui.Element
 			var items func(*ui.Menu)
 			switch section {
@@ -222,18 +237,54 @@ func (p *mailPage) sectionShown(s string) bool {
 	return s != "labels" || slices.ContainsFunc(p.a.labels, func(l core.Label) bool { return l.Count > 0 })
 }
 
-// accountsNav is the sidebar's accounts section; its header's menu adds one
-// (accountsMenu). It returns the header.
+// accountsNav is the sidebar's other-folders section; its header's menu adds an
+// account or local archive (accountsMenu). It returns the header.
 func (p *mailPage) accountsNav(c *ui.Context) ui.Element {
 	a := p.a
-	head := kit.SidebarCollapsible(c, &p.accountsOpen, true, func() {
-		ui.Text(c, i18n.T("mail.accounts")).SingleLine().Grow(1).Shrink(1)
-	}, func() {
-		for _, acc := range a.accounts {
-			p.account(c, acc)
+	head := kit.SidebarItem(c, kit.SidebarItemOpts{Muted: true, Open: &p.accountsOpen,
+		Title: func() { ui.Text(c, i18n.T("mail.other_folders")).SingleLine().Shrink(1) },
+		Group: func() {
+			for _, acc := range a.accounts {
+				p.account(c, acc)
+			}
+		}})
+	return head
+}
+
+// inboxFolder returns accID's inbox folder, if loaded.
+func (p *mailPage) inboxFolder(accID int64) (core.Folder, bool) {
+	for _, f := range p.folders[accID] {
+		if f.Role == "inbox" {
+			return f, true
+		}
+	}
+	return core.Folder{}, false
+}
+
+// inboxAccountRow is an account's inbox listed directly under All Inboxes.
+func (p *mailPage) inboxAccountRow(c *ui.Context, acc core.Account, f core.Folder) {
+	t := theme.Of(c)
+	name := accountName(acc)
+	v := core.View{FolderID: f.ID}
+	on := p.viewShown(v)
+	item := kit.SidebarItem(c, kit.SidebarItemOpts{
+		Selected: on, Covered: p.viewEdit != nil, Muted: !on, Indent: 4,
+		OnClick: func() { p.a.navigate(Route{Page: PageMail, View: v}) },
+	}).Label(name + " · " + i18n.T("mail.folder.inbox"))
+	item.Children(func() {
+		p.a.accountMark(c, acc)
+		ui.Text(c, name).SingleLine().Grow(1).Shrink(1).Role(ui.RoleNone)
+		if f.Unread > 0 {
+			kit.Text(c, strconv.Itoa(f.Unread), t.Text.Xs).TextColor(t.Muted)
 		}
 	})
-	return head
+	item.ContextMenu(func(m *ui.Menu) {
+		if m.Item(i18n.T("mail.mark_all_read")).Disabled(f.Unread == 0).Chosen() {
+			p.markViewAsRead(v)
+		}
+		m.Separator()
+		p.accountItems(m, acc, f.ID)
+	})
 }
 
 // accountsMenu is the accounts header's own menu items: add an account, or a local archive.
@@ -280,35 +331,39 @@ func (p *mailPage) viewShown(v core.View) bool {
 	return p.a.route.Page == PageMail && p.a.route.View == v && !p.searched
 }
 
-// account is an account's foldable row, its provider's mark (badged while its
-// sync is in trouble), name and unread count, over all its folders.
+// account is an account's foldable row under Other folders, its provider's mark
+// (badged while its sync is in trouble) and name over its folders (excluding
+// inbox for mail accounts, whose inboxes sit directly under All Inboxes).
 func (p *mailPage) account(c *ui.Context, acc core.Account) {
 	t := theme.Of(c)
 	name := accountName(acc)
-	count := "" // at the row's end, under the counts above it; the chevron follows the name
-	if n := p.a.unread[acc.ID]; n > 0 {
-		count = strconv.Itoa(n)
-	}
-	row := kit.SidebarCollapsibleCount(c, p.accountOpen(acc.ID), false, func() {
-		p.a.accountMark(c, acc) // as in the settings sidebar
-		ui.Text(c, name).SingleLine().Shrink(1).TextColor(t.Foreground)
-	}, count, func() {
-		hide := "" // the subtree of a folded folder
-		for _, f := range sidebarFolders(acc.ID, p.folders[acc.ID]) {
-			if f.Role == "drafts" {
-				p.accountLabelsNav(c, acc.ID)
+	_, hasInbox := p.inboxFolder(acc.ID)
+	hideInbox := !isArchive(acc) && hasInbox
+	row := kit.SidebarItem(c, kit.SidebarItemOpts{Open: p.accountOpen(acc.ID),
+		Title: func() {
+			p.a.accountMark(c, acc) // as in the settings sidebar
+			ui.Text(c, name).SingleLine().Shrink(1).TextColor(t.Foreground)
+		},
+		Group: func() {
+			hide := "" // the subtree of a folded folder
+			for _, f := range sidebarFolders(acc.ID, p.folders[acc.ID]) {
+				if hideInbox && f.Role == "inbox" {
+					continue
+				}
+				if f.Role == "drafts" {
+					p.accountLabelsNav(c, acc.ID)
+				}
+				if hide != "" && strings.HasPrefix(f.key, hide) {
+					continue
+				}
+				hide = ""
+				open := boolAt(p.folderOpen, folderKey{acc.ID, f.key}, true)
+				if f.kids && !*open {
+					hide = f.key + "\x00"
+				}
+				p.folderRow(c, f, open)
 			}
-			if hide != "" && strings.HasPrefix(f.key, hide) {
-				continue
-			}
-			hide = ""
-			open := boolAt(p.folderOpen, folderKey{acc.ID, f.key}, true)
-			if f.kids && !*open {
-				hide = f.key + "\x00"
-			}
-			p.folderRow(c, f, open)
-		}
-	})
+		}}).Label(name + " · " + i18n.T("mail.other_folders"))
 	row.ContextMenu(func(m *ui.Menu) { p.accountItems(m, acc, 0) })
 	p.saveAccountOpen(acc.ID)
 }
@@ -352,7 +407,7 @@ func (p *mailPage) folderRow(c *ui.Context, f sideFolder, open *bool) {
 	if !real {
 		click = toggle
 	}
-	item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Covered: p.viewEdit != nil, Indent: 4 * float32(f.depth), OnClick: click})
+	item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Covered: p.viewEdit != nil, Muted: !on, Indent: 4 * float32(f.depth), OnClick: click})
 	item.Children(func() {
 		kit.SidebarIcon(c, item, cmp.Or(folderIcons[f.Role], "folder"), on)
 		ui.Text(c, f.name).SingleLine().Grow(1).Shrink(1)
@@ -364,9 +419,9 @@ func (p *mailPage) folderRow(c *ui.Context, f sideFolder, open *bool) {
 			kit.Text(c, strconv.Itoa(n), t.Text.Xs).TextColor(t.Muted)
 		}
 		if f.kids {
-			ch, label := kit.SidebarChevron(c, 0), "mail.folder.expand"
+			ch, label := kit.Chevron(c, *open, theme.IconXs), "mail.folder.expand"
 			if *open {
-				ch, label = ch.Rotate(90), "mail.folder.collapse"
+				label = "mail.folder.collapse"
 			}
 			if real { // the row opens the folder; the chevron folds it
 				ch.OnClick(toggle).Label(i18n.Tf(label, f.name))
@@ -465,36 +520,38 @@ func (p *mailPage) accountLabelsNav(c *ui.Context, accID int64) {
 	if !hasLabels && !viewInAccount {
 		return
 	}
-	t, th := theme.Of(c), c.Theme()
+	t := theme.Of(c)
 	open := p.accountLabelsOpen(accID)
 	totalUnread := 0
 	for _, l := range labels {
 		totalUnread += l.Unread
 	}
-	tr := kit.SidebarCollapsible(c, open, false, func() {
-		ui.Icon(c, icons.Get("tag")).Size(theme.Icon, theme.Icon).Shrink(0).TextColor(t.Muted)
-		ui.Text(c, i18n.T("mail.labels")).SingleLine().Grow(1).Shrink(1)
-		if !*open && totalUnread > 0 {
-			kit.Text(c, strconv.Itoa(totalUnread), t.Text.Xs).TextColor(t.Muted)
-		}
-	}, func() {
-		for _, l := range labels {
-			if l.Count == 0 {
-				continue
-			}
-			v := core.View{AccountID: accID, LabelID: l.ID}
-			on := p.viewShown(v)
-			item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Covered: p.viewEdit != nil, Indent: 8, OnClick: func() { p.a.navigate(Route{Page: PageMail, View: v}) }})
-			item.Children(func() {
-				ui.Icon(c, icons.Get("label-"+l.Icon)).Size(theme.Icon, theme.Icon).TextColor(t.Label(l.Color).Text)
-				ui.Text(c, l.Name).SingleLine().Grow(1).Shrink(1)
-				if l.Unread > 0 {
-					kit.Text(c, strconv.Itoa(l.Unread), t.Text.Xs).TextColor(t.Muted)
+	count := ""
+	if !*open && totalUnread > 0 {
+		count = strconv.Itoa(totalUnread)
+	}
+	kit.SidebarItem(c, kit.SidebarItemOpts{Open: open, Indent: 4, Count: count,
+		Title: func() {
+			ui.Icon(c, icons.Get("tag")).Size(theme.Icon, theme.Icon).Shrink(0).TextColor(t.Muted)
+			ui.Text(c, i18n.T("mail.labels")).TextColor(t.Muted).SingleLine().Shrink(1)
+		},
+		Group: func() {
+			for _, l := range labels {
+				if l.Count == 0 {
+					continue
 				}
-			})
-		}
-	})
-	tr.Padding(0, th.Space(2), 0, th.Space(6))
+				v := core.View{AccountID: accID, LabelID: l.ID}
+				on := p.viewShown(v)
+				item := kit.SidebarItem(c, kit.SidebarItemOpts{Selected: on, Covered: p.viewEdit != nil, Muted: !on, Indent: 8, OnClick: func() { p.a.navigate(Route{Page: PageMail, View: v}) }})
+				item.Children(func() {
+					ui.Icon(c, icons.Get("label-"+l.Icon)).Size(theme.Icon, theme.Icon).TextColor(t.Label(l.Color).Text)
+					ui.Text(c, l.Name).SingleLine().Grow(1).Shrink(1)
+					if l.Unread > 0 {
+						kit.Text(c, strconv.Itoa(l.Unread), t.Text.Xs).TextColor(t.Muted)
+					}
+				})
+			}
+		}})
 }
 
 // boolAt is m[k], first set to def: a pointer that outlives the frame, as kit.Collapsible needs.
@@ -535,14 +592,13 @@ func (p *mailPage) newDraft(then func(core.Draft)) {
 	})
 }
 
-// sidebarHead is the top of either page's sidebar: the page switch and the
-// search button.
+// sidebarHead is the top of either page's sidebar: the page switch. Search is
+// the title bar's field. On splitChrome platforms (Windows/Linux), the page
+// switch lives in the aligned Mica context bar above the sidebar.
 func (a *App) sidebarHead(c *ui.Context) {
+	if splitChrome() {
+		return
+	}
 	th := c.Theme()
-	ui.Row(c).Padding(0, th.Space(1.5)+sidebarInset(c), th.Space(3), 0).Gap(th.Space(1)).Children(func() {
-		a.pageSwitch(c)
-		ui.Spacer(c)
-		kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-			OnClick(a.openPalette)
-	})
+	ui.Row(c).Padding(0, sidebarInset(c), th.Space(3), 0).Children(func() { a.pageSwitch(c) })
 }

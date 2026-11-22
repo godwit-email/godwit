@@ -15,7 +15,9 @@ import (
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/plugins"
+	"github.com/godwit-email/godwit/core/skills"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/icons"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -56,17 +58,14 @@ func (h *harness) pluginConfig(name string) map[string]core.ConfigValue {
 
 func TestSkillsChangedRefreshesSettings(t *testing.T) {
 	h, _ := withAccount(t)
-	h.openSettings("extensions")
+	h.openSettings("skills")
 	e := h.app.pages[PageSettings].(*settingsPage).ext
 	h.until("initial skills", func() bool { return len(e.skills) > 0 })
-	count := len(e.skills)
-	h.click(i18n.Tf("settings.ext.tab.skills", count))
 	writeSkill(t, h.env, "meeting-notes")
 	h.app.onEvent(events.Event{Type: events.SkillsChanged})
 	h.advance(refreshEvery)
 	h.see("Meeting Notes")
 	h.see("Brief the email")
-	h.see(i18n.Tf("settings.ext.tab.skills", count+1))
 	if !viewUnchanged([]events.Event{{Type: events.SkillsChanged}}) {
 		t.Fatal("a skill change must not invalidate mail views")
 	}
@@ -80,7 +79,7 @@ func skillRefreshApp(t *testing.T) (*App, *extView, func() func()) {
 	posted := make(chan func(), 32)
 	a := New(Deps{Svc: env.Svc, Post: func(f func()) { posted <- f }, Clock: newFakeClock()})
 	t.Cleanup(a.cancel)
-	a.route = Route{Page: PageSettings, Settings: "extensions"}
+	a.route = Route{Page: PageSettings, Settings: "skills"}
 	e := a.pages[PageSettings].(*settingsPage).ext
 	var err error
 	e.skills, err = env.Svc.ListSkills(context.Background())
@@ -242,15 +241,27 @@ func TestSkillsChangedWithMailEventsRefreshesMail(t *testing.T) {
 	}
 }
 
+// TestSkillIconsAreDrawn: every icon a skill may name is one the skills page can draw.
+func TestSkillIconsAreDrawn(t *testing.T) {
+	for _, name := range skills.IconNames() {
+		if icons.Get(name) == nil {
+			t.Errorf("no icon %q", name)
+		}
+	}
+}
+
+// TestExtensionRowIconsExist: the icons the plugin, MCP and add-plugin rows draw are in the set (Get panics on others).
+func TestExtensionRowIconsExist(t *testing.T) {
+	for _, name := range []string{"cpu", "puzzle", "globe", "folder", "chevron-down", "chevron-right"} {
+		if icons.Get(name) == nil {
+			t.Errorf("no icon %q", name)
+		}
+	}
+}
+
 func TestSkillToggle(t *testing.T) {
 	h, _ := withAccount(t)
-	h.openSettings("extensions")
-	h.see("插件 · 1") // plugins come first
-	skills, err := h.env.Svc.ListSkills(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	h.click(i18n.Tf("settings.ext.tab.skills", len(skills))) // the page may not have loaded them yet
+	h.openSettings("skills")
 	h.see("Summarize")
 	h.see("内置")
 	h.click("启用 Summarize")
@@ -271,7 +282,7 @@ func TestSkillToggle(t *testing.T) {
 func TestPluginInstallGrantConfigure(t *testing.T) {
 	h, _ := withAccount(t)
 	h.plat.dir = coretest.PluginFixture(t, "config-demo")
-	p := h.openSettings("extensions")
+	p := h.openSettings("plugins")
 	h.click("选择文件夹")
 	h.called("OpenDirectory")
 	h.until("installed", func() bool { _, ok := h.plugin("config-demo"); return ok })
@@ -333,7 +344,7 @@ func TestPluginInstallGrantConfigure(t *testing.T) {
 func TestPluginFolderInstallLoading(t *testing.T) {
 	h, _ := withAccount(t)
 	h.plat.dir = coretest.PluginFixture(t, "config-demo")
-	h.openSettings("extensions")
+	h.openSettings("plugins")
 	release := h.block("plugins")
 	h.click("选择文件夹")
 	h.see("正在安装…")
@@ -350,8 +361,8 @@ func TestPluginDetailNoSend(t *testing.T) {
 		e.InstallPlugin(t, "config-demo")
 	})
 	h.until("initial load", func() bool { return h.app.loaded })
-	h.openSettings("extensions")
-	h.click("插件 · 2")
+	h.openSettings("plugins")
+	h.see("config-demo")
 	h.click("config-demo")
 	h.see("任何插件都不能发送邮件。")
 	h.see("不请求任何权限")
@@ -373,7 +384,8 @@ func TestMCPAddAndTrust(t *testing.T) {
 	}
 	h.click("保存")
 	h.see("lookup-server")
-	h.see("需要授权")
+	h.see(i18n.T("settings.ext.mcp.grant.help")) // a server awaiting its grant says so beside the grant
+	h.see(cmd)                                   // and what the grant will start
 	h.click("授权并启用")
 	h.see("lookup")
 	h.see("声明只读（仅供参考）")
@@ -402,8 +414,8 @@ func TestPluginConfigEditDuringSave(t *testing.T) {
 		e.InstallPlugin(t, "config-demo")
 	})
 	h.until("initial load", func() bool { return h.app.loaded })
-	p := h.openSettings("extensions")
-	h.click("插件 · 2")
+	p := h.openSettings("plugins")
+	h.see("config-demo")
 	h.click("config-demo") // an installed plugin opens on a click
 	h.click("Free")
 	h.click("Pro")
@@ -474,7 +486,7 @@ func TestPluginRowSwitch(t *testing.T) {
 		e.InstallPlugin(t, "config-demo")
 	})
 	h.until("initial load", func() bool { return h.app.loaded })
-	p := h.openSettings("extensions")
+	p := h.openSettings("plugins")
 	h.see("config-demo") // the plugins tab shows first, each plugin one closed row
 	if h.tt.HasText("它请求的权限") || h.tt.HasText("卸载插件") {
 		t.Fatal("an installed plugin opens by default")
@@ -506,8 +518,8 @@ func TestPendingPluginExcludedLine(t *testing.T) {
 		t.Fatalf("excluded %q", got)
 	}
 	h := pendingHarness(t)
-	h.openSettings("extensions")
-	h.click("插件 · 2")
+	h.openSettings("plugins")
+	h.see("config-demo")
 	h.see("待授权")
 	h.see("它请求的权限")
 	h.see("不包含")
@@ -519,7 +531,7 @@ func TestPendingPluginExcludedLine(t *testing.T) {
 // 允许并启用 saves what the pending plugin's form holds, then enables it.
 func TestPendingAllowSavesConfig(t *testing.T) {
 	h := pendingHarness(t)
-	h.openSettings("extensions")
+	h.openSettings("plugins")
 	h.fill("API Key", "supersecret1")
 	h.click("允许并启用")
 	h.until("enabled with its key", func() bool {
@@ -532,7 +544,7 @@ func TestPendingAllowSavesConfig(t *testing.T) {
 // shows on its field only (no toast) and clears on the retry.
 func TestPendingAllowBusyAndFieldError(t *testing.T) {
 	h := pendingHarness(t)
-	p := h.openSettings("extensions")
+	p := h.openSettings("plugins")
 	h.until("the form", func() bool { return p.ext.cfgs["config-demo"] != nil })
 	f := p.ext.cfgs["config-demo"]
 	f.vals["plan"].s = "gold"
@@ -566,7 +578,7 @@ func TestPluginRowDescription(t *testing.T) {
 	long := strings.Repeat("演示插件", 80)
 	shotInstall(t, h, "desc-demo", `{"name":"desc-demo","version":"0.1.0","description":{"default":"Demo","zh-CN":"`+long+`"},"main":"index.ts"}`,
 		`export default function (_ctx: any) {}`, true)
-	h.openSettings("extensions")
+	h.openSettings("plugins")
 	h.see("desc-demo")
 	h.see("演示插件")
 	desc, ok := h.tt.Find(long)
@@ -578,8 +590,8 @@ func TestPluginRowDescription(t *testing.T) {
 
 func TestPendingNotNowCollapses(t *testing.T) {
 	h := pendingHarness(t)
-	h.openSettings("extensions")
-	h.click("插件 · 2")
+	h.openSettings("plugins")
+	h.see("config-demo")
 	h.see("允许并启用")
 	h.click("暂不启用")
 	h.until("collapsed", func() bool { return !h.tt.HasText("允许并启用") })
@@ -608,8 +620,8 @@ func TestPendingPluginsKeepOwnForms(t *testing.T) {
 	if _, err := h.env.Svc.InstallPlugin(context.Background(), src2); err != nil {
 		t.Fatal(err)
 	}
-	p := h.openSettings("extensions")
-	h.click("插件 · 3")
+	p := h.openSettings("plugins")
+	h.see("config-two")
 	h.until("both forms", func() bool { return p.ext.cfgs["config-demo"] != nil && p.ext.cfgs["config-two"] != nil })
 	a, b := p.ext.cfgs["config-demo"], p.ext.cfgs["config-two"]
 	a.vals["apiKey"].s, b.vals["apiKey"].s = "aaa", "bbb"
@@ -629,11 +641,13 @@ func TestPendingPluginsKeepOwnForms(t *testing.T) {
 func TestNativePluginRiskAndGrant(t *testing.T) {
 	h, _ := withAccount(t)
 	h.plat.dir = coretest.NativePluginFixture(t, "dlx", "0.1.0", nil, nil)
-	h.openSettings("extensions")
+	h.openSettings("plugins")
 	h.click("选择文件夹")
 	h.called("OpenDirectory")
 	h.until("installed", func() bool { _, ok := h.plugin("dlx"); return ok })
-	h.until("the 原生 pill", func() bool { _, ok := h.tt.Find("原生"); return ok }) // exactly: the page's subtitle mentions 原生插件
+	h.until("the 原生 kind", func() bool {
+		return slices.ContainsFunc(h.tt.Texts(), func(s string) bool { return strings.HasPrefix(s, "原生 · ") })
+	}) // its line: the page's subtitle mentions 原生插件
 	h.see("待授权")
 	h.see("以 Godwit 的全部权限运行")
 	h.see("这个文件不在 Godwit 审核过的插件目录里")
@@ -648,7 +662,7 @@ func TestNativePluginRiskAndGrant(t *testing.T) {
 
 func TestScriptPluginCardUnchanged(t *testing.T) {
 	h := pendingHarness(t)
-	h.openSettings("extensions")
+	h.openSettings("plugins")
 	h.see("它请求的权限")
 	h.see("不包含")
 	h.see("允许并启用")
@@ -676,7 +690,7 @@ func loginFixture(t *testing.T, h *harness, extra map[string]any) *settingsPage 
 	if err := os.WriteFile(path, b, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	p := h.openSettings("extensions")
+	p := h.openSettings("plugins")
 	h.click("选择文件夹")
 	h.until("installed", func() bool { _, ok := h.plugin("signin"); return ok })
 	h.click("仍然启用")
@@ -765,5 +779,21 @@ func TestPluginSignInPageRefused(t *testing.T) {
 	h.until("the flow's end", func() bool { return p.ext.loginFlow == "" })
 	if slices.ContainsFunc(h.plat.Calls(), func(c string) bool { return strings.HasPrefix(c, "OpenURL") }) {
 		t.Fatal("a refused page opened")
+	}
+}
+
+// mcpTarget is what a grant lets Godwit reach: an HTTP server's host, or
+// the command a stdio one starts.
+func TestMCPTarget(t *testing.T) {
+	for _, c := range []struct {
+		s    core.MCPServer
+		want string
+	}{
+		{core.MCPServer{Transport: "http", URL: "https://mcp.linear.app/sse"}, "mcp.linear.app"},
+		{core.MCPServer{Transport: "stdio", Command: "npx", Args: []string{"-y", "server"}}, "npx -y server"},
+	} {
+		if got := mcpTarget(c.s); got != c.want {
+			t.Errorf("mcpTarget(%+v) = %q, want %q", c.s, got, c.want)
+		}
 	}
 }

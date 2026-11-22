@@ -1,8 +1,14 @@
 import { RiCloseLine } from "@remixicon/react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/button";
 import type { Attachment } from "@/mygo";
 import type { T } from "@/shared/i18n";
 import { byteSize } from "./size";
+
+/** The tile's label: the file's extension, at most four letters. */
+const kind = (name: string) => {
+  const dot = name.lastIndexOf(".");
+  return dot < 0 ? "" : name.slice(dot + 1, dot + 5);
+};
 
 /** The draft's attachments, each removable, the names refused for size and those that failed. */
 export function Attachments({
@@ -27,14 +33,18 @@ export function Attachments({
           {items.map((a) => (
             <div
               key={a.id}
-              className="flex h-7 max-w-full items-center gap-1.5 rounded-md border pr-0.5 pl-2.5 text-xs"
+              className="flex w-70.5 max-w-full items-center gap-1.5 rounded-lg border bg-background px-2.5 py-2"
             >
-              <span className="truncate">{a.filename}</span>
-              <span className="shrink-0 text-muted-foreground">{byteSize(a.size)}</span>
+              <span className="flex h-8.5 w-7 shrink-0 items-center justify-center rounded-md bg-(--hover-tint) text-muted-foreground text-xs uppercase">
+                {kind(a.filename)}
+              </span>
+              <span className="ml-1 flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-sm">{a.filename}</span>
+                <span className="text-muted-foreground text-xs">{byteSize(a.size)}</span>
+              </span>
               <Button
                 variant="ghost"
-                size="icon-xs"
-                className="rounded-full"
+                size="icon-sm"
                 aria-label={t("compose.remove", a.filename)}
                 disabled={frozen}
                 onClick={() => !frozen && onRemove(a.id)}

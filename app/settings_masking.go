@@ -25,13 +25,13 @@ type maskDraft struct {
 }
 
 // maskingView is 隐私脱敏 (docs/adr/0025-mask-at-cloud-egress.md), the
-// privacy page's first tab: the switch and the categories save as they
+// privacy group's first page: the switch and the categories save as they
 // change; the words, rules and allowlist with their button, once checked;
 // then the way into 脱敏记录.
 func (p *settingsPage) maskingView(c *ui.Context) {
 	st := &p.st
 	rows := []func(){func() {
-		kit.SwitchRow(c, &st.Masking, i18n.T("settings.masking.on"), i18n.T("settings.masking.on.help"))
+		kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &st.Masking}, i18n.T("settings.masking.on"), i18n.T("settings.masking.on.help"), "", nil)
 	}}
 	if st.Masking {
 		rows = append(rows, func() { p.recognitionModelRow(c) })
@@ -39,7 +39,7 @@ func (p *settingsPage) maskingView(c *ui.Context) {
 			rows = append(rows, func() { maskCategoryRow(c, name, cat) })
 		}
 	}
-	settingsSection(c, i18n.T("settings.masking"), i18n.T("settings.masking.foot"), rows...)
+	settingsSection(c, "", i18n.T("settings.masking.foot"), rows...)
 	if st.Masking {
 		p.maskCustom(c)
 		p.maskPreview(c)
@@ -111,13 +111,14 @@ func (p *settingsPage) recognitionModelRow(c *ui.Context) {
 		help += "\n" + recognitionBackendText(*b)
 	}
 	if d != nil {
-		settingRow(c, label, help, func() {
+		settingRow(c, label, help, func() ui.Element {
 			settingButton(c, i18n.T("settings.masking.recognition_model.cancel"), kit.Outline, false).OnClick(d.cancel)
+			return ui.Element{}
 		})
 		return
 	}
 	on := st.RecognitionModel
-	kit.SwitchRow(c, &on, label, help)
+	kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &on}, label, help, "", nil)
 	if on && !st.RecognitionModel && !p.recognition.installed {
 		p.downloadRecognitionModel()
 	} else {
@@ -189,7 +190,8 @@ func maskCategories(cats []string) string {
 // with what it finds.
 func maskCategoryRow(c *ui.Context, name string, cat *core.MaskCategory) {
 	label := i18n.T("settings.masking.cat." + name)
-	settingRow(c, label, i18n.T("settings.masking.cat."+name+".help"), func() {
+	settingRow(c, label, i18n.T("settings.masking.cat."+name+".help"), func() ui.Element {
+		var sw ui.Element
 		ui.Row(c).Gap(c.Theme().Space(3)).AlignItems(ui.Center).Children(func() {
 			if cat.On {
 				action := cmp.Or(cat.Action, core.MaskMask)
@@ -202,8 +204,9 @@ func maskCategoryRow(c *ui.Context, name string, cat *core.MaskCategory) {
 					cat.Action = action
 				}
 			}
-			kit.Switch(c, &cat.On).Label(label)
+			sw = kit.Switch(c, &cat.On).Label(label)
 		})
+		return sw
 	})
 }
 
@@ -228,10 +231,10 @@ func (p *settingsPage) maskCustom(c *ui.Context) {
 	settingsSection(c, i18n.T("settings.masking.custom"), i18n.T("settings.masking.custom.foot"),
 		area(i18n.T("settings.masking.words"), i18n.T("settings.masking.words.help"), "", &d.words, false),
 		func() {
-			kit.SwitchRow(c, &st.MaskWordsCase, i18n.T("settings.masking.words.case"), "")
+			kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &st.MaskWordsCase}, i18n.T("settings.masking.words.case"), "", "", nil)
 		},
 		func() {
-			kit.SwitchRow(c, &st.MaskWordsWhole, i18n.T("settings.masking.words.whole"), i18n.T("settings.masking.words.whole.help"))
+			kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &st.MaskWordsWhole}, i18n.T("settings.masking.words.whole"), i18n.T("settings.masking.words.whole.help"), "", nil)
 		},
 		area(i18n.T("settings.masking.rules"), i18n.T("settings.masking.rules.help"), d.err, &d.rules, true),
 		area(i18n.T("settings.masking.allow"), i18n.T("settings.masking.allow.help"), "", &d.allow, false),
@@ -291,9 +294,13 @@ func (p *settingsPage) maskPreview(c *ui.Context) {
 	}
 	settingsSection(c, i18n.T("settings.masking.preview"), i18n.T("settings.masking.preview.help"), func() {
 		settingBlock(c, func() {
-			kit.TextArea(c, &d.preview, kit.InputOpts{}).Height(th.Space(20)).Label(i18n.T("settings.masking.preview"))
+			kit.Field(c, i18n.T("settings.masking.preview.source"), "", "", func() {
+				kit.TextArea(c, &d.preview, kit.InputOpts{}).Height(th.Space(20)).Label(i18n.T("settings.masking.preview"))
+			})
 			if d.preview != "" {
-				kit.Text(c, d.shown, t.Text.Xs).Font(theme.Mono).Selectable()
+				kit.Field(c, i18n.T("settings.masking.preview.sent"), "", "", func() {
+					kit.Text(c, d.shown, t.Text.Xs).Font(theme.Mono).Selectable()
+				})
 			}
 		})
 	})

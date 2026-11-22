@@ -53,5 +53,5 @@ func (p *palette) viewAll() {
 
 // viewAllItem is the row after the mail hits when some are left out.
 func (p *palette) viewAllItem(total int) palItem {
-	return palItem{icon: "list", title: i18n.Tf("palette.view_all", total), kbd: "⌘↵", open: p.viewAll}
+	return palItem{icon: "list", bare: true, title: i18n.Tf("palette.view_all", total), kbd: "⌘↵", open: p.viewAll}
 }

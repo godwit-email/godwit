@@ -18,6 +18,18 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
+// avatarSettingsChanged reports whether a settings change can affect whether
+// or how remote sender avatars load (remote-image policy or proxy).
+func avatarSettingsChanged(old, st core.Settings) bool {
+	return st.RemoteImages != old.RemoteImages ||
+		st.ProxyMode != old.ProxyMode ||
+		st.ProxyURL != old.ProxyURL ||
+		!slices.Equal(st.ProxyBypass, old.ProxyBypass) ||
+		st.ProxyUser != old.ProxyUser ||
+		st.ProxyPassword != old.ProxyPassword ||
+		st.ProxyPasswordSet != old.ProxyPasswordSet
+}
+
 // changeSettings shows st at once and saves it as a full snapshot; a save
 // still waiting is replaced. A failure of the newest save reverts to the
 // last confirmed settings.
@@ -27,6 +39,10 @@ func (a *App) changeSettings(st core.Settings) {
 	a.settingsGen++
 	a.settingsVer++
 	ver := a.settingsVer
+	if avatarSettingsChanged(old, st) {
+		a.avatarPolicyVer++
+	}
+	pVer := a.avatarPolicyVer
 	a.settingsEffects(old, st)
 	save := a.saveSettings
 	var saved core.Settings
@@ -35,8 +51,13 @@ func (a *App) changeSettings(st core.Settings) {
 		return err
 	}, func(gen uint64, err error) {
 		a.refreshTasks() // saved or not, ask again: it may name other models
+		settledPolicy := false
 		if err == nil {
 			a.settingsOK, a.settingsSavedVer = saved, ver
+			if pVer > a.avatarPolicySavedVer {
+				a.avatarPolicySavedVer = pVer
+				settledPolicy = true
+			}
 		}
 		if gen != a.settingsGen {
 			return
@@ -46,13 +67,22 @@ func (a *App) changeSettings(st core.Settings) {
 			a.settings = a.settingsOK
 			a.settingsVer++
 			a.settingsSavedVer = a.settingsVer
+			needSettle := a.avatarPolicyVer != a.avatarPolicySavedVer || avatarSettingsChanged(cur, a.settings)
+			if needSettle {
+				a.avatarPolicyVer++
+				a.avatarPolicySavedVer = a.avatarPolicyVer
+			}
 			a.settingsEffects(cur, a.settings)
-			a.mail.reader.avatarsChanged(settingsSettled)
+			if needSettle {
+				a.mail.reader.avatarsChanged(settingsSettled)
+			}
 			a.toastErr(err)
 			return
 		}
 		a.settings = saved
-		a.mail.reader.avatarsChanged(settingsSettled)
+		if settledPolicy {
+			a.mail.reader.avatarsChanged(settingsSettled)
+		}
 	})
 }
 
@@ -60,6 +90,10 @@ func (a *App) changeSettings(st core.Settings) {
 func (a *App) settingsEffects(old, st core.Settings) {
 	if st.RemoteImages != old.RemoteImages {
 		a.mail.reader.avatarsChanged(trustChanged)
+		a.contacts().avatars = nil
+	} else if avatarSettingsChanged(old, st) {
+		a.mail.reader.avatarsChanged(settingsChanged)
+		a.contacts().avatars = nil
 	}
 	if st.Theme != old.Theme {
 		a.plat.SetThemeSource(st.Theme)
@@ -194,16 +228,16 @@ func (p *settingsPage) generalView(c *ui.Context) {
 	defer p.syncSettings() // what handlers changed while building
 	st := &p.st
 	sel := func(label, desc string, control func() ui.Element) func() {
-		return func() { settingRow(c, label, desc, func() { control() }) }
+		return func() { settingRow(c, label, desc, control) }
 	}
 	sw := func(on *bool, label, help string) func() {
-		return func() { kit.SwitchRow(c, on, label, help) }
+		return func() { kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: on}, label, help, "", nil) }
 	}
 	pageHeading(c, i18n.T("settings.general"), i18n.T("settings.general.sub"))
 	settingsSection(c, i18n.T("settings.appearance"), "",
 		func() {
-			settingRow(c, i18n.T("settings.theme"), i18n.T("settings.theme.help"), func() {
-				ui.Row(c).Gap(theme.ThemeTileGap).Children(func() {
+			settingRow(c, i18n.T("settings.theme"), i18n.T("settings.theme.help"), func() ui.Element {
+				return ui.Row(c).Gap(theme.ThemeTileGap).Children(func() {
 					for _, th := range []string{"system", "light", "dark"} {
 						p.themeTile(c, th)
 					}
@@ -307,14 +341,17 @@ func (p *settingsPage) generalView(c *ui.Context) {
 				return
 			}
 			t, th := theme.Of(c), c.Theme()
-			settingRow(c, i18n.T("settings.thread_collapse_threshold"), i18n.T("settings.thread_collapse_threshold.help"), func() {
+			settingRow(c, i18n.T("settings.thread_collapse_threshold"), i18n.T("settings.thread_collapse_threshold.help"), func() ui.Element {
 				n := float64(st.ThreadCollapseThreshold)
-				ui.Row(c).Width(theme.UsageSelectMin).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
-					if ui.Slider(c, &n, core.MinThreadCollapse, core.MaxThreadCollapse).Step(1).Grow(1).Shrink(1).Label(i18n.T("settings.thread_collapse_threshold")).Changed() {
+				var slider ui.Element
+				ui.Row(c).Width(theme.SettingsControlWidth).Gap(th.Space(3)).AlignItems(ui.Center).Children(func() {
+					slider = ui.Slider(c, &n, core.MinThreadCollapse, core.MaxThreadCollapse).Step(1).Grow(1).Shrink(1).Label(i18n.T("settings.thread_collapse_threshold"))
+					if slider.Changed() {
 						st.ThreadCollapseThreshold = int(math.Round(n))
 					}
 					kit.Text(c, strconv.Itoa(st.ThreadCollapseThreshold), t.Text.Xs).Width(th.Space(10)).TextAlign(ui.End).TextColor(t.Muted)
 				})
+				return slider
 			})
 		})
 	p.proxySection(c)
@@ -327,11 +364,11 @@ func (p *settingsPage) labsView(c *ui.Context) {
 	st := &p.st
 	pageHeading(c, i18n.T("settings.labs"), i18n.T("settings.labs.sub"))
 	settingsCard(c, func() {
-		kit.SwitchRow(c, &st.ExperimentalJMAP, i18n.T("settings.experimental_jmap"), i18n.T("settings.experimental_jmap.help"))
-		kit.SwitchRow(c, &st.ExperimentalEWS, i18n.T("settings.experimental_ews"), i18n.T("settings.experimental_ews.help"))
-		kit.SwitchRow(c, &st.ExperimentalPOP3, i18n.T("settings.experimental_pop3"), i18n.T("settings.experimental_pop3.help"))
-		kit.SwitchRow(c, &st.ExperimentalGraph, i18n.T("settings.experimental_graph"), i18n.T("settings.experimental_graph.help"))
-		kit.SwitchRow(c, &st.ExperimentalGmailAPI, i18n.T("settings.experimental_gmailapi"), i18n.T("settings.experimental_gmailapi.help"))
+		kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &st.ExperimentalJMAP}, i18n.T("settings.experimental_jmap"), i18n.T("settings.experimental_jmap.help"), "", nil)
+		kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &st.ExperimentalEWS}, i18n.T("settings.experimental_ews"), i18n.T("settings.experimental_ews.help"), "", nil)
+		kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &st.ExperimentalPOP3}, i18n.T("settings.experimental_pop3"), i18n.T("settings.experimental_pop3.help"), "", nil)
+		kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &st.ExperimentalGraph}, i18n.T("settings.experimental_graph"), i18n.T("settings.experimental_graph.help"), "", nil)
+		kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &st.ExperimentalGmailAPI}, i18n.T("settings.experimental_gmailapi"), i18n.T("settings.experimental_gmailapi.help"), "", nil)
 	})
 }
 
@@ -360,14 +397,14 @@ func (p *settingsPage) proxySection(c *ui.Context) {
 	}
 	input := func(label, msg string, v *string, opts kit.InputOpts) func() {
 		return func() {
-			settingRow(c, label, msg, func() {
-				kit.Input(c, v, opts).Width(theme.SettingsInputWidth).Label(label)
+			settingRow(c, label, msg, func() ui.Element {
+				return kit.Input(c, v, opts).Width(theme.SettingsControlWidth).Label(label)
 			})
 		}
 	}
 	rows := []func(){func() {
-		settingRow(c, i18n.T("settings.proxy.mode"), source, func() {
-			settingSelect(c, i18n.T("settings.proxy.mode"), &d.mode, []kit.Option[string]{
+		settingRow(c, i18n.T("settings.proxy.mode"), source, func() ui.Element {
+			return settingSelect(c, i18n.T("settings.proxy.mode"), &d.mode, []kit.Option[string]{
 				{Value: core.ProxySystem, Label: i18n.T("settings.proxy.system")},
 				{Value: core.ProxyCustom, Label: i18n.T("settings.proxy.custom")},
 				{Value: core.ProxyOff, Label: i18n.T("settings.proxy.off")},
@@ -378,23 +415,25 @@ func (p *settingsPage) proxySection(c *ui.Context) {
 		rows = append(rows,
 			input(i18n.T("settings.proxy.url"), cmp.Or(d.addrErr, i18n.T("settings.proxy.url.help")), &d.addr,
 				kit.InputOpts{Invalid: d.addrErr != "", Placeholder: "socks5://127.0.0.1:1080"}),
+			input(i18n.T("settings.proxy.bypass"), d.bypassErr, &d.bypass,
+				kit.InputOpts{Invalid: d.bypassErr != "", Placeholder: "localhost, 127.0.0.1, *.corp.example"}),
 			input(i18n.T("settings.proxy.user"), "", &st.ProxyUser, kit.InputOpts{Placeholder: i18n.T("settings.proxy.optional")}),
 			func() {
 				ph := i18n.T("settings.proxy.optional")
 				if st.ProxyPasswordSet {
 					ph = i18n.T("settings.proxy.password.kept")
 				}
-				settingRow(c, i18n.T("settings.proxy.password"), "", func() {
+				settingRow(c, i18n.T("settings.proxy.password"), "", func() ui.Element {
+					var field ui.Element
 					ui.Row(c).Gap(c.Theme().Space(3)).AlignItems(ui.Center).Children(func() {
-						kit.Input(c, &d.pass, kit.InputOpts{Password: true, Placeholder: ph}).Width(theme.SettingsInputWidth).Label(i18n.T("settings.proxy.password"))
+						field = kit.Input(c, &d.pass, kit.InputOpts{Password: true, Placeholder: ph}).Width(theme.SettingsControlWidth).Label(i18n.T("settings.proxy.password"))
 						if st.ProxyPasswordSet && d.pass == "" { // a saved one shows only as the placeholder, so erasing can't reach it
-							settingButton(c, i18n.T("settings.proxy.password.clear"), kit.Outline, false).OnClick(func() { st.ProxyPasswordSet = false })
+							rowButton(c, i18n.T("settings.proxy.password.clear"), kit.Outline, false).OnClick(func() { st.ProxyPasswordSet = false })
 						}
 					})
+					return field
 				})
-			},
-			input(i18n.T("settings.proxy.bypass"), d.bypassErr, &d.bypass,
-				kit.InputOpts{Invalid: d.bypassErr != "", Placeholder: "*.corp.example, .lan, 10.0.0.0/8"}))
+			})
 	}
 	// a typed password saves; erasing it removes the stored one
 	if d.pass != d.sent {
@@ -431,19 +470,19 @@ func proxyKey(st *core.Settings) string {
 	return st.ProxyMode + " " + st.ProxyURL + " " + strings.Join(st.ProxyBypass, ",")
 }
 
-// aiFeaturesView is the Intelligence page's 功能 tab: the reader's AI features, and
+// aiFeaturesView is the AI 功能 page: the reader's AI features, and
 // the languages and translation they use.
 func (p *settingsPage) aiFeaturesView(c *ui.Context) {
 	p.syncSettings()
 	defer p.syncSettings() // what handlers changed while building
 	st := &p.st
 	sel := func(label, desc string, control func() ui.Element) func() {
-		return func() { settingRow(c, label, desc, func() { control() }) }
+		return func() { settingRow(c, label, desc, control) }
 	}
 	sw := func(on *bool, label, help string) func() {
-		return func() { kit.SwitchRow(c, on, label, help) }
+		return func() { kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: on}, label, help, "", nil) }
 	}
-	settingsSection(c, i18n.T("settings.ai"), "",
+	settingsSection(c, "", "",
 		sw(&st.Summary, i18n.T("settings.summary"), i18n.T("settings.summary.help")),
 		sw(&st.QuickReplies, i18n.T("settings.quick_replies"), i18n.T("settings.quick_replies.help")),
 		sw(&st.RuleAI, i18n.T("settings.rule_ai"), i18n.T("settings.rule_ai.help")))
@@ -465,14 +504,27 @@ func (p *settingsPage) aiFeaturesView(c *ui.Context) {
 			return settingSelect(c, i18n.T("settings.translator"), &st.Translator, p.translatorOptions(st.Translator))
 		}),
 		func() {
-			settingRow(c, i18n.T("settings.no_translate"), i18n.T("settings.no_translate.help"), func() { p.noTranslate(c) })
+			settingRow(c, i18n.T("settings.no_translate"), i18n.T("settings.no_translate.help"), func() ui.Element { return p.noTranslate(c) })
 		})
 }
 
 // themeTile is a small picture of the window in a theme: rail, sidebar and
 // content; "system" is the light window on its left half and the dark one on
-// its right. The name is only its tooltip and label.
+// its right. Its name sits under it, in the foreground once chosen.
 func (p *settingsPage) themeTile(c *ui.Context, th string) {
+	t := theme.Of(c)
+	label := i18n.T("settings.theme." + th)
+	color := t.Muted
+	if p.st.Theme == th {
+		color = t.Foreground
+	}
+	ui.Column(c).AlignItems(ui.Center).Gap(c.Theme().Space(1.5)).Children(func() {
+		p.themePicture(c, th, label)
+		kit.Text(c, label, t.Text.Xs).TextColor(color)
+	})
+}
+
+func (p *settingsPage) themePicture(c *ui.Context, th, label string) {
 	t := theme.Of(c)
 	on := p.st.Theme == th
 	light, dark := theme.Light(), theme.Dark()
@@ -491,7 +543,6 @@ func (p *settingsPage) themeTile(c *ui.Context, th string) {
 		}
 		return e.LinearGradient(ui.LinearGradient{From: l, To: d, Angle: 90, Start: f, End: f})
 	}
-	label := i18n.T("settings.theme." + th)
 	b := kit.Pressable(c, kit.PressableOpts{Bare: true, OnClick: func() { p.st.Theme = th }}).Label(label).Role(ui.RoleRadio).Checked(on).
 		Size(theme.ThemeTileWidth, theme.ThemeTileHeight).Radius(t.Radius.Md).Clip().Border(theme.Stroke, t.Border)
 	fill(b, 0, theme.ThemeTileWidth, light.Window, dark.Window)
@@ -510,11 +561,11 @@ func (p *settingsPage) themeTile(c *ui.Context, th string) {
 			}
 		})
 	})
-	kit.TooltipLabelled(c, b, label)
 }
 
-// noTranslate picks the languages that need no translation.
-func (p *settingsPage) noTranslate(c *ui.Context) {
+// noTranslate picks the languages that need no translation; it returns the
+// select button.
+func (p *settingsPage) noTranslate(c *ui.Context) ui.Element {
 	th := c.Theme()
 	var names []string
 	for _, l := range languages {
@@ -526,7 +577,7 @@ func (p *settingsPage) noTranslate(c *ui.Context) {
 	if label == "" {
 		label = i18n.T("settings.no_translate.none")
 	}
-	anchor := kit.SelectButton(c, label, kit.SelectOpts{Flat: true, MinWidth: theme.SettingsSelectMin, MaxWidth: theme.SettingsSelectMax}).
+	anchor := kit.SelectButton(c, label, kit.SelectOpts{Flat: true, MinWidth: theme.SettingsControlWidth, MaxWidth: theme.SettingsSelectMax}).
 		Label(i18n.T("settings.no_translate")).OnClick(func() { p.noTrans = !p.noTrans })
 	kit.Popover(c, anchor, &p.noTrans, func() {
 		ui.Column(c).Gap(th.Space(2)).Children(func() {
@@ -542,6 +593,7 @@ func (p *settingsPage) noTranslate(c *ui.Context) {
 			}
 		})
 	})
+	return anchor
 }
 
 // translatorOptions are the 翻译方式 choices: the model, then each plugin

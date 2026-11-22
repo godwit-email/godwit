@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	netmail "net/mail"
 	"os"
 	"slices"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/gateway"
+	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/store"
 )
@@ -41,8 +43,11 @@ var beforeOutboxItem func(id int64)
 // OutboxItem is a message that has not finished sending and archiving. State is
 // queued, sending, sent, archiving, send_uncertain, archive_uncertain or failed.
 type OutboxItem struct {
-	ID               int64
-	Subject          string
+	ID      int64
+	Subject string
+	// To is who it is addressed to: its To header, names kept, or the
+	// envelope's addresses when the header cannot be read.
+	To               []string
 	State, LastError string
 	CreatedAt        time.Time
 	// DraftID is the draft it was sent from, read-only until CancelOutbox or
@@ -96,7 +101,7 @@ const (
 
 // ListOutbox returns the account's unfinished outbox items, oldest first.
 func (s *Service) ListOutbox(ctx context.Context, accountID int64) ([]OutboxItem, error) {
-	rows, err := s.db.Query(ctx, `SELECT id, subject, state, last_error, created_at, draft_id, send_after, next_attempt_at, attempts, failure, send_at
+	rows, err := s.db.Query(ctx, `SELECT id, subject, state, last_error, created_at, draft_id, send_after, next_attempt_at, attempts, failure, send_at, raw_path, rcpts
 		FROM outbox WHERE account_id = ? AND state != 'done' ORDER BY id`, accountID)
 	if err != nil {
 		return nil, err
@@ -105,7 +110,8 @@ func (s *Service) ListOutbox(ctx context.Context, accountID int64) ([]OutboxItem
 	for _, r := range rows.Values {
 		it := OutboxItem{ID: store.Int(r[0]), Subject: store.Str(r[1]), State: store.Str(r[2]),
 			LastError: store.Str(r[3]), CreatedAt: time.Unix(store.Int(r[4]), 0), DraftID: store.Int(r[5]),
-			SendAfter: unixMilli(r[6]), NextAttempt: unixMilli(r[7]), Attempts: int(store.Int(r[8])), SendAt: unixMilli(r[10])}
+			SendAfter: unixMilli(r[6]), NextAttempt: unixMilli(r[7]), Attempts: int(store.Int(r[8])), SendAt: unixMilli(r[10]),
+			To: outboxTo(store.Str(r[11]), store.Str(r[12]))}
 		if f := store.Str(r[9]); f != "" {
 			it.Failure = new(OutboxFailure)
 			if err := json.Unmarshal([]byte(f), it.Failure); err != nil {
@@ -115,6 +121,24 @@ func (s *Service) ListOutbox(ctx context.Context, accountID int64) ([]OutboxItem
 		out = append(out, it)
 	}
 	return out, nil
+}
+
+// outboxTo is the To header of the raw message at path, or the envelope's
+// recipients (rcpts, JSON) when it cannot be read.
+func outboxTo(path, rcpts string) []string {
+	if f, err := os.Open(path); err == nil {
+		defer f.Close()
+		if m, err := netmail.ReadMessage(f); err == nil { // reads the header only
+			if to, err := m.Header.AddressList("To"); err == nil {
+				out := make([]string, len(to))
+				for i, a := range to {
+					out[i] = mail.FormatAddress(a.Name, a.Address) // readable UTF-8, as a draft's To
+				}
+				return out
+			}
+		}
+	}
+	return jsonList(rcpts)
 }
 
 // unixMilli is a stored time in unix milliseconds; NULL is the zero time.

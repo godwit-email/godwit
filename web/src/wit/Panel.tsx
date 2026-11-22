@@ -1,7 +1,6 @@
 import { useChat } from "@ai-sdk/react";
 import {
   RiAddLine,
-  RiAlertLine,
   RiArrowDownLine,
   RiArrowDownSLine,
   RiArrowUpLine,
@@ -36,33 +35,26 @@ import {
   type FormEvent,
   Fragment,
   type ReactNode,
+  type RefObject,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { toast } from "sonner";
-import { toneButton } from "@/components/tone";
-import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
+import { Alert as Notice } from "@/components/alert";
+import { Badge } from "@/components/badge";
+import { Button } from "@/components/button";
+import { toast } from "@/components/toast";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuShortcut,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { Input } from "@/components/ui/input";
 import {
   InputGroup,
   InputGroupAddon,
@@ -95,6 +87,7 @@ import {
   QuestionnaireSubmit,
   QuestionnaireTitle,
 } from "@/components/ui/questionnaire";
+import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   TraceCollapsible,
@@ -104,10 +97,13 @@ import {
   TraceLine,
   TraceTitle,
 } from "@/components/ui/trace";
+import { WitCheckbox } from "@/components/wit-checkbox";
+import { type PopupMenu, separator, WitMenu } from "@/components/wit-menu";
 import type {
   Approval,
   Citation,
   MailHit,
+  MenuEntry,
   ModelChoice,
   WitCommand,
   WitHistory,
@@ -141,7 +137,7 @@ const UsageRing = ({ value }: { value: number }) => {
   return (
     <svg
       viewBox="0 0 16 16"
-      className={cn("size-4", value >= 0.8 ? "text-amber-500" : "text-muted-foreground")}
+      className={cn("size-4", value >= 0.8 ? "text-(--warning-text)" : "text-muted-foreground")}
       aria-hidden="true"
     >
       <circle cx="8" cy="8" r={r} fill="none" strokeWidth="2" className="stroke-border" />
@@ -173,10 +169,17 @@ function ContextUsage({ usage, t }: { usage: WitUsage; t: T }) {
       key: "conversation",
       label: t("wit.ctx.conversation"),
       value: Math.max(0, used - summary),
-      tone: "bg-blue-500",
+      tone: "bg-(--label-blue-dot)",
     },
     ...(summary > 0
-      ? [{ key: "summary", label: t("wit.ctx.summary"), value: summary, tone: "bg-amber-500" }]
+      ? [
+          {
+            key: "summary",
+            label: t("wit.ctx.summary"),
+            value: summary,
+            tone: "bg-(--label-amber-dot)",
+          },
+        ]
       : []),
     { key: "free", label: t("wit.ctx.free"), value: 100 - used, tone: "bg-muted" },
   ];
@@ -193,7 +196,7 @@ function ContextUsage({ usage, t }: { usage: WitUsage; t: T }) {
       <ul className="flex flex-col gap-1">
         {rows.map((r) => (
           <li key={r.key} className="flex items-center gap-2">
-            <span className={cn("size-2.5 shrink-0 rounded-[3px]", r.tone)} aria-hidden="true" />
+            <span className={cn("size-2.5 shrink-0 rounded-[2px]", r.tone)} aria-hidden="true" />
             <span className="flex-1">{r.label}</span>
             <span className="text-muted-foreground tabular-nums">{r.value}%</span>
           </li>
@@ -371,33 +374,32 @@ function BatchApprovalCard({
   };
 
   const actionLabel = t(`wit.action.${action}`);
+  const allId = useId();
 
   return (
     <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)">
-      <div className="flex flex-wrap items-center gap-2 border-b-[0.5px] bg-sidebar px-3.5 py-2.5 leading-5">
-        <span className="font-semibold">{actionLabel}</span>
+      <div className="flex flex-wrap items-center gap-2 border-b-[0.5px] bg-sidebar px-3.5 py-2.5 leading-5.25">
+        <span className="font-medium">{actionLabel}</span>
         <span className="ml-auto flex gap-1.5">
-          <Badge
-            variant="outline"
-            className="border-(--warning-border) bg-(--warning-bg) text-(--warning-text)"
-          >
-            {t("wit.approval.pending")}
-          </Badge>
+          <Badge tone="warning">{t("wit.approval.pending")}</Badge>
         </span>
       </div>
 
       <div className="flex flex-col gap-2 px-3.5 py-3 text-xs">
         {items.length > 0 && (
-          <div className="flex items-center justify-between border-b pb-2 text-xs text-muted-foreground">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
+          <div className="flex items-center justify-between border-b pb-2 text-muted-foreground text-xs">
+            <label
+              htmlFor={`${allId}-all`}
+              className="flex cursor-pointer select-none items-center gap-2"
+            >
+              <WitCheckbox
+                id={`${allId}-all`}
                 checked={allSelected}
-                onChange={toggleAll}
+                onCheckedChange={toggleAll}
                 disabled={busy}
-                className="size-3.5 rounded accent-green-600 dark:accent-green-500 cursor-pointer"
+                aria-labelledby={allId}
               />
-              <span>
+              <span id={allId}>
                 {allSelected ? t("wit.batch.deselect_all") : t("wit.batch.select_all")} (
                 {selected.size}/{items.length})
               </span>
@@ -405,28 +407,29 @@ function BatchApprovalCard({
           </div>
         )}
 
-        <div className="max-h-60 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden flex flex-col gap-1.5">
+        <div className="flex max-h-60 flex-col gap-1.5 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {items.map((it) => {
             const isChecked = selected.has(it.id);
             return (
               <label
+                htmlFor={`${allId}-${it.id}-box`}
                 key={it.id}
-                className={`flex items-start gap-2.5 rounded-lg border p-2 transition-colors cursor-pointer select-none ${
-                  isChecked
-                    ? "bg-muted/40 border-muted-foreground/30"
-                    : "opacity-60 bg-transparent border-muted/50"
-                }`}
+                className={cn(
+                  "flex cursor-pointer select-none items-start gap-2.5 rounded-lg border p-2 transition-colors",
+                  isChecked ? "bg-(--hover-tint)" : "opacity-60",
+                )}
               >
-                <input
-                  type="checkbox"
+                <WitCheckbox
+                  id={`${allId}-${it.id}-box`}
                   checked={isChecked}
-                  onChange={() => toggleItem(it.id)}
+                  onCheckedChange={() => toggleItem(it.id)}
                   disabled={busy}
-                  className="mt-0.5 size-3.5 rounded accent-green-600 dark:accent-green-500 cursor-pointer shrink-0"
+                  aria-labelledby={`${allId}-${it.id}`}
+                  className="mt-0.5"
                 />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium truncate text-foreground">
+                <div id={`${allId}-${it.id}`} className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2 leading-4.5">
+                    <span className="truncate font-medium text-foreground">
                       {it.from || t("wit.batch.no_sender")}
                     </span>
                     {onCite && it.msg_id > 0 && (
@@ -438,14 +441,14 @@ function BatchApprovalCard({
                           onCite(it.msg_id);
                         }}
                         title={t("wit.mail.open")}
-                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline shrink-0 cursor-pointer font-medium"
+                        className="inline-flex shrink-0 cursor-pointer items-center gap-1 font-medium text-primary text-xs hover:underline"
                       >
                         <RiMailLine className="size-3" />
                         <span>{t("wit.mail.open")}</span>
                       </button>
                     )}
                   </div>
-                  <div className="truncate text-xs text-muted-foreground">
+                  <div className="truncate text-muted-foreground text-xs leading-4.5">
                     {it.subject || t("mail.no_subject")}
                   </div>
                 </div>
@@ -583,46 +586,40 @@ function ToolCard({
   return (
     <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)">
       <div className="flex flex-wrap items-center gap-2 border-b-[0.5px] bg-sidebar px-3.5 py-2.5 leading-5">
-        <span className="font-semibold">{t("wit.approval.wants", label)}</span>
+        <span className="font-medium">{t("wit.approval.wants", label)}</span>
         <span className="font-mono text-muted-foreground text-xs">{a.tool}</span>
         <span className="ml-auto flex gap-1.5">
-          {a.tool.startsWith("plugin_") && (
-            <Badge variant="secondary">{t("wit.approval.plugin")}</Badge>
-          )}
-          <Badge
-            variant="outline"
-            className="border-(--warning-border) bg-(--warning-bg) text-(--warning-text)"
-          >
-            {t("wit.approval.pending")}
-          </Badge>
+          {a.tool.startsWith("plugin_") && <Badge>{t("wit.approval.plugin")}</Badge>}
+          <Badge tone="warning">{t("wit.approval.pending")}</Badge>
         </span>
       </div>
       <div className="flex flex-col gap-1.5 px-3.5 py-3 text-sm">
         {a.summary && a.summary !== label && <p className="text-muted-foreground">{a.summary}</p>}
         {editing ? (
           <div className="flex flex-col gap-2.5">
-            <label className="flex flex-col gap-1">
+            <div className="flex flex-col gap-1">
               <span className="text-xs font-medium text-muted-foreground">
                 {t("wit.approval.subject")}
               </span>
-              <input
-                type="text"
+              <Input
+                aria-label={t("wit.approval.subject")}
                 value={editSubject}
                 onChange={(e) => setEditSubject(e.target.value)}
                 disabled={busy}
-                className="w-full rounded border border-input bg-background px-2.5 py-1 text-xs font-medium"
+                className="h-7 text-xs md:text-xs"
               />
-            </label>
-            <label className="flex flex-col gap-1">
+            </div>
+            <div className="flex flex-col gap-1">
               <span className="text-xs font-medium text-muted-foreground">{t("compose.body")}</span>
-              <textarea
+              <Textarea
+                aria-label={t("compose.body")}
                 rows={4}
                 value={editBody}
                 onChange={(e) => setEditBody(e.target.value)}
                 disabled={busy}
-                className="w-full rounded border border-input bg-background px-2.5 py-1.5 text-xs font-sans"
+                className="min-h-0 py-1.5 text-xs md:text-xs"
               />
-            </label>
+            </div>
           </div>
         ) : (
           <>
@@ -650,13 +647,10 @@ function ToolCard({
             <span className="shrink-0 text-muted-foreground">{t("wit.approval.sends_to")}</span>
             <span className="flex flex-wrap gap-1.5">
               {a.destinations.map((d) => (
-                <span
-                  key={d}
-                  className="flex h-5 items-center gap-1 rounded-sm border-[0.5px] px-1.5 text-xs"
-                >
+                <Badge key={d} tone="outline" className="font-mono">
                   <RiGlobalLine className="size-3 text-muted-foreground" />
                   {d}
-                </span>
+                </Badge>
               ))}
             </span>
           </div>
@@ -799,13 +793,10 @@ function QuestionCard({
   return (
     <div className="overflow-hidden rounded-xl border-[0.5px] bg-background shadow-(--shadow-xs)">
       <div className="flex items-center gap-2 border-b-[0.5px] bg-sidebar px-3.5 py-2.5 leading-5">
-        <span className="font-semibold">
+        <span className="font-medium">
           {server ? t("wit.question.asks_mcp", server) : t("wit.question.asks")}
         </span>
-        <Badge
-          variant="outline"
-          className="ml-auto border-(--warning-border) bg-(--warning-bg) text-(--warning-text)"
-        >
+        <Badge tone="warning" className="ml-auto">
           {t("wit.approval.pending")}
         </Badge>
       </div>
@@ -837,7 +828,7 @@ function QuestionCard({
         {questions.map((q, i) => (
           <QuestionnaireItem key={q.question} name={`q${i}`} multiple={q.multiSelect}>
             <QuestionnaireTitle className="flex flex-wrap items-center gap-2">
-              {q.header && <Badge variant="secondary">{q.header}</Badge>}
+              {q.header && <Badge>{q.header}</Badge>}
               {q.question}
               {q.multiSelect && (
                 <span className="font-normal text-muted-foreground text-xs">
@@ -916,7 +907,7 @@ function Settled({ a, onDraft, t }: { a: Approval; onDraft?(id: number): Promise
   const rule = a.tool === PROPOSE_RULE_TOOL ? ruleSettled(a, t) : "";
   const [Icon, key, tone] =
     a.state === "done"
-      ? [RiCheckboxCircleLine, "wit.approval.allowed", "text-green-600"]
+      ? [RiCheckboxCircleLine, "wit.approval.allowed", "text-(--success-text)"]
       : a.state === "failed"
         ? [RiErrorWarningLine, "wit.approval.failed", "text-destructive"]
         : [RiCloseCircleLine, "wit.approval.rejected", "text-muted-foreground"];
@@ -1455,17 +1446,12 @@ function Answer({
           return k?.suspect ? [{ id: c.messageId, ...k }] : [];
         })
         .map((c) => (
-          <Alert
-            key={c.id}
-            role="status"
-            className="gap-x-2.5 gap-y-0 rounded-lg border-0 bg-(--warning-bg) px-3 py-2.5 text-(--warning-text) text-sm"
-          >
-            <RiAlertLine />
-            <AlertDescription className="text-sm text-current leading-relaxed">
-              {/* the quote is mail text: a plain string, never markup */}
+          <Notice key={c.id} tone="warning" role="status">
+            {/* the quote is mail text: a plain string, never markup */}
+            <span>
               {c.quote ? t("wit.suspect_quote", `[${c.n}]`, c.quote) : t("wit.suspect", `[${c.n}]`)}
-            </AlertDescription>
-          </Alert>
+            </span>
+          </Notice>
         ))}
       {m.parts.map((p, i) => {
         const w = folds.find((w) => w.includes(i));
@@ -1573,7 +1559,7 @@ function Answer({
         <div className="flex flex-wrap gap-1">
           {cited.map((c) => (
             <HoverCard key={c.messageId}>
-              <HoverCardTrigger render={<Badge variant="outline" className="cursor-default" />}>
+              <HoverCardTrigger render={<Badge tone="outline" className="cursor-default" />}>
                 [{nums.get(c.messageId)?.n}]
               </HoverCardTrigger>
               <HoverCardContent className="flex flex-col gap-1">
@@ -1665,6 +1651,8 @@ export function Panel({
   onAnswer,
   skills,
   onNew,
+  popup,
+  dock,
 }: {
   info?: WitInfo;
   history: WitHistory;
@@ -1708,6 +1696,10 @@ export function Panel({
   skills?(): Promise<SkillChoice[]>;
   /** Shows a new conversation (the / menu's 新对话; the Wit page). */
   onNew?(): void;
+  /** Shows the input's menus (+, the model, /) as the system's; without it, web menus. */
+  popup?: PopupMenu;
+  /** The page's input row and its input, which the page's toasts rise above and line up with. */
+  dock?: { bar: RefObject<HTMLDivElement | null>; input: RefObject<HTMLDivElement | null> };
 }) {
   // A command's question: the skill as its menu names it (翻译成…, or the adjustment).
   const commandLabel = (c: WitCommand) => {
@@ -2046,9 +2038,6 @@ export function Panel({
         : t("wit.model.pick");
     setModelNotice(t("wit.model.changed", label));
   };
-  // The menu groups the choices by their service, in the order they come.
-  const services = new Map<string, ModelChoice[]>();
-  for (const c of choices ?? []) services.set(c.service, [...(services.get(c.service) ?? []), c]);
 
   // Citations with core's numbers (the refs the model cites by); a message is suspect once any
   // citation of it is.
@@ -2204,7 +2193,7 @@ export function Panel({
               busy={busy}
               decide={(accept, editedArgs) => decideAs(a, accept, false, editedArgs)}
               session={
-                onSession && a.sessionAllow
+                onSession && a.sessionAllow && a.destinations.length === 0
                   ? async () => {
                       if (deciding.length > 0) return;
                       // the run's other pending calls of the tool are approved with it
@@ -2286,7 +2275,10 @@ export function Panel({
           icon: <RiTranslate2 />,
           label: t("wit.compose.translate_to", l.label),
           run: now(() =>
-            ask(t("wit.compose.translate_to", l.label), { skill: "translate-draft", lang: l.tag }),
+            ask(t("wit.compose.translate_to", l.label), {
+              skill: "translate-draft",
+              lang: l.tag,
+            }),
           ),
         }))
       : []),
@@ -2350,7 +2342,7 @@ export function Panel({
                     {
                       key: "model:",
                       group: session,
-                      label: t("wit.model.default", model),
+                      label: t("wit.model.default", model ?? ""),
                       checked: !models.ref,
                       run: now(() => pickModel("")),
                     },
@@ -2380,6 +2372,50 @@ export function Panel({
         ]
       : []),
   ];
+  // The model menu: the default when it is none listed, the models by service (the one the
+  // conversation follows ticked), the effort's choices, the settings last. Picking the default
+  // follows it again, so its id carries no ref.
+  const modelEntries = (list: ModelChoice[]): MenuEntry[] => {
+    const defaultModel = list.find((c) => c.default);
+    const byService = new Map<string, ModelChoice[]>();
+    for (const c of list) byService.set(c.service, [...(byService.get(c.service) ?? []), c]);
+    const out: MenuEntry[] = [];
+    if (!defaultModel)
+      out.push({
+        id: "model:",
+        label: t("wit.model.default", model ?? ""),
+        radio: true,
+        checked: !models?.ref || undefined,
+      });
+    let sep = !defaultModel;
+    for (const [service, items] of byService) {
+      if (sep) out.push(separator);
+      sep = true;
+      out.push({ id: `service:${service}`, label: service, header: true });
+      for (const c of items)
+        out.push({
+          id: `model:${c.default ? "" : c.ref}`,
+          label: c.name,
+          badge: c.default ? t("wit.model.default_tag") : undefined,
+          radio: true,
+          checked: (models?.ref || defaultModel?.ref) === c.ref || undefined,
+        });
+    }
+    if (effort)
+      out.push(separator, {
+        id: "effort",
+        label: t("wit.effort"),
+        badge: t(`wit.effort.${effort.value || "default"}`),
+        items: (["", "low", "medium", "high"] as const).map((v) => ({
+          id: `effort:${v}`,
+          label: t(`wit.effort.${v || "default"}`),
+          radio: true,
+          checked: effort.value === v || undefined,
+        })),
+      });
+    if (onModels) out.push(separator, { id: "settings", label: t("wit.model"), icon: "settings" });
+    return out;
+  };
   const conversation = (
     <MessageScrollerProvider autoScroll>
       <MessageScroller className="min-h-0 flex-1">
@@ -2472,25 +2508,18 @@ export function Panel({
               </MessageScrollerItem>
             ))}
             {page && chat.messages.length === 0 && !running && !locked && (
-              <div className="flex flex-col items-center gap-3 pt-[16vh] text-center">
-                <span className="flex size-12 items-center justify-center rounded-2xl border border-glass-border bg-glass-bg shadow-xs">
+              <div className="flex flex-col items-center gap-3 pt-30 text-center">
+                <span className="flex size-12 items-center justify-center rounded-2xl border border-glass-border bg-glass-bg shadow-(--shadow-xs)">
                   <RiSparkling2Line className="size-6" />
                 </span>
                 <h1 className="font-semibold text-xl">{t("wit.empty.title")}</h1>
-                <p className="max-w-110 text-muted-foreground text-xs leading-relaxed">
-                  {t("wit.empty.note")}
-                </p>
+                <p className="max-w-110 text-muted-foreground text-xs">{t("wit.empty.note")}</p>
                 <p className="mt-3 text-muted-foreground text-xs">{t("wit.suggest")}</p>
-                <div className="flex max-w-150 flex-wrap justify-center gap-2">
+                <div className="flex flex-wrap justify-center gap-2">
                   {[1, 2, 3, 4].map((n) => {
                     const q = t(`wit.suggest.${n}`);
                     return (
-                      <Button
-                        key={n}
-                        variant="ghost"
-                        className="h-auto rounded-lg border border-glass-border bg-glass-bg px-3.5 py-1.5 text-sm text-foreground shadow-xs transition-all outline-none hover:bg-glass-hover focus-visible:ring-2 focus-visible:ring-ring dark:shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.08)]"
-                        onClick={() => ask(q)}
-                      >
+                      <Button key={n} variant="outline" onClick={() => ask(q)}>
                         {q}
                       </Button>
                     );
@@ -2531,14 +2560,16 @@ export function Panel({
   // A question core kept unanswered (its run refused or failed): why, and 重试 asks it again.
   const failed = chat.error ? undefined : chat.messages.at(-1)?.metadata?.failed;
   const error = (chat.error || failed) && !running && (
-    <Alert variant="destructive" className="border-0 bg-destructive/10">
-      <AlertDescription>{witError(chat.error?.message ?? failed ?? "", t)}</AlertDescription>
-      <AlertAction>
-        <Button className={toneButton.danger} size="sm" onClick={() => void chat.regenerate()}>
+    <Notice
+      tone="danger"
+      action={
+        <Button variant="outline" tone="danger" size="sm" onClick={() => void chat.regenerate()}>
           {t("common.retry")}
         </Button>
-      </AlertAction>
-    </Alert>
+      }
+    >
+      <p>{witError(chat.error?.message ?? failed ?? "", t)}</p>
+    </Notice>
   );
   // The context meter (once there is usage) leads the input's right-hand controls.
   const meter = usage.input > 0 || usage.history > 0;
@@ -2546,7 +2577,10 @@ export function Panel({
   // disabled control would grey the whole group.
   const idle = locked || !draft.trim() || running;
   const input = (
-    <InputGroup className="relative gap-2 rounded-2xl border-[0.5px] border-glass-border bg-glass-bg px-3 py-2.5 shadow-[0_4px_20px_rgba(0,0,0,0.035)] outline-none transition-[border-color,box-shadow] focus-within:shadow-[0_4px_20px_rgba(0,0,0,0.075)] has-[[data-slot=input-group-control]:focus-visible]:border-glass-border has-[[data-slot=input-group-control]:focus-visible]:ring-0 dark:shadow-[0_4px_20px_rgba(0,0,0,0.3),inset_0_1px_0_0_rgba(255,255,255,0.08)] dark:focus-within:shadow-[0_4px_20px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.08)]">
+    <InputGroup
+      ref={dock?.input}
+      className="relative gap-2 rounded-2xl border-[0.5px] border-glass-border bg-glass-bg px-3 py-2.5 shadow-(--shadow-float) outline-none has-[[data-slot=input-group-control]:focus-visible]:border-glass-border has-[[data-slot=input-group-control]:focus-visible]:ring-0"
+    >
       {editing && (
         <div className="-mx-3 -mt-2.5 mb-0.5 flex items-center gap-2 rounded-t-2xl bg-muted px-3 py-1.5 text-muted-foreground text-xs">
           <RiEditLine className="size-3.5 shrink-0" />
@@ -2620,22 +2654,19 @@ export function Panel({
       />
       <InputGroupAddon align="block-end" className="gap-2 p-0">
         {onSearch && (
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <InputGroupButton variant="ghost" size="icon-sm" aria-label={t("wit.add")}>
-                  <RiAddLine className="size-4.5" />
-                </InputGroupButton>
-              }
-            />
-            <DropdownMenuContent side="top" className="min-w-45">
-              <DropdownMenuItem disabled={full} onClick={() => setPicking({ at: -1, query: "" })}>
-                <RiMailLine className="text-muted-foreground" />
-                <span className="flex-1">{t("wit.quote")}</span>
-                <span className="text-muted-foreground/70 text-xs">@</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <WitMenu
+            popup={popup}
+            side="top"
+            trigger={
+              <InputGroupButton variant="ghost" size="icon-sm" aria-label={t("wit.add")}>
+                <RiAddLine className="size-4.5" />
+              </InputGroupButton>
+            }
+            entries={() => [
+              { id: "quote", label: t("wit.quote"), icon: "mail", badge: "@", disabled: full },
+            ]}
+            onChoose={() => setPicking({ at: -1, query: "" })}
+          />
         )}
         {meter && (
           <Popover>
@@ -2654,7 +2685,7 @@ export function Panel({
             >
               <UsageRing value={usage.history} />
             </PopoverTrigger>
-            <PopoverContent side="top" className="flex w-72 flex-col gap-3 text-xs">
+            <PopoverContent side="top" className="flex w-72 flex-col gap-3 p-4 text-xs">
               <ContextUsage usage={usage} t={t} />
               {transport.compacts && (
                 <div className="flex items-center justify-between gap-3 border-t-[0.5px] pt-3">
@@ -2696,105 +2727,48 @@ export function Panel({
           </Popover>
         )}
         {model && models ? (
-          <DropdownMenu
-            onOpenChange={(open) => {
-              if (open) models.list().then(setChoices, fail);
+          <WitMenu
+            popup={popup}
+            side="top"
+            align="end"
+            onError={fail}
+            trigger={
+              <InputGroupButton
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  !meter && "ml-auto",
+                  "h-7 min-w-0 gap-1 px-2.5 font-medium text-foreground text-xs",
+                )}
+                title={t("wit.model.pick")}
+              >
+                <span className="truncate">{chosen}</span>
+                {effort?.value && (
+                  <span className="text-muted-foreground">{t(`wit.effort.${effort.value}`)}</span>
+                )}
+                <RiArrowDownSLine className="size-3 text-muted-foreground" />
+              </InputGroupButton>
+            }
+            entries={async () => {
+              const list = await models.list();
+              setChoices(list);
+              return modelEntries(list);
             }}
-          >
-            <DropdownMenuTrigger
-              render={
-                <InputGroupButton
-                  variant="ghost"
-                  size="sm"
-                  className={cn(!meter && "ml-auto", "h-8 min-w-0 gap-1.5 px-2 text-xs")}
-                  title={t("wit.model.pick")}
-                >
-                  <span className="truncate">{chosen}</span>
-                  {effort?.value && (
-                    <span className="text-muted-foreground">{t(`wit.effort.${effort.value}`)}</span>
-                  )}
-                  <RiArrowDownSLine className="size-3 text-muted-foreground" />
-                </InputGroupButton>
-              }
-            />
-            <DropdownMenuContent side="top" align="end" className="max-h-80 min-w-56">
-              {!listedDefault && (
-                // the default only by its name when it is none of the models listed
-                <DropdownMenuRadioGroup
-                  value={models.ref}
-                  onValueChange={(v: string) => pickModel(v)}
-                >
-                  <DropdownMenuRadioItem closeOnClick value="">
-                    {t("wit.model.default", model)}
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              )}
-              {[...services].map(([service, list], i) => (
-                <DropdownMenuGroup key={service}>
-                  {(i > 0 || !listedDefault) && <DropdownMenuSeparator />}
-                  <DropdownMenuLabel>{service}</DropdownMenuLabel>
-                  <DropdownMenuRadioGroup
-                    // the default model is checked while the conversation follows the default
-                    value={models.ref || (listedDefault?.ref ?? "")}
-                    // picking the default follows it again (no model of its own)
-                    onValueChange={(v: string) => pickModel(v === listedDefault?.ref ? "" : v)}
-                  >
-                    {list.map((c) => (
-                      <DropdownMenuRadioItem closeOnClick key={c.ref} value={c.ref}>
-                        {c.name}
-                        {c.default && (
-                          <Badge variant="outline" className="text-muted-foreground">
-                            {t("wit.model.default_tag")}
-                          </Badge>
-                        )}
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuGroup>
-              ))}
-              {effort && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuSub>
-                    {/* the value as the item's shortcut, the trigger's arrow right by it */}
-                    <DropdownMenuSubTrigger className="[&>svg]:ml-0">
-                      {t("wit.effort")}
-                      <DropdownMenuShortcut>
-                        {t(`wit.effort.${effort.value || "default"}`)}
-                      </DropdownMenuShortcut>
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent>
-                      <DropdownMenuRadioGroup
-                        value={effort.value}
-                        onValueChange={(v: string) => effort.pick(v)}
-                      >
-                        {(["", "low", "medium", "high"] as const).map((v) => (
-                          <DropdownMenuRadioItem closeOnClick key={v} value={v}>
-                            {t(`wit.effort.${v || "default"}`)}
-                          </DropdownMenuRadioItem>
-                        ))}
-                      </DropdownMenuRadioGroup>
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-                </>
-              )}
-              {onModels && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={onModels}>
-                    <RiSettings3Line className="text-muted-foreground" />
-                    {t("wit.model")}
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+            onChoose={(id) => {
+              if (id === "settings") onModels?.();
+              else if (id.startsWith("effort:")) effort?.pick(id.slice("effort:".length));
+              else pickModel(id.slice("model:".length));
+            }}
+          />
         ) : (
           model && (
             <InputGroupButton
               variant="ghost"
               size="sm"
-              className={cn(!meter && "ml-auto", "h-8 gap-1 px-2 text-muted-foreground text-xs")}
+              className={cn(
+                !meter && "ml-auto",
+                "h-7 gap-1 px-2.5 font-medium text-foreground text-xs",
+              )}
               title={t("wit.model")}
               onClick={onModels}
             >
@@ -2805,7 +2779,7 @@ export function Panel({
         )}
         {running ? (
           <InputGroupButton
-            className={cn(!model && !meter && "ml-auto")}
+            className={cn(!model && !meter && "ml-auto", "text-foreground")}
             variant="outline"
             size="icon-sm"
             aria-label={t("wit.stop")}
@@ -2845,7 +2819,7 @@ export function Panel({
           {conversation}
           <div className="relative bg-background">
             {fade}
-            <div className="mx-auto flex w-full max-w-202 flex-col gap-2 px-6 pb-6">
+            <div ref={dock?.bar} className="mx-auto flex w-full max-w-202 flex-col gap-2 px-6 pb-6">
               {error}
               {input}
             </div>
@@ -2856,11 +2830,7 @@ export function Panel({
   }
   // 调整 / 翻译: quick actions above the input; locked, they do nothing but keep their look.
   const trayButton = (Icon: typeof RiEqualizerLine, label: string) => (
-    <Button
-      variant="ghost"
-      size="sm"
-      className="h-7 gap-1.5 rounded-md border border-glass-border bg-glass-bg px-2.5 text-xs text-foreground shadow-xs hover:bg-glass-hover disabled:opacity-100 dark:shadow-[0_1px_3px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.08)] dark:hover:bg-glass-hover dark:aria-expanded:bg-glass-hover"
-    >
+    <Button variant="outline" size="sm" className="h-7 gap-1.5 px-2.5 text-xs disabled:opacity-100">
       <Icon className="size-3.5 text-muted-foreground" />
       {label}
       <RiArrowDownSLine className="size-3 text-muted-foreground" />
@@ -2874,7 +2844,7 @@ export function Panel({
       {info && !only && info.chips.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 px-4 py-3">
           {info.chips.map((c) => (
-            <Badge key={c} variant="secondary" className="h-auto max-w-full truncate">
+            <Badge key={c} className="max-w-full truncate">
               {c}
             </Badge>
           ))}
@@ -2947,12 +2917,7 @@ export function Panel({
             {onModels && (
               <>
                 {" "}
-                <Button
-                  variant="link"
-                  size="sm"
-                  className="h-auto p-0 align-baseline text-xs"
-                  onClick={onModels}
-                >
+                <Button variant="link" size="sm" className="align-baseline" onClick={onModels}>
                   {t("wit.compose.translate_only.models")}
                 </Button>
               </>

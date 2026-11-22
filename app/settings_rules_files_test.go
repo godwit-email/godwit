@@ -22,10 +22,10 @@ func TestSettingsRulesFileActions(t *testing.T) {
 	h.click("选择文件夹…")
 	h.see(h.plat.dir)
 	h.see(filepath.Join(h.plat.dir, "2026-11-03 Invoice #1234 from Acme Inc", "invoice.pdf"))
-	h.click("文件夹命名")
+	h.click("日期 主题")
 	h.click("年 / 月 / 日期 主题")
 	h.see(filepath.Join(h.plat.dir, "2026", "11", "2026-11-03 Invoice #1234 from Acme Inc", "invoice.pdf"))
-	h.click("文件夹命名")
+	h.click("年 / 月 / 日期 主题")
 	h.click("自定义…")
 	h.click("发件人域名")
 	h.see(filepath.Join(h.plat.dir, "2026", "11", "2026-11-03 Invoice #1234 from Acme Incstripe.com", "invoice.pdf"))
@@ -44,5 +44,34 @@ func TestSettingsRulesFileActions(t *testing.T) {
 	want.Kind = core.ActionEML
 	if rs[0].Doc.Actions[1] != want {
 		t.Fatalf("second action %+v", rs[0].Doc.Actions[1])
+	}
+}
+
+// TestFileReadyNeedsAbsoluteFolder: a typed folder core would reject keeps
+// the editor's Save off, rather than closing the editor on a failed save.
+func TestFileReadyNeedsAbsoluteFolder(t *testing.T) {
+	abs := filepath.Join(t.TempDir(), "Invoices")
+	for dir, want := range map[string]bool{abs: true, "Invoices": false, "~/Documents": false, "": false} {
+		d := &core.RuleDoc{Actions: []core.RuleAction{{Kind: core.ActionPDF, Dir: dir, Subfolder: true, Naming: core.NamingPresets[0]}}}
+		if got := fileReady(d); got != want {
+			t.Errorf("fileReady(%q) = %v, want %v", dir, got, want)
+		}
+	}
+}
+
+// TestFileFollowerKeepsNamingUntilSaved: a folder typed through another
+// action's keeps the action's own naming; saving gives a follower its leader's.
+func TestFileFollowerKeepsNamingUntilSaved(t *testing.T) {
+	dir := t.TempDir() // absolute on every platform, as fileReady needs
+	d := &core.RuleDoc{Actions: []core.RuleAction{
+		{Kind: core.ActionPDF, Dir: dir, Subfolder: true, Naming: core.NamingPresets[0]},
+		{Kind: core.ActionEML, Dir: dir, Subfolder: false, Naming: "{subject}"},
+	}}
+	if !fileReady(d) {
+		t.Fatal("a follower's own naming should not block saving")
+	}
+	syncFollowers(d)
+	if f := d.Actions[1]; f.Subfolder != true || f.Naming != core.NamingPresets[0] {
+		t.Fatalf("follower after sync = %+v", f)
 	}
 }

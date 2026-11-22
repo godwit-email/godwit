@@ -152,8 +152,16 @@ type mailPage struct {
 	viewsReading                  bool   // a reload that reads them has not landed
 	viewRefresh                   func() // stops the timer that rereads an open view
 
-	exec    func(ctx context.Context, op string, ids []int64, from, folder int64) (core.ArchiveUndo, error) // write; tests wrap it
-	fetched func()                                                                                          // tests: runs off the UI thread once a reload has read the list
+	exec       func(ctx context.Context, op string, ids []int64, from, folder int64) (core.ArchiveUndo, error) // write; tests wrap it
+	fetched    func()                                                                                          // tests: runs off the UI thread once a reload has read the list
+	avatars    map[string]*listAvatar                                                                          // cached sender avatars for list rows, by normalized address
+	avatarsVer uint64                                                                                          // matches a.avatarPolicySavedVer
+}
+
+// listAvatar is a sender's avatar once read for the mail list; img is nil
+// while it loads or when no image is permitted/available (leaves the initial).
+type listAvatar struct {
+	img ui.ImageSource
 }
 
 // listSel is a list's place and choice, kept on its items by key.
@@ -562,7 +570,7 @@ func (p *mailPage) purgeDialog(c *ui.Context) {
 	kit.Dialog(c, &p.purgeAsk, i18n.T("mail.purge.title"),
 		kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: desc, Close: i18n.T("common.close")}, nil, func() {
 			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { p.purgeAsk = false })
-			kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive}).OnClick(func() {
+			kit.Button(c, i18n.T("mail.purge.confirm"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger}).OnClick(func() {
 				p.purgeAsk = false
 				p.batch("purge", p.purgeRows)
 				p.advance(p.purgeRows)
@@ -724,7 +732,7 @@ func (p *mailPage) Content(c *ui.Context) {
 	}
 	_, isDrafts := draftsOf(p.folders, p.view)
 	a.listW = a.listWidth()
-	changed, _ := kit.Resizer(c, &a.listW, th.Space(2), false, i18n.T("mail.resize_list"), nil, func() {
+	changed, _ := kit.Resizer(c, &a.listW, th.Space(2), i18n.T("mail.resize_list"), nil, func() {
 		kit.Panel(c, r).Grow(1).Children(func() {
 			switch {
 			case p.view.Unified == "outbox":
@@ -758,18 +766,17 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 	t, th := theme.Of(c), c.Theme()
 	if p.searchOpen {
 		ui.Column(c).Padding(th.Space(3), th.Space(3), th.Space(2), th.Space(3)).Gap(th.Space(2)).Children(func() {
-			box := kit.InputGroup(c, kit.InputOpts{Glass: true}).Gap(th.Space(2)).Padding(0, th.Space(1), 0, th.Space(2.5))
-			box.Children(func() {
-				ui.Icon(c, icons.Get("search")).Size(theme.Icon, theme.Icon).TextColor(t.Muted)
-				in := kit.Input(c, &p.query, kit.InputOpts{Placeholder: i18n.T("mail.search.placeholder"), Bare: true}).FocusRing(false).AutoFocus().Grow(1)
-				if in.Submitted() {
-					p.runSearch()
-				}
-				if p.query != "" {
-					kit.IconButton(c, "x", i18n.T("mail.search.clear"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-						Size(th.Space(6), th.Space(6)).TextColor(t.Muted).OnClick(p.clearSearch)
-				}
-			})
+			in := kit.Input(c, &p.query, kit.InputOpts{Placeholder: i18n.T("mail.search.placeholder"), Glass: true,
+				Leading: func() { kit.InputIcon(c, "search") },
+				Trailing: func() {
+					if p.query != "" {
+						kit.IconButton(c, "x", i18n.T("mail.search.clear"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs}).OnClick(p.clearSearch)
+					}
+				},
+			}).AutoFocus()
+			if in.Submitted() {
+				p.runSearch()
+			}
 			p.filterChips(c)
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Children(func() {
 				kit.Text(c, p.searchHint(), t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
@@ -795,6 +802,15 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 		p.a.openPalette()
 	}
 	saved := p.savedViewID() != 0
+	if splitChrome() {
+		if head == "" {
+			return
+		}
+		ui.Row(c).AlignItems(ui.Center).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4)).Children(func() {
+			kit.Text(c, head, t.Text.Xs).FontWeight(500).TextColor(t.Muted)
+		})
+		return
+	}
 	if saved && head == "" && !p.a.sidebarHidden { // its groups' headings are the list's
 		return
 	}
@@ -802,13 +818,31 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 		kit.Text(c, head, t.Text.Xs).FontWeight(500).TextColor(t.Muted)
 		ui.Spacer(c)
 		if !saved {
-			kit.Tabs(c, &p.filter, i18n.T("mail.filter.all"), i18n.T("mail.filter.unread"))
+			p.filterTabs(c)
 		}
-		if p.a.sidebarHidden { // else the sidebar's header has it
+		if p.a.sidebarHidden { // as the title bar's field, while the sidebar is folded
 			kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 				OnClick(p.a.openPalette)
 		}
 	})
+}
+
+func (p *mailPage) isDraftsView() bool {
+	_, ok := draftsOf(p.folders, p.view)
+	return ok
+}
+
+// showsFilterTabs reports whether the current mail list supports the All/Unread
+// filter switch (shown inside the list header on macOS, and in the aligned Mica
+// context bar on Windows/Linux).
+func (p *mailPage) showsFilterTabs() bool {
+	return p.viewEdit == nil && !p.searchOpen &&
+		p.view.Unified != "outbox" && p.view.Unified != "scheduled" &&
+		p.savedViewID() == 0 && !p.isDraftsView()
+}
+
+func (p *mailPage) filterTabs(c *ui.Context) {
+	kit.Tabs(c, &p.filter, kit.TabsOpts{}, kit.TabLabels(i18n.T("mail.filter.all"), i18n.T("mail.filter.unread")))
 }
 
 // searchHint is the line under the search box: what was found, in which
@@ -942,6 +976,10 @@ func (p *mailPage) listView(c *ui.Context) {
 	}
 	ls.list.Selected, ls.list.Selection = &ls.cur, &ls.sel
 	act, target := "", []mailItem(nil)
+	padR := th.Space(2)
+	if goos != "darwin" {
+		padR = th.Space(3) // keep selected row pills clear of always-visible Windows/Linux scrollbars
+	}
 	l := kit.List(c, ls.list, len(es), func(i int) {
 		if es[i].group != "" {
 			viewHeading(c, es[i])
@@ -1041,7 +1079,7 @@ func (p *mailPage) listView(c *ui.Context) {
 				}
 			}
 		})
-	}).Grow(1).Padding(0, th.Space(2)).Gap(theme.Stroke) // rows a hairline apart: two chosen ones stay two
+	}).Grow(1).Padding(0, padR, 0, th.Space(2)).Gap(theme.Stroke) // rows a hairline apart: two chosen ones stay two
 	if p.devPath != "" { // written off the UI thread; the clipboard needs a frame
 		c.WriteClipboard(p.devPath)
 		p.a.toast(p.devPath)
@@ -1242,7 +1280,7 @@ func (p *mailPage) item(c *ui.Context, it mailItem) ui.Element {
 	if p.searched {
 		return p.resultRow(c, it)
 	}
-	return p.row(c, it)
+	return p.row(c, it, func() { p.batch("toggle_star", []mailItem{it}) })
 }
 
 // folderLine is "folder · account" of a result.
@@ -1270,30 +1308,33 @@ func (p *mailPage) resultWho(it mailItem) string {
 func (p *mailPage) resultRow(c *ui.Context, it mailItem) ui.Element {
 	t, th := theme.Of(c), c.Theme()
 	q := p.hlQuery
-	col := ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2), th.Space(3))
+	col := ui.Column(c).Padding(th.Space(2.5), th.Space(2))
 	return col.Children(func() {
-		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, p.resultWho(it)).FontWeight(500).SingleLine().Shrink(1) // the lead line, as a list row's
-			securityIcon(c, p.a.settings, it.Security)
-			ui.Spacer(c)
-			p.starButton(c, it, col.Hovered())
-			if it.Attach {
-				ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
+		who := p.resultWho(it)
+		withAvatar(c, who, p.itemAvatar(it), func() {
+			ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, who).FontWeight(500).SingleLine().Shrink(1) // the lead line, as a list row's
+				securityIcon(c, p.a.settings, it.Security)
+				ui.Spacer(c)
+				p.star(c, it, col.Hovered(), func() { p.batch("toggle_star", []mailItem{it}) })
+				if it.Attach {
+					ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).Shrink(0).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
+				}
+				kit.Text(c, listTime(p.a.clock.Now(), it.Date), t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(0)
+			})
+			subject := it.Subject
+			if subject == "" {
+				subject = i18n.T("mail.no_subject")
 			}
-			kit.Text(c, listTime(p.a.clock.Now(), it.Date), t.Text.Xs).TextColor(t.Muted)
+			marked(c, subject, q).SingleLine()
+			if it.Snippet != "" {
+				marked(c, it.Snippet, q).FontSize(t.Text.Xs).TextColor(t.Muted).SingleLine()
+			}
+			if line := p.folderLine(it); line != "" {
+				kit.Text(c, line, t.Text.Xs).TextColor(t.Muted).SingleLine()
+			}
+			p.a.rowChips(c, it.Labels)
 		})
-		subject := it.Subject
-		if subject == "" {
-			subject = i18n.T("mail.no_subject")
-		}
-		marked(c, subject, q).SingleLine()
-		if it.Snippet != "" {
-			marked(c, it.Snippet, q).FontSize(t.Text.Xs).TextColor(t.Muted).SingleLine()
-		}
-		if line := p.folderLine(it); line != "" {
-			kit.Text(c, line, t.Text.Xs).TextColor(t.Muted).SingleLine()
-		}
-		p.a.rowChips(c, it.Labels)
 	})
 }
 
@@ -1375,86 +1416,201 @@ func (p *mailPage) searchedDesc() string {
 	return i18n.T("mail.search.empty_desc")
 }
 
-// starButton is a direct star/unstar toggle button on a mail row. As S, it
+// star is a row's star: a star/unstar button that runs toggle (as S, it
 // unstars only a row all starred; an unstarred row's shows on hover or focus,
-// always there for the keyboard and assistive technology.
-func (p *mailPage) starButton(c *ui.Context, it mailItem, hovered bool) {
+// always there for the keyboard and assistive technology), or with toggle nil
+// (a preview's row) its state alone, shown only when starred.
+func (p *mailPage) star(c *ui.Context, it mailItem, hovered bool, toggle func()) {
 	t := theme.Of(c)
+	if toggle == nil {
+		if it.Flagged > 0 {
+			ui.Icon(c, icons.Get("star-fill")).Size(theme.IconXs, theme.IconXs).Shrink(0).TextColor(t.Attention).Label(i18n.T("mail.unified.starred"))
+		}
+		return
+	}
 	starred := it.Flagged == it.Count
 	icon, label := "star", i18n.T("mail.action.star")
 	if starred {
 		icon, label = "star-fill", i18n.T("mail.action.unstar")
 	}
-	b := kit.IconButton(c, icon, label, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeMini})
+	b := kit.IconButton(c, icon, label, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeMini}).Shrink(0)
 	if it.Flagged > 0 {
 		b.TextColor(t.Attention)
 	} else if !hovered && !b.FocusVisible() {
 		b.Opacity(0)
 	}
-	b.OnClick(func() {
-		p.batch("toggle_star", []mailItem{it})
+	b.OnClick(toggle)
+}
+
+// forgetListAvatars drops cached list avatars when policy, trust or address
+// books change so visible rows re-read under the new rules.
+func (p *mailPage) forgetListAvatars() {
+	p.avatars = nil
+}
+
+func (p *mailPage) inJunkRow(it mailItem) bool {
+	if p.view.FolderID != 0 {
+		if f, ok := p.folder(p.view.FolderID); ok && f.Role == "junk" {
+			return true
+		}
+	}
+	if !it.Thread {
+		if f, ok := p.folder(it.Msg.FolderID); ok && f.Role == "junk" {
+			return true
+		}
+		for _, fid := range it.Msg.FolderIDs {
+			if f, ok := p.folder(fid); ok && f.Role == "junk" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// itemAvatar returns it's sender avatar under the remote-image policy, or nil
+// while loading, blocked, or unavailable (leaving the initial). Junk and Fraud
+// rows never show sender images.
+func (p *mailPage) itemAvatar(it mailItem) ui.ImageSource {
+	if p.inJunkRow(it) || it.Security.Status == gomail.SecurityFraud {
+		return nil
+	}
+	raw, msgID := it.Msg.From, int64(0)
+	if !it.Thread {
+		if f, ok := p.folder(it.Msg.FolderID); ok && f.Role == "sent" && len(it.Msg.To) > 0 {
+			raw = it.Msg.To[0]
+		} else {
+			msgID = it.ID
+		}
+	}
+	return p.addrAvatar(raw, msgID)
+}
+
+// addrAvatar loads and caches the avatar for raw's normalized email address.
+// When msgID != 0, SenderAvatar reads that message directly; otherwise
+// ContactAvatar checks enabled CardDAV PHOTO first, then SenderAvatar on the
+// sender's newest received message.
+func (p *mailPage) addrAvatar(raw string, msgID int64) ui.ImageSource {
+	a := p.a
+	addr := gomail.AddrKey(raw)
+	if addr == "" || !strings.Contains(addr, "@") {
+		return nil
+	}
+	if p.avatarsVer != a.avatarPolicySavedVer {
+		p.avatars, p.avatarsVer = nil, a.avatarPolicySavedVer
+	}
+	if a.avatarPolicyVer != a.avatarPolicySavedVer {
+		return nil // as the reader and contacts, hold fetches while a local policy change is unsaved
+	}
+	if av := p.avatars[addr]; av != nil {
+		return av.img
+	}
+	if p.avatars == nil {
+		p.avatars = map[string]*listAvatar{}
+	}
+	av := &listAvatar{}
+	p.avatars[addr] = av
+	var img ui.ImageSource
+	a.do(func(ctx context.Context) error {
+		var (
+			got core.Avatar
+			err error
+		)
+		if msgID != 0 {
+			got, err = a.svc.SenderAvatar(ctx, msgID, false)
+		} else {
+			got, err = a.svc.ContactAvatar(ctx, addr)
+		}
+		if err != nil || len(got.Data) == 0 {
+			return err
+		}
+		img, err = avatarImage(got)
+		return err
+	}, func(error) {
+		av.img = img
+	})
+	return nil
+}
+
+// withAvatar lays out lines in a column beside who's avatar: a row's body, the
+// labels under its text. The avatar only decorates, as the sender is named in
+// the first line: it has no label of its own.
+func withAvatar(c *ui.Context, who string, img ui.ImageSource, lines func()) {
+	withAvatarUnread(c, who, img, 0, lines)
+}
+
+// withAvatarUnread is withAvatar with an unread badge pinned to the avatar's
+// top-left corner when unread > 0, keeping avatars aligned to the list's 16 px axis.
+func withAvatarUnread(c *ui.Context, who string, img ui.ImageSource, unread int, lines func()) {
+	t, th := theme.Of(c), c.Theme()
+	ui.Row(c).Gap(th.Space(2.5)).Children(func() {
+		ui.Box(c).AlignSelf(ui.Start).Shrink(0).Children(func() {
+			kit.AvatarImage(c, who, img).Label("").Role(ui.RoleNone)
+			if unread > 0 {
+				ui.Box(c).Absolute().Left(-th.Space(1.25)).Top(-th.Space(1.25)).Size(th.Space(3), th.Space(3)).Radius(th.Space(1.5)).Background(t.Unread).Border(th.Space(0.5), t.Background).
+					Label(i18n.Tf("mail.row.unread", unread))
+			}
+		})
+		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(0.5)).Children(lines)
 	})
 }
 
 // row is one thread or message: who, when, the subject and the start of the
-// text; unread ones in bold, with a dot in the row's left gutter that says
-// how many are unread to assistive technology.
-func (p *mailPage) row(c *ui.Context, it mailItem) ui.Element {
+// text beside the sender's avatar; unread ones in the foreground, with a corner
+// dot on the avatar that says how many are unread to assistive technology.
+// toggleStar is its star's action, nil for a row that only shows (star).
+func (p *mailPage) row(c *ui.Context, it mailItem, toggleStar func()) ui.Element {
 	t := theme.Of(c)
 	th, small := c.Theme(), t.Text.Xs
-	// The lead line carries the weight, 600 unread and 500 read; the line
-	// under it reads at 400. Read mail steps both a shade down, so unread
-	// stands out by more than its weight.
-	lead, ink := 500, t.Subdued
+	// The lead line is medium and the line under it regular, read or not:
+	// read mail steps both a shade down, as the design's rows.
+	ink := t.Subdued
 	if it.Unread > 0 {
-		lead, ink = 600, t.Foreground
+		ink = t.Foreground
 	}
-	col := ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5))
+	col := ui.Column(c).Padding(th.Space(2.5), th.Space(2))
 	return col.Children(func() {
-		if it.Unread > 0 {
-			ui.Box(c).Absolute().Left(th.Space(1.5)).Top(th.Space(4)).Size(th.Space(2), th.Space(2)).Radius(th.Space(1)).Background(t.Unread).
-				Label(i18n.Tf("mail.row.unread", it.Unread))
-		}
-		subject := it.Subject
-		if subject == "" {
-			subject = i18n.T("mail.no_subject")
-		}
-		subjectFirst := p.a.settings.ListRowOrder == core.ListRowSubject
-		// who is who the mail is with, its count and security mark: the line's lead, or its second line.
-		who := func(weight int) {
-			ui.Text(c, it.Who).FontWeight(weight).TextColor(ink).SingleLine().Shrink(1)
-			if it.Thread && it.Count > 1 { // how many messages the conversation holds, a plain count as the sidebar's
-				kit.Text(c, strconv.Itoa(it.Count), small).TextColor(t.Muted).Shrink(0).Label(i18n.Tf("reader.thread_count", it.Count))
+		withAvatarUnread(c, it.Who, p.itemAvatar(it), it.Unread, func() {
+			subject := it.Subject
+			if subject == "" {
+				subject = i18n.T("mail.no_subject")
 			}
-			securityIcon(c, p.a.settings, it.Security)
-		}
-		ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
-			if subjectFirst {
-				ui.Text(c, subject).FontWeight(lead).TextColor(ink).SingleLine().Shrink(1)
-			} else {
-				who(lead)
+			subjectFirst := p.a.settings.ListRowOrder == core.ListRowSubject
+			// who is who the mail is with, its count and security mark: the line's lead, or its second line.
+			who := func(weight int) {
+				ui.Text(c, it.Who).FontWeight(weight).TextColor(ink).SingleLine().Shrink(1)
+				if it.Thread && it.Count > 1 { // how many messages the conversation holds, a plain count as the sidebar's
+					kit.Text(c, strconv.Itoa(it.Count), small).TextColor(t.Muted).Shrink(0).Label(i18n.Tf("reader.thread_count", it.Count))
+				}
+				securityIcon(c, p.a.settings, it.Security)
 			}
-			ui.Spacer(c)
-			p.starButton(c, it, col.Hovered())
-			if it.Attach {
-				ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
-			}
-			kit.Text(c, listTime(p.a.clock.Now(), it.Date), small).TextColor(t.Muted)
-		})
-		if subjectFirst {
-			ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() { who(400) })
-		} else {
-			ui.Text(c, subject).TextColor(ink).SingleLine()
-		}
-		if icon, line := p.viewLine(it); line != "" {
-			ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).TextColor(t.Muted).Children(func() {
-				ui.Icon(c, icons.Get(icon)).Size(theme.IconXs, theme.IconXs).Shrink(0)
-				kit.Text(c, line, t.Text.Xs).SingleLine()
+			ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+				if subjectFirst {
+					ui.Text(c, subject).FontWeight(500).TextColor(ink).SingleLine().Shrink(1)
+				} else {
+					who(500)
+				}
+				ui.Spacer(c)
+				p.star(c, it, col.Hovered(), toggleStar)
+				if it.Attach {
+					ui.Icon(c, icons.Get("paperclip")).Size(theme.IconXs, theme.IconXs).Shrink(0).TextColor(t.Muted).Label(i18n.T("mail.attachment"))
+				}
+				kit.Text(c, listTime(p.a.clock.Now(), it.Date), small).TextColor(t.Muted).SingleLine().Shrink(0) // the sender gives way first
 			})
-		} else if it.Snippet != "" {
-			kit.Text(c, it.Snippet, t.Text.Xs).TextColor(t.Muted).SingleLine()
-		}
-		p.a.rowChips(c, it.Labels)
+			if subjectFirst {
+				ui.Row(c).Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() { who(400) })
+			} else {
+				ui.Text(c, subject).TextColor(ink).SingleLine()
+			}
+			if icon, line := p.viewLine(it); line != "" {
+				ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).TextColor(t.Muted).Children(func() {
+					ui.Icon(c, icons.Get(icon)).Size(theme.IconXs, theme.IconXs).Shrink(0)
+					kit.Text(c, line, t.Text.Xs).SingleLine()
+				})
+			} else if it.Snippet != "" {
+				kit.Text(c, it.Snippet, t.Text.Xs).TextColor(t.Muted).SingleLine()
+			}
+			p.a.rowChips(c, it.Labels)
+		})
 	})
 }
 
@@ -1468,14 +1624,17 @@ func (p *mailPage) skeletonRow(c *ui.Context) {
 			bars(func(w float32) { kit.Skeleton(c, w, size) })
 		})
 	}
-	ui.Column(c).Gap(th.Space(0.5)).Padding(th.Space(2.5), th.Space(2.5), th.Space(2.5), th.Space(5)).Children(func() {
-		line(t.Text.Sm, func(bar func(float32)) {
-			bar(theme.SkeletonShort * 0.75)
-			ui.Spacer(c)
-			bar(th.Space(8))
+	ui.Row(c).Gap(th.Space(2.5)).Padding(th.Space(2.5), th.Space(2)).Children(func() {
+		kit.Skeleton(c, th.Space(8), th.Space(8)).Radius(t.Radius.Lg).Shrink(0)
+		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(0.5)).Children(func() {
+			line(t.Text.Sm, func(bar func(float32)) {
+				bar(theme.SkeletonShort * 0.75)
+				ui.Spacer(c)
+				bar(th.Space(8))
+			})
+			line(t.Text.Sm, func(bar func(float32)) { bar(theme.SkeletonShort * 1.5) })
+			line(t.Text.Xs, func(bar func(float32)) { bar(0) })
 		})
-		line(t.Text.Sm, func(bar func(float32)) { bar(theme.SkeletonShort * 1.5) })
-		line(t.Text.Xs, func(bar func(float32)) { bar(0) })
 	})
 }
 
@@ -1910,7 +2069,8 @@ func (p *mailPage) offerUndoPurge(title string, ids []int64, start time.Time) {
 		return
 	}
 	a.toasts = append(a.toasts, ui.Toast{ID: fmt.Sprintf("purge-%d-%d", start.UnixNano(), ids[0]), Title: title,
-		Action: i18n.T("compose.undo"), OnAction: func() { p.undoPurge(ids) }, Timeout: left})
+		Action: i18n.T("compose.undo"), OnAction: func() { p.undoPurge(ids) }, Timeout: left,
+		Data: kit.ToastData{Deadline: start.Add(core.UndoPurgeWindow)}})
 }
 
 // closeReaderOf closes the reader when what it shows is all among ids: the

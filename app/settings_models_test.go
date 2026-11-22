@@ -20,6 +20,7 @@ import (
 	"github.com/godwit-email/godwit/core/auth"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/plugins"
+	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/kit"
 	"github.com/godwit-email/godwit/internal/theme"
 	"github.com/stretchr/testify/assert"
@@ -330,7 +331,7 @@ func TestProviderTiles(t *testing.T) {
 		t.Fatalf("the subscription group opens first: form %+v", f)
 	}
 	h.click("API 密钥")
-	h.see("选好服务商，填上 Key")
+	h.see("用服务商的 API Key 接入")
 	if h.tt.HasText("Grok") {
 		t.Fatal("a subscription tile shows in the API key group")
 	}
@@ -619,8 +620,8 @@ func TestModelsEmptyState(t *testing.T) {
 	h.until("models loaded", func() bool { return m.loaded })
 	h.see("还没有接入模型服务")
 	h.see("连接本地网关")
-	if n := h.countTexts("添加服务"); n != 2 { // one button (label and text): the empty state's; the header's is hidden
-		t.Fatalf("%d 添加服务 texts, want one button's", n)
+	if n := h.countTexts("添加服务"); n != 4 { // two buttons (label and text each): the header's and the empty state's
+		t.Fatalf("%d 添加服务 texts, want two buttons'", n)
 	}
 	h.click("连接本地网关")
 	h.see("添加模型服务")
@@ -698,7 +699,7 @@ func TestModelsDeleteConfirmStrip(t *testing.T) {
 	h := withLLM(t)
 	h.editService("test")
 	h.click("删除此服务")
-	h.see("删除「test」？用到它的 Skill 会改用默认模型，Key 会从钥匙串移除。")
+	h.see(i18n.Tf("settings.models.del_confirm", "test"))
 	if _, ok := h.modelService("test"); !ok {
 		t.Fatal("asking removed the service")
 	}
@@ -1537,6 +1538,14 @@ func TestOAuthTileCloseCancels(t *testing.T) {
 func TestServiceCardSubtitle(t *testing.T) {
 	assert.Equal(t, "alice@example.com", svcSubtitle(core.ModelService{Provider: core.ProviderChatGPT, Email: "alice@example.com", BaseURL: "https://api.openai.com/v1"}))
 	assert.Equal(t, "https://api.openai.com/v1", svcSubtitle(core.ModelService{Provider: core.ProviderOpenAI, BaseURL: "https://api.openai.com/v1"}))
+}
+
+// svcLine is a service's host, then what it does: its models and judge.
+func TestServiceCardLine(t *testing.T) {
+	api := core.ModelService{Provider: core.ProviderOpenAI, BaseURL: "https://api.openai.com/v1", Kind: "responses", Models: []string{"a", "b"}, JudgeFormat: "decisions", JudgeModel: "luna"}
+	assert.Equal(t, strings.Join([]string{"api.openai.com", i18n.Plural("settings.models.gen", 2), i18n.Tf("settings.models.judge_chip", "luna")}, " · "), svcLine(api))
+	assert.Equal(t, "127.0.0.1:8080", svcLine(core.ModelService{Provider: core.ProviderOther, BaseURL: "http://127.0.0.1:8080/v1"}))
+	assert.Equal(t, "alice@example.com", svcLine(core.ModelService{Provider: core.ProviderChatGPT, Email: "alice@example.com", BaseURL: "https://chatgpt.com/backend-api"}))
 }
 
 func TestHumanizeChatGPTUsage(t *testing.T) {

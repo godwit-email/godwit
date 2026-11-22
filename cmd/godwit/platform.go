@@ -470,9 +470,13 @@ func loadAfterSetup(setup func(), load func() error, undo func()) error {
 // AllowImages lets message's reader pages load its remote images.
 func (p *platform) AllowImages(message int64) { p.reader.Allow(message) }
 
-func (p *platform) BodyGlass(view ui.NativeWebView, top, bottom int) {
+func (p *platform) BodyGlass(view ui.NativeWebView, top, bottom app.BodyGlassRect) {
 	if v, ok := view.(*mygo.WebView); ok {
-		if err := webui.ReaderGlassed.EmitPage(v.Page(), webui.ReaderGlass{Top: top, Bottom: bottom}); err != nil {
+		g := webui.ReaderGlass{
+			Top:    webui.ReaderGlassRect{X: top.X, Y: top.Y, W: top.W, H: top.H, R: top.R},
+			Bottom: webui.ReaderGlassRect{X: bottom.X, Y: bottom.Y, W: bottom.W, H: bottom.H, R: bottom.R},
+		}
+		if err := webui.ReaderGlassed.EmitPage(v.Page(), g); err != nil {
 			log.Printf("the glass to a reader page: %v", err)
 		}
 	}
@@ -643,18 +647,22 @@ func trayIcon(box trayBox) ([]byte, error) {
 }
 
 // composeWindowOptions is a compose window on goos: the compose page of the
-// frontend, the dev server's under `go tool mygo dev`, else web/dist's. On
-// macOS its title bar is hidden, the traffic lights centered in the page's
-// top bar as the main window's are; Title still names it in the Window menu.
+// frontend, the dev server's under `go tool mygo dev`, else web/dist's. It
+// matches the main window's custom title bar chrome on every platform so
+// Windows and Linux do not stack a native title bar and menu strip above
+// ComposeView's own header bar; Title still names it in the Window menu.
 func composeWindowOptions(goos string) mygo.WindowOptions {
 	o := mygo.WindowOptions{URL: "/compose.html", Width: 860, Height: 720, MinWidth: 640, MinHeight: 480,
-		StateKey: "compose", Title: i18n.T("compose.new")}
-	if goos == "darwin" {
+		StateKey: "compose", Title: i18n.T("compose.new"), TitleBarStyle: mygo.TitleBarHiddenInset}
+	switch goos {
+	case "darwin":
 		// The main window's material; ?material tells the page to tint it rather than cover it.
 		o.URL, o.Vibrancy = "/compose.html?material", mygo.VibrancySidebar
 		o.Transparent = true
 		o.TitleBarStyle = mygo.TitleBarHidden
 		o.TrafficLightPosition = &mygo.Point{X: trafficLightInset, Y: (theme.TopBarHeight - trafficLightSize) / 2}
+	case "windows":
+		o.URL, o.Vibrancy, o.TitleBarHeight = "/compose.html?material", mygo.VibrancyMica, 40
 	}
 	return o
 }
@@ -709,35 +717,6 @@ func pickFiles(_ context.Context, winID int) ([]string, error) {
 	return mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: w, Multiple: true})
 }
 
-// popupMenu shows items ("" for a separator) as a native menu at x, y of
-// window winID's page and returns the index chosen, -1 for none or for a
-// window that is gone.
-func popupMenu(winID int, items []string, x, y int) int {
-	w := mygo.WindowByID(winID)
-	if w == nil || w.IsDestroyed() {
-		return -1
-	}
-	chosen := make(chan int, 1)
-	menu := make([]*mygo.MenuItem, len(items))
-	for i, label := range items {
-		if label == "" {
-			menu[i] = mygo.Separator()
-			continue
-		}
-		menu[i] = &mygo.MenuItem{Label: label, Click: func(*mygo.MenuItem, *mygo.Window) { chosen <- i }}
-	}
-	mygo.NewMenu(menu).PopupAt(w, x, y) // returns once the menu is closed
-	select {
-	case i := <-chosen:
-		return i
-	// shortcut: AppKit clicks the item before the popup returns; a platform
-	// that delivers it later than this gets "none". Needs a chosen item from
-	// mygo's Menu.PopupAt to drop the wait.
-	case <-time.After(200 * time.Millisecond):
-		return -1
-	}
-}
-
 // pickImage asks for one signature image in a dialog on the calling page's
 // window; "" for none.
 func pickImage(ctx context.Context) (string, error) {
@@ -771,18 +750,69 @@ func (c composeWindow) EmitClosing(gen int) {
 	}
 }
 
+// composeFrames are the open compose windows' native layers, by window ID.
+type composeFrames struct {
+	mu sync.Mutex
+	m  map[int]*app.ComposeFrame
+}
+
+func (fs *composeFrames) get(win int) *app.ComposeFrame {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	return fs.m[win]
+}
+
+func (fs *composeFrames) set(win int, f *app.ComposeFrame) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	if fs.m == nil {
+		fs.m = map[int]*app.ComposeFrame{}
+	}
+	if f == nil {
+		delete(fs.m, win)
+	} else {
+		fs.m[win] = f
+	}
+}
+
 // newComposeWindow opens a compose window, placed by cas, whose closing goes through ws:
 // closing is always prevented and asked of ws, and the page never leaves
-// its entry nor opens windows.
-func newComposeWindow(ws *webui.Windows, cas *cascade) webui.Window {
-	w := mygo.NewWindow(composeWindowOptions(runtime.GOOS))
+// its entry nor opens windows. Native draws the window: its title bar, the
+// page's web view under it and the toasts over it (app.ComposeFrame, by view);
+// frames keeps the frame while the window is open.
+func newComposeWindow(ws *webui.Windows, cas *cascade, frames *composeFrames, view func(*app.ComposeFrame) func(*ui.Context)) webui.Window {
+	opts := composeWindowOptions(runtime.GOOS)
+	entry := opts.URL
+	// Set after NewWindow, which called off the main thread returns while the
+	// main thread draws the window already: an atomic, not a plain variable.
+	var draw atomic.Pointer[func(*ui.Context)]
+	opts.URL, opts.Content = "", ui.View(func(c *ui.Context) {
+		if d := draw.Load(); d != nil {
+			(*d)(c)
+		}
+	})
+	w := mygo.NewWindow(opts)
 	cas.place(w)
-	lockPage(w.Page())
+	if v, err := w.NewWebView(mygo.WebViewOptions{Transparent: true}); err != nil {
+		log.Printf("the compose page: %v", err) // the window stays blank
+	} else {
+		f := app.NewComposeFrame(v, w.Invalidate)
+		frames.set(w.ID(), f)
+		d := view(f)
+		draw.Store(&d)
+		lockPage(v.Page())
+		if err := v.Page().LoadURL(entry); err != nil {
+			log.Printf("the compose page: %v", err)
+		}
+		v.Focus()
+		w.Invalidate()
+	}
 	w.OnClose(func(e *mygo.CloseEvent) {
 		e.PreventDefault()
 		ws.RequestClose(w.ID())
 	})
 	w.OnClosed(func() {
+		frames.set(w.ID(), nil)
 		cas.closed(w)
 		ws.Closed(w.ID())
 	})

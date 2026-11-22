@@ -183,59 +183,60 @@ func (f *pluginForm) fieldError(err error, fields []plugins.ConfigField) {
 // pending plugin's form is saved by 允许并启用).
 func (e *extView) configView(c *ui.Context, f *pluginForm, fields []plugins.ConfigField, save bool) {
 	th := c.Theme()
-	ui.Column(c).FillWidth().Gap(th.Space(3)).Children(func() { e.configFields(c, f, fields, save) })
+	ui.Column(c).FillWidth().Gap(th.Space(4)).Children(func() { e.configFields(c, f, fields, save) })
 }
 
 func (e *extView) configFields(c *ui.Context, f *pluginForm, fields []plugins.ConfigField, save bool) {
 	t, th := theme.Of(c), c.Theme()
 	lang := i18n.Language()
-	ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
-		kit.Text(c, i18n.T("settings.ext.config"), t.Text.Sm).FontWeight(500)
+	ui.Column(c).Gap(th.Space(0.5)).Children(func() {
+		kit.Text(c, i18n.T("settings.ext.config"), t.Text.Sm)
 		kit.Text(c, i18n.T("settings.ext.config.sub"), t.Text.Xs).TextColor(t.Muted)
 	})
 	shown := f.shown(fields)
+	first := true
 	for _, fd := range fields {
 		v := f.vals[fd.Key]
 		if v == nil || !shown[fd.Key] {
 			continue
 		}
+		if !first {
+			kit.Separator(c, false)
+		}
+		first = false
 		label := fd.Label.For(lang)
 		cc := c.Key(fd.Key)
 		if fd.Type == "boolean" {
-			kit.SwitchRow(cc, &v.on, label, v.err).Padding(0)
+			kit.FieldWith(cc, kit.FieldOpts{Horizontal: true, Switch: &v.on}, label, "", v.err, nil).Padding(th.Space(2), 0)
 			continue
 		}
-		ui.Field(cc, label, func() {
+		kit.LabelledRow(cc, label, "", v.err, func() ui.Element { // a settings row: the label, and the field at its end
 			switch {
 			case fd.Type == "secret":
 				ph := ""
 				if v.set {
 					ph = i18n.T("settings.secret_kept")
 				}
-				kit.Input(c, &v.s, kit.InputOpts{Password: true, Placeholder: ph, Invalid: v.err != ""})
+				return kit.Input(c, &v.s, kit.InputOpts{Password: true, Placeholder: ph, Invalid: v.err != ""}).Width(theme.SettingsControlWidth).Label(label)
 			case fd.Type == "select" && fd.AllowCustom:
 				var sugg []string
 				for _, o := range fd.Options {
 					sugg = append(sugg, o.Value)
 				}
-				box := kit.InputGroup(c, kit.InputOpts{Invalid: v.err != "", Flat: true})
-				box.Children(func() {
-					ui.Autocomplete(c, &v.s, sugg).Label(label).Grow(1).MinWidth(0).
-						Height(th.Space(8)-theme.Stroke-theme.Stroke).Padding(0, th.Space(2.5)).Border(0, t.Input).FocusRing(false)
-				})
+				return kit.Input(c, &v.s, kit.InputOpts{Invalid: v.err != "", Flat: true, Autocomplete: true, Suggest: sugg}).Width(theme.SettingsControlWidth).Label(label)
 			case fd.Type == "select":
 				opts := make([]kit.Option[string], len(fd.Options))
 				for i, o := range fd.Options {
 					opts[i] = kit.Option[string]{Value: o.Value, Label: o.Label.For(lang)}
 				}
-				kit.Select(c, &v.s, opts).Label(label)
+				return kit.Select(c, &v.s, opts).Width(theme.SettingsControlWidth).Label(label)
 			default:
-				kit.Input(c, &v.s, kit.InputOpts{Invalid: v.err != ""})
+				return kit.Input(c, &v.s, kit.InputOpts{Invalid: v.err != ""}).Width(theme.SettingsControlWidth).Label(label)
 			}
-		}).Error(v.err)
+		}).Padding(th.Space(2), 0)
 	}
 	if f.err != "" {
-		kit.Alert(c, kit.Danger, f.err, nil)
+		kit.Alert(c, kit.ToneDanger, f.err, nil)
 	}
 	if save {
 		kit.Button(c, i18n.T("common.save"), kit.ButtonOpts{Disabled: f.busy}).AlignSelf(ui.Start).OnClick(func() { e.saveConfig(f, fields) })

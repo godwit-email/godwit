@@ -172,7 +172,7 @@ func (v *addressBooksView) accountSection(c *ui.Context, acc core.Account) {
 	}
 	rows := []func(){func() {
 		on := linked || v.linking[acc.ID]
-		if kit.SwitchRow(c, &on, i18n.Tf("settings.addressbooks.link", brand), desc).Disabled(v.linking[acc.ID]).Changed() {
+		if kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: &on, Disabled: v.linking[acc.ID]}, i18n.Tf("settings.addressbooks.link", brand), desc, "", nil).Changed() {
 			if on {
 				v.link(acc)
 			} else {
@@ -193,7 +193,7 @@ func (v *addressBooksView) bookRows(c *ui.Context, ab core.AddressBook) []func()
 	var rows []func()
 	if ab.Status == "reauth_required" {
 		rows = append(rows, func() {
-			settingRow(c, i18n.T("settings.addressbooks.status.reauth"), abDetailText(ab), func() { v.authAction(c, ab) })
+			settingRow(c, i18n.T("settings.addressbooks.status.reauth"), abDetailText(ab), func() ui.Element { v.authAction(c, ab); return ui.Element{} })
 		})
 	}
 	syncDesc := v.syncText(ab)
@@ -206,7 +206,7 @@ func (v *addressBooksView) bookRows(c *ui.Context, ab core.AddressBook) []func()
 		for _, col := range ab.Collections {
 			rows = append(rows, func() {
 				on := col.Enabled
-				if kit.SwitchRow(c.Key(col.ID), &on, col.Name, i18n.Plural("settings.addressbooks.cards", col.CardCount)).
+				if kit.FieldWith(c.Key(col.ID), kit.FieldOpts{Horizontal: true, Switch: &on}, col.Name, i18n.Plural("settings.addressbooks.cards", col.CardCount), "", nil).
 					Label(i18n.Tf("settings.addressbooks.collection.toggle", col.Name)).Changed() {
 					v.toggleCollection(ab.ID, col.ID, on)
 				}
@@ -214,9 +214,10 @@ func (v *addressBooksView) bookRows(c *ui.Context, ab core.AddressBook) []func()
 		}
 	}
 	return append(rows, func() {
-		settingRow(c, i18n.T("settings.addressbooks.sync"), syncDesc, func() {
-			settingButton(c, i18n.T("settings.account.sync_now"), kit.Outline, v.syncing[ab.ID]).
+		settingRow(c, i18n.T("settings.addressbooks.sync"), syncDesc, func() ui.Element {
+			rowButton(c, i18n.T("settings.account.sync_now"), kit.Outline, v.syncing[ab.ID]).
 				Label(i18n.Tf("settings.addressbooks.sync.aria", ab.Name)).OnClick(func() { v.syncNow(ab.ID) })
+			return ui.Element{}
 		})
 	})
 }
@@ -238,20 +239,18 @@ func (v *addressBooksView) syncText(ab core.AddressBook) string {
 // sign-in and removal, as an account's page.
 func (v *addressBooksView) page(c *ui.Context, ab core.AddressBook) {
 	a := v.a
-	t, th := theme.Of(c), c.Theme()
+	t := theme.Of(c)
 	if v.renameID != ab.ID {
 		v.renameID, v.rename = ab.ID, ab.Name
 	}
-	ui.Row(c).Gap(th.Space(4)).Children(func() {
-		presetMark(c, ab.Preset, theme.MarkXl)
-		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
-			kit.Text(c, ab.Name, t.Text.X3l).FontWeight(600).SingleLine()
-			ui.Text(c, abKind(ab)).TextColor(t.Muted)
-		})
+	ui.Column(c).Gap(theme.HeadingGap).Children(func() {
+		pageHeading(c, ab.Name, "")
+		ui.Text(c, abKind(ab)).TextColor(t.Muted)
 	})
 	settingsSection(c, i18n.T("settings.account.basic"), "", func() {
-		settingRow(c, i18n.T("settings.account.alias"), "", func() {
-			if kit.Input(c, &v.rename, kit.InputOpts{}).Width(theme.SettingsInputWidth).Label(i18n.T("settings.account.alias")).Changed() {
+		settingRow(c, i18n.T("settings.account.alias"), "", func() ui.Element {
+			field := kit.Input(c, &v.rename, kit.InputOpts{}).Width(theme.SettingsControlWidth).Label(i18n.T("settings.account.alias"))
+			if field.Changed() {
 				if name, id := strings.TrimSpace(v.rename), ab.ID; name != "" {
 					a.writes.Chain("addressbooks", func(ctx context.Context) error { return a.svc.RenameAddressBook(ctx, id, name) }, func(err error) {
 						if err != nil {
@@ -261,6 +260,7 @@ func (v *addressBooksView) page(c *ui.Context, ab core.AddressBook) {
 					})
 				}
 			}
+			return field
 		})
 	})
 	foot := ""
@@ -270,15 +270,19 @@ func (v *addressBooksView) page(c *ui.Context, ab core.AddressBook) {
 	settingsSection(c, i18n.T("settings.addressbooks"), foot, v.bookRows(c, ab)...)
 	settingsSection(c, i18n.T("settings.account.login"), "",
 		func() {
-			settingRow(c, i18n.T("settings.account.login.method"), abAuthText(ab), func() { v.authAction(c, ab) })
+			settingRow(c, i18n.T("settings.account.login.method"), abAuthText(ab), func() ui.Element { v.authAction(c, ab); return ui.Element{} })
 		},
 		func() {
-			settingRow(c, "CardDAV", "", func() { kit.Text(c, ab.URL, t.Text.Xs).Font(theme.Mono).TextColor(t.Muted).Shrink(1) })
+			settingRow(c, "CardDAV", "", func() ui.Element {
+				kit.Text(c, ab.URL, t.Text.Xs).Font(theme.Mono).TextColor(t.Muted).Shrink(1)
+				return ui.Element{}
+			})
 		})
 	settingsSection(c, i18n.T("settings.account.remove"), "", func() {
-		settingRow(c, i18n.T("settings.addressbooks.remove.row"), strings.TrimRight(i18n.T("settings.addressbooks.remove.desc"), "。."), func() {
-			settingButton(c, i18n.T("settings.account.remove.button"), kit.DestructiveOutline, false).
+		settingRow(c, i18n.T("settings.addressbooks.remove.row"), strings.TrimRight(i18n.T("settings.addressbooks.remove.desc"), "。."), func() ui.Element {
+			kit.Button(c, i18n.T("settings.account.remove.button"), kit.ButtonOpts{Size: kit.SizeSm, Variant: kit.Outline, Tone: kit.ToneDanger}).
 				Label(i18n.Tf("settings.addressbooks.remove.aria", ab.Name)).OnClick(func() { v.openRemove(ab) })
+			return ui.Element{}
 		})
 	})
 }
@@ -486,7 +490,7 @@ func (v *addressBooksView) dialogView(c *ui.Context) {
 				Description(i18n.T("onboarding.secret.help"))
 			secretWhitespaceHint(c, &v.password)
 			if v.dlgErr != nil {
-				kit.Alert(c, kit.Danger, humanize(v.dlgErr), nil)
+				kit.Alert(c, kit.ToneDanger, humanize(v.dlgErr), nil)
 			}
 		}
 		pw, id, updateAuth, gen := v.password, ab.ID, v.updateAuth, v.dlgGen
@@ -520,11 +524,11 @@ func (v *addressBooksView) dialogView(c *ui.Context) {
 			kit.DialogOpts{Size: kit.DialogSm, Alert: true, Desc: i18n.T("settings.addressbooks.remove.desc"), Close: i18n.T("common.close")},
 			func() {
 				if v.dlgErr != nil {
-					kit.Alert(c, kit.Danger, humanize(v.dlgErr), nil)
+					kit.Alert(c, kit.ToneDanger, humanize(v.dlgErr), nil)
 				}
 			}, func() {
 				kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(v.close)
-				kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Destructive, Disabled: v.busy}).OnClick(func() {
+				kit.Button(c, i18n.T("common.delete"), kit.ButtonOpts{Variant: kit.Ghost, Tone: kit.ToneDanger, Disabled: v.busy}).OnClick(func() {
 					v.busy, v.dlgErr = true, nil
 					a.writes.Chain("addressbooks", func(ctx context.Context) error {
 						return a.svc.RemoveAddressBook(ctx, id)
@@ -639,7 +643,7 @@ func (v *addressBooksView) addDialogView(c *ui.Context) {
 		}
 
 		if v.dlgErr != nil {
-			kit.Alert(c, kit.Danger, humanize(v.dlgErr), nil)
+			kit.Alert(c, kit.ToneDanger, humanize(v.dlgErr), nil)
 		}
 	}
 
@@ -811,7 +815,7 @@ func presetMark(c *ui.Context, preset string, size float32) {
 // iconMark is icon on a mark's tile, for an entry with no logo of its own.
 func iconMark(c *ui.Context, icon string, size float32) {
 	t := theme.Of(c)
-	r := min(t.Radius.Lg, size/4)
+	r := t.Radius.Md
 	if size <= theme.MarkSm {
 		r = t.Radius.Sm
 	}
@@ -819,7 +823,12 @@ func iconMark(c *ui.Context, icon string, size float32) {
 	if size <= theme.MarkSm {
 		iconSz = theme.IconSm
 	}
-	ui.Box(c).Size(size, size).Shrink(0).Radius(r).Background(t.Hover).Border(theme.Hairline, t.Border).Center().Children(func() {
+	fill, border := t.Hover, float32(theme.Hairline)
+	if size > theme.MarkMd { // the window's larger tile: the hover tint, no outline
+		r, fill, border = t.Radius.Lg, t.HoverTint, 0
+	}
+	tile := ui.Box(c).Size(size, size).Shrink(0).Radius(r).Background(fill).Border(border, t.Border).Center()
+	tile.Children(func() {
 		ui.Icon(c, icons.Get(icon)).Size(iconSz, iconSz).TextColor(t.Foreground)
 	})
 }

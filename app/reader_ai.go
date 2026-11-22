@@ -14,6 +14,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
+	"github.com/egoist/mygo/ui/markdown/parser"
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/ai"
 	gomail "github.com/godwit-email/godwit/core/mail"
@@ -25,7 +26,7 @@ import (
 )
 
 // The AI of the reader, per message: every expanded message gets its
-// summary and plugin cards and can be translated; the toolbar's Summary,
+// summary and plugin cards and can be translated; the header's Summary,
 // Translate and skill menu act on the newest one, which alone gets quick
 // replies. ponytail: r.ai keeps every message read this session; evict the
 // oldest if memory ever matters.
@@ -462,17 +463,17 @@ func (r *reader) quickReply(msgID int64, q core.QuickReply) {
 	})
 }
 
-// aiTools are the toolbar's Summary, Translate and skill menu, for the
-// newest message.
+// aiTools are the header's Summary, Translate and skill menu, for the newest
+// message.
 func (r *reader) aiTools(c *ui.Context) {
 	out := kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}
 	m, _ := r.last()
 	st := r.state(m.ID)
 	t := theme.Of(c)
-	// aiButton is a ghost at the toolbar's icon button height; on, it keeps
-	// the hover fill. It shows icon before label; a menu's shows a chevron after it.
+	// aiButton is a small ghost; on, it keeps the hover fill. It shows icon
+	// before label; a menu's shows a chevron after it.
 	aiButton := func(icon, label string, on, menu bool) ui.Element {
-		b := kit.ButtonFrame(c, out).Label(label).Height(c.Theme().Space(8))
+		b := kit.ButtonFrame(c, out).Label(label)
 		if on {
 			b.Background(t.HoverTint)
 		}
@@ -530,16 +531,17 @@ func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
 		r.summaryPanel(c, m)
 	}
 	if res := st.result; res != nil {
-		r.panel(c, res.title, "", func() { st.result = nil }, func() {
+		hasContent := strings.TrimSpace(res.run.text) != "" || (res.run.done && len(res.run.doc.Blocks) > 0)
+		r.panel(c, res.title, res.run, hasContent, func() { st.result = nil }, func() {
 			r.output(c, res.run)
-			r.runState(c, res.run, nil)
+			r.aiBodyState(c, res.run, hasContent, nil)
 		})
 	}
 	if tr := st.translation; r.trShown(st) && !(tr.done && strings.TrimSpace(tr.text) == "") {
 		ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, icons.Get("languages")).Size(theme.IconSm, theme.IconSm).TextColor(t.Muted)
 			kit.Text(c, modelLabel(i18n.Tf("reader.ai.translated", shortLang(tr.lang), tr.model)), t.Text.Xs).TextColor(t.Muted)
-			kit.TextLink(c, i18n.T("reader.ai.show_original"), t.Foreground, t.Text.Xs).OnClick(func() { r.toggleTranslate(m.ID) })
+			kit.Button(c, i18n.T("reader.ai.show_original"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).OnClick(func() { r.toggleTranslate(m.ID) })
 		})
 	}
 }
@@ -552,23 +554,36 @@ func (r *reader) summaryPanel(c *ui.Context, m core.MessageSummary) {
 		return
 	}
 	if sum := st.summary; sum != nil && r.summaryShown(st) {
+		t, th := theme.Of(c), c.Theme()
 		meta := sum.model
 		if len(r.msgs) > 1 {
 			meta = strings.Join(slices.DeleteFunc([]string{meta, i18n.Tf("reader.ai.based_on", i18n.Tf("reader.thread.count", len(r.msgs)))},
 				func(s string) bool { return s == "" }), " · ")
 		}
-		r.panel(c, i18n.T("reader.ai.summary"), meta, nil, func() {
-			switch {
-			case len(r.msgs) < 2:
-				r.output(c, sum)
-			case sum.done: // a digest, else (unreadable) its text as written
-				if d, ok := core.ParseThreadDigest(sum.text, r.threadIDs); ok {
-					r.digest(c, d)
-				} else {
-					r.output(c, sum)
+		hasContent := len(r.msgs) < 2 && (strings.TrimSpace(sum.text) != "" || (sum.done && len(sum.doc.Blocks) > 0))
+		kit.Block(c, ui.Column(c), kit.ToneCard).Radius(t.Radius.Xl).FillWidth().
+			Padding(th.Space(3), th.Space(4)).Gap(th.Space(1.5)).Children(func() {
+			ui.Row(c).FillWidth().Gap(th.Space(1.5)).AlignItems(ui.Center).Children(func() {
+				r.aiIcon(c, sum.running)
+				kit.Text(c, cmp.Or(meta, i18n.T("reader.ai.summary")), t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(1)
+				if status := r.aiStatus(sum, hasContent); status != "" {
+					kit.Text(c, "·", t.Text.Xs).TextColor(t.Muted).Shrink(0)
+					kit.Text(c, status, t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(0)
 				}
-			}
-			r.runState(c, sum, func() { st.summary = r.summarize(m.ID) })
+			})
+			ui.Column(c).FillWidth().Gap(th.Space(2)).Children(func() {
+				switch {
+				case len(r.msgs) < 2:
+					r.output(c, sum)
+				case sum.done: // a digest, else (unreadable) its text as written
+					if d, ok := core.ParseThreadDigest(sum.text, r.threadIDs); ok {
+						r.digest(c, d)
+					} else {
+						r.output(c, sum)
+					}
+				}
+				r.aiBodyState(c, sum, hasContent, func() { st.summary = r.summarize(m.ID) })
+			})
 		})
 	}
 }
@@ -577,19 +592,25 @@ func (r *reader) summaryPanel(c *ui.Context, m core.MessageSummary) {
 // and below a hairline what waits on the user.
 func (r *reader) digest(c *ui.Context, d core.ThreadDigest) {
 	t, th := theme.Of(c), c.Theme()
-	ui.Column(c).Gap(th.Space(1.5)).Role(ui.RoleList).Children(func() {
-		for i, step := range d.Progress {
-			ui.Row(c.Key(i)).Gap(th.Space(2)).AlignItems(ui.Start).Role(ui.RoleListItem).Children(func() {
-				// the step's own size and line, and one width for every number: steps start in line
-				ui.Text(c, strconv.Itoa(i+1)+".").LineHeight(theme.LineReading).TextColor(t.Muted).MinWidth(th.Space(4)).Shrink(0)
-				r.digestLine(c, step)
-			})
-		}
-	})
+	if len(d.Progress) > 0 {
+		ui.Column(c).FillWidth().Gap(th.Space(1.5)).Role(ui.RoleList).Children(func() {
+			for i, step := range d.Progress {
+				ui.Row(c.Key(i)).Gap(th.Space(2)).AlignItems(ui.Start).Role(ui.RoleListItem).Children(func() {
+					// the step's own size and line, and one width for every number: steps start in line
+					ui.Text(c, strconv.Itoa(i+1)+".").LineHeight(theme.LineReading).TextColor(t.Muted).MinWidth(th.Space(4)).Shrink(0)
+					r.digestLine(c, step)
+				})
+			}
+		})
+	}
 	if d.Todo != nil {
-		kit.Separator(c, false)
-		ui.Column(c).Gap(th.Space(1)).Children(func() {
-			kit.Text(c, i18n.T("reader.ai.todo"), t.Text.Xs).FontWeight(600)
+		row := ui.Row(c).FillWidth().Gap(th.Space(2.5)).AlignItems(ui.Start)
+		if len(d.Progress) > 0 {
+			row.Margin(th.Space(0.5), 0, 0, 0).Padding(th.Space(2.5), 0, 0, 0).
+				BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border)
+		}
+		row.Children(func() {
+			kit.Badge(c, i18n.T("reader.ai.todo")).Shrink(0).Margin(th.Space(0.5), 0, 0, 0)
 			r.digestLine(c, d.Todo)
 		})
 	}
@@ -761,13 +782,207 @@ func (r *reader) output(c *ui.Context, run *aiRun) {
 	} else if run.markdown != nil && run.text != "" {
 		run.markdown.Theme = &markdown.Theme{FontSize: theme.Of(c).BodyFontSize, CodeFont: theme.Mono, LineHeight: theme.LineReading}
 		if run.running {
+			run.markdown.Block = r.streamCursorBlock
 			markdown.Stream(c, run.text, run.markdown)
 		} else {
+			run.markdown.Block = nil
 			markdown.View(c, run.text, run.markdown)
 		}
 	} else if run.text != "" {
-		ui.Text(c, run.text).LineHeight(theme.LineReading)
+		if run.running {
+			r.renderWithStreamCursor(c, []ui.Span{{Text: run.text, Size: theme.Of(c).BodyFontSize}}, theme.Of(c).BodyFontSize)
+		} else {
+			ui.Text(c, run.text).LineHeight(theme.LineReading)
+		}
 	}
+}
+
+// lastStreamBlock returns the index of the last non-empty prose leaf block
+// eligible for an inline streaming typing cursor, or -1 if the document ends
+// in a non-prose block (e.g. a code fence or table).
+func lastStreamBlock(d *parser.Document) int {
+	for i := d.Len() - 1; i >= 1; i-- {
+		b := d.Block(i)
+		switch b.Kind {
+		case parser.Root, parser.List, parser.Item, parser.Quote:
+			continue
+		case parser.Paragraph:
+			if d.LineCount(i) == 0 {
+				continue
+			}
+			in := d.Inlines(i)
+			if len(in) == 0 || isImagesOnly(in) {
+				return -1
+			}
+			return i
+		case parser.Heading:
+			return i
+		default:
+			return -1
+		}
+	}
+	return -1
+}
+
+func isImagesOnly(in []parser.Inline) bool {
+	hasImg := false
+	for k := 0; k < len(in); k = in[k].Next {
+		switch in[k].Kind {
+		case parser.Image:
+			hasImg = true
+		case parser.SoftBreak, parser.LineBreak:
+		case parser.Text:
+			if strings.TrimSpace(in[k].Text) != "" {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return hasImg
+}
+
+// streamCursorBlock renders the last revealed paragraph or heading of a
+// streaming Markdown document with an inline pulsing block cursor right after
+// the final glyph. All earlier blocks keep markdown.Stream's default rendering.
+func (r *reader) streamCursorBlock(c *ui.Context, d *parser.Document, i int) bool {
+	if i != lastStreamBlock(d) {
+		return false
+	}
+	t := theme.Of(c)
+	def := markdown.DefaultTheme(c.Theme())
+	b := d.Block(i)
+	base := ui.Span{Size: t.BodyFontSize, Color: t.Foreground}
+	for p := b.Parent; p > 0; p = d.Block(p).Parent {
+		if d.Block(p).Kind == parser.Quote {
+			base.Color = def.QuoteText
+			break
+		}
+	}
+	var headingRule bool
+	if b.Kind == parser.Heading && b.Level >= 1 && b.Level <= len(def.Headings) {
+		h := def.Headings[b.Level-1]
+		base.Size = t.BodyFontSize * h.Size
+		base.Weight = h.Weight
+		if h.Color.A > 0 {
+			base.Color = h.Color
+		}
+		headingRule = h.Rule
+	}
+
+	inlines := d.Inlines(i)
+	var spans []ui.Span
+	var collect func(from, to int, cur ui.Span)
+	collect = func(from, to int, cur ui.Span) {
+		for k := from; k < to; k = inlines[k].Next {
+			n := &inlines[k]
+			switch n.Kind {
+			case parser.Text, parser.Mention, parser.Reference:
+				if n.Text != "" {
+					sp := cur
+					sp.Text = n.Text
+					spans = append(spans, sp)
+				}
+			case parser.SoftBreak:
+				sp := cur
+				sp.Text = " "
+				spans = append(spans, sp)
+			case parser.LineBreak:
+				sp := cur
+				sp.Text = "\n"
+				spans = append(spans, sp)
+			case parser.Strong:
+				cs := cur
+				cs.Weight = def.StrongWeight
+				collect(k+1, n.Next, cs)
+			case parser.Emphasis:
+				cs := cur
+				cs.Italic = true
+				collect(k+1, n.Next, cs)
+			case parser.Strikethrough:
+				cs := cur
+				cs.Strikethrough = true
+				collect(k+1, n.Next, cs)
+			case parser.Code:
+				sp := cur
+				sp.Text = n.Text
+				sp.Font = theme.Mono
+				sp.Size = cur.Size * def.CodeSize
+				sp.Background = def.CodeBackground
+				sp.Radius = max(3, sp.Size/4)
+				if sp.Color != def.Link {
+					sp.Color = def.Code
+				}
+				spans = append(spans, sp)
+			case parser.Link:
+				cs := cur
+				cs.Color = def.Link
+				collect(k+1, n.Next, cs)
+			case parser.Image:
+				sp := cur
+				sp.Text = "[" + cmp.Or(parser.PlainText(inlines[k+1:n.Next]), "image") + "]"
+				sp.Color = t.Muted
+				spans = append(spans, sp)
+			case parser.Math:
+				sp := cur
+				sp.Text = n.Text
+				sp.Font = theme.Mono
+				sp.Color = t.Muted
+				spans = append(spans, sp)
+			case parser.FootnoteRef:
+				sp := cur
+				sp.Text = "[" + n.Text + "]"
+				sp.Color = def.Link
+				spans = append(spans, sp)
+			}
+		}
+	}
+	collect(0, len(inlines), base)
+	if len(spans) == 0 {
+		return false
+	}
+
+	el := r.renderWithStreamCursor(c, spans, base.Size)
+	if b.Kind == parser.Heading {
+		el.Role(ui.RoleHeading).Level(b.Level)
+		if headingRule {
+			el.BorderWidth(0, 0, theme.Stroke, 0).BorderColor(def.Rule).Padding(0, 0, c.Theme().Space(1), 0)
+		}
+	}
+	return true
+}
+
+// renderWithStreamCursor builds a RichText paragraph with a pulsing rounded
+// block cursor inline right after the last glyph.
+func (r *reader) renderWithStreamCursor(c *ui.Context, spans []ui.Span, size float32) ui.Element {
+	t, th := theme.Of(c), c.Theme()
+	runes := 0
+	for _, sp := range spans {
+		runes += utf8.RuneCountInString(sp.Text)
+	}
+	curW := size * 0.48
+	curH := size * 1.02
+	mid := textMiddle * size
+	up, down := curH/2+mid, max(float32(0), curH/2-mid)
+	// Word joiners keep the cursor glued to the final glyph; tiny spacer gives breathing room.
+	spans = append(spans,
+		ui.Span{Text: "\u2060"},
+		ui.Span{Text: "\ufffc", ObjectWidth: th.Space(0.75), ObjectHeight: theme.Stroke},
+		ui.Span{Text: "\u2060"},
+		ui.Span{Text: "\ufffc", ObjectWidth: curW, ObjectHeight: up, ObjectDescent: down},
+	)
+	cursorAt := runes + 3
+
+	el := ui.RichText(c, spans...).LineHeight(theme.LineReading)
+	alpha := float32(0.75)
+	if !c.Preferences().ReduceMotion {
+		alpha = 0.25 + 0.65*el.Loop("cursor", theme.CursorBlink, ui.Bounce(ui.EaseInOut))
+	}
+	return el.DrawObjects(func(p *ui.Painter, at int, box ui.Rect) {
+		if at == cursorAt {
+			p.Fill(box, t.Foreground.Alpha(alpha), t.Radius.Xs)
+		}
+	})
 }
 
 const chatGPTUsageURL = "https://chatgpt.com/settings/usage"
@@ -777,50 +992,93 @@ func isChatGPTUsage(err error) bool {
 	return errors.As(err, &aiErr) && aiErr.Detail == ai.DetailChatGPTUsage
 }
 
+// aiIcon draws the sparkles mark, softly pulsing while an AI run is active.
+func (r *reader) aiIcon(c *ui.Context, running bool) {
+	t := theme.Of(c)
+	ic := ui.Icon(c, icons.Get("sparkles")).Size(theme.IconSm, theme.IconSm).TextColor(t.Foreground)
+	if running && !c.Preferences().ReduceMotion {
+		ic.Opacity(0.35 + 0.65*ic.Loop("pulse", theme.ThinkingPulse, ui.Bounce(ui.EaseInOut)))
+	}
+}
+
+// aiStatus names the active phase of an AI run: thinking before visible output,
+// generating while streaming, and empty once finished.
+func (r *reader) aiStatus(run *aiRun, hasContent bool) string {
+	if run == nil || !run.running {
+		return ""
+	}
+	if hasContent {
+		return i18n.T("reader.ai.generating")
+	}
+	return i18n.T("reader.ai.thinking")
+}
+
+// aiBodyState shows pulsing dots while waiting for visible output, nothing
+// while text is already streaming (so completion causes zero vertical shift),
+// and an error alert with Retry when failed.
+func (r *reader) aiBodyState(c *ui.Context, run *aiRun, hasContent bool, retry func()) {
+	switch {
+	case run.running:
+		if !hasContent {
+			kit.ThinkingDots(c).Label(i18n.T("reader.ai.thinking"))
+		}
+	case run.err != nil:
+		r.runError(c, run.err, retry)
+	}
+}
+
 // runState shows a spinner while run runs, its error with Retry when it failed.
 func (r *reader) runState(c *ui.Context, run *aiRun, retry func()) {
 	switch {
 	case run.running:
 		kit.Spinner(c)
 	case run.err != nil:
-		kit.Alert(c, kit.Danger, humanize(run.err), func() {
-			if isChatGPTUsage(run.err) {
-				a := r.p.a
-				kit.AlertAction(c, kit.Danger, i18n.T("settings.models.manage_usage"),
-					func() { a.do(func(context.Context) error { return a.plat.OpenURL(chatGPTUsageURL) }, a.toastErr) })
-			}
-			if retry != nil {
-				kit.AlertAction(c, kit.Danger, i18n.T("common.retry"), retry)
-			}
-		})
+		r.runError(c, run.err, retry)
 	}
+}
+
+func (r *reader) runError(c *ui.Context, err error, retry func()) {
+	kit.Alert(c, kit.ToneDanger, humanize(err), func() {
+		if isChatGPTUsage(err) {
+			a := r.p.a
+			kit.Button(c, i18n.T("settings.models.manage_usage"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneDanger}).Shrink(0).
+				OnClick(func() { a.do(func(context.Context) error { return a.plat.OpenURL(chatGPTUsageURL) }, a.toastErr) })
+		}
+		if retry != nil {
+			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneDanger}).Shrink(0).OnClick(retry)
+		}
+	})
 }
 
 // fetchErr shows a failed read with Retry.
 func (r *reader) fetchErr(c *ui.Context, err error, loading bool, retry func()) {
 	if msg := humanize(err); msg != "" && !loading {
-		kit.Alert(c, kit.Danger, msg, func() {
+		kit.Alert(c, kit.ToneDanger, msg, func() {
 			if isChatGPTUsage(err) {
 				a := r.p.a
-				kit.AlertAction(c, kit.Danger, i18n.T("settings.models.manage_usage"),
-					func() { a.do(func(context.Context) error { return a.plat.OpenURL(chatGPTUsageURL) }, a.toastErr) })
+				kit.Button(c, i18n.T("settings.models.manage_usage"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneDanger}).Shrink(0).
+					OnClick(func() { a.do(func(context.Context) error { return a.plat.OpenURL(chatGPTUsageURL) }, a.toastErr) })
 			}
-			kit.AlertAction(c, kit.Danger, i18n.T("common.retry"), retry)
+			kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneDanger}).Shrink(0).OnClick(retry)
 		})
 	}
 }
 
-// panel is the AI's box: a sparkle, a title, an optional close button, the body.
-func (r *reader) panel(c *ui.Context, title, meta string, close func(), body func()) {
+// panel is the AI's box: a sparkle (pulsing while active), a title, active
+// phase status, an optional close button, and the body.
+func (r *reader) panel(c *ui.Context, title string, run *aiRun, hasContent bool, close func(), body func()) {
 	t, th := theme.Of(c), c.Theme()
 	p := ui.Column(c).Gap(th.Space(2)).Padding(th.Space(3), th.Space(3.5)).Radius(t.Radius.Xl).Clip().
 		Background(t.GlassBg).
 		Border(theme.Hairline, t.GlassBorder)
 	kit.Elevate(c, p, theme.ShadowSm).Children(func() {
 		ui.Row(c).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-			ui.Icon(c, icons.Get("sparkles")).Size(theme.IconSm, theme.IconSm).TextColor(t.Foreground)
-			ui.Text(c, title).FontWeight(600).Shrink(1)
-			kit.Text(c, meta, t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
+			r.aiIcon(c, run != nil && run.running)
+			ui.Text(c, title).FontWeight(500).SingleLine().Shrink(1)
+			if status := r.aiStatus(run, hasContent); status != "" {
+				kit.Text(c, status, t.Text.Xs).TextColor(t.Muted).SingleLine().Shrink(0)
+			}
+			ui.Spacer(c)
 			if close != nil {
 				kit.IconButton(c, "x", i18n.T("reader.ai.close_result"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(close)
 			}
@@ -941,7 +1199,7 @@ func (r *reader) tagChips(c *ui.Context) {
 				name = i18n.T("codes.card." + tag.Label)
 			}
 			e := kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Secondary, Size: kit.SizeXs}).Shrink(0).Label(name).Children(func() {
-				ui.Icon(c, icons.Get("external-link")).Size(theme.IconSm, theme.IconSm)
+				ui.Icon(c, icons.Get("external-link")).Size(theme.IconXs, theme.IconXs)
 				ui.Text(c, name)
 				ui.Text(c, tag.Text).TextColor(t.Muted) // where it goes, before it opens
 			})
@@ -952,25 +1210,46 @@ func (r *reader) tagChips(c *ui.Context) {
 	}
 }
 
-// replyBar floats at the reading pane's foot: the newest message's quick
-// replies as short labels, each a draft to edit, then a box that hands a
-// question about the thread, quoting that message, to Wit.
+// replyBar floats as a card at the reading pane's foot: an optional program
+// draft strip, the Wit reply input, quick replies underneath, and a circular
+// primary send button anchored at the bottom-right corner.
 func (r *reader) replyBar(c *ui.Context) ui.Element {
-	t, th := theme.Of(c), c.Theme()
+	th := c.Theme()
 	target, _ := r.replyTarget()
-	return ui.Column(c).Padding(th.Space(2.5), th.Space(7), th.Space(3)).Material(kit.Bar(t.Background)).
-		BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border).Children(func() {
-		r.column(c).Gap(th.Space(2)).Children(func() {
+	bar := ui.Column(c).Padding(0, th.Space(7), th.Space(4))
+	return bar.Children(func() {
+		card := kit.FloatCard(c, r.column(c)).Padding(th.Space(1.5), th.Space(2), th.Space(2), th.Space(3)).Gap(th.Space(1))
+		st := r.ai[target.ID]
+		quickEnabled := st != nil && r.taskReady("") && r.p.a.settings.QuickReplies
+		hasQuick := quickEnabled && (len(st.quick.v) > 0 || (st.quick.err != nil && !st.quick.loading))
+		card.Children(func() {
 			r.programReplyRow(c)
-			if st := r.ai[target.ID]; st != nil && r.taskReady("") && r.p.a.settings.QuickReplies {
-				r.fetchErr(c, st.quick.err, st.quick.loading, func() { r.loadQuick(target.ID, true) })
+			inPadR := float32(0)
+			if !hasQuick {
+				inPadR = th.Space(9) // keep single-row text clear of the circular send button
+			}
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Padding(0, inPadR, 0, 0).Children(func() {
+				in := kit.Input(c, &r.replyAsk, kit.InputOpts{Bare: true, Placeholder: i18n.Tf("reader.reply_wit", r.replyName(target))}).
+					Grow(1).Shrink(1).MinWidth(0).Label(i18n.T("reader.ask_wit"))
+				if in.Submitted() {
+					r.askReply()
+				}
+			})
+			if quickEnabled {
+				if st.quick.err != nil && !st.quick.loading {
+					ui.Column(c).FillWidth().Padding(0, th.Space(9), 0, 0).Children(func() {
+						r.fetchErr(c, st.quick.err, st.quick.loading, func() { r.loadQuick(target.ID, true) })
+					})
+				}
 				if len(st.quick.v) > 0 {
 					availW := r.p.a.readerMaxWidth()
 					if r.pane.W > 0 {
 						availW = min(r.p.a.readerMaxWidth(), r.pane.W-2*th.Space(7))
 					}
+					availW -= th.Space(3) + th.Space(2) + th.Space(9) // card horizontal padding + send button clearance
 					labels := fitQuickLabels(c, st.quick.v, availW)
-					ui.Row(c).Gap(th.Space(1)).Role(ui.RoleGroup).Label(i18n.T("reader.ai.quick")).Children(func() {
+					ui.Row(c).FillWidth().Padding(0, th.Space(9), 0, 0).Gap(th.Space(1)).AlignItems(ui.Center).
+						Role(ui.RoleGroup).Label(i18n.T("reader.ai.quick")).Children(func() {
 						for i, q := range st.quick.v {
 							lbl := labels[i]
 							chip := kit.ButtonFrame(c, kit.ButtonOpts{Variant: kit.Secondary, Size: kit.SizeXs}).Shrink(1).MinWidth(0).Label(q.Preview).
@@ -981,15 +1260,15 @@ func (r *reader) replyBar(c *ui.Context) ui.Element {
 					})
 				}
 			}
-			kit.InputGroup(c, kit.InputOpts{Flat: true, Size: kit.SizeLg}).Padding(0, th.Space(1), 0, th.Space(3)).Gap(th.Space(1)).Children(func() {
-				name := r.replyName(target)
-				in := kit.Input(c, &r.replyAsk, kit.InputOpts{Bare: true, Placeholder: i18n.Tf("reader.reply_wit", name)}).Grow(1).Shrink(1).Label(i18n.T("reader.ask_wit"))
-				if in.Submitted() {
-					r.askReply()
-				}
-				kit.IconButton(c, "arrow-up", i18n.T("reader.ask_wit"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).OnClick(r.askReply)
-			})
+			kit.IconButton(c, "arrow-up", i18n.T("reader.ask_wit"), kit.ButtonOpts{Variant: kit.Default, Size: kit.SizeSm, Round: true}).
+				Absolute().Right(th.Space(2)).Bottom(th.Space(2)).OnClick(r.askReply)
 		})
+		if b := card.LayoutBounds(); b != r.replyCard {
+			r.replyCard = b
+			c.Invalidate()
+		}
+		r.replyRadius = theme.Of(c).Radius.X2l
+		kit.ToastBar(c, bar, card)
 	})
 }
 

@@ -6,7 +6,6 @@ import (
 	"log"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/core"
@@ -86,33 +85,6 @@ func (v *rulesView) fieldChanged(cd *core.RuleCondition, was string) {
 	}
 }
 
-// ruleCard is one of the editor's node cards, edged and filled as given.
-func ruleCard(c *ui.Context, edge, fill ui.Color, body func()) ui.Element {
-	t, th := theme.Of(c), c.Theme()
-	return ui.Column(c).FillWidth().Gap(th.Space(2.5)).Padding(th.Space(3), th.Space(4)).Radius(t.Radius.Xl).
-		Background(fill).Border(theme.Hairline, edge).Children(body)
-}
-
-// cardHead is a node card's head: its icon in a tile, its word (当, 如果,
-// 就), then extra on the same line.
-func cardHead(c *ui.Context, icon, word string, tile, fg ui.Color, extra func()) {
-	t, th := theme.Of(c), c.Theme()
-	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Children(func() {
-		ui.Box(c).Size(th.Space(6), th.Space(6)).Radius(t.Radius.Md).Background(tile).TextColor(fg).Center().Shrink(0).Children(func() {
-			ui.Icon(c, icons.Get(icon)).Size(theme.IconSm, theme.IconSm)
-		})
-		kit.Text(c, word, t.Text.Sm).FontWeight(600)
-		if extra != nil {
-			extra()
-		}
-	})
-}
-
-// connector is the line between two node cards.
-func connector(c *ui.Context) {
-	ui.Box(c).Size(c.Theme().Space(0.5), theme.RuleConnector).Background(theme.Of(c).Border).AlignSelf(ui.Center).Shrink(0)
-}
-
 // ruleNote is a note in a tinted box with its icon.
 func ruleNote(c *ui.Context, icon, text string, fill, edge, fg ui.Color) {
 	t, th := theme.Of(c), c.Theme()
@@ -123,20 +95,17 @@ func ruleNote(c *ui.Context, icon, text string, fill, edge, fg ui.Color) {
 	})
 }
 
-// actionTone is how an action's card and badge look by its kind: forward
-// 外发 (amber), file 写入本机, Wit AI (violet); ok is false for a local one.
-func actionTone(t theme.Tokens, kind string) (badge string, fill, fg, card, edge ui.Color, ok bool) {
-	switch {
-	case kind == core.ActionForward:
-		amber := t.Label("amber")
-		return i18n.T("settings.rules.egress"), amber.Fill, amber.Text, t.WarningBg, t.WarningBorder, true
-	case slices.Contains(core.RuleAIActions, kind):
-		violet := t.Label("violet")
-		return i18n.T("settings.rules.kind.ai"), violet.Fill, violet.Text, t.Card, violet.Edge, true
-	case fileAction(kind):
-		return i18n.T("settings.rules.kind.local_write"), t.Hover, t.Foreground, t.Card, t.Border, true
-	}
-	return "", t.Hover, t.Foreground, t.Card, t.Border, false
+// drawDropLine paints the reorder drop indicator (dot + 2 px accent line) along
+// the top or bottom edge of el, matching ui.List and mail_sidebar's drag cue.
+func drawDropLine(el ui.Element, below bool, accent ui.Color) {
+	el.DrawOver(func(pt *ui.Painter, r ui.Rect) {
+		y := r.Y
+		if below {
+			y += r.H
+		}
+		pt.Fill(ui.Rect{X: r.X + 4, Y: y - 1, W: r.W - 4, H: 2}, accent, 1)
+		pt.Fill(ui.Rect{X: r.X, Y: y - 4, W: 8, H: 8}, accent, 4)
+	})
 }
 
 // ready reports whether the rule in the editor can be saved.
@@ -151,43 +120,41 @@ func (v *rulesView) ready() bool {
 		(v.a.settings.RuleAI || !usesAI(*d))
 }
 
-// editor is the back link and heading, then the rule as a column of node
-// cards joined by lines (名称, 当, 如果, then each action) beside a side
-// panel that stays in view: the existing mail it matches, 运行方式 and notes.
+// editorTitle is the editor's heading and breadcrumb: the rule's name, or 新建规则.
+func (v *rulesView) editorTitle() string {
+	if v.edit.ID != 0 {
+		return ruleName(v.edit.Doc)
+	}
+	return i18n.T("settings.rules.new")
+}
+
+// editor is the full-height borderless split: the rule's form scrolling on the
+// left (名称 & 运行方式, 当, 如果, 就) and the live matching-mail preview on the
+// right. 规则 is the way back (Breadcrumb).
 func (v *rulesView) editor(c *ui.Context) {
 	th := c.Theme()
 	d := &v.edit.Doc
-	title, sub := i18n.T("settings.rules.new"), i18n.T("settings.rules.editor.sub")
+	title, sub := v.editorTitle(), i18n.T("settings.rules.editor.sub")
 	if v.edit.ID != 0 {
-		title, sub = ruleName(*d), v.summary(*d)
+		sub = v.summary(*d)
 	}
-	ui.Column(c).Gap(theme.HeadingGap).Children(func() {
-		settingsBack(c, i18n.T("settings.rules"), v.closeEditor)
-		pageHeading(c, title, sub, func() {
-			ui.Row(c).Gap(th.Space(2)).Children(func() {
-				settingButton(c, i18n.T("common.cancel"), kit.Outline, false).OnClick(v.closeEditor)
-				settingButton(c, i18n.T("common.save"), kit.Default, !v.ready()).OnClick(v.save)
+	v.schedulePreview()
+	ui.Row(c).Grow(1).FillWidth().AlignItems(ui.Stretch).Children(func() {
+		ui.Scroll(c).Grow(1).Shrink(1).MinWidth(0).Children(func() {
+			ui.Column(c).FillWidth().MaxWidth(theme.ContentMaxWidth).Padding(th.Space(8)).Gap(th.Space(6)).Children(func() {
+				pageHeading(c, title, sub, func() {
+					ui.Row(c).Gap(th.Space(2)).Children(func() {
+						settingButton(c, i18n.T("common.cancel"), kit.Outline, false).OnClick(v.closeEditor)
+						settingButton(c, i18n.T("common.save"), kit.Default, !v.ready()).OnClick(v.save)
+					})
+				})
+				v.banners(c)
+				v.form(c)
 			})
 		})
+		ui.Column(c).Width(theme.RuleAsideWidth).Shrink(0).Label(i18n.T("settings.rules.aside")).Children(func() { v.preview(c) })
 	})
-	v.schedulePreview()
 	v.saveDialog(c)
-	v.banners(c)
-	grid := ui.Row(c).FillWidth().Gap(th.Space(6)).AlignItems(ui.Start)
-	top := grid.LayoutBounds().Y
-	grid.Children(func() {
-		flow := ui.Column(c).Grow(1).Shrink(1).Basis(0).MinWidth(0)
-		flowH := flow.LayoutBounds().H
-		flow.Children(func() { v.flow(c) })
-		aside := ui.Column(c).Width(theme.RuleAsideWidth).Shrink(0).Gap(th.Space(3)).Label(i18n.T("settings.rules.aside"))
-		// Sticky: the panel moves down as the page scrolls past the grid's top, within the flow's height.
-		off := max(0, min(v.viewTop+th.Space(4)-top, flowH-aside.LayoutBounds().H))
-		if off != v.asideTop {
-			v.asideTop = off
-			c.Invalidate()
-		}
-		aside.Margin(v.asideTop, 0, 0, 0).Children(func() { v.aside(c) })
-	})
 	v.confirmDialog(c)
 }
 
@@ -225,74 +192,99 @@ func (v *rulesView) banners(c *ui.Context) {
 			})
 			if w.conv != 0 {
 				conv := w.conv
-				kit.TextLink(c, i18n.T("settings.rules.from_wit.back"), violet.Dot, t.Text.Xs).Shrink(0).
+				kit.Button(c, i18n.T("settings.rules.from_wit.back"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).Shrink(0).
 					OnClick(func() { v.a.navigate(Route{Page: PageWit, ConversationID: conv}) })
 			}
 		})
 	}
 }
 
-// flow is the editor's column of node cards.
-func (v *rulesView) flow(c *ui.Context) {
+// form is the editor's column of macOS-style settings cards: basic (名称 & 运行方式),
+// 当, 如果 (unified condition groups), and 就 (draggable action rows).
+func (v *rulesView) form(c *ui.Context) {
 	a := v.a
-	t, th := theme.Of(c), c.Theme()
-	d := &v.edit.Doc
-	kit.Card(c, ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(2), th.Space(4)).MinHeight(th.Space(12)), kit.ToneTint).Children(func() {
-		kit.Text(c, i18n.T("settings.rules.name"), t.Text.Sm).FontWeight(500).Shrink(0)
-		kit.Input(c, &d.Name, kit.InputOpts{Placeholder: i18n.T("settings.rules.name.placeholder")}).Label(i18n.T("settings.rules.name")).Grow(1).Shrink(1)
-	})
-	ui.Box(c).Height(th.Space(4))
 	labels := make([]kit.Option[string], len(a.labels))
 	for i, l := range a.labels {
 		labels[i] = kit.Option[string]{Value: l.Slug, Label: l.Name}
 	}
-	v.whenCard(c, labels)
-	connector(c)
-	v.ifCard(c, labels)
-	for i := range d.Actions {
-		connector(c.Key(-1 - i)) // keys apart from the cards'
-		v.actionCard(c.Key(i), i, labels)
-	}
-	connector(c)
-	v.addAction(c)
+	v.basicSection(c)
+	v.whenSection(c, labels)
+	v.ifSection(c, labels)
+	v.thenSection(c, labels)
 }
 
-// whenCard is 当: the trigger, its label or verdict, and the account.
-func (v *rulesView) whenCard(c *ui.Context, labels []kit.Option[string]) {
-	a := v.a
-	t, th := theme.Of(c), c.Theme()
+// basicSection is 名称 and 运行方式 in one settings card.
+func (v *rulesView) basicSection(c *ui.Context) {
 	d := &v.edit.Doc
-	ruleCard(c, t.Border, t.Card, func() {
-		cardHead(c, "time", i18n.T("settings.rules.when"), t.Hover, t.Foreground, nil)
-		ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(th.Space(2)).Children(func() {
-			was := d.Trigger
-			triggers := []kit.Option[string]{}
-			for _, tr := range []string{core.TriggerReceive, core.TriggerLabel, core.TriggerSecurity, core.TriggerDaily} {
-				triggers = append(triggers, kit.Option[string]{Value: tr, Label: i18n.T("settings.rules.trigger." + tr)})
-			}
-			triggerSelect(c, i18n.T("settings.rules.trigger"), &d.Trigger, triggers)
-			if d.Trigger != was {
-				d.TriggerArg = map[string]string{core.TriggerSecurity: core.SecuritySuspicious}[d.Trigger]
-				if d.Trigger == core.TriggerLabel && len(labels) > 0 {
-					d.TriggerArg = labels[0].Value
+	settingsCard(c, func() {
+		settingRow(c, i18n.T("settings.rules.name"), "", func() ui.Element {
+			return kit.Input(c, &d.Name, kit.InputOpts{Placeholder: i18n.T("settings.rules.name.placeholder")}).
+				Label(i18n.T("settings.rules.name")).Width(theme.SettingsControlWidth)
+		})
+	}, func() {
+		runIdx := 0
+		helpKey := "settings.rules.run.window.help"
+		if v.edit.Background {
+			runIdx = 1
+			helpKey = "settings.rules.run.background.help"
+		}
+		settingRow(c, i18n.T("settings.rules.run"), i18n.T(helpKey), func() ui.Element {
+			el := kit.Tabs(c, &runIdx, kit.TabsOpts{Look: kit.TabsSegmented},
+				kit.TabLabels(i18n.T("settings.rules.run.window"), i18n.T("settings.rules.run.background")))
+			v.edit.Background = runIdx == 1
+			return el
+		})
+	})
+}
+
+// whenSection is 当: the trigger (with its label or verdict when applicable)
+// and the receiving account scope.
+func (v *rulesView) whenSection(c *ui.Context, labels []kit.Option[string]) {
+	a := v.a
+	th := c.Theme()
+	d := &v.edit.Doc
+	settingsSection(c, i18n.T("settings.rules.when"), "", func() {
+		settingRow(c, i18n.T("settings.rules.trigger"), i18n.T("settings.rules.trigger."+d.Trigger+".help"), func() ui.Element {
+			var first ui.Element
+			ui.Row(c).AlignItems(ui.Center).Gap(th.Space(2)).Children(func() {
+				was := d.Trigger
+				var triggers []kit.Option[string]
+				for _, tr := range []string{core.TriggerReceive, core.TriggerLabel, core.TriggerSecurity, core.TriggerDaily} {
+					triggers = append(triggers, kit.Option[string]{Value: tr, Label: i18n.T("settings.rules.trigger." + tr)})
 				}
-			}
-			switch d.Trigger {
-			case core.TriggerLabel:
-				triggerSelect(c, i18n.T("settings.rules.trigger.label.which"), &d.TriggerArg, labels)
-			case core.TriggerSecurity:
-				triggerSelect(c, i18n.T("settings.rules.trigger.security.which"), &d.TriggerArg, []kit.Option[string]{
-					{Value: core.SecuritySuspicious, Label: i18n.T("settings.rules.security.suspicious")},
-					{Value: core.SecurityDangerous, Label: i18n.T("settings.rules.security.dangerous")}})
-			}
-			kit.Text(c, i18n.T("settings.rules.in"), t.Text.Sm).TextColor(t.Muted)
+				if d.Trigger == core.TriggerLabel || d.Trigger == core.TriggerSecurity {
+					first = kit.SelectWith(c, kit.SelectOpts{Flat: true, MinWidth: th.Space(36), MaxWidth: theme.SettingsControlWidth}, &d.Trigger, triggers).
+						Label(i18n.T("settings.rules.trigger"))
+				} else {
+					first = settingSelect(c, i18n.T("settings.rules.trigger"), &d.Trigger, triggers)
+				}
+				if d.Trigger != was {
+					d.TriggerArg = map[string]string{core.TriggerSecurity: core.SecuritySuspicious}[d.Trigger]
+					if d.Trigger == core.TriggerLabel && len(labels) > 0 {
+						d.TriggerArg = labels[0].Value
+					}
+				}
+				switch d.Trigger {
+				case core.TriggerLabel:
+					kit.SelectWith(c, kit.SelectOpts{Flat: true, MinWidth: th.Space(28), MaxWidth: theme.SettingsControlWidth}, &d.TriggerArg, labels).
+						Label(i18n.T("settings.rules.trigger.label.which"))
+				case core.TriggerSecurity:
+					kit.SelectWith(c, kit.SelectOpts{Flat: true, MinWidth: th.Space(28), MaxWidth: theme.SettingsControlWidth}, &d.TriggerArg, []kit.Option[string]{
+						{Value: core.SecuritySuspicious, Label: i18n.T("settings.rules.security.suspicious")},
+						{Value: core.SecurityDangerous, Label: i18n.T("settings.rules.security.dangerous")}}).
+						Label(i18n.T("settings.rules.trigger.security.which"))
+				}
+			})
+			return first
+		})
+	}, func() {
+		settingRow(c, i18n.T("settings.rules.account"), "", func() ui.Element {
 			accts := []kit.Option[int64]{{Value: 0, Label: i18n.T("settings.rules.account.all")}}
 			for _, acc := range a.accounts {
 				accts = append(accts, kit.Option[int64]{Value: acc.ID, Label: accountName(acc)})
 			}
-			triggerSelect(c, i18n.T("settings.rules.account"), &d.Account, accts)
+			return settingSelect(c, i18n.T("settings.rules.account"), &d.Account, accts)
 		})
-		kit.Text(c, i18n.T("settings.rules.trigger."+d.Trigger+".help"), t.Text.Xs).TextColor(t.Muted)
 	})
 }
 
@@ -339,62 +331,191 @@ func flipMatch(m *string) {
 	}
 }
 
-// condButtonWidth is the width of a logic button for word, at least Space(7).
-func condButtonWidth(c *ui.Context, word string) float32 {
+// condEditorOpts configures the shared condition group editor for Rules,
+// Saved Views, and Saved View conversation groups (inline mode).
+type condEditorOpts struct {
+	title       string
+	emptyText   string
+	footnote    string
+	inline      bool
+	defaultCond func() core.RuleCondition
+	row         func(*core.RuleCondition)
+}
+
+// condGroupConnector draws the centered ─── 且 ▾ ─── / ─── 或 ▾ ─── pill joining
+// two condition groups; clicking flips between MatchAll and MatchAny.
+func condGroupConnector(c *ui.Context, match *string) {
 	th := c.Theme()
-	w, _ := c.MeasureText(0, ui.Span{Text: word})
-	return max(th.Space(7), w+th.Space(3))
+	word := i18n.T("settings.rules.logic." + *match)
+	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2.5)).Padding(th.Space(0.5), th.Space(4)).Children(func() {
+		kit.Separator(c, false).Grow(1).Shrink(1).Basis(0)
+		kit.Button(c, word, kit.ButtonOpts{Variant: kit.Outline, Flat: true, Round: true, Size: kit.SizeXs, Trailing: "chevron-down"}).
+			Label(i18n.Tf("settings.rules.logic.flip", word)).Shrink(0).OnClick(func() { flipMatch(match) })
+		kit.Separator(c, false).Grow(1).Shrink(1).Basis(0)
+	})
 }
 
-// condRailWidth is the width of the wider logic button in the current language,
-// and of the rail cell (Space(2) wider, for the bracket's horizontal arm).
-func condRailWidth(c *ui.Context) (btnW, railW float32) {
-	btnW = max(condButtonWidth(c, i18n.T("settings.rules.logic.all")), condButtonWidth(c, i18n.T("settings.rules.logic.any")))
-	return btnW, btnW + c.Theme().Space(2)
+// condMatchButton draws the compact 满足全部条件 ▾ / 满足任一条件 ▾ toggle in a
+// group header; clicking flips the group's match mode.
+func condMatchButton(c *ui.Context, match *string) {
+	label := i18n.T("settings.rules.match." + *match)
+	kit.Button(c, label, kit.ButtonOpts{Variant: kit.Outline, Flat: true, Size: kit.SizeXs, Trailing: "chevron-down"}).
+		Label(i18n.Tf("settings.rules.logic.flip", label)).Shrink(0).OnClick(func() { flipMatch(match) })
 }
 
-// condRail is the cell left of a row or a group: its part of a bracket's line,
-// rounded at the first and the last, and match's and or or to click, if given.
-// With seam the button sits on the top edge of the cell: with two rows, the
-// middle of the line, clear of its corners.
-func condRail(c *ui.Context, line, first, last bool, match *string, seam bool) {
+// condEditor renders the unified default-1-group condition editor shared by
+// Rules and Saved Views: a single card by default (showing 满足全部条件 ▾ once
+// it has 2+ rows, and + 添加条件 inside), + 添加条件组 in the section header,
+// and independent cards joined by ─── 且 ▾ ─── once 2+ groups exist.
+func condEditor(c *ui.Context, conds *[]core.RuleCondition, match *string, o condEditorOpts) {
 	t, th := theme.Of(c), c.Theme()
-	btnW, railW := condRailWidth(c)
-	ui.Row(c).Width(railW).Shrink(0).AlignSelf(ui.Stretch).AlignItems(ui.Center).Children(func() {
-		if line {
-			ui.Column(c).Absolute().Left(btnW / 2).Top(0).Right(0).Bottom(0).PassThrough().Children(func() {
-				hair, r := float32(theme.Hairline), th.Space(2)
-				up := ui.Box(c).FillWidth().Grow(1).Basis(0).BorderColor(t.Border)
-				down := ui.Box(c).FillWidth().Grow(1).Basis(0).BorderColor(t.Border)
-				switch {
-				case first:
-					down.BorderWidth(hair, 0, 0, hair).Radius(r, 0, 0, 0)
-				case last:
-					up.BorderWidth(0, 0, hair, hair).Radius(0, 0, 0, r)
-				default:
-					up.BorderWidth(0, 0, 0, hair)
-					down.BorderWidth(hair, 0, 0, hair)
+	count := len(core.RuleDoc{Conditions: *conds}.Rows())
+	atLimit := count >= core.MaxRuleConditions
+	noGroupRoom := count+condGroupRows > core.MaxRuleConditions
+
+	nextCond := func(list []core.RuleCondition) core.RuleCondition {
+		if len(list) == 0 && o.defaultCond != nil {
+			return o.defaultCond()
+		}
+		add := core.RuleCondition{Field: core.FieldSubject, Op: core.OpContains}
+		if len(list) > 0 {
+			if f := list[len(list)-1].Field; textField(f) {
+				add.Field = f // 发件人 a 或 发件人 b, most often
+			}
+		}
+		return add
+	}
+
+	groupBody := func(list *[]core.RuleCondition, on *string, isMulti bool, removeRow func(int), removeGroup func(), inlineAddGroup bool) {
+		showHeader := isMulti || len(*list) >= 2
+		if showHeader {
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(2.5), th.Space(4), th.Space(1), th.Space(4)).Children(func() {
+				condMatchButton(c, on)
+				ui.Spacer(c)
+				if isMulti && removeGroup != nil {
+					kit.Button(c, i18n.T("settings.rules.cond_group.remove"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs}).
+						TextColor(t.Muted).Shrink(0).OnClick(removeGroup)
 				}
 			})
 		}
-		if match == nil {
-			return
+		topPad := th.Space(3)
+		if showHeader {
+			topPad = th.Space(1.5)
 		}
-		word := i18n.T("settings.rules.logic." + *match)
-		w := condButtonWidth(c, word)
-		left := (btnW - w) / 2
-		b := kit.Button(c, word, kit.ButtonOpts{Variant: kit.Outline, Flat: true, Size: kit.SizeSm}).Size(w, th.Space(6)).PaddingX(0).
-			Background(t.Background).Label(i18n.Tf("settings.rules.logic.flip", word)).OnClick(func() { flipMatch(match) })
-		if seam {
-			b.Absolute().Left(left).Top(-th.Space(3))
-		} else {
-			b.Margin(0, 0, 0, left)
+		ui.Column(c).FillWidth().Gap(th.Space(2)).Padding(topPad, th.Space(4), th.Space(1), th.Space(4)).Children(func() {
+			for i := range *list {
+				ui.Row(c.Key(i)).FillWidth().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+					o.row(&(*list)[i])
+					kit.IconButton(c, "x", i18n.T("settings.rules.condition.remove"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs}).
+						Shrink(0).OnClick(func() { removeRow(i) })
+				})
+			}
+		})
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(1), th.Space(4), th.Space(2.5), th.Space(3)).Children(func() {
+			kit.Button(c, i18n.T("settings.rules.condition.add"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs, Icon: "plus", Disabled: atLimit}).
+				TextColor(t.Muted).OnClick(func() { *list = append(*list, nextCond(*list)) })
+			if inlineAddGroup {
+				ui.Spacer(c)
+				kit.Button(c, i18n.T("settings.rules.cond_group.add"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs, Icon: "plus", Disabled: noGroupRoom}).
+					TextColor(t.Muted).OnClick(func() { addCondGroup(conds, match) })
+			}
+		})
+	}
+
+	emptyRow := func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(3)).Padding(th.Space(3), th.Space(4)).Children(func() {
+			if o.emptyText != "" {
+				kit.Text(c, o.emptyText, t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
+			} else {
+				ui.Spacer(c)
+			}
+			kit.Button(c, i18n.T("settings.rules.condition.add"), kit.ButtonOpts{Variant: kit.Outline, Flat: true, Size: kit.SizeSm, Icon: "plus", Disabled: atLimit}).
+				Shrink(0).OnClick(func() { *conds = append(*conds, nextCond(*conds)) })
+		})
+	}
+
+	if o.inline {
+		ui.Column(c).FillWidth().Children(func() {
+			switch {
+			case len(*conds) == 0:
+				emptyRow()
+			case !condGrouped(*conds):
+				groupBody(conds, match, false, func(i int) {
+					*conds = slices.Delete(*conds, i, i+1)
+					tidyConds(conds, match)
+				}, nil, true)
+			default:
+				for g := range *conds {
+					if g > 0 {
+						condGroupConnector(c.Key(-1-g), match)
+					}
+					cg := &(*conds)[g]
+					ui.Column(c.Key(g)).FillWidth().Label(i18n.T("settings.rules.cond_group")).Children(func() {
+						groupBody(&cg.Group, &cg.Match, true, func(i int) {
+							cg.Group = slices.Delete(cg.Group, i, i+1)
+							if len(cg.Group) == 0 {
+								*conds = slices.Delete(*conds, g, g+1)
+							}
+							tidyConds(conds, match)
+						}, func() {
+							*conds = slices.Delete(*conds, g, g+1)
+							tidyConds(conds, match)
+						}, g == len(*conds)-1)
+					})
+				}
+			}
+		})
+		return
+	}
+
+	ui.Column(c).FillWidth().Gap(theme.SectionGap).Children(func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).PaddingX(th.Space(4)).Children(func() {
+			kit.Text(c, o.title, t.Text.Sm).FontWeight(500).Grow(1)
+			if count > 0 {
+				kit.Button(c, i18n.T("settings.rules.cond_group.add"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs, Icon: "plus", Disabled: noGroupRoom}).
+					TextColor(t.Muted).Shrink(0).OnClick(func() { addCondGroup(conds, match) })
+			}
+		})
+		switch {
+		case len(*conds) == 0:
+			settingsCard(c, emptyRow)
+		case !condGrouped(*conds):
+			settingsCard(c, func() {
+				groupBody(conds, match, false, func(i int) {
+					*conds = slices.Delete(*conds, i, i+1)
+					tidyConds(conds, match)
+				}, nil, false)
+			})
+		default:
+			for g := range *conds {
+				if g > 0 {
+					condGroupConnector(c.Key(-1-g), match)
+				}
+				cg := &(*conds)[g]
+				ui.Column(c.Key(g)).FillWidth().Label(i18n.T("settings.rules.cond_group")).Children(func() {
+					settingsCard(c, func() {
+						groupBody(&cg.Group, &cg.Match, true, func(i int) {
+							cg.Group = slices.Delete(cg.Group, i, i+1)
+							if len(cg.Group) == 0 {
+								*conds = slices.Delete(*conds, g, g+1)
+							}
+							tidyConds(conds, match)
+						}, func() {
+							*conds = slices.Delete(*conds, g, g+1)
+							tidyConds(conds, match)
+						}, false)
+					})
+				})
+			}
+		}
+		if o.footnote != "" {
+			kit.Text(c, o.footnote, t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(4))
 		}
 	})
 }
 
-// ifCard is 如果: the rule's conditions.
-func (v *rulesView) ifCard(c *ui.Context, labels []kit.Option[string]) {
+// ifSection is 如果: the rule's conditions, using the shared condition editor.
+func (v *rulesView) ifSection(c *ui.Context, labels []kit.Option[string]) {
 	t := theme.Of(c)
 	d := &v.edit.Doc
 	var fields []kit.Option[string]
@@ -439,137 +560,11 @@ func (v *rulesView) ifCard(c *ui.Context, labels []kit.Option[string]) {
 			kit.Input(c, &cd.Value, kit.InputOpts{Placeholder: i18n.T(ph)}).Label(i18n.T("settings.rules.value")).Grow(1).Shrink(1).Basis(0).MinWidth(0)
 		}
 	}
-	ruleCard(c, t.Border, t.Card, func() {
-		cardHead(c, "filter", i18n.T("settings.rules.if"), t.Hover, t.Foreground, nil)
-		if len(d.Conditions) == 0 {
-			kit.Text(c, i18n.T("settings.rules.no_conditions"), t.Text.Xs).TextColor(t.Muted)
-		}
-		condEditor(c, &d.Conditions, &d.Match, &v.condMenu, row)
+	condEditor(c, &d.Conditions, &d.Match, condEditorOpts{
+		title:     i18n.T("settings.rules.if"),
+		emptyText: i18n.T("settings.rules.no_conditions"),
+		row:       row,
 	})
-}
-
-// condEditor is conditions, or their groups, each in a bracket with one and or
-// or to click, then what adds more; row is one condition's controls. Rules and
-// views share it.
-func condEditor(c *ui.Context, conds *[]core.RuleCondition, match *string, menu *bool, row func(*core.RuleCondition)) {
-	t, th := theme.Of(c), c.Theme()
-	count := len(core.RuleDoc{Conditions: *conds}.Rows())
-	atLimit := count >= core.MaxRuleConditions
-	noGroupRoom := count+condGroupRows > core.MaxRuleConditions
-	// rows is conditions, boxed in a group or not, under one bracket with match.
-	rows := func(list *[]core.RuleCondition, on *string, boxed bool, remove func(i int)) {
-		n := len(*list)
-		for i := range *list {
-			ui.Row(c.Key(i)).FillWidth().AlignItems(ui.Stretch).Children(func() {
-				if boxed || n > 1 {
-					var btn *string
-					if i == 1 {
-						btn = on
-					}
-					condRail(c, n > 1, i == 0, i == n-1, btn, n == 2)
-				}
-				ui.Row(c).Grow(1).Shrink(1).Basis(0).MinWidth(0).PaddingY(th.Space(1)).Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-					row(&(*list)[i])
-					kit.IconButton(c, "x", i18n.T("settings.rules.condition.remove"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-						OnClick(func() { remove(i) })
-				})
-			})
-		}
-	}
-	if !condGrouped(*conds) {
-		ui.Column(c).FillWidth().Children(func() {
-			rows(conds, match, false, func(i int) {
-				*conds = slices.Delete(*conds, i, i+1)
-				tidyConds(conds, match)
-			})
-		})
-		addCondMenu(c, conds, match, menu, atLimit, noGroupRoom)
-		return
-	}
-	ui.Column(c).FillWidth().Children(func() {
-		last := len(*conds) - 1
-		for g := range *conds {
-			cg := &(*conds)[g]
-			ui.Row(c.Key(g)).FillWidth().AlignItems(ui.Stretch).Children(func() {
-				var btn *string
-				if g == 1 {
-					btn = match
-				}
-				condRail(c, true, g == 0, g == last, btn, true)
-				ui.Column(c).Grow(1).Shrink(1).Basis(0).MinWidth(0).PaddingY(th.Space(1)).Children(func() {
-					kit.Block(c, ui.Column(c), kit.ToneTint).FillWidth().Padding(th.Space(1), th.Space(2.5)).
-						Label(i18n.T("settings.rules.cond_group")).Children(func() {
-						rows(&cg.Group, &cg.Match, true, func(i int) {
-							cg.Group = slices.Delete(cg.Group, i, i+1)
-							if len(cg.Group) == 0 {
-								*conds = slices.Delete(*conds, g, g+1)
-							}
-							tidyConds(conds, match)
-						})
-						_, railW := condRailWidth(c)
-						ui.Row(c).FillWidth().AlignItems(ui.Center).Padding(0, 0, 0, railW).Children(func() {
-							kit.Button(c, i18n.T("settings.rules.condition.add"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "plus", Disabled: atLimit}).TextColor(t.Muted).
-								OnClick(func() {
-									add := core.RuleCondition{Field: core.FieldSubject, Op: core.OpContains}
-									if f := cg.Group[len(cg.Group)-1].Field; textField(f) {
-										add.Field = f // 发件人 a 或 发件人 b, most often
-									}
-									cg.Group = append(cg.Group, add)
-								})
-							ui.Row(c).Grow(1)
-							kit.Button(c, i18n.T("settings.rules.cond_group.remove"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).TextColor(t.Muted).
-								OnClick(func() {
-									*conds = slices.Delete(*conds, g, g+1)
-									tidyConds(conds, match)
-								})
-						})
-					})
-				})
-			})
-		}
-	})
-	_, railW := condRailWidth(c)
-	kit.Button(c, i18n.T("settings.rules.cond_group.add"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "plus", Disabled: noGroupRoom}).
-		AlignSelf(ui.Start).Margin(0, 0, 0, railW).TextColor(t.Muted).OnClick(func() { addCondGroup(conds, match) })
-}
-
-// addCondMenu is 添加 and its menu: 添加条件, or 添加一组条件.
-func addCondMenu(c *ui.Context, conds *[]core.RuleCondition, match *string, menu *bool, disabled, noGroupRoom bool) {
-	t := theme.Of(c)
-	label := i18n.T("settings.rules.add")
-	add := kit.Button(c, label, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Icon: "plus", Trailing: "chevron-down", Disabled: disabled}).
-		AlignSelf(ui.Start).TextColor(t.Muted).OnClick(func() { *menu = !*menu })
-	if !*menu {
-		return
-	}
-	kit.MenuAt(c, add, menu, ui.AnchorBottomLeft, ui.AnchorTopLeft, theme.PopupOffset, label, func() {
-		for _, o := range []struct {
-			key  string
-			off  bool
-			pick func()
-		}{
-			{"settings.rules.condition.add", false, func() {
-				*conds = append(*conds, core.RuleCondition{Field: core.FieldSubject, Op: core.OpContains})
-			}},
-			{"settings.rules.cond_group.add", noGroupRoom, func() { addCondGroup(conds, match) }},
-		} {
-			item, fg := i18n.T(o.key), t.Foreground
-			if o.off {
-				fg = t.Muted
-			}
-			kit.MenuItem(c.Key(o.key), false).Label(item).Disabled(o.off).TextColor(fg).Children(func() {
-				ui.Text(c, item).SingleLine().Grow(1)
-			}).OnClick(func() {
-				*menu = false
-				o.pick()
-			})
-		}
-	})
-}
-
-// triggerSelect is a select on the 当 card, as wide as its choice.
-func triggerSelect[T comparable](c *ui.Context, label string, sel *T, opts []kit.Option[T]) ui.Element {
-	return kit.SelectWith(c, kit.SelectOpts{Flat: true, MaxWidth: theme.SettingsSelectMax}, sel, opts).Label(label)
 }
 
 // ruleSelect is a select in a rule card's row: w wide (a longer language
@@ -588,17 +583,35 @@ func (v *rulesView) aiOff(kind string) bool {
 	return !v.a.settings.RuleAI && slices.Contains(core.RuleAIActions, kind)
 }
 
-// actionCard is action i: its icon, 就 (the first) or 然后, its kind's
-// badge, moves and removal; its kind and what it takes; its note.
-func (v *rulesView) actionCard(c *ui.Context, i int, labels []kit.Option[string]) {
+// ruleActionDrag is an action's index in Doc.Actions while its grip drags it.
+type ruleActionDrag int
+
+// thenSection is 就: its header with + 添加动作, and a single card of
+// draggable action rows separated by inset hairlines.
+func (v *rulesView) thenSection(c *ui.Context, labels []kit.Option[string]) {
+	t, th := theme.Of(c), c.Theme()
+	d := &v.edit.Doc
+	ui.Column(c).FillWidth().Gap(theme.SectionGap).Children(func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Center).PaddingX(th.Space(4)).Children(func() {
+			kit.Text(c, i18n.T("settings.rules.then"), t.Text.Sm).FontWeight(500).Grow(1)
+			v.addActionButton(c)
+		})
+		rows := make([]func(), len(d.Actions))
+		for i := range d.Actions {
+			idx := i
+			rows[idx] = func() { v.actionRow(c.Key(idx), idx, labels) }
+		}
+		settingsCard(c, rows...)
+	})
+}
+
+// actionRow is action i inside the 就 card: drag grip on the left, kind select
+// and target control in the middle, × remove on the right, and optional sub-block
+// (forward warning, local file export options, or AI note) aligned beneath the select.
+func (v *rulesView) actionRow(c *ui.Context, i int, labels []kit.Option[string]) {
 	t, th := theme.Of(c), c.Theme()
 	d := &v.edit.Doc
 	ac := &d.Actions[i]
-	badge, fill, fg, card, edge, tinted := actionTone(t, ac.Kind)
-	verb := i18n.T("settings.rules.then")
-	if i > 0 {
-		verb = i18n.T("settings.rules.then.next")
-	}
 	var kinds []kit.Option[string]
 	for _, g := range ruleActionGroups {
 		for _, k := range g.kinds {
@@ -609,71 +622,103 @@ func (v *rulesView) actionCard(c *ui.Context, i int, labels []kit.Option[string]
 			kinds = append(kinds, kit.Option[string]{Value: k, Label: label, Disabled: v.aiOff(k) && k != ac.Kind})
 		}
 	}
-	ruleCard(c, edge, card, func() {
-		cardHead(c, actionIcon(ac.Kind), verb, fill, fg, func() {
-			if tinted {
-				ruleTag(c, badge, fill, fg, "")
+	hasSub := ac.Kind == core.ActionForward || fileAction(ac.Kind) || slices.Contains(core.RuleAIActions, ac.Kind)
+	item := ui.Column(c).FillWidth()
+	if from, ok := ui.DragOver[ruleActionDrag](item); ok && int(from) != i {
+		drawDropLine(item, int(from) < i, th.Accent)
+	}
+	if from, ok := ui.Drop[ruleActionDrag](item); ok && int(from) != i && int(from) >= 0 && int(from) < len(d.Actions) {
+		f := int(from)
+		moved := d.Actions[f]
+		next := slices.Delete(slices.Clone(d.Actions), f, f+1)
+		d.Actions = slices.Insert(next, i, moved)
+	}
+	item.Children(func() {
+		pb := th.Space(2.5)
+		if hasSub {
+			pb = th.Space(1.5)
+		}
+		ui.Row(c).FillWidth().Gap(th.Space(2)).Padding(th.Space(2.5), th.Space(4), pb, th.Space(2.5)).AlignItems(ui.Center).Children(func() {
+			grip := ui.Box(c).Size(th.Space(5), th.Space(8)).Center().Shrink(0).Drag(ruleActionDrag(i))
+			if grip.Dragging() {
+				item.Opacity(0.4)
 			}
-			ui.Row(c).Grow(1)
-			kit.IconButton(c, "arrow-up", i18n.T("settings.rules.action.up"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Disabled: i == 0}).
-				OnClick(func() { d.Actions[i-1], d.Actions[i] = d.Actions[i], d.Actions[i-1] })
-			kit.IconButton(c, "arrow-down", i18n.T("settings.rules.action.down"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Disabled: i == len(d.Actions)-1}).
-				OnClick(func() { d.Actions[i], d.Actions[i+1] = d.Actions[i+1], d.Actions[i] })
-			kit.IconButton(c, "trash-2", i18n.T("settings.rules.action.remove"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm, Disabled: len(d.Actions) == 1}).
-				OnClick(func() { d.Actions = slices.Delete(d.Actions, i, i+1) })
-		})
-		ui.Row(c).FillWidth().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-			ruleSelect(c, i18n.Tf("settings.rules.action.n", i+1), &ac.Kind, kinds, theme.RuleActionWidth)
-			if ac.Kind == core.ActionLabel || ac.Kind == core.ActionUnlabel {
+			grip.Children(func() {
+				ui.Icon(c, icons.Get("grip")).Size(theme.Icon, theme.Icon).TextColor(t.Idle)
+			})
+			ruleSelect(c, i18n.Tf("settings.rules.action.n", i+1), &ac.Kind, kinds, th.Space(44))
+			switch {
+			case ac.Kind == core.ActionLabel || ac.Kind == core.ActionUnlabel:
+				ac.To, ac.Dir, ac.Subfolder, ac.Naming = "", "", false, ""
 				if ac.Label == "" {
 					ac.Label = v.firstLabel()
 				}
 				ruleSelect(c, i18n.T("settings.rules.label"), &ac.Label, labels, 0)
-			} else {
-				ac.Label = ""
-			}
-			if ac.Kind == core.ActionForward {
-				kit.Input(c, &ac.To, kit.InputOpts{Placeholder: i18n.T("settings.rules.forward.to")}).Label(i18n.T("settings.rules.forward.to")).Grow(1).Shrink(1).Basis(0).MinWidth(0)
-			} else {
-				ac.To = ""
-			}
-			if fileAction(ac.Kind) {
+			case ac.Kind == core.ActionForward:
+				ac.Label, ac.Dir, ac.Subfolder, ac.Naming = "", "", false, ""
+				kit.Input(c, &ac.To, kit.InputOpts{Placeholder: i18n.T("settings.rules.forward.to")}).
+					Label(i18n.T("settings.rules.forward.to")).Grow(1).Shrink(1).Basis(0).MinWidth(0)
+			case fileAction(ac.Kind):
+				ac.Label, ac.To = "", ""
 				fileKindChanged(d, i)
 				v.fileDir(c, d, i)
-			} else {
-				ac.Dir, ac.Subfolder, ac.Naming = "", false, ""
+			default:
+				ac.Label, ac.To, ac.Dir, ac.Subfolder, ac.Naming = "", "", "", false, ""
+				ui.Spacer(c)
+			}
+			// the grip is the pointer's; these move an action from the keyboard and screen readers
+			kit.IconButton(c, "arrow-up", i18n.T("settings.rules.action.up"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs, Disabled: i == 0}).
+				Shrink(0).OnClick(func() { d.Actions[i-1], d.Actions[i] = d.Actions[i], d.Actions[i-1] })
+			kit.IconButton(c, "arrow-down", i18n.T("settings.rules.action.down"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs, Disabled: i == len(d.Actions)-1}).
+				Shrink(0).OnClick(func() { d.Actions[i], d.Actions[i+1] = d.Actions[i+1], d.Actions[i] })
+			kit.IconButton(c, "x", i18n.T("settings.rules.action.remove"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs, Disabled: len(d.Actions) == 1}).
+				Shrink(0).OnClick(func() { d.Actions = slices.Delete(d.Actions, i, i+1) })
+		})
+		if !hasSub {
+			return
+		}
+		ui.Column(c).FillWidth().Gap(th.Space(2.5)).Padding(0, th.Space(4), th.Space(3), th.Space(9.5)).Children(func() {
+			switch {
+			case ac.Kind == core.ActionForward:
+				note := "settings.rules.forward.note"
+				if k := mail.AddrKey(ac.To); k != "" && slices.Contains(v.edit.Confirmed, k) {
+					note = "settings.rules.forward.confirmed"
+				}
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(1.5)).Children(func() {
+					kit.BadgeWith(c, i18n.T("settings.rules.egress"), kit.BadgeOpts{Tone: kit.BadgeWarning}).Shrink(0)
+					kit.Text(c, i18n.T(note), t.Text.Xs).TextColor(t.WarningText).Grow(1).Shrink(1)
+				})
+			case fileAction(ac.Kind):
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(1.5)).Children(func() {
+					kit.BadgeWith(c, i18n.T("settings.rules.kind.local_write"), kit.BadgeOpts{Tone: kit.BadgeNeutral, Muted: true}).Shrink(0)
+					kit.Text(c, i18n.T("settings.rules.files.note"), t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
+				})
+				v.fileOptions(c, d, i)
+			case slices.Contains(core.RuleAIActions, ac.Kind):
+				violet := t.Label("violet")
+				noteKey := "settings.rules.ai.note"
+				if v.aiOff(ac.Kind) {
+					noteKey = "settings.rules.ai_off.hint"
+				}
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(1.5)).Children(func() {
+					ruleTag(c, i18n.T("settings.rules.kind.ai"), violet.Fill, violet.Text, "")
+					kit.Text(c, i18n.T(noteKey), t.Text.Xs).TextColor(t.Muted).Grow(1).Shrink(1)
+				})
 			}
 		})
-		switch {
-		case ac.Kind == core.ActionForward:
-			note := "settings.rules.forward.note"
-			if k := mail.AddrKey(ac.To); k != "" && slices.Contains(v.edit.Confirmed, k) {
-				note = "settings.rules.forward.confirmed"
-			}
-			kit.Text(c, i18n.T(note), t.Text.Xs).TextColor(t.WarningText)
-		case v.aiOff(ac.Kind):
-			kit.Text(c, i18n.T("settings.rules.ai_off.hint"), t.Text.Xs).TextColor(t.Muted)
-		case slices.Contains(core.RuleAIActions, ac.Kind):
-			kit.Text(c, i18n.T("settings.rules.ai.note"), t.Text.Xs).TextColor(t.Muted)
-		case fileAction(ac.Kind):
-			kit.Text(c, i18n.T("settings.rules.files.note"), t.Text.Xs).TextColor(t.Muted)
-		}
-		if fileAction(ac.Kind) {
-			v.fileOptions(c, d, i)
-		}
 	})
 }
 
-// addAction is 添加动作 and its menu of the actions by group, each with its icon.
-func (v *rulesView) addAction(c *ui.Context) {
-	t, th := theme.Of(c), c.Theme()
+// addActionButton is + 添加动作 in the 就 header and its grouped action menu.
+func (v *rulesView) addActionButton(c *ui.Context) {
+	t := theme.Of(c)
 	d := &v.edit.Doc
-	add := kit.Button(c, i18n.T("settings.rules.action.add"), kit.ButtonOpts{Variant: kit.Outline, Flat: true, Icon: "plus", Disabled: len(d.Actions) >= core.MaxRuleActions}).
-		PaddingX(th.Space(3.5)).BorderStyle(ui.BorderDashed).AlignSelf(ui.Center).OnClick(func() { v.menu = !v.menu })
+	add := kit.Button(c, i18n.T("settings.rules.action.add"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeXs, Icon: "plus", Disabled: len(d.Actions) >= core.MaxRuleActions}).
+		TextColor(t.Muted).Shrink(0).OnClick(func() { v.menu = !v.menu })
 	if !v.menu {
 		return
 	}
-	kit.MenuAt(c, add, &v.menu, ui.AnchorBottomLeft, ui.AnchorTopLeft, theme.PopupOffset, i18n.T("settings.rules.action.add"), func() {
+	kit.MenuAt(c, add, &v.menu, ui.AnchorBottomRight, ui.AnchorTopRight, theme.PopupOffset, i18n.T("settings.rules.action.add"), func() {
 		for _, g := range ruleActionGroups {
 			if len(g.kinds) == 0 {
 				continue
@@ -700,28 +745,18 @@ func (v *rulesView) addAction(c *ui.Context) {
 	})
 }
 
-// aside is the side panel: the existing mail the rule matches, 运行方式,
-// and the notes on forwarding and on Wit's actions.
-func (v *rulesView) aside(c *ui.Context) {
+// preview is the borderless right pane: the existing mail the rule matches,
+// matching Saved Views' live preview layout and Mail/Row alignment.
+func (v *rulesView) preview(c *ui.Context) {
 	t, th := theme.Of(c), c.Theme()
-	// 运行方式 first: a choice of the rule's, over the preview that only shows.
-	kit.Card(c, ui.Column(c), kit.ToneCard).FillWidth().Gap(th.Space(2)).Padding(th.Space(3)).Children(func() {
-		kit.Text(c, i18n.T("settings.rules.run"), t.Text.Sm).FontWeight(600).PaddingX(th.Space(1))
-		for _, o := range []struct {
-			bg  bool
-			key string
-		}{{false, "window"}, {true, "background"}} {
-			kit.RadioCard(c.Key(o.key), &v.edit.Background, o.bg, i18n.T("settings.rules.run."+o.key), i18n.T("settings.rules.run."+o.key+".help"))
-		}
-	})
-	kit.Card(c, ui.Column(c), kit.ToneTint).FillWidth().Gap(th.Space(2)).Padding(th.Space(3)).Children(func() {
-		ui.Row(c).FillWidth().AlignItems(ui.Baseline).Gap(th.Space(2)).PaddingX(th.Space(1)).Children(func() {
-			kit.Text(c, i18n.T("settings.rules.preview"), t.Text.Sm).FontWeight(600).Grow(1)
+	ui.Column(c).Grow(1).FillWidth().Padding(th.Space(8), th.Space(6), th.Space(6), th.Space(2)).Gap(th.Space(2)).Children(func() {
+		ui.Row(c).FillWidth().AlignItems(ui.Baseline).Gap(th.Space(2)).PaddingX(th.Space(2)).Children(func() {
+			kit.Text(c, i18n.T("settings.rules.preview"), t.Text.Sm).FontWeight(500).Grow(1)
 			kit.Text(c, i18n.Tf("settings.rules.preview.recent", core.RulePreviewDays), t.Text.Xs).TextColor(t.Muted)
 		})
 		p := v.prev
 		muted := func(key string) {
-			kit.Block(c, ui.Column(c), kit.ToneOutline).FillWidth().Padding(th.Space(4), th.Space(3)).
+			kit.Block(c, ui.Column(c), kit.ToneOutline).FillWidth().Margin(0, th.Space(2)).Padding(th.Space(4), th.Space(3)).
 				AlignItems(ui.Center).Children(func() { kit.Text(c, i18n.T(key), t.Text.Xs).TextColor(t.Muted).TextAlign(ui.Center) })
 		}
 		switch {
@@ -732,31 +767,31 @@ func (v *rulesView) aside(c *ui.Context) {
 		case p.Count == 0:
 			muted("settings.rules.preview.none")
 		default:
-			kit.Text(c, i18n.Tf("settings.rules.preview.count", p.Count), t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(1))
-			now := time.Now()
-			kit.Block(c, ui.Column(c), kit.ToneOutline).FillWidth().Clip().Children(func() {
-				for i, m := range p.Messages {
-					if i > 0 {
-						kit.Separator(c, false)
-					}
-					ui.Column(c.Key(m.ID)).FillWidth().Gap(th.Space(0.5)).Padding(th.Space(2), th.Space(3)).Children(func() {
-						ui.Row(c).FillWidth().Gap(th.Space(2)).Children(func() {
-							kit.Text(c, displayName(m.From), t.Text.Xs).FontWeight(500).SingleLine().Grow(1).Shrink(1)
-							kit.Text(c, listTime(now, m.Date), t.Text.Xs).TextColor(t.Muted).Shrink(0)
+			kit.Text(c, i18n.Tf("settings.rules.preview.count", p.Count), t.Text.Xs).TextColor(t.Muted).PaddingX(th.Space(2))
+			now := v.a.clock.Now()
+			ui.Scroll(c).Grow(1).Shrink(1).FillWidth().Children(func() {
+				ui.Column(c).FillWidth().Gap(th.Space(0.25)).Children(func() {
+					for _, m := range p.Messages {
+						who := displayName(m.From)
+						ui.Row(c.Key(m.ID)).FillWidth().Gap(th.Space(2.5)).Padding(th.Space(2.5), th.Space(2)).AlignItems(ui.Start).Children(func() {
+							kit.Avatar(c, who).Label("").Role(ui.RoleNone).Shrink(0)
+							ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(th.Space(0.5)).Children(func() {
+								ui.Row(c).FillWidth().Gap(th.Space(2)).AlignItems(ui.Baseline).Children(func() {
+									kit.Text(c, who, t.Text.Sm).FontWeight(500).TextColor(t.Subdued).SingleLine().Grow(1).Shrink(1)
+									kit.Text(c, listTime(now, m.Date), t.Text.Xs).TextColor(t.Muted).Shrink(0)
+								})
+								kit.Text(c, m.Subject, t.Text.Xs).TextColor(t.Subdued).SingleLine()
+							})
 						})
-						kit.Text(c, m.Subject, t.Text.Xs).SingleLine()
-					})
-				}
+					}
+				})
 			})
 		}
+		if v.menu && !v.a.settings.RuleAI {
+			violet := t.Label("violet")
+			ruleNote(c, "sparkles", i18n.T("settings.rules.ai_off.note"), violet.Fill.Mix(t.Background, 0.5), violet.Edge, violet.Text)
+		}
 	})
-	if v.menu && !v.a.settings.RuleAI {
-		violet := t.Label("violet")
-		ruleNote(c, "sparkles", i18n.T("settings.rules.ai_off.note"), violet.Fill.Mix(t.Background, 0.5), violet.Edge, violet.Text)
-	}
-	if forwards(v.edit.Doc) {
-		ruleNote(c, "forward", i18n.T("settings.rules.forward.aside"), t.WarningBg, t.WarningBorder, t.WarningText)
-	}
 }
 
 // save saves the rule, first asking to confirm forward recipients it has
@@ -791,6 +826,7 @@ func (v *rulesView) commit() {
 		return
 	}
 	a := v.a
+	syncFollowers(&v.edit.Doc)
 	r, name, wit := v.edit, ruleName(v.edit.Doc), v.wit
 	n := 0
 	if v.prev != nil && v.runExisting {
@@ -878,18 +914,13 @@ func (v *rulesView) confirmDialog(c *ui.Context) {
 	}
 	kit.Dialog(c, &v.confirming, i18n.T("settings.rules.confirm.title"), kit.DialogOpts{Size: kit.DialogSm, Alert: true,
 		Desc: i18n.Tf("settings.rules.confirm.desc", ruleName(v.edit.Doc)), Close: i18n.T("common.close")}, func() {
-		amber := t.Label("amber")
-		kit.Block(c, ui.Column(c).FillWidth().Gap(th.Space(1.5)).Padding(th.Space(3.5)), kit.ToneWarning).Children(func() {
-			kit.Text(c, i18n.T("settings.rules.confirm.to"), t.Text.Xs).TextColor(t.WarningText)
-			for _, to := range v.unconfirmed {
-				ui.Row(c).Wrap().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-					kit.Text(c, to, t.Text.Sm).Font(theme.Mono).FontWeight(500).Selectable()
-					if slices.ContainsFunc(v.firstTime, func(f string) bool { return mail.AddrKey(f) == mail.AddrKey(to) }) {
-						ruleTag(c, i18n.T("settings.rules.confirm.first"), amber.Fill, amber.Text, "")
-					}
-				})
+		for _, to := range v.unconfirmed { // the design's warning, one per address, its first time said under it
+			first := ""
+			if slices.ContainsFunc(v.firstTime, func(f string) bool { return mail.AddrKey(f) == mail.AddrKey(to) }) {
+				first = i18n.T("settings.rules.confirm.first")
 			}
-		})
+			kit.TitledAlert(c.Key(to), kit.ToneWarning, i18n.Tf("settings.rules.confirm.to", to), first, nil)
+		}
 		ui.Column(c).Gap(th.Space(1.5)).Children(func() {
 			for _, s := range []string{outbox, i18n.T("settings.rules.confirm.new_only"), i18n.T("settings.rules.confirm.again")} {
 				kit.Text(c, "· "+s, t.Text.Sm)
