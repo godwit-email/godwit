@@ -338,8 +338,8 @@ func TestSettingsLabelsDisplay(t *testing.T) {
 	h.see("图标与文本")
 	h.click("图标与文本")
 	h.click("仅图标")
-	h.until("label display changed to icon", func() bool {
-		return h.app.settings.LabelDisplay == "icon"
+	h.until("icon label display saved", func() bool {
+		return h.app.settings.LabelDisplay == "icon" && h.app.writes.keys["settings"] == nil
 	})
 	st, err := h.env.Svc.GetSettings(context.Background())
 	if err != nil {

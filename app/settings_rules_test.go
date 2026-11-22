@@ -495,7 +495,7 @@ func TestSettingsRulesReorder(t *testing.T) {
 		}
 	}
 	h.openSettings("rules")
-	h.see("C")
+	h.see("启用「C」") // "C" alone also matches the sidebar's "MCP" before the rules load.
 	names := func() string {
 		var s string
 		for _, r := range h.rules() {
