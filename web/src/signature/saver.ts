@@ -24,9 +24,9 @@ const REFUSALS: [string, Refusal][] = [
  * typing pauses, and saves run one after another. show(B) first saves the shown signature's
  * pending edit, then loads B; a Load older than the newest show is
  * dropped, and edits for any signature but the shown one are ignored. flush saves at once and
- * answers Go with the token; a failed save stays pending for its signature, and every save (a
- * flush, the next debounce) tries it again, unless the signature is gone or Go refused the HTML
- * (onRefused): that failure is final and the edit is dropped. A save of the shown signature that
+ * answers Go with the token; a failed save stays pending for its signature (unless it has a newer
+ * edit), and every save (a flush, the next debounce) tries it again, unless the signature is gone
+ * or Go refused the HTML (onRefused): that failure is final and the edit is dropped. A save of the shown signature that
  * works clears the refusal.
  */
 export function signatureSaver(
@@ -37,12 +37,13 @@ export function signatureSaver(
   let shown = 0;
   let gen = 0;
   const pending = new Map<number, string>(); // per signature: its edit not saved yet
+  const newest = new Map<number, string>(); // per signature: its newest edit, saved or not
   let timer: ReturnType<typeof setTimeout> | undefined;
   let last = Promise.resolve(true);
 
   // Saves every signature's pending edit, after the saves before; true if all of them saved. A
-  // failed one stays pending for its signature (unless that signature has a newer edit) and is tried
-  // again by the next save.
+  // failed one stays pending for its signature (unless that signature has a newer edit, even one
+  // already queued or saved) and is tried again by the next save.
   const save = () => {
     clearTimeout(timer);
     timer = undefined;
@@ -66,7 +67,7 @@ export function signatureSaver(
               if (acc === shown) onRefused(refused); // said, never retried
               return false;
             }
-            if (!pending.has(acc)) pending.set(acc, html);
+            if (newest.get(acc) === html) pending.set(acc, html);
             return false;
           },
         ),
@@ -81,6 +82,7 @@ export function signatureSaver(
     edit(acc: number, html: string) {
       if (acc !== shown) return;
       pending.set(acc, html);
+      newest.set(acc, html);
       clearTimeout(timer);
       timer = setTimeout(save, DELAY);
     },
