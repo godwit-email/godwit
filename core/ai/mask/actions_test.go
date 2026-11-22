@@ -147,3 +147,22 @@ func TestRequestWholeWarnsAndBlocksAValueAsAWhole(t *testing.T) {
 	require.ErrorAs(t, err, &b)
 	assert.Equal(t, []string{mask.Codes}, b.Categories)
 }
+
+// What each text holds on its own is masked as Text masks it, whatever
+// reading them whole finds: a word inside another, and two codes that,
+// read together, are no one code (#873).
+func TestRequestWholeMasksEachTextToo(t *testing.T) {
+	m := configured(t, mask.Config{Words: []string{"cat"}})
+	texts := []string{"concatenate"}
+	w, nodes := whole(texts...)
+	out, err := m.RequestWhole(context.Background(), w, nodes, texts)
+	require.NoError(t, err)
+	assert.NotContains(t, out[0], "cat")
+
+	m = configured(t, mask.Config{Actions: map[string]string{mask.Codes: mask.Block}})
+	texts = []string{"Your verification code is 482913.", "Your verification code is 731559."}
+	w, nodes = whole(texts[0], "\n", texts[1])
+	_, err = m.RequestWhole(context.Background(), w, [][2]int{nodes[0], nodes[2]}, texts)
+	var b *mask.BlockedError
+	require.ErrorAs(t, err, &b)
+}

@@ -179,8 +179,8 @@ func (m *Masker) RequestTexts(ctx context.Context, texts []string) ([]string, er
 }
 
 // RequestWhole masks texts, the distinct texts of nodes that one request
-// sends, by what Text finds in whole: a value whose label is in another
-// node is found. nodes are where in whole the texts stand (the rest, a
+// sends, as RequestTexts does and by what Text finds in whole: a value
+// whose label is in another node is found. nodes are where in whole the texts stand (the rest, a
 // subject, is context only). A value is cut at their edges, and each piece
 // of it is masked wherever it stands in texts, at word edges, with a
 // placeholder of its own that is not learned: the value whole is. Records
@@ -227,7 +227,19 @@ func (m *Masker) RequestWhole(ctx context.Context, whole string, nodes [][2]int,
 	slices.SortStableFunc(cuts, func(a, b cut) int { return len(b.raw) - len(a.raw) })
 	out = make([]string, len(texts))
 	for i, t := range texts {
-		out[i] = replaceCuts(m.defuse(t), cuts)
+		// each text masked on its own too: read whole, two codes are no one code (mail.SignInCode)
+		o, err := m.text(t, true, true, f)
+		if err != nil {
+			b, ok := err.(*BlockedError)
+			if !ok {
+				return nil, err
+			}
+			block = block.with(b.Categories...)
+		}
+		out[i] = replaceCuts(o, cuts)
+	}
+	if block != nil {
+		return nil, block
 	}
 	return out, nil
 }
