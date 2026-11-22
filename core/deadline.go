@@ -135,8 +135,7 @@ func (s *Service) setDeadline(ctx context.Context, source string, threadID int64
 		}
 	}
 	if d.Date == "" {
-		_, err := s.db.Transaction(ctx, []sqlite.Statement{{SQL: "DELETE FROM thread_deadlines WHERE thread_id = ?", Args: []any{threadID}}, bumpReplyDates})
-		return err
+		return s.commitDeadline(ctx, sqlite.Statement{SQL: "DELETE FROM thread_deadlines WHERE thread_id = ?", Args: []any{threadID}})
 	}
 	d.Source = source
 	return s.writeDeadline(ctx, threadID, d, now)
@@ -181,17 +180,23 @@ func (s *Service) writeDeadline(ctx context.Context, threadID int64, d Deadline,
 	if d.MessageID != 0 {
 		msg = d.MessageID
 	}
-	_, err := s.db.Transaction(ctx, []sqlite.Statement{{SQL: `INSERT INTO thread_deadlines(thread_id, due_date, due_time, source, message_id, quote, set_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+	return s.commitDeadline(ctx, sqlite.Statement{SQL: `INSERT INTO thread_deadlines(thread_id, due_date, due_time, source, message_id, quote, set_at) VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(thread_id) DO UPDATE SET due_date = excluded.due_date, due_time = excluded.due_time, source = excluded.source,
 		message_id = excluded.message_id, quote = excluded.quote, set_at = excluded.set_at`,
-		Args: []any{threadID, date, d.Time, d.Source, msg, d.Quote, now.Unix()}}, bumpReplyDates})
-	return err
+		Args: []any{threadID, date, d.Time, d.Source, msg, d.Quote, now.Unix()}})
 }
 
-// bumpReplyDates moves the 期限's version with each write: a view's paging
-// cursor carries it, so the order it pages through stays the one it started.
-var bumpReplyDates = sqlite.Statement{SQL: `INSERT INTO meta(key, value) VALUES ('reply_dates_version', '1')
-	ON CONFLICT(key) DO UPDATE SET value = CAST(value AS INTEGER) + 1`}
+// commitDeadline writes st and moves the 期限's version with it: a view's
+// paging cursor carries the version, so a page never mixes two orders. The
+// views then reread, rows and order changed.
+func (s *Service) commitDeadline(ctx context.Context, st sqlite.Statement) error {
+	if _, err := s.db.Transaction(ctx, []sqlite.Statement{st, {SQL: `INSERT INTO meta(key, value) VALUES ('reply_dates_version', '1')
+		ON CONFLICT(key) DO UPDATE SET value = CAST(value AS INTEGER) + 1`}}); err != nil {
+		return err
+	}
+	s.publishView()
+	return nil
+}
 
 // deadlinesIn is the 期限 in effect for each of threadIDs that has one, read
 // now with the 回复状态 statuses: what sorting, rows and list_view_threads

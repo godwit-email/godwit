@@ -92,7 +92,8 @@ type SavedView struct {
 }
 
 // ViewRow is a conversation in a view: Status is ReplyStatusUnreplied,
-// ReplyStatusWaiting or none, WaitingDays since the user's last mail, NewReply
+// ReplyStatusWaiting or none (none too beside a Deadline where the view's
+// conditions don't ask for 回复状态), WaitingDays since the user's last mail, NewReply
 // that it is newer than its last archive, Manual that it was added by hand,
 // and Deadline its 期限 in effect (nil: none).
 type ViewRow struct {
@@ -568,6 +569,11 @@ func usesWaiting(conds []RuleCondition) bool {
 	return slices.ContainsFunc(RuleDoc{Conditions: conds}.Rows(), func(c RuleCondition) bool { return c.Field == FieldReply && c.Op == OpOlderThan })
 }
 
+// usesReply is whether conds ask for a 回复状态.
+func usesReply(conds []RuleCondition) bool {
+	return slices.ContainsFunc(RuleDoc{Conditions: conds}.Rows(), func(c RuleCondition) bool { return c.Field == FieldReply })
+}
+
 // row completes a placed conversation's status, in a view or group whose
 // conditions may ask how long it has waited.
 func (e *viewEval) row(p placedThread, waiting bool) ViewRow {
@@ -587,11 +593,11 @@ func (e *viewEval) row(p placedThread, waiting bool) ViewRow {
 // document it was read from, so one from before an edit starts over.
 func (s *Service) groupPage(ctx context.Context, e *viewEval, d SavedViewDoc, all []placedThread, index int, rev int64, cursor string, limit int) (ViewGroupPage, error) {
 	page := ViewGroupPage{ID: ViewGroupOther}
-	waiting := usesWaiting(d.Conditions)
+	waiting, reply := usesWaiting(d.Conditions), usesReply(d.Conditions)
 	if index >= 0 {
 		g := d.Groups[index]
 		page.ID, page.Name = g.ID, g.Name
-		waiting = waiting || usesWaiting(g.Conditions)
+		waiting, reply = waiting || usesWaiting(g.Conditions), reply || usesReply(g.Conditions)
 	}
 	var rows []placedThread
 	for _, p := range all {
@@ -634,7 +640,9 @@ func (s *Service) groupPage(ctx context.Context, e *viewEval, d SavedViewDoc, al
 		r := e.row(p, waiting)
 		r.ThreadSummary = items[i]
 		r.Subject = subjects[p.id]
-		r.Deadline = p.deadline
+		if r.Deadline = p.deadline; r.Deadline != nil && !reply {
+			r.Status, r.NewReply = "", false // the date alone, where 回复状态 isn't what the view is about
+		}
 		page.Items[i] = r
 	}
 	return page, nil

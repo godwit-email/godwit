@@ -93,7 +93,7 @@ type viewGroupState struct {
 // viewItem is a view's conversation as a row of group.
 func viewItem(r core.ViewRow, group string) mailItem {
 	it := threadItem(r.ThreadSummary)
-	it.Group, it.Status, it.NewReply, it.WaitingDays, it.Manual = group, r.Status, r.NewReply, r.WaitingDays, r.Manual
+	it.Group, it.Status, it.NewReply, it.WaitingDays, it.Manual, it.Deadline = group, r.Status, r.NewReply, r.WaitingDays, r.Manual, r.Deadline
 	return it
 }
 

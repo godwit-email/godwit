@@ -51,6 +51,7 @@ type mailItem struct {
 	NewReply    bool
 	WaitingDays int
 	Manual      bool
+	Deadline    *core.Deadline
 }
 
 func threadItem(t core.ThreadSummary) mailItem {
@@ -1601,10 +1602,32 @@ func (p *mailPage) row(c *ui.Context, it mailItem, toggleStar func()) ui.Element
 			} else {
 				ui.Text(c, subject).TextColor(ink).SingleLine()
 			}
-			if icon, line := p.viewLine(it); line != "" {
+			icon, line := p.viewLine(it)
+			var due string
+			var overdue bool
+			if it.Deadline != nil {
+				due, overdue = deadlineText(p.a.clock.Now(), *it.Deadline)
+				if it.Status == "" {
+					icon, line = "", "" // the date alone, with no icon
+				}
+			}
+			if line != "" || due != "" {
 				ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).TextColor(t.Muted).Children(func() {
-					ui.Icon(c, icons.Get(icon)).Size(theme.IconXs, theme.IconXs).Shrink(0)
-					kit.Text(c, line, t.Text.Xs).SingleLine()
+					if icon != "" {
+						ui.Icon(c, icons.Get(icon)).Size(theme.IconXs, theme.IconXs).Shrink(0)
+					}
+					if line != "" {
+						kit.Text(c, line, t.Text.Xs).SingleLine().Shrink(1)
+					}
+					if due != "" {
+						if line != "" {
+							kit.Text(c, "·", t.Text.Xs).Shrink(0)
+						}
+						date := kit.Text(c, due, t.Text.Xs).SingleLine().Shrink(0)
+						if overdue {
+							date.TextColor(t.Danger)
+						}
+					}
 				})
 			} else if it.Snippet != "" {
 				kit.Text(c, it.Snippet, t.Text.Xs).TextColor(t.Muted).SingleLine()

@@ -251,6 +251,27 @@ func TestViewSortsByReplyDate(t *testing.T) {
 	assert.Nil(t, e.deadlineOf(t, "d@x"), "more than 7 days overdue")
 }
 
+// A row with a reply date keeps its 回复状态 only where the view's or group's
+// conditions ask for it; elsewhere it says the date alone.
+func TestViewRowDateWithoutStatus(t *testing.T) {
+	e := dated(t)
+	status := func(d SavedViewDoc) map[string]string {
+		got, err := e.s.PreviewView(bg, d, 0, 200)
+		require.NoError(t, err)
+		out := map[string]string{}
+		for _, g := range got.Groups {
+			for _, r := range g.Items {
+				out[r.Subject] = r.Status
+			}
+		}
+		return out
+	}
+	from := cond(FieldFrom, OpContains, "a.example")
+	assert.Equal(t, map[string]string{"a": ReplyStatusUnreplied, "b": "", "c": "", "d": ReplyStatusUnreplied, "e": ""}, status(flatDoc(MatchAll, from)))
+	assert.Equal(t, map[string]string{"a": ReplyStatusUnreplied, "b": ReplyStatusUnreplied, "c": ReplyStatusUnreplied, "d": ReplyStatusUnreplied, "e": ReplyStatusUnreplied},
+		status(SavedViewDoc{Match: MatchAll, Conditions: []RuleCondition{from}, Groups: []ViewGroup{{ID: "r", Name: "R", Match: MatchAll, Conditions: []RuleCondition{condUnreplied}}}}))
+}
+
 // The reader reads a conversation's reply date outside any view, more than 7
 // days overdue too; a removed one reads as none.
 func TestThreadDeadline(t *testing.T) {
