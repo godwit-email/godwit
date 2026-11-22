@@ -276,6 +276,9 @@ var uiOnly = map[string]bool{
 	// 批准并发送 on a program's draft (ADR 0043): the approval stands for the user's click,
 	// so no program may give it. It sends nothing SendRevision could not.
 	"ApproveDraft": true,
+	// Settings' 全部去掉 for other apps' and Wit's reply dates, the user's way out when an agent
+	// wrote many: no program wipes them in bulk, and the undo writes rows past setDeadline's checks.
+	"RemoveAppAndWitDeadlines": true, "UndoRemoveAppAndWitDeadlines": true,
 }
 
 // Expose picks the *core.Service methods callable by the full role: every

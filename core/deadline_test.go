@@ -196,6 +196,9 @@ func TestDeadlineStaysLocal(t *testing.T) {
 	}
 	before := state()
 	require.NoError(t, e.s.SetThreadDeadline(bg, tid, Deadline{Date: e.day(2), MessageID: q, Quote: "Friday"}))
+	removed, err := e.s.RemoveAppAndWitDeadlines(bg)
+	require.NoError(t, err)
+	require.NoError(t, e.s.UndoRemoveAppAndWitDeadlines(bg, removed))
 	require.NoError(t, e.s.SetThreadDeadline(WithUISession(t.Context(), e.s), tid, Deadline{}))
 	assert.Equal(t, before, state())
 }
@@ -209,4 +212,51 @@ func TestDeadlineOverdue(t *testing.T) {
 	assert.False(t, e.deadlineOf(t, "q@x").Overdue, "due by the end of today")
 	require.NoError(t, e.s.SetThreadDeadline(bg, tid, Deadline{Date: e.day(-1), Time: "23:59", MessageID: q}))
 	assert.True(t, e.deadlineOf(t, "q@x").Overdue)
+}
+
+// 全部去掉 in settings takes away every date other apps and Wit set, and
+// nothing else; undoing it puts them back, but not over a date the user set since.
+func TestRemoveAppAndWitDeadlines(t *testing.T) {
+	e := newSendEnv(t, false)
+	for _, id := range []string{"p", "w", "a", "m"} {
+		e.put(t, "INBOX", eml(id+"@x", "bob+"+id+"@a.example", "alice@example.com", id, e.viewAt(1), "Reply by Friday."))
+	}
+	e.sync(t)
+	set := func(source, mid string) {
+		require.NoError(t, e.s.setDeadline(bg, source, e.threadOf(t, mid), Deadline{Date: e.day(2), Time: "09:30", MessageID: e.idOf(t, mid), Quote: "Friday"}))
+	}
+	set(DeadlineProgram, "p@x")
+	set(DeadlineWit, "w@x")
+	set(DeadlineAI, "a@x")
+	set(DeadlineManual, "m@x")
+	program := e.deadlineOf(t, "p@x")
+	count := func() int {
+		n, err := e.s.CountAppAndWitDeadlines(bg)
+		require.NoError(t, err)
+		return n
+	}
+	assert.Equal(t, 2, count())
+
+	removed, err := e.s.RemoveAppAndWitDeadlines(bg)
+	require.NoError(t, err)
+	assert.Len(t, removed, 2)
+	assert.Nil(t, e.deadlineOf(t, "p@x"))
+	assert.Nil(t, e.deadlineOf(t, "w@x"))
+	assert.Equal(t, DeadlineAI, e.deadlineOf(t, "a@x").Source)
+	assert.Equal(t, DeadlineManual, e.deadlineOf(t, "m@x").Source)
+	assert.Zero(t, count())
+
+	// Meanwhile the user sets their own date on one: undo leaves it.
+	require.NoError(t, e.s.SetThreadDeadline(WithUISession(t.Context(), e.s), e.threadOf(t, "w@x"), Deadline{Date: e.day(5)}))
+	require.NoError(t, e.s.UndoRemoveAppAndWitDeadlines(bg, removed))
+	assert.Equal(t, program, e.deadlineOf(t, "p@x"))
+	assert.Equal(t, &Deadline{Date: e.day(5), Source: DeadlineManual}, e.deadlineOf(t, "w@x"))
+	assert.Equal(t, 1, count())
+
+	// Undo writes back only app and Wit dates, never a manual or ai one.
+	forged := []RemovedDeadline{{ThreadID: e.threadOf(t, "p@x"), Date: e.day(9), Source: DeadlineManual}}
+	_, err = e.s.RemoveAppAndWitDeadlines(bg)
+	require.NoError(t, err)
+	require.NoError(t, e.s.UndoRemoveAppAndWitDeadlines(bg, forged))
+	assert.Nil(t, e.deadlineOf(t, "p@x"))
 }

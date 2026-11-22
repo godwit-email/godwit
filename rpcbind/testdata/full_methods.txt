@@ -47,6 +47,7 @@ CompleteContacts
 ContactDetail
 ContactMail
 Contacts
+CountAppAndWitDeadlines
 CreateLabel
 CreateLocalFolder
 CreateSignature

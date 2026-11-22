@@ -7,8 +7,11 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/godwit-email/godwit/core"
+	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/internal/i18n"
 	"github.com/godwit-email/godwit/internal/theme"
 )
@@ -97,6 +100,45 @@ func TestSettingsGeneralCopy(t *testing.T) {
 	h.openSettings("features")
 	h.see("总结、翻译和 Wit 的回答用这种语言")
 	h.see("为收到的邮件准备几条简短的回复")
+}
+
+// TestSettingsRemoveAppDates: AI 功能 counts the reply dates other apps and
+// Wit set; 全部去掉 removes them, its toast puts them back, and it is off at zero.
+func TestSettingsRemoveAppDates(t *testing.T) {
+	h, acc := withAccount(t)
+	m := h.deliverOne(acc, coretest.Msg("Bob <bob@a.example>", acc.Email, "Quote", "Please confirm by Friday."))
+	date := time.Now().AddDate(0, 0, 3).Format(time.DateOnly)
+	if err := h.env.Svc.SetThreadDeadline(context.Background(), m.ThreadID, core.Deadline{Date: date, MessageID: m.ID}); err != nil {
+		t.Fatal(err)
+	}
+	count := func() int {
+		n, err := h.env.Svc.CountAppAndWitDeadlines(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	h.openSettings("features")
+	h.see("其他应用和 Wit 设的回复日期")
+	h.see("1")
+	h.click("全部去掉")
+	h.see("已去掉 1 个回复日期")
+	h.until("removed", func() bool { return count() == 0 })
+	h.until("the row reads 0", func() bool { return h.tt.HasText("0") })
+	h.click("撤销")
+	h.until("back", func() bool { return count() == 1 })
+
+	_, err := h.env.Svc.RemoveAppAndWitDeadlines(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.openSettings("general")
+	h.openSettings("features") // opening the page reads the count
+	h.until("the row reads 0", func() bool { return h.tt.HasText("0") })
+	h.click("全部去掉") // disabled: nothing happens
+	if h.tt.HasText("已去掉 0 个回复日期") {
+		t.Fatal("a removal at zero")
+	}
 }
 
 // TestThemeThumbFocusTip: Tab focus shows the tooltip too.
