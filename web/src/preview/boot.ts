@@ -38,6 +38,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
       "conflict",
       "invalid",
       "late",
+      "reschedule",
       "nowit",
     ],
     entry: () => import("@/compose/main"),
@@ -52,7 +53,9 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "conflict",
         "invalid",
         "late",
+        "reschedule",
       ].includes(state);
+      const scheduledFor = state === "reschedule" ? Date.now() + 86_400_000 : 0;
       let revision = 1;
       let followed = false;
       const body = () => (revision > 1 || withBody ? fx.compose(mode, true).body : "");
@@ -80,6 +83,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "ComposePage.Load": async () => ({
           ...fx.compose(mode, withBody),
           revision,
+          scheduledFor,
           ...(state === "translate" && {
             wit: { ...fx.compose(mode, withBody).wit, translateOnly: true },
           }),
@@ -90,7 +94,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
             signatureHtml: `<p>Alex Chen<br>Partnerships · Example Co.</p><img src="${fx.logo}">`, // no "-- ": SignatureDelimiter is off by default
           }),
         }),
-        "ComposePage.Latest": async () => ({ ...fx.compose(mode, true), revision }),
+        "ComposePage.Latest": async () => ({ ...fx.compose(mode, true), revision, scheduledFor }),
         "ComposePage.WitInfo": async () => ({
           ...fx.compose(mode, false).wit,
           translateOnly: state === "translate",

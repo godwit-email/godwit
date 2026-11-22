@@ -97,6 +97,7 @@
   "compose_send_later": "稍后发送…",
   "compose_send_options": "发送选项",
   "compose_send_now": "立即发送",
+  "compose_schedule_again": "按原定时间发送（{arg1}）",
   "compose_send_tonight": "今晚 {arg1} 发送",
   "compose_send_tomorrow": "明天 {arg1} 发送",
   "compose_send_later_title": "稍后发送",

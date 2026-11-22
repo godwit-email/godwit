@@ -4,7 +4,7 @@ import { Button } from "@/components/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { type PopupMenu, popupUnder, separator } from "@/components/wit-menu";
 import { currentLocale, type T } from "@/shared/i18n";
-import { SendLaterDialog } from "./SendLaterDialog";
+import { readout, SendLaterDialog } from "./SendLaterDialog";
 
 /** The presets Send later offers at now: tonight at 21:00 while it is before then, tomorrow at 8:00. */
 export function presets(now: Date): { key: string; at: Date }[] {
@@ -25,6 +25,7 @@ export function SendBar({
   sending,
   frozen,
   anyway = false,
+  scheduledFor,
   onSend,
   onSendNow = onSend,
   onSendLater,
@@ -38,6 +39,7 @@ export function SendBar({
   frozen: boolean;
   /** Plugins warned about this send: the button reads 仍然发送, and onSend goes ahead despite them. */
   anyway?: boolean;
+  scheduledFor: number;
   onSend(): void;
   /** The menu's Send now: now, whatever onSend's warned send was for (onSend if absent). */
   onSendNow?(): void;
@@ -48,26 +50,37 @@ export function SendBar({
   t: T;
 }) {
   const [dialog, setDialog] = useState(false);
-  const [initial, setInitial] = useState(() => new Date());
+  const [initial, setInitial] = useState(() => ({ at: new Date(), n: 0 }));
   const openDialog = () => {
     const next = new Date();
-    next.setHours(next.getHours() + 1, 0, 0, 0); // the next whole hour
-    setInitial(next);
+    if (scheduledFor > next.getTime()) next.setTime(scheduledFor);
+    else next.setHours(next.getHours() + 1, 0, 0, 0);
+    setInitial(({ n }) => ({ at: next, n: n + 1 }));
     setDialog(true);
   };
   const options = async (e: React.MouseEvent<HTMLElement>) => {
-    const hm = new Intl.DateTimeFormat(currentLocale(), { hour: "numeric", minute: "2-digit" });
-    const ps = presets(new Date());
+    const loc = currentLocale();
+    const hm = new Intl.DateTimeFormat(loc, { hour: "numeric", minute: "2-digit" });
+    const now = new Date();
+    const ps = presets(now);
+    const choices = ps.map((p, i) => ({ id: `preset:${i}`, label: t(p.key, hm.format(p.at)) }));
+    if (scheduledFor > now.getTime()) {
+      choices.unshift({
+        id: "again",
+        label: t("compose.schedule_again", readout(loc, new Date(scheduledFor), now)),
+      });
+    }
     const id = await popupUnder(menu, e.currentTarget, [
       { id: "now", label: t("compose.send_now") },
       separator,
-      ...ps.map((p, i) => ({ id: `preset:${i}`, label: t(p.key, hm.format(p.at)) })),
+      ...choices,
       separator,
       { id: "later", label: t("compose.send_later") },
     ]);
     const preset = id.startsWith("preset:") ? ps[Number(id.slice("preset:".length))] : undefined;
     if (id === "now") onSendNow();
-    else if (id === "later") openDialog();
+    else if (id === "again" && scheduledFor > Date.now()) onSendLater(scheduledFor);
+    else if (id === "later" || id === "again") openDialog();
     else if (preset) onSendLater(preset.at.getTime());
   };
   const off = sending || frozen;
@@ -87,10 +100,10 @@ export function SendBar({
         <RiArrowDownSLine />
       </Button>
       <SendLaterDialog
-        key={initial.getTime()}
+        key={initial.n}
         open={dialog}
         onOpenChange={setDialog}
-        initial={initial}
+        initial={initial.at}
         off={off}
         onSchedule={onSendLater}
         t={t}

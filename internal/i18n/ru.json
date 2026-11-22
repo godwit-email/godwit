@@ -97,6 +97,7 @@
   "compose_send_later": "Отправить позже…",
   "compose_send_options": "Параметры отправки",
   "compose_send_now": "Отправить сейчас",
+  "compose_schedule_again": "Запланировать на прежнее время ({arg1})",
   "compose_send_tonight": "Отправить сегодня в {arg1}",
   "compose_send_tomorrow": "Отправить завтра в {arg1}",
   "compose_send_later_title": "Отправить позже",

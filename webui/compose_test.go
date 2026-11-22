@@ -97,7 +97,34 @@ func TestComposeLoadOwnDraft(t *testing.T) {
 	assert.Equal(t, d.Revision, st.Revision)
 	assert.Equal(t, d.UpdatedAt.UnixMilli(), st.UpdatedAt)
 	assert.NotZero(t, st.UpdatedAt)
+	assert.Zero(t, st.ScheduledFor)
 	assert.Equal(t, "system", st.Theme.Mode)
+}
+
+func TestComposeLoadScheduledForAfterReopen(t *testing.T) {
+	f := newFixture(t, coretest.WithoutAutoSync())
+	d := f.draft(t, "new", 0)
+	f.c.Attach(1, d.ID)
+	res, err := f.page.Save(f.ctx(1), ComposeEdit{To: []string{"bob@example.com"}, Revision: d.Revision})
+	require.NoError(t, err)
+	at := time.Now().Add(time.Hour).UnixMilli()
+	sent, err := f.page.Send(f.ctx(1), res.Revision, "", at)
+	require.NoError(t, err)
+	require.True(t, sent.Sent)
+	f.c.Release(1)
+	items, err := f.e.Svc.ListOutbox(t.Context(), f.acc.ID)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.NoError(t, f.e.Svc.CancelOutbox(t.Context(), items[0].ID))
+
+	for _, win := range []int{2, 3} {
+		f.c.Attach(win, d.ID)
+		st, err := f.page.Load(f.ctx(win))
+		require.NoError(t, err)
+		assert.Equal(t, at, st.ScheduledFor)
+		f.c.Release(win)
+	}
+	assert.False(t, f.queued(t, d.ID))
 }
 
 func TestComposeSaveThenLoad(t *testing.T) {

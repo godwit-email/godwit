@@ -149,6 +149,7 @@
   "compose_send_later": "Send later…",
   "compose_send_options": "Send options",
   "compose_send_now": "Send now",
+  "compose_schedule_again": "Schedule again for {arg1}",
   "compose_send_tonight": "Send tonight at {arg1}",
   "compose_send_tomorrow": "Send tomorrow at {arg1}",
   "compose_send_later_title": "Send later",

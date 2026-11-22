@@ -97,6 +97,7 @@
   "compose_send_later": "Daha sonra gönder…",
   "compose_send_options": "Gönderme seçenekleri",
   "compose_send_now": "Şimdi gönder",
+  "compose_schedule_again": "Aynı zamana yeniden planla ({arg1})",
   "compose_send_tonight": "Bu akşam {arg1} saatinde gönder",
   "compose_send_tomorrow": "Yarın {arg1} saatinde gönder",
   "compose_send_later_title": "Daha sonra gönder",

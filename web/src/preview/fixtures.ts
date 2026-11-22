@@ -62,6 +62,7 @@ export const compose = (mode: "light" | "dark", withBody: boolean): ComposeState
   revision: 1,
   theme: theme(mode),
   updatedAt: new Date().setHours(9, 52, 0, 0),
+  scheduledFor: 0,
   locale: "zh-Hans",
   fromProgram: false,
   wit: {

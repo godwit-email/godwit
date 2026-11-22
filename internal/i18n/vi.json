@@ -97,6 +97,7 @@
   "compose_send_later": "Gửi sau…",
   "compose_send_options": "Tùy chọn gửi",
   "compose_send_now": "Gửi ngay",
+  "compose_schedule_again": "Lên lịch lại vào {arg1}",
   "compose_send_tonight": "Gửi tối nay lúc {arg1}",
   "compose_send_tomorrow": "Gửi ngày mai lúc {arg1}",
   "compose_send_later_title": "Gửi sau",

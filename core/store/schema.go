@@ -862,6 +862,9 @@ var Migrations = [][]string{{
 	// A draft a program (the Local API, godwit mcp, a plugin or Wit) created or
 	// changed; local only, never an IMAP keyword (ADR 0043).
 	`ALTER TABLE drafts ADD COLUMN from_program INTEGER NOT NULL DEFAULT 0`,
+}, {
+	// 取回定时邮件时记住原定时间（Unix 毫秒），再次入队时清空。
+	`ALTER TABLE drafts ADD COLUMN scheduled_for INTEGER`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

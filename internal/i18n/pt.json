@@ -97,6 +97,7 @@
   "compose_send_later": "Enviar mais tarde…",
   "compose_send_options": "Opções de envio",
   "compose_send_now": "Enviar agora",
+  "compose_schedule_again": "Agendar novamente para {arg1}",
   "compose_send_tonight": "Enviar hoje às {arg1}",
   "compose_send_tomorrow": "Enviar amanhã às {arg1}",
   "compose_send_later_title": "Enviar mais tarde",

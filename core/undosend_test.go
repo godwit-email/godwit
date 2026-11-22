@@ -59,6 +59,7 @@ func (e *sendEnv) listed(t *testing.T, draftID int64) bool {
 func TestCancelWithinUndoWindow(t *testing.T) {
 	e := newSendEnv(t, false)
 	d := e.draftToSend(t)
+	assert.True(t, d.ScheduledFor.IsZero())
 	require.NoError(t, e.s.Send(bg, d.ID))
 	it := e.onlyItem(t)
 	assert.Equal(t, "queued", it.State)

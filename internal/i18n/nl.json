@@ -97,6 +97,7 @@
   "compose_send_later": "Later versturen…",
   "compose_send_options": "Verzendopties",
   "compose_send_now": "Nu versturen",
+  "compose_schedule_again": "Opnieuw plannen voor {arg1}",
   "compose_send_tonight": "Vanavond om {arg1} versturen",
   "compose_send_tomorrow": "Morgen om {arg1} versturen",
   "compose_send_later_title": "Later versturen",

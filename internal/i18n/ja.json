@@ -97,6 +97,7 @@
   "compose_send_later": "あとで送信…",
   "compose_send_options": "送信オプション",
   "compose_send_now": "今すぐ送信",
+  "compose_schedule_again": "元の日時に再設定（{arg1}）",
   "compose_send_tonight": "今夜 {arg1} に送信",
   "compose_send_tomorrow": "明日 {arg1} に送信",
   "compose_send_later_title": "あとで送信",

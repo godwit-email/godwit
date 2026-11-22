@@ -16,6 +16,8 @@ from `theme.json`, a copy of `webui.ThemeOf` at font size 14; zh-Hans text comes
 
 Example: `/preview.html?page=compose&state=inline&theme=dark`.
 
+用 `/preview.html?page=compose&state=reschedule` 打开取回的定时草稿，点发送选项可查看预填的原定时间。
+
 `preview.html` is not a build input; nothing here reaches `vite build`. `fake.ts` is the
 `window.mygo`, `fixtures.ts` the data, `boot.ts` picks the state and scripts what a state needs
 (`streaming`'s tool calls, `applied`'s finished run, `cmdk`'s selection and ⌘K).

@@ -178,12 +178,14 @@ func (s *Service) takeBack(ctx context.Context, id int64, state string) error {
 		return err
 	}
 	rs, err := s.db.DurableTransaction(ctx, []sqlite.Statement{
+		{SQL: `UPDATE drafts SET scheduled_for = outbox.send_at FROM outbox
+			WHERE outbox.id = ? AND outbox.state = ? AND drafts.id = outbox.draft_id`, Args: []any{id, state}},
 		{SQL: "DELETE FROM reply_records WHERE outbox_id = (SELECT id FROM outbox WHERE id = ? AND state = ? AND draft_id IS NOT NULL)", Args: []any{id, state}},
 		{SQL: "DELETE FROM outbox WHERE id = ? AND state = ? AND draft_id IS NOT NULL", Args: []any{id, state}}})
 	if err != nil {
 		return err
 	}
-	if rs[1].Changes == 0 {
+	if rs[2].Changes == 0 {
 		if r[3] == nil && store.Str(r[2]) == state {
 			return ErrNoOutboxDraft
 		}

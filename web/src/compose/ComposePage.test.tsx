@@ -93,6 +93,7 @@ const state = {
   attachments: [],
   revision: 7,
   updatedAt: new Date(2026, 9, 10, 9, 5).getTime(),
+  scheduledFor: 0,
   theme,
   locale: "zh-Hans",
   fromProgram: false,
@@ -536,7 +537,8 @@ test("cmd-enter commits pending address", async () => {
   expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ to: ["a@x.com", "x@y.z"] }));
 });
 
-test("send warnings then send anyway", async () => {
+test("有原定时间的草稿点发送，确认警告后仍然立即发送", async () => {
+  vi.mocked(api.load).mockResolvedValue({ ...state, scheduledFor: Date.now() + 3_600_000 });
   const w = { plugin: "p", message: "没有附件" };
   vi.mocked(api.send).mockResolvedValueOnce({ ...noWarnings, warnings: [w], digest: "d" });
   render(<ComposePage />);
@@ -548,17 +550,18 @@ test("send warnings then send anyway", async () => {
   expect(api.send).toHaveBeenLastCalledWith(7, "d", 0);
 });
 
-test("send later: warnings keep the time for send anyway", async () => {
+test("按原定时间发送经过发送前检查，确认警告后仍使用同一时间", async () => {
+  const at = Date.now() + 3_600_000;
+  vi.mocked(api.load).mockResolvedValue({ ...state, scheduledFor: at });
   const w = { plugin: "p", message: "没有附件" };
   vi.mocked(api.send).mockResolvedValueOnce({ ...noWarnings, warnings: [w], digest: "d" });
   render(<ComposePage />);
   await body();
+  expect(api.send).not.toHaveBeenCalled();
   vi.mocked(api.popupMenu).mockImplementationOnce(
-    async (entries) => entries.find((e) => e.label.startsWith("明天"))?.id ?? "",
+    async (entries) => entries.find((e) => e.label.startsWith("按原定时间发送"))?.id ?? "",
   );
   await userEvent.click(screen.getByRole("button", { name: "发送选项" }));
-  const at = vi.mocked(api.send).mock.calls[0][2];
-  expect(at).toBeGreaterThan(Date.now());
   expect(api.send).toHaveBeenCalledWith(7, "", at);
   await userEvent.click(screen.getByRole("button", { name: "仍然发送" }));
   expect(api.send).toHaveBeenLastCalledWith(7, "d", at);

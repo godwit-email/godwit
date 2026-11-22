@@ -93,10 +93,13 @@ export function SendLaterDialog({
   t: T;
 }) {
   const loc = currentLocale();
-  const [day, setDay] = useState(() => day0(initial));
-  const [mins, setMins] = useState(() => initial.getHours() * 60 + initial.getMinutes());
+  const [at, setAt] = useState(initial);
   const [past, setPast] = useState(false);
-  const at = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, mins);
+  const mins = at.getHours() * 60 + at.getMinutes();
+  const choose = (day: Date, minutes: number) => {
+    setAt(new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, minutes));
+    setPast(false);
+  };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="md" close={t("common.close")}>
@@ -136,12 +139,9 @@ export function SendLaterDialog({
             <Calendar
               mode="single"
               required
-              selected={day}
-              onSelect={(d) => {
-                setDay(d);
-                setPast(false);
-              }}
-              defaultMonth={day}
+              selected={at}
+              onSelect={(day) => choose(day, mins)}
+              defaultMonth={at}
               disabled={{ before: day0(new Date()) }}
               locale={dayLocale(loc)}
               components={{ DayButton }}
@@ -158,10 +158,7 @@ export function SendLaterDialog({
             <Clock
               mins={mins}
               label={t("compose.send_later.time")}
-              onChange={(v) => {
-                setMins(v);
-                setPast(false);
-              }}
+              onChange={(v) => choose(at, v)}
             />
           </div>
           <DialogDescription className="flex items-center gap-1.5 text-xs">

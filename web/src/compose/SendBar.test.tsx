@@ -8,7 +8,7 @@ import { FACE, facePoint } from "./SendLaterDialog";
 const t = makeT("zh-Hans");
 
 /** pick is the item chosen from the native menu, by its label. */
-function setup(frozen = false, sending = false, pick = "") {
+function setup(frozen = false, sending = false, pick = "", scheduledFor = 0) {
   const onSend = vi.fn();
   const onSendLater = vi.fn();
   const menu = vi.fn(
@@ -19,6 +19,7 @@ function setup(frozen = false, sending = false, pick = "") {
     <SendBar
       sending={sending}
       frozen={frozen}
+      scheduledFor={scheduledFor}
       onSend={onSend}
       onSendLater={onSendLater}
       menu={menu}
@@ -118,11 +119,59 @@ describe("at 15:30 on Sunday 15 November 2026", () => {
     vi.restoreAllMocks();
   });
 
-  const open = async () => {
-    const r = setup(false, false, "稍后发送");
+  const open = async (scheduledFor = 0) => {
+    const r = setup(false, false, "稍后发送", scheduledFor);
     await options();
     return { ...r, clock: await screen.findByRole("slider", { name: "时间" }) };
   };
+
+  const original = new Date(2026, 10, 17, 8, 17, 42, 321).getTime();
+
+  test("原定时间列在其他预设前，选中后按原毫秒值排定", async () => {
+    const { menu, onSendLater } = setup(false, false, "按原定时间发送", original);
+    expect(onSendLater).not.toHaveBeenCalled();
+    await options();
+    expect(menu.mock.calls[0][0][2].label).toBe("按原定时间发送（11月17日周二 8:17）");
+    expect(onSendLater).toHaveBeenCalledExactlyOnceWith(original);
+  });
+
+  test("对话框预填原定日期和时间，取消改动再打开仍是原值", async () => {
+    const { clock, onSendLater } = await open(original);
+    expect(screen.getByText("11月17日周二 8:17")).toBeInTheDocument();
+    fireEvent.keyDown(clock, { key: "ArrowUp" });
+    await userEvent.click(screen.getByRole("button", { name: "取消" }));
+    await options();
+    expect(screen.getByText("11月17日周二 8:17")).toBeInTheDocument();
+    expect(onSendLater).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "定时发送" }));
+    expect(onSendLater).toHaveBeenCalledExactlyOnceWith(original);
+  });
+
+  test("修改预填时间后，按新选的日期和时间排定", async () => {
+    const { clock, onSendLater } = await open(original);
+    await userEvent.click(screen.getByRole("button", { name: /11月18日/ }));
+    fireEvent.keyDown(clock, { key: "ArrowUp" });
+    await userEvent.click(screen.getByRole("button", { name: "定时发送" }));
+    expect(onSendLater).toHaveBeenCalledExactlyOnceWith(new Date(2026, 10, 18, 9, 17).getTime());
+  });
+
+  test.each([-1, 0])("原定时间距离现在 %i 毫秒时不推荐，对话框回到下一整点", async (offset) => {
+    const { menu, onSendLater } = await open(Date.now() + offset);
+    expect(menu.mock.calls[0][0].some((e) => e.label.startsWith("按原定时间发送"))).toBe(false);
+    expect(screen.getByText("今天 · 11月15日周日 16:00")).toBeInTheDocument();
+    expect(onSendLater).not.toHaveBeenCalled();
+  });
+
+  test("菜单打开期间原定时间已过，选择后要重新挑选时间", async () => {
+    const { menu, onSendLater } = setup(false, false, "", original);
+    menu.mockImplementationOnce(async (entries) => {
+      vi.setSystemTime(original);
+      return entries.find((e) => e.label.startsWith("按原定时间发送"))?.id ?? "";
+    });
+    await options();
+    expect(screen.getByText("今天 · 11月17日周二 9:00")).toBeInTheDocument();
+    expect(onSendLater).not.toHaveBeenCalled();
+  });
 
   test("the keys step the clock, the calendar picks the day, the header reads it out", async () => {
     const { onSendLater, clock } = await open();

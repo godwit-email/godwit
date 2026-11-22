@@ -257,6 +257,9 @@ func (p *ComposePage) Load(ctx context.Context) (ComposeState, error) {
 		ReplyTo: d.ReplyTo, Subject: d.Subject, Body: editable, Quote: mail.HTMLToText(s.quote),
 		Attachments: attachments(d), Revision: d.Revision,
 		UpdatedAt: d.UpdatedAt.UnixMilli(), Theme: ThemeOf(st), Locale: i18n.Language(), FromProgram: d.FromProgram}
+	if !d.ScheduledFor.IsZero() {
+		out.ScheduledFor = d.ScheduledFor.UnixMilli()
+	}
 	for _, a := range accs {
 		if a.Kind != core.KindLocalArchive && !a.ReceiveOnly { // no sender
 			out.Accounts = append(out.Accounts, Account{ID: a.ID, Email: a.Email})

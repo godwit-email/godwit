@@ -1025,6 +1025,7 @@ function Compose({
                 sending={sending}
                 frozen={locked}
                 anyway={warned}
+                scheduledFor={state.scheduledFor}
                 onSend={() => (warned ? send(warnings.digest, warnings.at) : send())}
                 onSendNow={() => send()}
                 onSendLater={(at) => send("", at)}
