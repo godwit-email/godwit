@@ -316,9 +316,6 @@ func TestResolveOnlyUncertainOrFailed(t *testing.T) {
 		r, err := e.s.db.Execute(bg, "INSERT INTO outbox(account_id, state) VALUES (?, ?)", e.acc.ID, st)
 		require.NoError(t, err)
 		for _, a := range []string{"confirm_sent", "resend", "discard", "edit"} {
-			if st == "queued" && a == "resend" {
-				continue // retry now
-			}
 			if st == "archive_uncertain" && a != "resend" {
 				continue // decidable, but never sent again
 			}

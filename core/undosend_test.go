@@ -328,7 +328,7 @@ func TestDiscardAndConfirmSentDropDraft(t *testing.T) {
 	}
 }
 
-// resend sends a failed item at once; on a queued one it keeps the window.
+// resend sends a failed item at once; retry_now on a queued one keeps the window.
 func TestResendKeepsOrSkipsWindow(t *testing.T) {
 	e := newSendEnv(t, false)
 	it := e.failNew(t)
@@ -347,7 +347,8 @@ func TestResendKeepsOrSkipsWindow(t *testing.T) {
 	out, err := e.s.ListOutbox(bg, e.acc.ID)
 	require.NoError(t, err)
 	queued := out[len(out)-1]
-	require.NoError(t, e.s.ResolveOutbox(bg, queued.ID, "resend"))
+	assert.ErrorIs(t, e.s.ResolveOutbox(bg, queued.ID, "resend"), ErrInvalidState)
+	require.NoError(t, e.s.ResolveOutbox(bg, queued.ID, "retry_now"))
 	e.sync(t)
 	assert.Len(t, e.smtp.Messages(), 1, "still within its window")
 }

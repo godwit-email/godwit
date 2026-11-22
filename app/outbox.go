@@ -122,7 +122,7 @@ func (p *mailPage) outboxActions(it core.OutboxItem, now time.Time) []outboxActi
 	switch it.State {
 	case "queued":
 		if it.NextAttempt.After(now) {
-			add("retry_now", kit.Outline, resolve("resend", nil))
+			add("retry_now", kit.Outline, resolve("retry_now", nil))
 		}
 		if it.DraftID != 0 && isScheduled(it) {
 			add("edit", kit.Outline, func() { p.cancel(it.ID, func() { p.a.plat.OpenCompose(it.DraftID) }) })

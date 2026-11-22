@@ -196,13 +196,14 @@ func (s *Service) takeBack(ctx context.Context, id int64, state string) error {
 	return nil
 }
 
-// ResolveOutbox decides an item in send_uncertain, archive_uncertain or failed:
+// ResolveOutbox decides an item in send_uncertain, archive_uncertain or failed,
+// or retries a queued one now:
 // confirm_sent treats it as sent (it is archived next), resend queues it again
 // for now (OutboxExpiry counts from then; never archive_uncertain, which the
 // server already accepted) and discard drops it; all three clear
 // its Failure, and confirm_sent and discard delete its draft. edit
-// takes a failed item back as CancelOutbox does. resend also retries a queued
-// item now, its undo window still kept.
+// takes a failed item back as CancelOutbox does. retry_now retries a queued
+// item now, its undo window still kept, and does nothing to any other.
 func (s *Service) ResolveOutbox(ctx context.Context, id int64, action string) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
@@ -214,6 +215,9 @@ func (s *Service) ResolveOutbox(ctx context.Context, id int64, action string) er
 		return err
 	}
 	if len(rows.Values) == 0 {
+		if action == "retry_now" { // sent and gone since the button was drawn
+			return nil
+		}
 		return fmt.Errorf("outbox item %d not found", id)
 	}
 	if err := s.bind(ctx, store.Int(rows.Values[0][0])); err != nil {
@@ -238,13 +242,17 @@ func (s *Service) ResolveOutbox(ctx context.Context, id int64, action string) er
 		stmts := []sqlite.Statement{
 			{SQL: `UPDATE outbox SET state = 'queued', attempts = 0, last_error = NULL, failure = NULL, send_after = ?, next_attempt_at = NULL
 				WHERE id = ? AND state IN ('send_uncertain', 'failed')`, Args: []any{s.clk().Now().UnixMilli(), id}},
-			{SQL: "UPDATE outbox SET next_attempt_at = NULL WHERE id = ? AND state = 'queued'", Args: []any{id}}, // and retries a queued one now
 		}
 		if e, audited := apiAudit(ctx, "ResolveOutbox", id); audited {
 			stmts = append(stmts, gateway.AuditChange(e, s.secrets.Redact, false))
 		}
 		rs, terr := s.db.DurableTransaction(ctx, stmts)
-		ok, err = terr == nil && rs[1].Changes == 1, terr
+		ok, err = terr == nil && rs[0].Changes == 1, terr
+	case "retry_now":
+		// Only while still queued: a stale button must not resend what has
+		// since become send_uncertain (#857), so anything else is a no-op.
+		_, err = s.db.Execute(ctx, "UPDATE outbox SET next_attempt_at = NULL WHERE id = ? AND state = 'queued'", id)
+		ok = true
 	case "discard":
 		// The draft goes with the item, in the same transaction: it is done with.
 		const decidable = "id = ? AND state IN ('send_uncertain', 'archive_uncertain', 'failed')"
@@ -632,7 +640,7 @@ func (s *Service) localSent(ctx context.Context, accountID int64) (func(context.
 //	sending → sent | send_uncertain (may have gone out) | queued (retried, login refused, sync stopped) | failed (refused, raw copy unreadable)
 //	sent | archive_uncertain → archiving → done | archive_uncertain
 //	send_uncertain → send_uncertain (could not check) | done (found in Sent)
-//	send_uncertain | archive_uncertain | failed → sent (confirm_sent); send_uncertain | failed → queued (resend); queued → queued (resend now)
+//	send_uncertain | archive_uncertain | failed → sent (confirm_sent); send_uncertain | failed → queued (resend); queued → queued (retry_now)
 //
 // Items also leave by deletion: queued (CancelOutbox) and failed (edit), with
 // their draft given back; send_uncertain, archive_uncertain and failed
