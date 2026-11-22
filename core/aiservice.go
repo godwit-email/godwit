@@ -152,12 +152,22 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 	if digest {
 		system += "\n\n" + threadDigestFormat
 	}
+	extra := ""
+	if name == "summarize" {
+		extra = s.summaryAppend
+	}
+	if extra != "" {
+		system += "\n\n" + extra
+	}
 
 	key := ""
 	if t.Kind == "message" || t.Kind == "thread" {
 		parts := []any{sk.Name, sk.Version, t.Kind, t.ID, members, model.ServiceID, model.Version, model.Model, lang, keep}
 		if digest { // apart from summaries cached before the format
 			parts = append(parts, threadDigestFormat)
+		}
+		if extra != "" {
+			parts = append(parts, extra)
 		}
 		key = cacheKey(parts...)
 		o, hit, err := s.cacheGet(ctx, key)

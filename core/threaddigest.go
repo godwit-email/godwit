@@ -20,6 +20,19 @@ Write one PROGRESS line per step where the thread moved on, oldest first, at mos
 	`for example: Bob sent the code <mail id="12"/> and resent it twice <mail id="13"/><mail id="14"/>. ` +
 	`The TODO line is the one place to say what the user is to do; leave it out when the newest email asks nothing of them.`
 
+// replyByFormat is the two lines a summary of a message or thread gives the
+// reply date in (parseReplyBy reads them), %s the user's IANA time zone.
+// Only the reply-date eval appends it for now (Service.summaryAppend,
+// replyeval_test.go); production summaries do not ask for it.
+const replyByFormat = `After the summary, add exactly these two lines, the one place to write a date as ISO YYYY-MM-DD:
+REPLY BY: YYYY-MM-DD [HH:MM] | none
+QUOTE: <the sentence in the newest email that asks for that date, copied word for word>
+REPLY BY is the date by which the newest email wants the user's reply, on the user's calendar in %s: ` +
+	`work out "Friday", "tomorrow", "end of the month" or "EOD" from that email's date (given in UTC) in that time zone. ` +
+	`Add HH:MM, 24-hour in that time zone, only when it asks for a time; when it asks for several dates, give the earliest. ` +
+	`Write none, with an empty QUOTE, when it asks for no reply by a date: when the date is one by which the sender will do something ("we'll ship by Friday"), ` +
+	`when it asks the user to do something other than reply ("pay by Friday"), or when the date is only in older or quoted emails.`
+
 // ThreadDigest is a thread's summary as summarize writes it for a thread:
 // its steps, oldest first, and what the user is to do (nil for nothing).
 type ThreadDigest struct {

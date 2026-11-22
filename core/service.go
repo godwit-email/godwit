@@ -240,6 +240,7 @@ type Service struct {
 	securityWake      chan struct{} // wakes the security scanner
 	reclaimWake       chan struct{} // wakes the free-space reclaimer (reclaimSoon)
 	labelJudge        func(context.Context) (ai.Judge, error)
+	summaryAppend     string // after summarize's prompt: the reply-date eval's replyByFormat; "" in production
 	securityJudge     func(context.Context) (ai.Judge, error)
 	securityRaw       func(context.Context, int64) ([]byte, error)
 	securityLookupTXT func(context.Context, string) ([]string, error)
