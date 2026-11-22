@@ -5,7 +5,7 @@ go 1.27.4
 require (
 	git.sr.ht/~rockorager/go-jmap v0.5.3
 	github.com/Azure/go-ntlmssp v0.1.1
-	github.com/MoeForge/moejs v0.1.0-alpha.11
+	github.com/MoeForge/moejs v0.1.1
 	github.com/clipperhouse/uax29/v2 v2.7.0
 	github.com/ebitengine/purego v0.11.3
 	github.com/egoist/mygo v0.9.1
@@ -37,6 +37,7 @@ require (
 )
 
 require (
+	github.com/MoeForge/moego v0.1.0-alpha.3 // indirect
 	github.com/ProtonMail/go-crypto v1.4.1 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/cloudflare/circl v1.6.2 // indirect
