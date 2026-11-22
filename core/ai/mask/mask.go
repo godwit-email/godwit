@@ -158,7 +158,12 @@ func (m *Masker) Learn(text string) {
 // added to f; one of a category set to Block fails it (*BlockedError), even
 // where another value overlapped it, but only once all of s is masked.
 // Learning (f.learn) masks every value, whatever its category's action.
-func (m *Masker) text(s string, defuse, read bool, f *Found) (string, error) {
+func (m *Masker) text(s string, defuse, read bool, f *Found) (_ string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("mask: %v", r)
+		}
+	}()
 	s, spans, block, err := m.spans(s, defuse, read, f)
 	if err != nil {
 		return "", err

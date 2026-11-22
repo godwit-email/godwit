@@ -129,8 +129,8 @@ func (b boundTranslator) maskTexts(ctx context.Context, texts []string) ([]strin
 	return b.masker.RequestTexts(ctx, texts)
 }
 
-// maskWhole is maskTexts for texts, the nodes of read, masked by what read
-// holds whole (mask.RequestWhole).
+// maskWhole is maskTexts for texts, the distinct texts of read's nodes,
+// masked by what read holds whole (mask.RequestWhole).
 func (b boundTranslator) maskWhole(ctx context.Context, read bodyRead, texts []string) ([]string, error) {
 	if b.masker == nil || !b.masker.On() {
 		return texts, nil

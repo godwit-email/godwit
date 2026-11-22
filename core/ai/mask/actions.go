@@ -2,6 +2,7 @@ package mask
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -177,15 +178,21 @@ func (m *Masker) RequestTexts(ctx context.Context, texts []string) ([]string, er
 	return out, nil
 }
 
-// RequestWhole masks texts, the pieces of whole one request sends, by
-// what Text finds in whole: a value whose label is in another piece is
-// found. nodes are where in whole the pieces stand (the rest, a subject,
-// is context only). A value is cut at their edges, and each piece of it is
-// masked wherever it stands in texts, at word edges, with a placeholder of
-// its own that is not learned. Records what whole held as Request does.
-func (m *Masker) RequestWhole(ctx context.Context, whole string, nodes [][2]int, texts []string) ([]string, error) {
+// RequestWhole masks texts, the distinct texts of nodes that one request
+// sends, by what Text finds in whole: a value whose label is in another
+// node is found. nodes are where in whole the texts stand (the rest, a
+// subject, is context only). A value is cut at their edges, and each piece
+// of it is masked wherever it stands in texts, at word edges, with a
+// placeholder of its own that is not learned: the value whole is. Records
+// what whole held as Request does.
+func (m *Masker) RequestWhole(ctx context.Context, whole string, nodes [][2]int, texts []string) (out []string, err error) {
 	f := new(Found)
 	defer m.sent(ctx, f)
+	defer func() {
+		if r := recover(); r != nil {
+			out, err = nil, fmt.Errorf("mask: %v", r)
+		}
+	}()
 	if err := m.learnNames(whole); err != nil {
 		return nil, err
 	}
@@ -198,26 +205,27 @@ func (m *Masker) RequestWhole(ctx context.Context, whole string, nodes [][2]int,
 	}
 	var cuts []cut
 	for _, sp := range spans {
+		p, err := m.placeholder(sp.kind, sp.value, sp.recognized, sp.own)
+		if err != nil {
+			return nil, err
+		}
 		for _, n := range nodes {
 			lo, hi := max(sp.start, n[0]), min(sp.end, n[1])
 			raw := strings.TrimSpace(s[lo:max(lo, hi)])
 			if raw == "" {
 				continue
 			}
-			var p string
-			if lo == sp.start && hi == sp.end {
-				p, err = m.placeholder(sp.kind, sp.value, sp.recognized, sp.own)
-			} else {
-				p, err = m.fragment(sp.kind, raw)
+			c := cut{raw, p}
+			if lo != sp.start || hi != sp.end {
+				if c.placeholder, err = m.fragment(sp.kind, raw); err != nil {
+					return nil, err
+				}
 			}
-			if err != nil {
-				return nil, err
-			}
-			cuts = append(cuts, cut{raw, p})
+			cuts = append(cuts, c)
 		}
 	}
 	slices.SortStableFunc(cuts, func(a, b cut) int { return len(b.raw) - len(a.raw) })
-	out := make([]string, len(texts))
+	out = make([]string, len(texts))
 	for i, t := range texts {
 		out[i] = replaceCuts(m.defuse(t), cuts)
 	}
@@ -225,7 +233,7 @@ func (m *Masker) RequestWhole(ctx context.Context, whole string, nodes [][2]int,
 }
 
 // cut is a piece of a value, raw, and its placeholder.
-type cut struct{ raw, p string }
+type cut struct{ raw, placeholder string }
 
 // replaceCuts is s with each cut in it, the longest first, replaced by its
 // placeholder, where it does not run on into a word.
@@ -244,7 +252,7 @@ func replaceCuts(s string, cuts []cut) string {
 				continue
 			}
 			b.WriteString(s[last:i])
-			b.WriteString(c.p)
+			b.WriteString(c.placeholder)
 			last, i = j, j-1
 			break
 		}
