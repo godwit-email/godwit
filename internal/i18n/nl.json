@@ -571,6 +571,7 @@
   "reader_attachments_select_item": "{arg1} selecteren",
   "reader_attachments_downloading": "{arg1} wordt gedownload",
   "reader_attachments_cancel_download": "Downloaden van {arg1} annuleren",
+  "reader_attachments_drag_hint": "Open of bewaar het om het eruit te slepen",
   "reader_attachments_count": "{arg1, plural, one {{arg1, number, ::group-off} bijlage} other {{arg1, number, ::group-off} bijlagen}}",
   "reader_attachments_selected": "{arg1, number, ::group-off} van {arg2, number, ::group-off} geselecteerd",
   "reader_attachments_save_all": "Alles opslaan…",

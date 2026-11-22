@@ -187,11 +187,6 @@ type msgBody struct {
 
 	timing bodyTiming // how long the body took to show (GODWIT_READER_TIMING)
 
-	// staged is each attachment's copy under its own name (by attachment ID),
-	// made as soon as the message shows so a drag can hand Finder a real file.
-	staged  map[int64]string
-	started map[int64]bool // attachments whose copy was begun
-
 	unsub     core.Unsubscribe // how it unsubscribes, by its headers; none until asked
 	unsubbing bool             // its unsubscribe is under way
 	attSel    map[int64]bool   // selected attachment IDs for batch save
@@ -480,61 +475,8 @@ func (r *reader) loadBody(id int64) {
 		r.openView(id)
 		r.loadAvatar(id, b.avatarAllow)
 		r.loadUnsubscribe(id)
-		r.stageAttachments(id, b)
+		a.stageCached(m.Attachments)
 	})
-}
-
-// maxStagedBytes is the largest attachment copied ahead for dragging. A
-// bigger one is still opened and saved, just not draggable.
-const maxStagedBytes = 256 << 20
-
-// stageAttachments downloads message id's attachments (the cache fetches
-// them from the server) and copies each, under its own name, into a
-// directory Close removes. A chip is draggable once its copy exists: the
-// drag must offer a file the moment it starts, so it cannot wait for the
-// download.
-func (r *reader) stageAttachments(id int64, b *msgBody) {
-	a, s := r.p.a, r.session
-	for _, att := range b.msg.Attachments {
-		if att.Inline || b.started[att.ID] || att.Size > maxStagedBytes {
-			continue
-		}
-		if b.started == nil {
-			b.started = map[int64]bool{}
-		}
-		b.started[att.ID] = true
-		a.do(func(ctx context.Context) error {
-			path, err := a.stageAttachment(ctx, att)
-			if err != nil {
-				return err
-			}
-			a.onUI(func() {
-				if !r.has(s) || r.bodies[id] != b {
-					return
-				}
-				if b.staged == nil {
-					b.staged = map[int64]string{}
-				}
-				b.staged[att.ID] = path
-			})
-			return nil
-		}, nil) // best effort: without a copy the chip still opens and saves
-	}
-}
-
-// stageAttachment copies the attachment, under its own name, to a new
-// directory in the platform's temporary one and returns its path.
-func (a *App) stageAttachment(ctx context.Context, att core.AttachmentInfo) (string, error) {
-	src, _, err := a.svc.GetAttachment(ctx, att.ID)
-	if err != nil {
-		return "", err
-	}
-	dir, err := a.tempDir(a.plat.TempDir())
-	if err != nil {
-		return "", err
-	}
-	dst := filepath.Join(dir, core.FileName(att.Filename, "attachment"))
-	return dst, copyFile(src, dst)
 }
 
 // loadUnsubscribe asks how message id unsubscribes after its body shows:
@@ -2365,10 +2307,15 @@ func (r *reader) attachments(c *ui.Context, b *msgBody) {
 				checked := multi && b.attSel[att.ID]
 				chip := ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1.5)).Padding(th.Space(2), th.Space(2.5)).
 					Radius(t.Radius.Lg).AlignItems(ui.Center)
-				if path, ok := b.staged[att.ID]; ok { // dragging it out hands over the file itself
+				dragged := false
+				if path, ok := r.p.a.staged[att.ID]; ok { // dragging it out hands over its copy
 					if data, err := transfer.FileData(path); err == nil {
 						chip.DragData(data, transfer.DragOptions{Operations: transfer.Copy})
+						dragged = true
 					}
+				}
+				if !dragged && r.p.a.downloadState(att.ID) == downloadNone {
+					kit.Tooltip(c, chip, i18n.T("reader.attachments.drag_hint"))
 				}
 				kit.ChoiceCard(c, chip, kit.ChoiceCardOpts{Selected: checked}, func() {
 					if multi {

@@ -571,6 +571,7 @@
   "reader_attachments_select_item": "Chọn {arg1}",
   "reader_attachments_downloading": "Đang tải {arg1}",
   "reader_attachments_cancel_download": "Hủy tải {arg1}",
+  "reader_attachments_drag_hint": "Mở hoặc lưu để có thể kéo ra",
   "reader_attachments_count": "{arg1, number, ::group-off} tệp đính kèm",
   "reader_attachments_selected": "Đã chọn {arg1, number, ::group-off} / {arg2, number, ::group-off}",
   "reader_attachments_save_all": "Lưu tất cả…",

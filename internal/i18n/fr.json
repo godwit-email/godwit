@@ -571,6 +571,7 @@
   "reader_attachments_select_item": "Sélectionner {arg1}",
   "reader_attachments_downloading": "Téléchargement de {arg1}",
   "reader_attachments_cancel_download": "Annuler le téléchargement de {arg1}",
+  "reader_attachments_drag_hint": "Ouvrez-le ou enregistrez-le pour pouvoir le glisser",
   "reader_attachments_count": "{arg1, plural, one {{arg1, number, ::group-off} pièce jointe} many {{arg1, number, ::group-off} pièces jointes} other {{arg1, number, ::group-off} pièces jointes}}",
   "reader_attachments_selected": "{arg1, number, ::group-off} sur {arg2, number, ::group-off} sélectionnés",
   "reader_attachments_save_all": "Tout enregistrer…",
