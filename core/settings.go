@@ -705,9 +705,9 @@ func (s *Service) UnblockSender(ctx context.Context, addr string) error {
 // where another folder holds the role.
 const inJunk = "'junk' IN (f.role, f.role_override)"
 
-// msgInJunk is whether message alias m shows in any junk folder, though it
-// also shows in the inbox (a Gmail label): ImagesAllowed, SenderAvatar and
-// Message.InJunk agree.
+// msgInJunk is whether message alias m shows in a junk folder, even if it
+// also shows in the inbox (a Gmail label): ImagesAllowed, SenderAvatar,
+// Message.InJunk and unsubscribing agree.
 const msgInJunk = "EXISTS (SELECT 1 FROM message_locations l JOIN folders f ON f.id = l.folder_id WHERE l.message_id = m.id AND l.shown AND " + inJunk + ")"
 
 // ImagesAllowed is whether message's remote images load without asking, by

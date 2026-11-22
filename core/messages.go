@@ -60,8 +60,8 @@ type Message struct {
 	// TrackersBlocked counts the tracking pixels dropped from HTML, whatever
 	// the remote images setting or the sender's trust.
 	TrackersBlocked int
-	// InJunk: any folder it shows in is junk, detected or given (even where
-	// another folder holds the role), so its sender's images are never trusted.
+	// InJunk: one of the folders it shows in is junk, detected or given (even
+	// where another folder holds the role), so its sender's images are never trusted.
 	InJunk      bool
 	Attachments []AttachmentInfo
 	AuthResults string

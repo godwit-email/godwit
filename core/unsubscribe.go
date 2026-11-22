@@ -155,8 +155,8 @@ func (s *Service) NewMailtoDraft(ctx context.Context, accountID int64, link stri
 }
 
 func (s *Service) unsubscribeMethod(ctx context.Context, messageID int64) (Unsubscribe, error) {
-	rows, err := s.db.Query(ctx, "SELECT m.account_id, m.list_unsubscribe, m.list_unsubscribe_post, m.list_id, "+inJunk+
-		" OR (SELECT kind FROM accounts WHERE id = m.account_id) = ? FROM messages m LEFT JOIN folders f ON f.id = "+shownFolder+" WHERE m.id = ?", KindLocalArchive, messageID)
+	rows, err := s.db.Query(ctx, "SELECT m.account_id, m.list_unsubscribe, m.list_unsubscribe_post, m.list_id, "+msgInJunk+
+		" OR (SELECT kind FROM accounts WHERE id = m.account_id) = ? FROM messages m WHERE m.id = ?", KindLocalArchive, messageID)
 	if err != nil {
 		return Unsubscribe{}, err
 	}
