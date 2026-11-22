@@ -535,9 +535,17 @@ func TestSettingsRulesListHeight(t *testing.T) {
 		}
 	}
 	h.openSettings("rules")
-	h.see("C")
+	footer := i18n.T("settings.rules.list.foot")
+	h.see(footer)
 	h.tt.Frame()
-	foot := func() float32 { r, _ := h.tt.Find(i18n.T("settings.rules.list.foot")); return r.Y }
+	foot := func() float32 {
+		t.Helper()
+		r, ok := h.tt.Find(footer)
+		if !ok {
+			t.Fatal("rule list footer is missing")
+		}
+		return r.Y
+	}
 	closed := foot()
 	h.click("展开最近命中")
 	h.see("删除规则")
