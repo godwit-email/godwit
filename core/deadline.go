@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/plugins/sqlite"
+	"github.com/godwit-email/godwit/core/events"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/godwit-email/godwit/internal/i18n"
 )
@@ -217,6 +218,94 @@ func (s *Service) deadlinesIn(ctx context.Context, now time.Time, statuses map[i
 		out[tid] = d
 	}
 	return out, nil
+}
+
+// RemovedDeadline is one row RemoveAppAndWitDeadlines took away, as stored.
+type RemovedDeadline struct {
+	ThreadID  int64
+	Date      string
+	Time      string
+	MessageID int64
+	Quote     string
+	Source    string
+	SetAt     int64
+}
+
+// CountAppAndWitDeadlines is how many 期限 other apps (program) and Wit have
+// written, in effect or not: what RemoveAppAndWitDeadlines would take away.
+func (s *Service) CountAppAndWitDeadlines(ctx context.Context) (int, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return 0, err
+	}
+	defer end()
+	rows, err := s.db.Query(ctx, "SELECT count(*) FROM thread_deadlines WHERE source IN (?, ?)", DeadlineProgram, DeadlineWit)
+	if err != nil {
+		return 0, err
+	}
+	return int(store.Int(rows.Values[0][0])), nil
+}
+
+// RemoveAppAndWitDeadlines deletes every 期限 other apps (program) and Wit
+// wrote, in effect or not, and returns them for UndoRemoveAppAndWitDeadlines:
+// settings' 全部去掉, for when an injected agent wrote many. Manual and ai
+// dates stay.
+func (s *Service) RemoveAppAndWitDeadlines(ctx context.Context) ([]RemovedDeadline, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer end()
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
+	rows, err := s.db.Query(ctx, `DELETE FROM thread_deadlines WHERE source IN (?, ?)
+		RETURNING thread_id, COALESCE(due_date, ''), due_time, COALESCE(message_id, 0), quote, source, set_at`, DeadlineProgram, DeadlineWit)
+	if err != nil {
+		return nil, err
+	}
+	var out []RemovedDeadline
+	var threads []int64
+	for _, r := range rows.Values {
+		out = append(out, RemovedDeadline{ThreadID: store.Int(r[0]), Date: store.Str(r[1]), Time: store.Str(r[2]), MessageID: store.Int(r[3]),
+			Quote: store.Str(r[4]), Source: store.Str(r[5]), SetAt: store.Int(r[6])})
+		threads = append(threads, store.Int(r[0]))
+	}
+	if len(threads) > 0 {
+		s.bus.Publish(events.Event{Type: events.MessagesChanged, ThreadIDs: threads})
+	}
+	return out, nil
+}
+
+// UndoRemoveAppAndWitDeadlines writes back what RemoveAppAndWitDeadlines
+// returned: program and wit rows only, and none over a 期限 written since.
+func (s *Service) UndoRemoveAppAndWitDeadlines(ctx context.Context, removed []RemovedDeadline) error {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer end()
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
+	var stmts []sqlite.Statement
+	var threads []int64
+	for _, d := range removed {
+		if d.Source != DeadlineProgram && d.Source != DeadlineWit || d.Date == "" {
+			continue
+		}
+		threads = append(threads, d.ThreadID)
+		// The thread or message may be gone since: the SELECT skips the one, the subquery NULLs the other.
+		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO thread_deadlines(thread_id, due_date, due_time, source, message_id, quote, set_at)
+			SELECT id, ?, ?, ?, (SELECT id FROM messages WHERE id = ?), ?, ? FROM threads WHERE id = ? ON CONFLICT(thread_id) DO NOTHING`,
+			Args: []any{d.Date, d.Time, d.Source, d.MessageID, d.Quote, d.SetAt, d.ThreadID}})
+	}
+	if len(stmts) == 0 {
+		return nil
+	}
+	if _, err := s.db.Transaction(ctx, stmts); err != nil {
+		return err
+	}
+	s.bus.Publish(events.Event{Type: events.MessagesChanged, ThreadIDs: threads})
+	return nil
 }
 
 // manualDeadlineInEffect is whether a manual 期限 set at setAt is in effect.

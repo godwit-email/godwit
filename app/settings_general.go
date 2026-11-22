@@ -3,6 +3,7 @@ package app
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"math"
 	"reflect"
 	"slices"
@@ -486,6 +487,21 @@ func (p *settingsPage) aiFeaturesView(c *ui.Context) {
 		sw(&st.Summary, i18n.T("settings.summary"), i18n.T("settings.summary.help")),
 		sw(&st.QuickReplies, i18n.T("settings.quick_replies"), i18n.T("settings.quick_replies.help")),
 		sw(&st.RuleAI, i18n.T("settings.rule_ai"), i18n.T("settings.rule_ai.help")))
+	settingsSection(c, "", "", func() {
+		settingRow(c, i18n.T("settings.app_deadlines"), i18n.T("settings.app_deadlines.help"), func() ui.Element {
+			n := "…"
+			if p.appDates >= 0 {
+				n = strconv.Itoa(p.appDates)
+			}
+			ui.Row(c).Gap(c.Theme().Space(3)).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, n).TextColor(theme.Of(c).Muted)
+				if rowButton(c, i18n.T("settings.app_deadlines.remove"), kit.Outline, p.appDates <= 0).Clicked() {
+					p.removeAppDates()
+				}
+			})
+			return ui.Element{}
+		})
+	})
 	settingsSection(c, i18n.T("settings.language"), "",
 		sel(i18n.T("settings.reading_language"), i18n.T("settings.reading_language.help"), func() ui.Element {
 			opts := []kit.Option[string]{{Value: "", Label: i18n.T("settings.reading_language.ui")}}
@@ -506,6 +522,44 @@ func (p *settingsPage) aiFeaturesView(c *ui.Context) {
 		func() {
 			settingRow(c, i18n.T("settings.no_translate"), i18n.T("settings.no_translate.help"), func() ui.Element { return p.noTranslate(c) })
 		})
+}
+
+// readAppDates reads how many reply dates other apps and Wit set, for AI 功能.
+func (p *settingsPage) readAppDates() {
+	a := p.a
+	var n int
+	a.query(func(ctx context.Context) (err error) { n, err = a.svc.CountAppAndWitDeadlines(ctx); return err }, func(err error) {
+		if err == nil {
+			p.appDates = n
+		}
+	})
+}
+
+// removeAppDates is 全部去掉: every reply date other apps and Wit set goes,
+// with a toast to put them back.
+func (p *settingsPage) removeAppDates() {
+	a := p.a
+	var removed []core.RemovedDeadline
+	a.do(func(ctx context.Context) (err error) { removed, err = a.svc.RemoveAppAndWitDeadlines(ctx); return err }, func(err error) {
+		p.readAppDates()
+		if err != nil {
+			a.toastErr(err)
+			return
+		}
+		if len(removed) == 0 {
+			return
+		}
+		now := a.clock.Now()
+		a.toasts = append(a.toasts, ui.Toast{ID: fmt.Sprintf("app-dates-%d", now.UnixNano()), Title: i18n.Tf("settings.app_deadlines.removed", len(removed)),
+			Action: i18n.T("compose.undo"), Timeout: viewUndoWindow, Data: kit.ToastData{Deadline: now.Add(viewUndoWindow)}, OnAction: func() {
+				a.do(func(ctx context.Context) error { return a.svc.UndoRemoveAppAndWitDeadlines(ctx, removed) }, func(err error) {
+					if err != nil {
+						a.toastErr(err)
+					}
+					p.readAppDates()
+				})
+			}})
+	})
 }
 
 // themeTile is a small picture of the window in a theme: rail, sidebar and

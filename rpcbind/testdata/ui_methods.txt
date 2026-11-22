@@ -22,6 +22,7 @@ PrepareModelStream
 PreviewAccountImportFile
 RawMessageFile
 RecentLog
+RemoveAppAndWitDeadlines
 ReplaceUIBackend
 SendLater
 SenderAvatar
@@ -34,3 +35,4 @@ StopUIBackend
 StoreLatestVersion
 SystemTranslatorLanguages
 TrayShown
+UndoRemoveAppAndWitDeadlines

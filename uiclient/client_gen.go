@@ -189,6 +189,10 @@ func (cl *Client) Contacts(ctx context.Context) ([]core.Contact, error) {
 	return call[[]core.Contact](cl, ctx, "Contacts")
 }
 
+func (cl *Client) CountAppAndWitDeadlines(ctx context.Context) (int, error) {
+	return call[int](cl, ctx, "CountAppAndWitDeadlines")
+}
+
 func (cl *Client) CreateLabel(ctx context.Context, in core.LabelInput) (core.Label, error) {
 	return call[core.Label](cl, ctx, "CreateLabel", in)
 }
@@ -617,6 +621,10 @@ func (cl *Client) RemoveAddressBook(ctx context.Context, id int64) error {
 	return callErr(cl, ctx, "RemoveAddressBook", id)
 }
 
+func (cl *Client) RemoveAppAndWitDeadlines(ctx context.Context) ([]core.RemovedDeadline, error) {
+	return call[[]core.RemovedDeadline](cl, ctx, "RemoveAppAndWitDeadlines")
+}
+
 func (cl *Client) RemoveAttachmentAt(ctx context.Context, draftID int64, attachmentID int64, revision int64) (int64, error) {
 	return call[int64](cl, ctx, "RemoveAttachmentAt", draftID, attachmentID, revision)
 }
@@ -939,6 +947,10 @@ func (cl *Client) UndoLastAssist(ctx context.Context, draftID int64) error {
 
 func (cl *Client) UndoPurge(ctx context.Context, ids []int64) (int, error) {
 	return call[int](cl, ctx, "UndoPurge", ids)
+}
+
+func (cl *Client) UndoRemoveAppAndWitDeadlines(ctx context.Context, removed []core.RemovedDeadline) error {
+	return callErr(cl, ctx, "UndoRemoveAppAndWitDeadlines", removed)
 }
 
 func (cl *Client) UndoRuleRun(ctx context.Context, runID int64) (int, error) {

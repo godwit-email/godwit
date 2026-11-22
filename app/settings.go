@@ -87,6 +87,7 @@ type settingsPage struct {
 	keychain    error // the keychain probe's result
 	keychainSet bool  // the probe finished
 	imgSize     int64 // the remote image cache's bytes; -1 until read
+	appDates    int   // reply dates other apps and Wit set (AI 功能); -1 until read
 
 	// The signature page, made once (NewSignatureView), and the signature
 	// it shows; sigPosted is a switch queued.
@@ -138,7 +139,7 @@ type settingsPage struct {
 }
 
 func newSettingsPage(a *App) *settingsPage {
-	return &settingsPage{a: a, forms: map[int64]*accountForm{}, usage: map[int64]int64{}, imgSize: -1, boxes: map[int64]*mailbox{}, reauth: map[int64]bool{}, rechecking: map[int64]bool{}, sigDocs: map[int64]sigDoc{},
+	return &settingsPage{a: a, forms: map[int64]*accountForm{}, usage: map[int64]int64{}, imgSize: -1, appDates: -1, boxes: map[int64]*mailbox{}, reauth: map[int64]bool{}, rechecking: map[int64]bool{}, sigDocs: map[int64]sigDoc{},
 		secDays: 30,
 		update:  a.svc.UpdateAccount, models: &modelsView{a: a, checkService: a.svc.CheckModelService, testService: a.svc.TestCapability, testPlugin: a.svc.TestPluginModel, serviceAvatar: a.svc.ModelServiceAvatar}, ext: &extView{a: a}, labels: newLabelsView(a), rules: &rulesView{a: a}, addressBooks: newAddressBooksView(a)}
 }
@@ -194,6 +195,9 @@ func (p *settingsPage) refresh(hints []events.Event) {
 		p.readUsage(acc.ID)
 		p.readMailbox(acc.ID)
 	case sec == "models" || sec == "features" || sec == "mcp" || sec == "clients":
+		if sec == "features" && hints == nil {
+			p.readAppDates()
+		}
 		if hints == nil || slices.ContainsFunc(hints, func(ev events.Event) bool { return extChange(ev) || ev.Type == events.ModelsChanged }) { // a plugin's models come and go with it
 			p.models.load()
 		}
