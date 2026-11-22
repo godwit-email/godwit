@@ -243,7 +243,7 @@ var uiOnly = map[string]bool{
 	// Attachment cache paths in the data directory, for a same-machine interface's drag
 	// (ADR 0044); full reads attachments with GetAttachment.
 	"CachedAttachments": true,
-	"CachedImage": true, "CachedImageDims": true, "ForgetImageFailure": true,
+	"CachedImage":       true, "CachedImageDims": true, "ForgetImageFailure": true,
 	// Results too large for one response, written as 0600 files in the data directory: a
 	// message's original (up to MaxMessageBytes) and the account export.
 	"RawMessageFile": true, "ExportAccountsFile": true,
