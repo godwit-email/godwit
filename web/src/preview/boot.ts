@@ -60,7 +60,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
       let followed = false;
       const body = () => (revision > 1 || withBody ? fx.compose(mode, true).body : "");
       const changed = (): BodyChange => {
-        const { to, cc, bcc, replyTo, subject } = fx.compose(mode, true);
+        const { from, quote, to, cc, bcc, replyTo, subject } = fx.compose(mode, true);
         return {
           revision,
           attachments: [],
@@ -68,6 +68,8 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
           signatureHtml: "",
           updatedAt: Date.now(),
           body: body(),
+          from,
+          quote,
           to,
           cc,
           bcc,

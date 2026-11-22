@@ -415,6 +415,18 @@ function Compose({
     saver.current?.useLatest(l.revision, cur.current);
   };
 
+  // The whole draft as stored, as a reload or a decision returns it: a send passes its revision, so
+  // the account, attachments and quote shown must be its too, not only what the page edits.
+  const take = (l: BodyChange | ComposeState) => {
+    adopt(l);
+    setFrom(l.from);
+    setFromProgram(l.fromProgram);
+    setSignature(sigOf(l));
+    setQuote(l.quote);
+    setAttachments(l.attachments);
+    setSavedAt(fmt(new Date(l.updatedAt)));
+  };
+
   // Reads the draft after a run or a decision; the newest read wins. Skipped in conflict, when the
   // stored revision is not newer, or with a local edit since the run; while the saver is busy,
   // read again once it is idle.
@@ -432,8 +444,7 @@ function Compose({
       }
       if (s.status === "conflict" || s.dirty || l.revision <= s.revision) return;
       if (edits.current !== runEdits.current) return;
-      adopt(l);
-      setFromProgram(l.fromProgram);
+      take(l);
       setApplied(true);
     } catch (e) {
       if (n === reloads.current) setReloadErr(witError(message(e), t));
@@ -632,11 +643,7 @@ function Compose({
     try {
       const r = await sv.run(op);
       if (r && !r.conflict) {
-        adopt(r);
-        setFromProgram(r.fromProgram);
-        setSignature(sigOf(r));
-        setAttachments(r.attachments);
-        setSavedAt(fmt(new Date(r.updatedAt)));
+        take(r);
       }
       return r;
     } catch (e) {

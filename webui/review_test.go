@@ -273,8 +273,8 @@ func TestReviewSubjectOps(t *testing.T) {
 	assert.Empty(t, ops("Same", "Same"))
 }
 
-// A decision adopts the draft as stored: recipients a program added since
-// come with it, so the page shows what it would send.
+// A decision adopts the draft as stored: recipients and the account a
+// program changed since come with it, so the page shows what it would send.
 func TestComposeDecideRecipients(t *testing.T) {
 	f, d, llm := witFixture(t, inlineOld)
 	a := f.propose(t, llm, inlineNew)
@@ -287,4 +287,5 @@ func TestComposeDecideRecipients(t *testing.T) {
 	require.False(t, bc.Conflict)
 	assert.Equal(t, []string{"eve@example.com"}, bc.Bcc)
 	assert.Equal(t, []string{"ann@example.com"}, bc.To)
+	assert.Equal(t, s.AccountID, bc.From)
 }

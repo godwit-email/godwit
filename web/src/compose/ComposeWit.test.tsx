@@ -216,6 +216,8 @@ const inline: Review = {
 };
 const change = (body: string, revision: number): BodyChange => ({
   revision,
+  from: state.from,
+  quote: state.quote,
   to: state.to,
   cc: [],
   bcc: [],
@@ -999,11 +1001,16 @@ test.each([
   expect(within(card).queryByRole("button", { name: "调整" })).toBeNull();
 });
 
-test("a reload shows the recipients changed behind the window", async () => {
-  vi.mocked(api.latest).mockResolvedValue({ ...latest("Wit 写的", 9), bcc: ["eve@x.com"] });
+test("a reload shows the recipients and attachments changed behind the window", async () => {
+  vi.mocked(api.latest).mockResolvedValue({
+    ...latest("Wit 写的", 9),
+    bcc: ["eve@x.com"],
+    attachments: [{ id: 3, filename: "plan.pdf", size: 10 }],
+  });
   await setup();
   emit({ kind: "done" });
   expect(await screen.findByRole("button", { name: "移除 eve@x.com" })).toBeInTheDocument();
+  expect(screen.getByText("plan.pdf")).toBeInTheDocument();
   expect(screen.queryByRole("alert")).toBeNull(); // nothing was being typed
 });
 
