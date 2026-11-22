@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -318,4 +319,143 @@ func TestViewPagingAcrossAReplyDate(t *testing.T) {
 	next, err := e.s.ViewGroupPage(bg, id, ViewGroupOther, again.NextCursor, 2)
 	require.NoError(t, err)
 	assert.Equal(t, "a", next.Items[0].Subject)
+}
+
+// witOn gives e's service a default model on a fake openai service, for Wit.
+func (e *sendEnv) witOn(t *testing.T) *testllm.Server {
+	t.Helper()
+	srv := testllm.Start(t, "openai")
+	_, err := e.s.AddModelService(bg, ModelServiceInput{Name: "x", Kind: "openai", BaseURL: srv.URL, APIKey: "k", Models: []string{"m1"}})
+	require.NoError(t, err)
+	st, err := e.s.GetSettings(bg)
+	require.NoError(t, err)
+	st.DefaultModel = "x/m1"
+	_, err = e.s.SetSettings(bg, st)
+	require.NoError(t, err)
+	return srv
+}
+
+// Wit sets a reply date, source wit, once the user approves; 本次对话都允许
+// approves its later calls, which still cannot replace or clear the user's own
+// date. A call the checks refuse goes back to the model with no approval.
+func TestDeadlineWit(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("q@x", "bob@a.example", "alice@example.com", "quote", e.viewAt(1), "Please confirm the quote by Friday."))
+	e.sync(t)
+	srv := e.witOn(t)
+	conv, err := e.s.NewConversation(bg, "ask", 0)
+	require.NoError(t, err)
+	sub, unsub := e.s.SubscribeConversation(conv.ID)
+	defer unsub()
+	set := func(args string) testllm.Turn {
+		return testllm.Turn{Calls: []testllm.Call{{Name: "set_reply_deadline", Args: args}}}
+	}
+	ask := func(turns ...testllm.Turn) WitEvent {
+		srv.Script(append(turns, testllm.Turn{Text: []string{"ok"}})...)
+		ch, err := e.s.Ask(bg, conv.ID, "Bob needs a reply by Friday")
+		require.NoError(t, err)
+		evs := drainWit(t, ch)
+		return evs[len(evs)-1]
+	}
+
+	last := ask(found("quote"), set(`{"id":1,"date":"`+e.day(3)+`","time":"15:00","quote":"by  Friday"}`))
+	require.Equal(t, "interrupted", last.Kind, "%+v", last.Err)
+	require.Len(t, last.Approvals, 1)
+	a := last.Approvals[0]
+	assert.True(t, a.SessionAllow, "no destination: grantable for the conversation")
+	assert.Contains(t, a.Summary, "quote", "names the conversation")
+	assert.Contains(t, a.Summary, "15:00")
+	assert.Nil(t, e.deadlineOf(t, "q@x"), "nothing before the approval")
+
+	require.NoError(t, e.s.ResolveApprovalForConversation(bg, a.ID))
+	for waitTerminal(t, sub).Kind != "done" {
+	}
+	q := e.idOf(t, "q@x")
+	assert.Equal(t, &Deadline{Date: e.day(3), Time: "15:00", MessageID: q, Quote: "by  Friday", Source: DeadlineWit}, e.deadlineOf(t, "q@x"))
+
+	// Granted: a later call applies at once, and the run goes on.
+	last = ask(set(`{"id":1,"date":"` + e.day(4) + `"}`))
+	require.Len(t, last.Approvals, 1)
+	assert.Equal(t, "done", last.Approvals[0].State)
+	for waitTerminal(t, sub).Kind != "done" {
+	}
+	assert.Equal(t, &Deadline{Date: e.day(4), MessageID: q, Source: DeadlineWit}, e.deadlineOf(t, "q@x"))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM audit_log WHERE tool = 'set_reply_deadline' AND decision = ?", decisionSession))
+
+	// Refused by the checks, or by the user's own date, granted or not: no approval, no change.
+	assert.Equal(t, "done", ask(set(`{"id":1,"date":"`+e.day(4)+`","quote":"by Monday"}`)).Kind)
+	require.NoError(t, e.s.SetThreadDeadline(WithUISession(t.Context(), e.s), e.threadOf(t, "q@x"), Deadline{Date: e.day(5)}))
+	assert.Equal(t, "done", ask(set(`{"id":1,"date":"`+e.day(6)+`"}`), set(`{"id":1,"date":""}`)).Kind)
+	assert.Equal(t, &Deadline{Date: e.day(5), Source: DeadlineManual}, e.deadlineOf(t, "q@x"))
+	assert.Equal(t, 2, e.count(t, "SELECT count(*) FROM approvals WHERE tool = 'set_reply_deadline'"))
+	reqs := srv.Requests()
+	assert.Contains(t, string(reqs[len(reqs)-1].Messages), ErrDeadlineOutranked.Error(), "the model is told why")
+}
+
+// The 回复日期 condition reads the dates in effect: 有, 没有, due within N days
+// (today included, overdue not) and 已过期, in groups and pages too.
+func TestViewDeadlineCondition(t *testing.T) {
+	e := newSendEnv(t, false)
+	for _, mid := range []string{"soon", "today", "passed", "later", "overdue", "none", "removed"} {
+		e.put(t, "INBOX", eml(mid+"@x", "bob@a.example", "alice@example.com", mid, e.viewAt(1), "Reply by Friday."))
+	}
+	e.put(t, "Sent", eml("mine@x", "alice@example.com", "dan@a.example", "mine", e.viewAt(1), "Tell me."))
+	e.sync(t)
+	set := func(mid string, d Deadline) {
+		d.MessageID = e.idOf(t, mid+"@x")
+		require.NoError(t, e.s.SetThreadDeadline(bg, e.threadOf(t, mid+"@x"), d), mid)
+	}
+	set("soon", Deadline{Date: e.day(2)})
+	set("today", Deadline{Date: e.day(0)})
+	set("passed", Deadline{Date: e.day(0), Time: "00:00"})
+	set("later", Deadline{Date: e.day(3)})
+	set("overdue", Deadline{Date: e.day(-1)})
+	set("removed", Deadline{Date: e.day(1)})
+	ui := WithUISession(t.Context(), e.s)
+	require.NoError(t, e.s.SetThreadDeadline(ui, e.threadOf(t, "removed@x"), Deadline{}), "the user removes it")
+	require.NoError(t, e.s.SetThreadDeadline(ui, e.threadOf(t, "mine@x"), Deadline{Date: e.day(1)}), "the user's own date, on a conversation with no 回复状态")
+
+	for value, want := range map[string][]string{
+		RuleYes:             {"later", "mine", "overdue", "passed", "soon", "today"},
+		RuleNo:              {"none", "removed"},
+		"3":                 {"mine", "soon", "today"},
+		"1":                 {"today"},
+		ViewDeadlineOverdue: {"overdue", "passed"},
+	} {
+		assert.Equal(t, map[string][]string{ViewGroupOther: want}, e.shown(t, flatDoc(MatchAll, cond(FieldDeadline, OpIs, value))), value)
+	}
+
+	id, err := e.s.SaveView(bg, SavedView{Name: "Due", Icon: "team", Doc: SavedViewDoc{Match: MatchAll, Groups: []ViewGroup{
+		{ID: "due", Name: "Due", Match: MatchAll, Conditions: []RuleCondition{cond(FieldDeadline, OpIs, "3")}}}}})
+	require.NoError(t, err)
+	got, err := e.s.ViewContents(bg, id, 2)
+	require.NoError(t, err)
+	page := got.Groups[0]
+	require.Equal(t, "due", page.ID)
+	assert.Equal(t, 3, page.Total)
+	seen := len(page.Items)
+	page, err = e.s.ViewGroupPage(bg, id, "due", page.NextCursor, 2)
+	require.NoError(t, err)
+	assert.Equal(t, 3, seen+len(page.Items), "the next page has the rest")
+	assert.Empty(t, page.NextCursor)
+}
+
+// 回复日期 is for views only: a date an app, Wit or the summary wrote must not
+// set off a rule's actions.
+func TestDeadlineConditionIsViewOnly(t *testing.T) {
+	e := newSendEnv(t, false)
+	save := func(c RuleCondition) error {
+		_, err := e.s.SaveView(bg, SavedView{Name: "X", Icon: "team", Doc: flatDoc(MatchAll, c)})
+		return err
+	}
+	for _, v := range []string{"0", "3651", "x", ""} {
+		assert.ErrorIs(t, save(cond(FieldDeadline, OpIs, v)), ErrInvalidView, v)
+	}
+	assert.ErrorIs(t, save(cond(FieldDeadline, OpContains, RuleYes)), ErrInvalidView, "op")
+	for _, v := range []string{RuleYes, RuleNo, ViewDeadlineOverdue, "1", "3650"} {
+		assert.NoError(t, save(cond(FieldDeadline, OpIs, v)), v)
+		_, err := e.s.SaveRule(bg, Rule{Doc: RuleDoc{Version: RuleVersion, Trigger: TriggerReceive, Match: MatchAll,
+			Conditions: []RuleCondition{cond(FieldDeadline, OpIs, v)}, Actions: []RuleAction{{Kind: ActionRead}}}})
+		assert.ErrorIs(t, err, ErrInvalidRule, v)
+	}
 }

@@ -34,6 +34,12 @@ const (
 	FieldStarred = "starred" // is RuleYes or RuleNo
 	FieldWrote   = "wrote"   // is RuleYes: a sender the user has written to, or their own mail; RuleNo: only others
 
+	// FieldDeadline is the 期限 in effect: is RuleYes, RuleNo,
+	// ViewDeadlineOverdue, or a number of days it is due within, today
+	// included and overdue not. Never in rules: a date a program, Wit or the
+	// summary wrote must not set off a rule's actions.
+	FieldDeadline = "deadline"
+
 	ViewDateToday     = "today"
 	ViewDateYesterday = "yesterday"
 	ViewDateThisWeek  = "this_week"
@@ -44,6 +50,8 @@ const (
 	ViewReplyUnreplied = "unreplied"
 	ViewReadUnread     = "unread"
 	ViewReadRead       = "read"
+
+	ViewDeadlineOverdue = "overdue"
 
 	// Exceptions: a conversation added to or removed from a view by hand.
 	ViewExceptionAdded   = "added"
@@ -227,6 +235,17 @@ func (s *Service) validViewConditions(ctx context.Context, match string, conds [
 			} else if !slices.Contains(viewDates, c.Value) {
 				return invalidView("date %q", c.Value)
 			}
+		case FieldDeadline:
+			if c.Op != OpIs {
+				return invalidView("deadline op %q", c.Op)
+			}
+			if n, err := strconv.Atoi(c.Value); err == nil {
+				if n < 1 || n > MaxViewDateDays {
+					return invalidView("deadline days %q", c.Value)
+				}
+			} else if c.Value != RuleYes && c.Value != RuleNo && c.Value != ViewDeadlineOverdue {
+				return invalidView("deadline %q", c.Value)
+			}
 		case FieldStarred, FieldWrote:
 			if c.Op != OpIs || c.Value != RuleYes && c.Value != RuleNo {
 				return invalidView("%s %s %q", c.Field, c.Op, c.Value)
@@ -256,6 +275,8 @@ type viewEval struct {
 	wroteTo    string // its argument
 	today      time.Time
 	replyDates string // the 期限's version (meta reply_dates_version), bumped by every write
+	// deadlines is the 期限 in effect by conversation, removal markers included.
+	deadlines map[int64]Deadline
 }
 
 func (s *Service) newViewEval(ctx context.Context) (*viewEval, error) {
@@ -310,7 +331,19 @@ func (s *Service) newViewEval(ctx context.Context) (*viewEval, error) {
 	if len(version.Values) > 0 {
 		replyDates = store.Str(version.Values[0][0])
 	}
-	return &viewEval{now: now, statuses: statuses, notIn: notIn, unread: unread, wrote: wrote, wroteTo: string(list), today: s.clk().Now(), replyDates: replyDates}, nil
+	e := &viewEval{now: now, statuses: statuses, notIn: notIn, unread: unread, wrote: wrote, wroteTo: string(list), today: s.clk().Now(), replyDates: replyDates}
+	rows, err := s.db.Query(ctx, "SELECT thread_id FROM thread_deadlines")
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]int64, len(rows.Values))
+	for i, r := range rows.Values {
+		ids[i] = store.Int(r[0])
+	}
+	if e.deadlines, err = s.deadlinesIn(ctx, e.today, statuses, ids); err != nil {
+		return nil, err
+	}
+	return e, nil
 }
 
 // inThread is the condition on threads t that a message of it meets cond,
@@ -349,6 +382,22 @@ func (e *viewEval) stateSQL(c RuleCondition) (string, []any) {
 	}
 	var ids []int64
 	days, _ := strconv.Atoi(c.Value)
+	if c.Field == FieldDeadline {
+		today, end := e.today.Format(time.DateOnly), e.today.AddDate(0, 0, days).Format(time.DateOnly)
+		for id, d := range e.deadlines {
+			switch {
+			case d.Date == "":
+			case c.Value == RuleYes, c.Value == RuleNo,
+				c.Value == ViewDeadlineOverdue && d.Overdue,
+				days > 0 && !d.Overdue && d.Date >= today && d.Date < end:
+				ids = append(ids, id)
+			}
+		}
+		if c.Value == RuleNo {
+			return "t.id NOT IN (SELECT value FROM json_each(?))", []any{intList(ids)}
+		}
+		return "t.id IN (SELECT value FROM json_each(?))", []any{intList(ids)}
+	}
 	for id, st := range e.statuses {
 		switch {
 		case c.Op == OpIs && st.Kind == ReplyStatusUnreplied,
@@ -386,7 +435,7 @@ func (e *viewEval) treeSQL(match string, conds []RuleCondition) (string, []any, 
 			var on bool
 			sql, a, on = e.treeSQL(c.Match, c.Group)
 			perMessage = perMessage || on
-		case c.Field == FieldReply || c.Field == FieldRead:
+		case c.Field == FieldReply || c.Field == FieldRead || c.Field == FieldDeadline:
 			sql, a = e.stateSQL(c)
 		case c.Field == FieldDate, c.Field == FieldStarred, c.Field == FieldWrote:
 			var yes bool
@@ -529,19 +578,13 @@ func (s *Service) placed(ctx context.Context, e *viewEval, viewID int64, d Saved
 		return nil, err
 	}
 	out := make([]placedThread, len(rows.Values))
-	ids := make([]int64, len(rows.Values))
 	for i, r := range rows.Values {
 		out[i] = placedThread{id: store.Int(r[0]), date: store.Int(r[1]), group: int(store.Int(r[2])), unread: store.Int(r[3]) != 0, manual: store.Int(r[4]) != 0}
-		ids[i] = out[i].id
-	}
-	deadlines, err := s.deadlinesIn(ctx, e.today, e.statuses, ids)
-	if err != nil {
-		return nil, err
 	}
 	y, m, day := e.today.Date()
 	cut := time.Date(y, m, day-7, 0, 0, 0, 0, e.today.Location()).Format(time.DateOnly) // more than 7 days overdue is no longer lifted
 	for i, p := range out {
-		if d, ok := deadlines[p.id]; ok && d.Date >= cut {
+		if d, ok := e.deadlines[p.id]; ok && d.Date >= cut {
 			out[i].deadline, out[i].due = &d, deadlineEnd(d, e.today.Location()).Unix()
 		}
 	}

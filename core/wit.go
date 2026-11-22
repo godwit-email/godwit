@@ -38,6 +38,8 @@ import (
 // list_skills 包含无 UI 绑定和 message/wit Skill；use_skill 只加载提示词，工具仍走原审批。
 // search_contacts only reads local mail-derived and cached address-book contacts
 // (no binary avatars, no network requests).
+// set_reply_deadline sets or clears a conversation's 期限 (source wit), on this
+// device only: no egress, and never over a date the user set.
 // It stays a written list, not derived from what is registered (batchActions
 // included): a tool reaches Ask only by being named here.
 var askTools = []string{
@@ -45,7 +47,7 @@ var askTools = []string{
 	"list_skills", "use_skill", "read_skill_file", "create_skill", "get_account_profile", "create_draft",
 	"move_to_trash", "archive_mail", "mark_as_spam", "mark_as_read", "mark_as_unread",
 	"star_mail", "unstar_mail", "unsubscribe", "get_all_links", "open_link_in_browser",
-	"reply_to_mail", "forward_mail", "delete_draft", proposeRuleTool, listRulesTool, askQuestionTool,
+	"reply_to_mail", "forward_mail", "delete_draft", "set_reply_deadline", proposeRuleTool, listRulesTool, askQuestionTool,
 }
 
 const (
@@ -316,6 +318,18 @@ func (s *Service) registerAskTools() {
 			"html":       map[string]any{"type": "string", "description": "Draft body as HTML (paragraphs in <p>, line breaks with <br>)."},
 		}, "to", "subject", "html")},
 		Write: true, Exec: &executor{Prepare: s.prepareDraft, Apply: s.applyDraft}})
+	s.mustRegister(toolDesc{Spec: ai.ToolSpec{Name: "set_reply_deadline",
+		Description: "Set or clear the date by which the sender wants the user's reply to a conversation that is waiting on them. " +
+			"id is the mail that asks for it, as the tools returned it, from someone else; a quote must appear word for word in that mail. " +
+			"The user approves it first. Stored only on this device and shown as set by Wit; it reorders the user's views and never sends, moves or changes mail. " +
+			"It cannot replace or clear a date the user set.",
+		Schema: object(map[string]any{
+			"id":    intProp,
+			"date":  map[string]any{"type": "string", "description": "YYYY-MM-DD in the user's calendar; empty clears it"},
+			"time":  map[string]any{"type": "string", "description": "HH:MM, the user's local time; leave out for the end of the day"},
+			"quote": map[string]any{"type": "string", "maxLength": MaxDeadlineQuote},
+		}, "id", "date")},
+		Write: true, Exec: &executor{Prepare: s.prepareWitDeadline, Apply: s.applyWitDeadline, Outside: true}})
 
 	// Mail triage & flag tools
 	for _, b := range batchActions {

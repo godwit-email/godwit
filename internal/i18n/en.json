@@ -2736,6 +2736,26 @@
   "wit_tool_reply_to_mail": "Reply to mail",
   "wit_tool_forward_mail": "Forward mail",
   "wit_tool_delete_draft": "Delete draft",
+  "wit_tool_set_reply_deadline": "Set a reply date",
+  "wit_deadline_set": "Reply to “{arg1}” by {arg2}",
+  "@wit_deadline_set": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "wit_deadline_clear": "Remove the reply date of “{arg1}”",
+  "@wit_deadline_clear": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "wit_action_move_to_trash": "Move to Trash",
   "wit_action_archive_mail": "Archive",
   "wit_action_mark_as_spam": "Spam",
@@ -3842,7 +3862,7 @@
   "view_deadline_by_at": "by {arg1} {arg2}",
   "view_deadline_next_week": "next {arg1}",
   "view_deadline_date": "{arg1}/{arg2}",
-  "view_deadline_overdue": "{arg1, plural, one {{arg1, number, ::group-off} day overdue} other {{arg1, number, ::group-off} days overdue}}",
+  "view_deadline_overdue_days": "{arg1, plural, one {{arg1, number, ::group-off} day overdue} other {{arg1, number, ::group-off} days overdue}}",
   "view_deadline_overdue_today": "Overdue",
   "reader_deadline_asked": "They'd like a reply by {arg1}",
   "reader_deadline_asked_at": "They'd like a reply by {arg1} {arg2}",
@@ -3941,6 +3961,14 @@
   "view_starred_no": "Not starred",
   "view_wrote_yes": "I’ve written to the sender",
   "view_wrote_no": "Never written to the sender",
+  "settings_rules_field_deadline": "Reply date",
+  "view_deadline_yes": "Has a reply date",
+  "view_deadline_no": "No reply date",
+  "view_deadline_days": "Due within days",
+  "view_deadline_overdue": "Overdue",
+  "view_deadline_unit": "days",
+  "view_cond_deadline_overdue": "Reply date has passed",
+  "view_cond_deadline_days": "{arg1, plural, one {Reply date within {arg1, number, ::group-off} day} other {Reply date within {arg1, number, ::group-off} days}}",
   "view_date_last": "{arg1, plural, one {Last {arg1, number, ::group-off} day} other {Last {arg1, number, ::group-off} days}}",
   "view_leave_desc": "If you discard them, your changes to this view are lost.",
   "view_leave_keep": "Keep editing",

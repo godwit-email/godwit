@@ -23,7 +23,7 @@ func deadlineText(now time.Time, d core.Deadline) (string, bool) {
 	}
 	if d.Overdue {
 		if ago := viewDaysAgo(now, day); ago > 0 {
-			return i18n.Plural("view.deadline.overdue", ago), true
+			return i18n.Plural("view.deadline.overdue_days", ago), true
 		}
 		return i18n.T("view.deadline.overdue_today"), true
 	}

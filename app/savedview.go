@@ -563,6 +563,14 @@ func (a *App) viewCondText(cd core.RuleCondition) string {
 		return i18n.T("view.starred." + cd.Value)
 	case core.FieldWrote:
 		return i18n.T("view.wrote." + cd.Value)
+	case core.FieldDeadline:
+		if n, err := strconv.Atoi(cd.Value); err == nil {
+			return i18n.Tf("view.cond.deadline_days", n)
+		}
+		if cd.Value == core.ViewDeadlineOverdue {
+			return i18n.T("view.cond.deadline_overdue")
+		}
+		return i18n.T("view.deadline." + cd.Value)
 	case core.FieldDate:
 		op, val := i18n.T("settings.rules.op.is"), ""
 		if cd.Op == core.OpNotContains {

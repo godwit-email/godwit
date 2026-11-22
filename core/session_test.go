@@ -118,7 +118,7 @@ func TestSessionGrantBinding(t *testing.T) {
 	assert.Equal(t, 1, e.audited(t, "create_draft", decisionSession))
 }
 
-// TestNoSendGrant: no tool sends, and only create_draft can be granted.
+// TestNoSendGrant: no tool sends, and only sessionTools can be granted.
 func TestNoSendGrant(t *testing.T) {
 	e := newExtEnv(t)
 	e.s.toolsMu.Lock()
@@ -129,6 +129,6 @@ func TestNoSendGrant(t *testing.T) {
 		if d.Source == "" {
 			a.source = "wit"
 		}
-		assert.Equal(t, name == "create_draft", sessionGrantable(a), name)
+		assert.Equal(t, name == "create_draft" || name == "set_reply_deadline", sessionGrantable(a), name)
 	}
 }
