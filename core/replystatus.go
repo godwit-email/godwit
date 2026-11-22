@@ -21,11 +21,14 @@ const replyStatusDays = 30
 
 // replyStatus is a conversation's state now. NewReply marks mail newer than
 // the conversation's last archive; Since is when the user's last mail or reply
-// was sent, for ReplyStatusWaiting.
+// was sent, for ReplyStatusWaiting. Settled is the date of the latest reply
+// (here, synced or flagged elsewhere) or archive (here or elsewhere): mail of
+// that date or older has been dealt with, so its 期限 is no longer in effect.
 type replyStatus struct {
 	Kind     string
 	NewReply bool
 	Since    int64
+	Settled  int64
 }
 
 // logicalMail is one message of a conversation, however many folders hold it.
@@ -194,6 +197,15 @@ func (s *Service) replyStatuses(ctx context.Context, now int64) (map[int64]reply
 		}
 		engaged = engaged || people.known[gomail.AddrKey(newest.from)] || people.known[gomail.AddrKey(newest.replyTo)]
 		if st, ok := threadReplyStatus(newest, people, engaged, marks[tid], repliedAt[tid]); ok {
+			st.Settled = repliedAt[tid]
+			if marks[tid].has {
+				st.Settled = max(st.Settled, marks[tid].date)
+			}
+			for _, m := range msgs {
+				if people.mine(m) || m.answered || m.in("archive") && !m.in("inbox") {
+					st.Settled = max(st.Settled, m.date)
+				}
+			}
 			out[tid] = st
 			if st.Kind == ReplyStatusUnreplied && !engaged {
 				strangers[newest.id] = tid

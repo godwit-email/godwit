@@ -217,6 +217,7 @@ SetRoleFolder
 SetRuleEnabled
 SetSettings
 SetSkillEnabled
+SetThreadDeadline
 SetViewException
 SignatureCode
 SignatureEditor
