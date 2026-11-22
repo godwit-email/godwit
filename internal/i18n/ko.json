@@ -569,6 +569,8 @@
   "reader_save_as": "다른 이름으로 저장…",
   "reader_attachments_select_all": "전체 선택",
   "reader_attachments_select_item": "{arg1} 선택",
+  "reader_attachments_downloading": "{arg1} 다운로드 중",
+  "reader_attachments_cancel_download": "{arg1} 다운로드 취소",
   "reader_attachments_count": "첨부파일 {arg1, number, ::group-off}개",
   "reader_attachments_selected": "{arg2, number, ::group-off}개 중 {arg1, number, ::group-off}개 선택됨",
   "reader_attachments_save_all": "모두 저장…",

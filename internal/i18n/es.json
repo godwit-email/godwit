@@ -569,6 +569,8 @@
   "reader_save_as": "Guardar como…",
   "reader_attachments_select_all": "Seleccionar todo",
   "reader_attachments_select_item": "Seleccionar {arg1}",
+  "reader_attachments_downloading": "Descargando {arg1}",
+  "reader_attachments_cancel_download": "Cancelar la descarga de {arg1}",
   "reader_attachments_count": "{arg1, plural, one {{arg1, number, ::group-off} adjunto} many {{arg1, number, ::group-off} adjuntos} other {{arg1, number, ::group-off} adjuntos}}",
   "reader_attachments_selected": "{arg1, number, ::group-off} de {arg2, number, ::group-off} seleccionados",
   "reader_attachments_save_all": "Guardar todo…",
