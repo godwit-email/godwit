@@ -1014,6 +1014,18 @@ test("a reload shows the recipients and attachments changed behind the window", 
   expect(screen.queryByRole("alert")).toBeNull(); // nothing was being typed
 });
 
+test("a row being typed in stays open when a reload empties it", async () => {
+  vi.mocked(api.load).mockResolvedValue({ ...state, cc: ["cat@x.com"] });
+  await setup();
+  const cc = screen.getByRole("combobox", { name: "抄送" });
+  await userEvent.type(cc, "dan@x.com");
+  vi.mocked(api.latest).mockResolvedValue({ ...latest("Wit 写的", 9), cc: [] });
+  emit({ kind: "done" });
+  expect(await screen.findByRole("alert")).toHaveTextContent("收件人已在别处被修改");
+  expect(screen.queryByRole("button", { name: "移除 cat@x.com" })).toBeNull();
+  expect(screen.getByRole("combobox", { name: "抄送" })).toHaveValue("dan@x.com");
+});
+
 test("an address being typed survives a reload that changes the recipients, and the clash shows", async () => {
   await setup();
   const to = screen.getByRole("combobox", { name: "收件人" });

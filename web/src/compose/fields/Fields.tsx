@@ -136,7 +136,13 @@ export function Fields({
         {extra}
       </>,
     );
-  const showCc = ccOpen || cc.length > 0 || bcc.length > 0 || replyTo !== "";
+  // Text typed in a row keeps it open: a reload that empties the row must not hide what send would commit.
+  const showCc =
+    ccOpen ||
+    cc.length > 0 ||
+    bcc.length > 0 ||
+    replyTo !== "" ||
+    !!(pending.cc || pending.bcc || pending.replyTo);
   const bad = invalid([...to, ...cc, ...bcc, ...lists.replyTo]);
 
   return (
