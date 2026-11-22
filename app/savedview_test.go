@@ -492,6 +492,40 @@ func TestViewRefreshesAtMidnight(t *testing.T) {
 	}
 }
 
+// TestViewDeadlineCondition: 回复日期 starts at 有, shows its day count, says
+// each choice, and a count out of range keeps the view from saving.
+func TestViewDeadlineCondition(t *testing.T) {
+	h, _ := mailHarness(t, nil, "alice@example.com")
+	p := h.app.mail
+	e := newViewEditor(p)
+	cd := core.RuleCondition{Field: core.FieldDeadline}
+	e.fieldChanged(&cd, core.FieldFrom)
+	if cd.Op != core.OpIs || cd.Value != core.RuleYes {
+		t.Fatalf("new 回复日期 condition: %+v", cd)
+	}
+	e.box.Name = "本周要回"
+	e.box.Doc.Match = core.MatchAll
+	e.box.Doc.Conditions = []core.RuleCondition{{Field: core.FieldDeadline, Op: core.OpIs, Value: "7"}}
+	p.openViewEditor(e)
+	h.see(i18n.T("settings.rules.field.deadline"))
+	h.see(i18n.T("view.deadline.days"))
+	if got := e.docProblem(); got != "" {
+		t.Fatalf("problem with 7 days: %q", got)
+	}
+	e.box.Doc.Conditions[0].Value = "0"
+	if got := e.docProblem(); got != i18n.Tf("view.problem.days", core.MaxViewDateDays) {
+		t.Fatalf("problem with 0 days: %q", got)
+	}
+	seen := map[string]bool{}
+	for _, v := range []string{core.RuleYes, core.RuleNo, core.ViewDeadlineOverdue, "7"} {
+		s := h.app.viewCondText(core.RuleCondition{Field: core.FieldDeadline, Op: core.OpIs, Value: v})
+		if s == "" || seen[s] || slices.Contains([]byte(s), '.') { // a key, not text
+			t.Fatalf("condition text for %q: %q", v, s)
+		}
+		seen[s] = true
+	}
+}
+
 // TestViewGroupDragReorder: dragging a conversation group's grip handle
 // reorders Doc.Groups cleanly.
 func TestViewGroupDragReorder(t *testing.T) {

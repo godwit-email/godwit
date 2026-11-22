@@ -140,6 +140,9 @@ func (p *mailPage) closeViewEditor() {
 
 var viewDateNames = []string{core.ViewDateToday, core.ViewDateYesterday, core.ViewDateThisWeek, core.ViewDateLastWeek, core.ViewDateThisMonth, core.ViewDateLastMonth}
 
+// viewDeadlineNames are 回复日期's choices other than a number of days.
+var viewDeadlineNames = []string{core.RuleYes, core.RuleNo, core.ViewDeadlineOverdue}
+
 // docProblem says what keeps the document from being a view, "" for nothing.
 func (e *viewEditor) docProblem() string {
 	d := e.box.Doc
@@ -151,6 +154,10 @@ func (e *viewEditor) docProblem() string {
 			case cd.Field == core.FieldLabel && !slices.ContainsFunc(e.p.a.labels, func(l core.Label) bool { return l.Slug == cd.Value }):
 				return i18n.T("view.problem.label") // deleted since
 			case cd.Field == core.FieldDate && !slices.Contains(viewDateNames, cd.Value):
+				if n, err := strconv.Atoi(cd.Value); err != nil || n < 1 || n > core.MaxViewDateDays {
+					return i18n.Tf("view.problem.days", core.MaxViewDateDays)
+				}
+			case cd.Field == core.FieldDeadline && !slices.Contains(viewDeadlineNames, cd.Value):
 				if n, err := strconv.Atoi(cd.Value); err != nil || n < 1 || n > core.MaxViewDateDays {
 					return i18n.Tf("view.problem.days", core.MaxViewDateDays)
 				}
@@ -352,7 +359,7 @@ func (e *viewEditor) conditionsNote() string {
 	switch {
 	case usesField(conds, core.FieldReply):
 		return i18n.T("view.editor.groups.days")
-	case usesField(conds, core.FieldRead):
+	case usesField(conds, core.FieldRead, core.FieldDeadline): // state that changes: they don't stay
 		return ""
 	}
 	return i18n.T("view.editor.conditions.note")
@@ -427,7 +434,7 @@ func (e *viewEditor) fieldChanged(cd *core.RuleCondition, was string) {
 		cd.Op, cd.Value = core.OpIs, core.ViewReadUnread
 	case cd.Field == core.FieldDate:
 		cd.Op, cd.Value = core.OpIs, core.ViewDateThisWeek
-	case cd.Field == core.FieldStarred || cd.Field == core.FieldWrote:
+	case cd.Field == core.FieldStarred || cd.Field == core.FieldWrote || cd.Field == core.FieldDeadline:
 		cd.Op, cd.Value = core.OpIs, core.RuleYes
 	}
 }
@@ -437,7 +444,7 @@ func (e *viewEditor) condRow(c *ui.Context, cd *core.RuleCondition) {
 	a := e.p.a
 	t, th := theme.Of(c), c.Theme()
 	var fields []kit.Option[string]
-	for _, f := range []string{core.FieldFrom, core.FieldTo, core.FieldSubject, core.FieldBody, core.FieldAny, core.FieldAttachments, core.FieldLabel, core.FieldFolder, core.FieldDate, core.FieldStarred, core.FieldWrote, core.FieldReply, core.FieldRead} {
+	for _, f := range []string{core.FieldFrom, core.FieldTo, core.FieldSubject, core.FieldBody, core.FieldAny, core.FieldAttachments, core.FieldLabel, core.FieldFolder, core.FieldDate, core.FieldStarred, core.FieldWrote, core.FieldReply, core.FieldDeadline, core.FieldRead} {
 		fields = append(fields, kit.Option[string]{Value: f, Label: i18n.T("settings.rules.field." + f)})
 	}
 	contains := kit.Option[string]{Value: core.OpContains, Label: i18n.T("settings.rules.op.contains")}
@@ -495,6 +502,18 @@ func (e *viewEditor) condRow(c *ui.Context, cd *core.RuleCondition) {
 		if days == cd.Value {
 			kit.Input(c, &cd.Value, kit.InputOpts{Placeholder: "7"}).Label(i18n.T("settings.rules.days")).Width(th.Space(16))
 			kit.Text(c, i18n.T("view.field.reply.days"), t.Text.Xs).Shrink(0)
+		}
+	case core.FieldDeadline:
+		days := cd.Value // the N 天内到期 option is whatever number is there
+		if slices.Contains(viewDeadlineNames, cd.Value) {
+			days = "7"
+		}
+		ruleSelect(c, i18n.T("settings.rules.field.deadline"), &cd.Value, []kit.Option[string]{
+			{Value: core.RuleYes, Label: i18n.T("view.deadline.yes")}, {Value: core.RuleNo, Label: i18n.T("view.deadline.no")},
+			{Value: days, Label: i18n.T("view.deadline.days")}, {Value: core.ViewDeadlineOverdue, Label: i18n.T("view.deadline.overdue")}}, 0)
+		if days == cd.Value {
+			kit.Input(c, &cd.Value, kit.InputOpts{Placeholder: "7"}).Label(i18n.T("settings.rules.days")).Width(th.Space(16))
+			kit.Text(c, i18n.T("view.deadline.unit"), t.Text.Xs).Shrink(0)
 		}
 	case core.FieldStarred:
 		ruleSelect(c, i18n.T("settings.rules.field.starred"), &cd.Value, []kit.Option[string]{
