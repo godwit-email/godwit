@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/egoist/mygo/ui"
 	"image"
@@ -618,6 +619,22 @@ func TestSettingsLoginItemOffInSystem(t *testing.T) {
 	h.until("the note gone", func() bool { h.tt.Frame(); return !h.tt.HasText("系统设置里已关闭 Godwit 的登录启动") })
 	if got := h.loginCalls(); !slices.Equal(got, []string{"SetOpenAtLogin true"}) {
 		t.Fatalf("login calls %v: Godwit must not register again by itself", got)
+	}
+}
+
+// A login item that waits for the user's approval in the system says so,
+// not as an unknown error with a button to report it (#875).
+func TestSettingsLoginItemNeedsApproval(t *testing.T) {
+	h, _ := withAccount(t)
+	h.plat.mu.Lock()
+	h.plat.loginOff = true
+	h.plat.loginErr = fmt.Errorf("%w: mygo: allow Godwit to open at login in System Settings > General > Login Items", ErrLoginItemOff)
+	h.plat.mu.Unlock()
+	h.openSettings("general")
+	h.click("开机时自动启动")
+	h.see(i18n.T("toast.close"))
+	if h.tt.HasText(i18n.T("error.report")) || h.tt.HasText("mygo:") {
+		t.Fatal("the login item waiting for approval shows as an unknown error to report")
 	}
 }
 

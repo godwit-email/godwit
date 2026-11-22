@@ -23,7 +23,14 @@ var errorKeys = []struct {
 	{errFlushSlow, "error.flush_slow"},
 	{errSignatureUnsaved, "error.signature_unsaved"},
 	{errViewUnsaved, "view.leave.desc"},
+	{ErrLoginItemOff, "settings.login_item_off"},
 }
+
+// ErrLoginItemOff is the platform's SetOpenAtLogin failing because the
+// system keeps Godwit's login item off until the user allows it there, as
+// macOS does with one the user turned off in Login Items (#875). It is the
+// user's choice, not a fault to report.
+var ErrLoginItemOff = errors.New("open at login is off in the system's settings")
 
 // humanize says what err means to the user; "" for a cancellation, which
 // the user asked for. An unknown error shows its own text.

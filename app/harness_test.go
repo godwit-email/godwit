@@ -371,6 +371,7 @@ type fakePlatform struct {
 	starred      bool
 	login        bool     // SetOpenAtLogin's last request
 	loginOff     bool     // the user turned the login item off in the system
+	loginErr     error    // SetOpenAtLogin's error
 	files        []string // OpenFiles
 	dir          string   // OpenDirectory
 	savePath     string   // SaveFile
@@ -674,7 +675,7 @@ func (p *fakePlatform) SetOpenAtLogin(on bool) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.login = on
-	return nil
+	return p.loginErr
 }
 func (p *fakePlatform) OpenAtLogin() bool {
 	p.mu.Lock()
