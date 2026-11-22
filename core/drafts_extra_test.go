@@ -6,6 +6,7 @@ import (
 	netmail "net/mail"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,7 +56,7 @@ func TestSetDraftAccount(t *testing.T) {
 	d, err := e.Svc.NewDraft(ctx, a.ID, "new", 0)
 	require.NoError(t, err)
 	d.To, d.Subject = []string{"carol@example.com"}, "hello"
-	d.HTML = "<p>body text</p>" + d.HTML
+	d.HTML = "<p>body text</p>" + `<blockquote data-godwit="quote">earlier mail</blockquote>` + d.HTML // the order before #813
 	d, err = e.Svc.SaveDraft(ctx, d)
 	require.NoError(t, err)
 	attachFile(t, e.Svc, d.ID, "notes.txt", "n")
@@ -66,10 +67,12 @@ func TestSetDraftAccount(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, b.ID, got.AccountID)
 	assert.Equal(t, d.Revision+1, got.Revision)
-	ed, _, sig := mail.SplitDraft(got.HTML)
+	ed, quote, sig := mail.SplitDraft(got.HTML)
 	assert.Contains(t, ed, "body text")
+	assert.Contains(t, quote, "earlier mail")
 	assert.Contains(t, sig, "Bob B.")
 	assert.NotContains(t, got.HTML, "Alice A.")
+	assert.Less(t, strings.Index(got.HTML, "Bob B."), strings.Index(got.HTML, "earlier mail"), "signature above the quote")
 	require.Len(t, got.Attachments, 1)
 	assert.Equal(t, "notes.txt", got.Attachments[0].Filename)
 

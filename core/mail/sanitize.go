@@ -682,5 +682,6 @@ func Blank(src string) bool {
 	return blank
 }
 
-// JoinDraft is the draft body of its parts, as SplitDraft returns them.
-func JoinDraft(editable, quote, signature string) string { return editable + quote + signature }
+// JoinDraft is the draft body of its parts, as SplitDraft returns them: the
+// signature sits under the new text, above the quoted mail.
+func JoinDraft(editable, quote, signature string) string { return editable + signature + quote }

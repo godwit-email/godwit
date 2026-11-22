@@ -182,8 +182,15 @@ func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, 
 	if err != nil {
 		return Draft{}, err
 	}
-	d.HTML += signatureHTML(acc.Signature, cids, st.SignatureDelimiter)
+	d.HTML = withSignature(d.HTML, acc, cids, st.SignatureDelimiter)
 	return d, nil
+}
+
+// withSignature is body with acc's signature in place of its own, above the
+// quote (mail.JoinDraft); NewDraft and SetDraftAccount both sign through it.
+func withSignature(body string, acc Account, cids map[string]bool, delim bool) string {
+	ed, quote, _ := mail.SplitDraft(body)
+	return mail.JoinDraft(ed, quote, signatureHTML(acc.Signature, cids, delim))
 }
 
 // SignatureHTMLPrefix marks a stored signature as the settings editor's HTML;
@@ -205,7 +212,7 @@ func SignatureEditorHTML(sig string, cids map[string]bool) string {
 
 func escapeLines(s string) string { return strings.ReplaceAll(html.EscapeString(s), "\n", "<br>") }
 
-// signatureHTML is the marked signature block that ends a draft body, "" for
+// signatureHTML is the marked signature block of a draft body, "" for
 // none; cids are the stored signature images. delim puts the "-- " line
 // before it (Settings.SignatureDelimiter); the text part follows the HTML.
 func signatureHTML(sig string, cids map[string]bool, delim bool) string {

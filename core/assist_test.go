@@ -107,7 +107,7 @@ func TestSplitJoinDraft(t *testing.T) {
 
 	ed, q, sig = mail.SplitDraft("<p>a</p><p>b</p>")
 	assert.Equal(t, []string{"<p>a</p><p>b</p>", "", ""}, []string{ed, q, sig})
-	assert.Equal(t, "<p>x</p>"+q+sig, mail.JoinDraft("<p>x</p>", q, sig))
+	assert.Equal(t, "<p>x</p>"+sig+q, mail.JoinDraft("<p>x</p>", q, sig))
 }
 
 func TestSanitizeKeepsDraftMarkers(t *testing.T) {

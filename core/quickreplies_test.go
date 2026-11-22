@@ -256,8 +256,8 @@ func TestDraftFromQuickReply(t *testing.T) {
 	assert.NotContains(t, d.HTML, "script")
 	quote := strings.Index(d.HTML, "Meet on Friday at the harbour.")
 	sig := strings.Index(d.HTML, "Me, Inc.")
-	assert.Greater(t, quote, 0)
-	assert.Greater(t, sig, quote)
+	assert.Greater(t, sig, 0)
+	assert.Greater(t, quote, sig, "signature above the quote")
 
 	got, err := e.s.GetDraft(t.Context(), d.ID)
 	require.NoError(t, err)
