@@ -598,3 +598,15 @@ func TestTranslateDraftHTMLSplitsLargeBlocks(t *testing.T) {
 		assert.Less(t, len(b), 1<<20, "each within the ABI's request limit")
 	}
 }
+
+// A code whose label is in another text node (#855) is still found: the
+// body is read whole, and a blocked category sends the plugin nothing.
+func TestPluginTranslateBlocksACodeApartFromItsLabel(t *testing.T) {
+	e := newAssistEnv(t)
+	record := useNativeTranslator(t, e.s, nil)
+	setMaskAction(t, e.s, map[string]string{mask.Codes: MaskBlock})
+	setBody(t, e, "", "<table><tr><td>验证码</td><td>482913</td></tr></table>")
+	evs := e.run(t, "translate", Target{Kind: "message", ID: e.msg, PreserveHTML: true})
+	assert.Equal(t, []string{mask.Codes}, MaskBlocked(evs[len(evs)-1].Err))
+	assert.Empty(t, translateRequests(t, record))
+}

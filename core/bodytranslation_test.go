@@ -150,11 +150,41 @@ func TestBodyTranslationMasksASecretCutFromItsLabel(t *testing.T) {
 	}
 }
 
+// A code whose label is in another text node, or that markup cuts in
+// two, or whose label is only in the subject, is masked in every node it
+// stands in (#855): no piece of it goes to the model.
+func TestBodyTranslationMasksACodeAcrossTextNodes(t *testing.T) {
+	for _, c := range []struct {
+		name, subject, html string
+		pieces              []string
+	}{
+		{"cells", "Plans", "<table><tr><td>验证码</td><td>482913</td></tr></table>", []string{"482913"}},
+		{"inline", "Plans", "<p>验证码 <b>482</b>913</p><p>Call 913 later</p>", []string{"482", "913"}},
+		{"subject", "Your verification code", "<p>482913</p>", []string{"482913"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			e := newSkillEnv(t)
+			setBody(t, e, "", c.html)
+			_, err := e.s.db.Execute(t.Context(), "UPDATE messages SET subject = ? WHERE id = ?", c.subject, e.msg)
+			require.NoError(t, err)
+			e.srv.Script(testllm.Turn{Text: []string{`{"texts":["x","y","z","w"],"source":"en"}`}})
+			evs := e.run(t, "translate", Target{Kind: "message", ID: e.msg, PreserveHTML: true})
+			require.NotEmpty(t, e.srv.Requests(), "%+v", evs)
+			body := string(e.srv.Requests()[0].Body)
+			assert.Contains(t, body, "{{CODE_")
+			for _, p := range c.pieces {
+				assert.NotContains(t, body, p)
+			}
+			assert.NotContains(t, body, c.subject, "the subject only helps find the code")
+		})
+	}
+}
+
 // A text needing no translation comes back as it was, its values too, not
 // as it was masked.
 func TestBodyTranslationKeepsTheValuesOfAnUntranslatedText(t *testing.T) {
 	const text = "卡号 4111 1111 1111 1111"
-	res, err := translateMasked(t.Context(), []string{text}, 1, "zh-CN", nil, mask.New([]byte("k")),
+	res, err := translateMasked(t.Context(), []string{text}, readBody(Message{Text: text}), 1, "zh-CN", nil, mask.New([]byte("k")),
 		func(_ context.Context, req translateRequest) (translateResult, error) {
 			return translateResult{Texts: []string{"x"}, Source: "zh-CN"}, nil
 		})

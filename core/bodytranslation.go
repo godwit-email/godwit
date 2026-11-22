@@ -12,8 +12,9 @@ import (
 	"github.com/godwit-email/godwit/core/ai"
 	"github.com/godwit-email/godwit/core/ai/mask"
 	"github.com/godwit-email/godwit/core/gateway"
-	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/core/skills"
+	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 )
 
 type bodyTranslation struct {
@@ -35,19 +36,14 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 	if err != nil {
 		return nil, err
 	}
+	read := readBody(m)
 	var originals []string
 	seen := map[string]bool{}
-	collect := func(text string) string {
-		if strings.TrimSpace(text) != "" && !seen[text] {
+	for _, n := range read.nodes {
+		if text := read.whole[n[0]:n[1]]; !seen[text] {
 			seen[text] = true
 			originals = append(originals, text)
 		}
-		return text
-	}
-	if m.HTML != "" {
-		mail.MapHTMLText(m.HTML, collect)
-	} else {
-		collect(m.Text)
 	}
 	lang := s.readingLanguage(ctx)
 	keep := slices.Sorted(slices.Values(st.NoTranslate))
@@ -123,10 +119,10 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 		out <- ai.Event{Kind: "context", Text: string(b), Model: ref}
 		if !hit {
 			if byModel {
-				result, err = translateMasked(ctx, originals, t.ID, lang, keep, masker, call)
+				result, err = translateMasked(ctx, originals, read, t.ID, lang, keep, masker, call)
 			} else {
 				var masked []string
-				if masked, err = bound.maskTexts(ctx, originals); err == nil {
+				if masked, err = bound.maskWhole(ctx, read, originals); err == nil {
 					result, err = translateRestored(ctx, originals, masked, func(tr, _ string) string { return bound.masker.Restore(tr) }, lang, keep, call)
 				}
 			}
@@ -159,10 +155,10 @@ func (s *Service) runBodyTranslation(ctx context.Context, end func(), sk skills.
 // masked before the texts are cut into pieces, and put back after. With m,
 // the texts are cut as m masks them and go so: no value is cut in two, nor
 // from the label it was found by.
-func translateMasked(ctx context.Context, originals []string, id int64, target string, keep []string, m *mask.Masker, call func(context.Context, translateRequest) (translateResult, error)) (bodyTranslation, error) {
+func translateMasked(ctx context.Context, originals []string, read bodyRead, id int64, target string, keep []string, m *mask.Masker, call func(context.Context, translateRequest) (translateResult, error)) (bodyTranslation, error) {
 	masked, links := maskLinks(originals, id)
 	if m != nil {
-		cut, err := m.RequestTexts(ctx, masked) // recorded here: what goes out is already masked
+		cut, err := m.RequestWhole(ctx, read.whole, read.nodes, masked) // recorded here: what goes out is already masked
 		if err != nil {
 			return bodyTranslation{}, err
 		}
@@ -173,6 +169,64 @@ func translateMasked(ctx context.Context, originals []string, id int64, target s
 		masked = cut
 	}
 	return translateRestored(ctx, originals, masked, func(tr, src string) string { return unmask(m.Restore(tr), src, links) }, target, keep, call)
+}
+
+// bodyRead is a message's body as masking reads it: whole is its subject's
+// line, then the text nodes translation sends, in order (nodes: where each
+// stands in whole), read as the reader shows them, so a code is found by a
+// label in another node: nodes in one block run on, blocks go on a line each.
+type bodyRead struct {
+	whole string
+	nodes [][2]int
+}
+
+// readBody is m's bodyRead; its HTML's nodes are those MapHTMLText replaces.
+// shortcut: a code set one digit per cell reads "1\n2\n…", which mail.SignInCode does not find either; join cells of one character if such codes are seen to leak.
+func readBody(m Message) bodyRead {
+	var b strings.Builder
+	var nodes [][2]int
+	b.WriteString("Subject: " + m.Subject + "\n")
+	line := false // a block began or ended since the last text
+	add := func(text string) {
+		if line {
+			b.WriteByte('\n')
+			line = false
+		}
+		if strings.TrimSpace(text) != "" {
+			nodes = append(nodes, [2]int{b.Len(), b.Len() + len(text)})
+		}
+		b.WriteString(text)
+	}
+	if m.HTML == "" {
+		add(m.Text)
+		return bodyRead{b.String(), nodes}
+	}
+	ctx := &html.Node{Type: html.ElementNode, Data: "body", DataAtom: atom.Body}
+	top, err := html.ParseFragment(strings.NewReader(m.HTML), ctx)
+	if err != nil {
+		return bodyRead{b.String(), nil} // MapHTMLText translates nothing either
+	}
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		switch n.DataAtom {
+		case atom.Style, atom.Script, atom.Code, atom.Pre:
+			line = line || n.DataAtom == atom.Pre
+			return
+		}
+		block := isBlockNode(n) || n.DataAtom == atom.Br
+		line = line || block
+		if n.Type == html.TextNode {
+			add(n.Data)
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+		line = line || block
+	}
+	for _, n := range top {
+		walk(n)
+	}
+	return bodyRead{b.String(), nodes}
 }
 
 // translateRestored is translateBodyTexts on masked, originals with values
