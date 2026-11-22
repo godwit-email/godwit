@@ -72,7 +72,7 @@ func TestSendLaterInThePast(t *testing.T) {
 // Cancelling gives the draft back, writable, and nothing goes.
 func TestCancelScheduled(t *testing.T) {
 	e := newSendEnv(t, false)
-	at := e.clock.Now().Add(UndoSendWindow / 2).Truncate(time.Millisecond) // 与 send_after 不同
+	at := e.clock.Now().Add(UndoSendWindow / 2).Truncate(time.Millisecond) // earlier than send_after, which includes the undo window
 	d := e.sendLater(t, at)
 	require.NoError(t, e.s.CancelOutbox(bg, e.onlyItem(t).ID))
 	got, err := e.s.GetDraft(bg, d.ID)
@@ -81,7 +81,7 @@ func TestCancelScheduled(t *testing.T) {
 	got.Subject, got.ScheduledFor = "edited", at.Add(time.Hour)
 	got, err = e.s.SaveDraft(bg, got)
 	require.NoError(t, err)
-	assert.Equal(t, at, got.ScheduledFor, "普通保存不能改写原定时间")
+	assert.Equal(t, at, got.ScheduledFor, "saving the draft must not overwrite its original send time")
 
 	e.reopen(t)
 	e.clock.Advance(2 * time.Hour)

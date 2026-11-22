@@ -863,7 +863,8 @@ var Migrations = [][]string{{
 	// changed; local only, never an IMAP keyword (ADR 0043).
 	`ALTER TABLE drafts ADD COLUMN from_program INTEGER NOT NULL DEFAULT 0`,
 }, {
-	// 取回定时邮件时记住原定时间（Unix 毫秒），再次入队时清空。
+	// Taking back a scheduled message copies send_at (Unix milliseconds) to
+	// its draft. Queuing the draft again clears it.
 	`ALTER TABLE drafts ADD COLUMN scheduled_for INTEGER`,
 }}
 

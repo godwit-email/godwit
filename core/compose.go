@@ -41,7 +41,8 @@ type Draft struct {
 	// created or changed it, so the interface labels it and offers
 	// ApproveDraft. Local only; the user's own edits keep it (ADR 0043).
 	FromProgram bool
-	// ScheduledFor 是取回定时邮件时记住的原定时间，只读。零值表示没有。
+	// ScheduledFor is the original send time of a scheduled message taken back
+	// from the outbox, or zero if none. SaveDraft ignores this field.
 	ScheduledFor time.Time
 }
 
