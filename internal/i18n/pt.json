@@ -571,6 +571,7 @@
   "reader_attachments_select_item": "Selecionar {arg1}",
   "reader_attachments_downloading": "Baixando {arg1}",
   "reader_attachments_cancel_download": "Cancelar o download de {arg1}",
+  "reader_attachments_drag_hint": "Abra ou salve para poder arrastá-lo",
   "reader_attachments_count": "{arg1, plural, one {{arg1, number, ::group-off} anexo} many {{arg1, number, ::group-off} anexos} other {{arg1, number, ::group-off} anexos}}",
   "reader_attachments_selected": "{arg1, number, ::group-off} de {arg2, number, ::group-off} selecionados",
   "reader_attachments_save_all": "Salvar tudo…",

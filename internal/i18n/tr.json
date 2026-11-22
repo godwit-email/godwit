@@ -571,6 +571,7 @@
   "reader_attachments_select_item": "{arg1} öğesini seç",
   "reader_attachments_downloading": "{arg1} indiriliyor",
   "reader_attachments_cancel_download": "{arg1} indirmesini iptal et",
+  "reader_attachments_drag_hint": "Sürükleyip çıkarmak için önce açın veya kaydedin",
   "reader_attachments_count": "{arg1, number, ::group-off} ek",
   "reader_attachments_selected": "{arg1, number, ::group-off} / {arg2, number, ::group-off} seçildi",
   "reader_attachments_save_all": "Tümünü kaydet…",

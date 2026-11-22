@@ -571,6 +571,7 @@
   "reader_attachments_select_item": "Выбрать {arg1}",
   "reader_attachments_downloading": "Загрузка {arg1}",
   "reader_attachments_cancel_download": "Отменить загрузку {arg1}",
+  "reader_attachments_drag_hint": "Откройте или сохраните, чтобы перетащить",
   "reader_attachments_count": "{arg1, plural, one {{arg1, number, ::group-off} вложение} few {{arg1, number, ::group-off} вложения} many {{arg1, number, ::group-off} вложений} other {{arg1, number, ::group-off} вложения}}",
   "reader_attachments_selected": "Выбрано {arg1, number, ::group-off} из {arg2, number, ::group-off}",
   "reader_attachments_save_all": "Сохранить все…",

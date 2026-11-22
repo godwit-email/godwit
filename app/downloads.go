@@ -2,6 +2,9 @@ package app
 
 import (
 	"context"
+	"maps"
+	"os"
+	"path/filepath"
 	"slices"
 
 	"github.com/godwit-email/godwit/core"
@@ -50,7 +53,15 @@ func (a *App) download(kind downloadKind, items []core.AttachmentInfo, run func(
 		return
 	}
 	ctx, cancel := context.WithCancel(a.ctx) // Close cancels them all
-	a.downloads = append(a.downloads, &download{kind, ids, run, done, ctx, cancel})
+	staged := func(err error) {
+		if err == nil { // now in the cache: their chips can drag them out
+			a.stageCached(items)
+		}
+		if done != nil {
+			done(err)
+		}
+	}
+	a.downloads = append(a.downloads, &download{kind, ids, run, staged, ctx, cancel})
 	if len(a.downloads) == 1 {
 		a.runDownload()
 	}
@@ -86,6 +97,62 @@ func (a *App) downloadState(id int64) downloadState {
 		}
 	}
 	return downloadNone
+}
+
+// stageCached gives each of items already in the cache a copy under its own
+// name, in a directory Close removes, for its chip to drag out (ADR 0044,
+// phase 1): a drag must hand over a file the moment it starts. It asks the
+// cache only, so nothing downloads, and keeps a copy for the run while its
+// file is there. UI thread.
+func (a *App) stageCached(items []core.AttachmentInfo) {
+	var files []core.AttachmentInfo
+	var ids []int64
+	had := map[int64]string{}
+	for _, at := range items {
+		if at.Inline {
+			continue
+		}
+		files, ids = append(files, at), append(ids, at.ID)
+		if p, ok := a.staged[at.ID]; ok {
+			had[at.ID] = p
+		}
+	}
+	if len(files) == 0 {
+		return
+	}
+	plat, staged := a.plat, map[int64]string{}
+	a.do(func(ctx context.Context) error {
+		cached, err := a.svc.CachedAttachments(ctx, ids)
+		if err != nil {
+			return err
+		}
+		for _, at := range files {
+			if p, ok := had[at.ID]; ok {
+				if _, err := os.Stat(p); err == nil {
+					staged[at.ID] = p
+					continue
+				}
+			}
+			src, ok := cached[at.ID]
+			if !ok {
+				continue
+			}
+			dir, err := a.tempDir(plat.TempDir())
+			if err != nil {
+				return err
+			}
+			dst := filepath.Join(dir, core.FileName(at.Filename, "attachment"))
+			if cloneFile(src, dst) == nil {
+				staged[at.ID] = dst
+			}
+		}
+		return nil
+	}, func(error) { // best effort: an unstaged chip still opens and saves
+		if a.staged == nil {
+			a.staged = map[int64]string{}
+		}
+		maps.Copy(a.staged, staged)
+	})
 }
 
 // cancelDownload cancels every download of attachment id: a waiting one

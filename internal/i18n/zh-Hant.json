@@ -571,6 +571,7 @@
   "reader_attachments_select_item": "選取 {arg1}",
   "reader_attachments_downloading": "正在下載 {arg1}",
   "reader_attachments_cancel_download": "取消下載 {arg1}",
+  "reader_attachments_drag_hint": "打開或儲存後可以拖出",
   "reader_attachments_count": "{arg1, number, ::group-off} 個附件",
   "reader_attachments_selected": "已選 {arg1, number, ::group-off} / {arg2, number, ::group-off}",
   "reader_attachments_save_all": "全部儲存…",

@@ -304,6 +304,9 @@ type App struct {
 	typeIcons   map[string]ui.ImageSource // by extension: the file manager's icon (typeIcon)
 
 	downloads []*download // attachment downloads, the running one first (downloads.go)
+	// staged is each cached attachment's copy under its own name, by ID, in a
+	// tempDir: a chip drags it out (stageCached). UI thread.
+	staged map[int64]string
 
 	tempMu   sync.Mutex
 	tempDirs []string // made by tempDir; Close removes them

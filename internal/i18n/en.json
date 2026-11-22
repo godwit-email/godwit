@@ -1086,6 +1086,7 @@
       }
     }
   },
+  "reader_attachments_drag_hint": "Open or save it to drag it out",
   "reader_attachments_count": "{arg1, plural, one {{arg1, number, ::group-off} attachment} other {{arg1, number, ::group-off} attachments}}",
   "@reader_attachments_count": {
     "placeholders": {
