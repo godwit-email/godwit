@@ -191,3 +191,26 @@ func TestSendLaterRunsSendChecks(t *testing.T) {
 	require.Len(t, out, 1)
 	assert.Equal(t, at.UnixMilli(), out[0].SendAt.UnixMilli())
 }
+
+// A scheduled reply taken back unchanged, only its quote and signature, is not
+// empty: closing it keeps the draft and its send time.
+func TestDeleteDraftIfEmptyKeepsScheduled(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("o@x", "Bob <bob@example.com>", "alice@example.com", "plan", day, "the plan"))
+	e.sync(t)
+	d, err := e.s.NewDraft(bg, e.acc.ID, "reply", e.idOf(t, "o@x"))
+	require.NoError(t, err)
+	at := e.clock.Now().Add(time.Hour).Truncate(time.Millisecond)
+	require.NoError(t, e.s.SendLater(bg, d.ID, d.Revision, at, ""))
+	require.NoError(t, e.s.CancelOutbox(bg, e.onlyItem(t).ID))
+	got, err := e.s.GetDraft(bg, d.ID)
+	require.NoError(t, err)
+	deleted, err := e.s.DeleteDraftIfEmpty(bg, d.ID, got.Revision)
+	require.NoError(t, err)
+	assert.False(t, deleted)
+
+	e.reopen(t)
+	got, err = e.s.GetDraft(bg, d.ID)
+	require.NoError(t, err)
+	assert.Equal(t, at, got.ScheduledFor)
+}
