@@ -260,3 +260,71 @@ func TestRemoveAppAndWitDeadlines(t *testing.T) {
 	require.NoError(t, e.s.UndoRemoveAppAndWitDeadlines(bg, forged))
 	assert.Nil(t, e.deadlineOf(t, "p@x"))
 }
+
+// The 回复日期 condition reads the dates in effect: 有, 没有, due within N days
+// (today included, overdue not) and 已过期, in groups and pages too.
+func TestViewDeadlineCondition(t *testing.T) {
+	e := newSendEnv(t, false)
+	for _, mid := range []string{"soon", "today", "passed", "later", "overdue", "none", "removed"} {
+		e.put(t, "INBOX", eml(mid+"@x", "bob@a.example", "alice@example.com", mid, e.viewAt(1), "Reply by Friday."))
+	}
+	e.put(t, "Sent", eml("mine@x", "alice@example.com", "dan@a.example", "mine", e.viewAt(1), "Tell me."))
+	e.sync(t)
+	set := func(mid string, d Deadline) {
+		d.MessageID = e.idOf(t, mid+"@x")
+		require.NoError(t, e.s.SetThreadDeadline(bg, e.threadOf(t, mid+"@x"), d), mid)
+	}
+	set("soon", Deadline{Date: e.day(2)})
+	set("today", Deadline{Date: e.day(0)})
+	set("passed", Deadline{Date: e.day(0), Time: "00:00"})
+	set("later", Deadline{Date: e.day(3)})
+	set("overdue", Deadline{Date: e.day(-1)})
+	set("removed", Deadline{Date: e.day(1)})
+	ui := WithUISession(t.Context(), e.s)
+	require.NoError(t, e.s.SetThreadDeadline(ui, e.threadOf(t, "removed@x"), Deadline{}), "the user removes it")
+	require.NoError(t, e.s.SetThreadDeadline(ui, e.threadOf(t, "mine@x"), Deadline{Date: e.day(1)}), "the user's own date, on a conversation with no 回复状态")
+
+	for value, want := range map[string][]string{
+		RuleYes:             {"later", "mine", "overdue", "passed", "soon", "today"},
+		RuleNo:              {"none", "removed"},
+		"3":                 {"mine", "soon", "today"},
+		"1":                 {"today"},
+		ViewDeadlineOverdue: {"overdue", "passed"},
+	} {
+		assert.Equal(t, map[string][]string{ViewGroupOther: want}, e.shown(t, flatDoc(MatchAll, cond(FieldDeadline, OpIs, value))), value)
+	}
+
+	id, err := e.s.SaveView(bg, SavedView{Name: "Due", Icon: "team", Doc: SavedViewDoc{Match: MatchAll, Groups: []ViewGroup{
+		{ID: "due", Name: "Due", Match: MatchAll, Conditions: []RuleCondition{cond(FieldDeadline, OpIs, "3")}}}}})
+	require.NoError(t, err)
+	got, err := e.s.ViewContents(bg, id, 2)
+	require.NoError(t, err)
+	page := got.Groups[0]
+	require.Equal(t, "due", page.ID)
+	assert.Equal(t, 3, page.Total)
+	seen := len(page.Items)
+	page, err = e.s.ViewGroupPage(bg, id, "due", page.NextCursor, 2)
+	require.NoError(t, err)
+	assert.Equal(t, 3, seen+len(page.Items), "the next page has the rest")
+	assert.Empty(t, page.NextCursor)
+}
+
+// 回复日期 is for views only: a date an app, Wit or the summary wrote must not
+// set off a rule's actions.
+func TestDeadlineConditionIsViewOnly(t *testing.T) {
+	e := newSendEnv(t, false)
+	save := func(c RuleCondition) error {
+		_, err := e.s.SaveView(bg, SavedView{Name: "X", Icon: "team", Doc: flatDoc(MatchAll, c)})
+		return err
+	}
+	for _, v := range []string{"0", "3651", "x", ""} {
+		assert.ErrorIs(t, save(cond(FieldDeadline, OpIs, v)), ErrInvalidView, v)
+	}
+	assert.ErrorIs(t, save(cond(FieldDeadline, OpContains, RuleYes)), ErrInvalidView, "op")
+	for _, v := range []string{RuleYes, RuleNo, ViewDeadlineOverdue, "1", "3650"} {
+		assert.NoError(t, save(cond(FieldDeadline, OpIs, v)), v)
+		_, err := e.s.SaveRule(bg, Rule{Doc: RuleDoc{Version: RuleVersion, Trigger: TriggerReceive, Match: MatchAll,
+			Conditions: []RuleCondition{cond(FieldDeadline, OpIs, v)}, Actions: []RuleAction{{Kind: ActionRead}}}})
+		assert.ErrorIs(t, err, ErrInvalidRule, v)
+	}
+}
