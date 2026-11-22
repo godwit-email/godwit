@@ -142,6 +142,7 @@
   },
   "compose_reply_to": "Reply-To",
   "compose_reply_to_input": "Reply-To address",
+  "compose_recipients_changed": "The recipients were changed elsewhere. The address you are typing has not been added yet: check the recipients before sending.",
   "compose_send": "Send",
   "mail_scheduled": "Scheduled",
   "scheduled_note": "Godwit sends scheduled mail only while it is running, in a window or in the background. If it is not running at the time, the message goes out the next time Godwit starts.",

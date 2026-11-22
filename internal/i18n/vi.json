@@ -90,6 +90,7 @@
   "compose_remove": "Xóa {arg1}",
   "compose_reply_to": "Trả lời đến",
   "compose_reply_to_input": "Địa chỉ trả lời",
+  "compose_recipients_changed": "Người nhận đã được thay đổi ở nơi khác. Địa chỉ bạn đang nhập chưa được thêm: hãy kiểm tra người nhận trước khi gửi.",
   "compose_send": "Gửi",
   "mail_scheduled": "Đã lên lịch",
   "scheduled_note": "Godwit chỉ gửi thư đã lên lịch khi đang chạy, trong cửa sổ hoặc ở chế độ nền. Nếu lúc đó Godwit không chạy, thư sẽ được gửi khi Godwit khởi động lần tới.",

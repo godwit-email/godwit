@@ -90,6 +90,7 @@
   "compose_remove": "{arg1} verwijderen",
   "compose_reply_to": "Antwoord aan",
   "compose_reply_to_input": "Antwoordadres",
+  "compose_recipients_changed": "De ontvangers zijn elders gewijzigd. Het adres dat je typt is nog niet toegevoegd: controleer de ontvangers voordat je verstuurt.",
   "compose_send": "Versturen",
   "mail_scheduled": "Gepland",
   "scheduled_note": "Godwit verstuurt geplande e-mail alleen terwijl het draait, in een venster of op de achtergrond. Draait het op dat moment niet, dan wordt het bericht verstuurd zodra Godwit weer start.",

@@ -90,6 +90,7 @@
   "compose_remove": "移除 {arg1}",
   "compose_reply_to": "回覆地址",
   "compose_reply_to_input": "填寫回覆地址",
+  "compose_recipients_changed": "收件人已在別處被修改。你正在輸入的地址還沒有加入，傳送前請核對收件人。",
   "compose_send": "傳送",
   "mail_scheduled": "已排定",
   "scheduled_note": "排定的郵件只在 Godwit 執行時傳送（開著視窗或在背景執行皆可）。到時間時若 Godwit 沒有執行，會在下次啟動時傳送。",

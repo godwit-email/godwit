@@ -59,16 +59,23 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
       let revision = 1;
       let followed = false;
       const body = () => (revision > 1 || withBody ? fx.compose(mode, true).body : "");
-      const changed = (): BodyChange => ({
-        revision,
-        attachments: [],
-        conflict: false,
-        signatureHtml: "",
-        updatedAt: Date.now(),
-        body: body(),
-        subject: fx.compose(mode, true).subject,
-        fromProgram: revision > 1 || state === "program", // Wit's edit marks the draft
-      });
+      const changed = (): BodyChange => {
+        const { to, cc, bcc, replyTo, subject } = fx.compose(mode, true);
+        return {
+          revision,
+          attachments: [],
+          conflict: false,
+          signatureHtml: "",
+          updatedAt: Date.now(),
+          body: body(),
+          to,
+          cc,
+          bcc,
+          replyTo,
+          subject,
+          fromProgram: revision > 1 || state === "program", // Wit's edit marks the draft
+        };
+      };
       const history = () =>
         state === "streaming"
           ? fx.streaming()

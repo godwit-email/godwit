@@ -90,6 +90,7 @@
   "compose_remove": "{arg1} entfernen",
   "compose_reply_to": "Antwort an",
   "compose_reply_to_input": "Antwortadresse",
+  "compose_recipients_changed": "Die Empfänger wurden an anderer Stelle geändert. Die Adresse, die Sie gerade eingeben, ist noch nicht hinzugefügt: Prüfen Sie die Empfänger vor dem Senden.",
   "compose_send": "Senden",
   "mail_scheduled": "Geplant",
   "scheduled_note": "Godwit versendet geplante E-Mails nur, solange es läuft – im Fenster oder im Hintergrund. Läuft es zum geplanten Zeitpunkt nicht, geht die Nachricht beim nächsten Start von Godwit raus.",

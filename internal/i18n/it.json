@@ -90,6 +90,7 @@
   "compose_remove": "Rimuovi {arg1}",
   "compose_reply_to": "Rispondi a",
   "compose_reply_to_input": "Indirizzo di risposta",
+  "compose_recipients_changed": "I destinatari sono stati modificati altrove. L’indirizzo che stai digitando non è ancora stato aggiunto: controlla i destinatari prima di inviare.",
   "compose_send": "Invia",
   "mail_scheduled": "Programmati",
   "scheduled_note": "Godwit invia la posta programmata solo mentre è in esecuzione, in una finestra o in background. Se a quell’ora non è in esecuzione, il messaggio parte al successivo avvio di Godwit.",

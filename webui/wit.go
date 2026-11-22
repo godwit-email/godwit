@@ -561,8 +561,14 @@ func (p *ComposePage) Follow(ctx context.Context) (WitHistory, error) {
 // editable HTML as stored, which the page adopts with the Change at once.
 type BodyChange struct {
 	Change
-	// Subject is the draft's subject as stored.
-	Subject string `json:"subject"`
+	// To, Cc, Bcc, ReplyTo and Subject are the header fields as stored: a
+	// program may have changed them too, and the page sends the revision it
+	// adopts, so it must show them.
+	To      []string `json:"to"`
+	Cc      []string `json:"cc"`
+	Bcc     []string `json:"bcc"`
+	ReplyTo string   `json:"replyTo"`
+	Subject string   `json:"subject"`
 	// Body is the editable HTML as stored.
 	Body string `json:"body"`
 	// FromProgram is core.Draft.FromProgram as stored: a Wit edit marks the
@@ -734,7 +740,8 @@ func bodyChange(ctx context.Context, svc Service, s *session, err error) (BodyCh
 	if err != nil {
 		return BodyChange{}, keyed(err)
 	}
-	return BodyChange{Change: ch, Subject: d.Subject, Body: s.adopt(d), FromProgram: d.FromProgram}, nil
+	return BodyChange{Change: ch, To: nz(d.To), Cc: nz(d.Cc), Bcc: nz(d.Bcc), ReplyTo: d.ReplyTo,
+		Subject: d.Subject, Body: s.adopt(d), FromProgram: d.FromProgram}, nil
 }
 
 // Undo takes back the latest edit Wit applied to the calling window's

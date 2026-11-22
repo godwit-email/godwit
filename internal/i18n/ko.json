@@ -90,6 +90,7 @@
   "compose_remove": "{arg1} 제거",
   "compose_reply_to": "회신 주소",
   "compose_reply_to_input": "회신 주소 입력",
+  "compose_recipients_changed": "받는 사람이 다른 곳에서 변경되었습니다. 입력 중인 주소는 아직 추가되지 않았습니다. 보내기 전에 받는 사람을 확인하세요.",
   "compose_send": "보내기",
   "mail_scheduled": "예약됨",
   "scheduled_note": "예약한 메일은 Godwit이 실행 중일 때(창 또는 백그라운드)만 보내집니다. 그 시각에 실행 중이 아니면 다음에 Godwit을 시작할 때 보내집니다.",

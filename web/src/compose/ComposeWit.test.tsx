@@ -216,6 +216,10 @@ const inline: Review = {
 };
 const change = (body: string, revision: number): BodyChange => ({
   revision,
+  to: state.to,
+  cc: [],
+  bcc: [],
+  replyTo: "",
   subject: "",
   body,
   conflict: false,
@@ -993,4 +997,27 @@ test.each([
   await screen.findByRole("region", { name: "正文修订" });
   const card = (await screen.findByText(a.tool)).parentElement as HTMLElement;
   expect(within(card).queryByRole("button", { name: "调整" })).toBeNull();
+});
+
+test("a reload shows the recipients changed behind the window", async () => {
+  vi.mocked(api.latest).mockResolvedValue({ ...latest("Wit 写的", 9), bcc: ["eve@x.com"] });
+  await setup();
+  emit({ kind: "done" });
+  expect(await screen.findByRole("button", { name: "移除 eve@x.com" })).toBeInTheDocument();
+  expect(screen.queryByRole("alert")).toBeNull(); // nothing was being typed
+});
+
+test("an address being typed survives a reload that changes the recipients, and the clash shows", async () => {
+  await setup();
+  const to = screen.getByRole("combobox", { name: "收件人" });
+  await userEvent.type(to, "bob@x.com");
+  vi.mocked(api.latest).mockResolvedValue({ ...latest("Wit 写的", 9), to: ["ann@x.com"] });
+  emit({ kind: "done" });
+  expect(await screen.findByRole("button", { name: "移除 ann@x.com" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "移除 a@x.com" })).toBeNull();
+  expect(to).toHaveValue("bob@x.com");
+  expect(screen.getByRole("alert")).toHaveTextContent("收件人已在别处被修改");
+  await userEvent.type(to, "{Enter}");
+  expect(screen.getByRole("button", { name: "移除 bob@x.com" })).toBeInTheDocument();
+  expect(screen.queryByRole("alert")).toBeNull();
 });

@@ -90,6 +90,7 @@
   "compose_remove": "Remover {arg1}",
   "compose_reply_to": "Responder a",
   "compose_reply_to_input": "Endereço de resposta",
+  "compose_recipients_changed": "Os destinatários foram alterados noutro lugar. O endereço que está a escrever ainda não foi adicionado: verifique os destinatários antes de enviar.",
   "compose_send": "Enviar",
   "mail_scheduled": "Agendados",
   "scheduled_note": "O Godwit só envia mensagens agendadas enquanto está em execução, numa janela ou em segundo plano. Se não estiver em execução nessa hora, a mensagem é enviada na próxima vez que o Godwit iniciar.",

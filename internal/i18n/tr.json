@@ -90,6 +90,7 @@
   "compose_remove": "{arg1} öğesini kaldır",
   "compose_reply_to": "Yanıt Adresi",
   "compose_reply_to_input": "Yanıt adresi",
+  "compose_recipients_changed": "Alıcılar başka bir yerde değiştirildi. Yazdığınız adres henüz eklenmedi: göndermeden önce alıcıları kontrol edin.",
   "compose_send": "Gönder",
   "mail_scheduled": "Zamanlanmış",
   "scheduled_note": "Godwit zamanlanmış postaları yalnızca çalışırken (pencerede ya da arka planda) gönderir. O saatte çalışmıyorsa ileti, Godwit bir sonraki açılışında gönderilir.",

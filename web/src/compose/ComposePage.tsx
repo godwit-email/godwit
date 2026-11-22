@@ -219,7 +219,7 @@ const fmt = (d: Date) =>
 /** The read-only signature: Go's sanitized HTML (core.SignatureShown), "" for none. */
 const sigOf = (s: { signatureHtml: string }) => s.signatureHtml;
 
-const editOf = (s: ComposeState): ComposeEdit => ({
+const editOf = (s: ComposeEdit): ComposeEdit => ({
   to: s.to,
   cc: s.cc,
   bcc: s.bcc,
@@ -401,18 +401,18 @@ function Compose({
     (key === "wit.compose.locked" ? toast.warning : toast)(t(key)); // native's toast ID is its text: one at a time
   };
 
-  // The body as stored, adopted: the editor takes it as one undoable step; the saver reads it as saved.
-  const adopt = (revision: number, body: string, subject?: string) => {
-    cur.current = {
-      ...cur.current,
-      body,
-      revision,
-      ...(subject !== undefined ? { subject } : {}),
-    };
+  // The draft as stored, adopted: the editor takes the body as one undoable step; the saver reads it
+  // as saved. The recipients come with it: a send passes this revision, so the page shows whom it
+  // goes to (an address still being typed is kept, and the clash shown).
+  const adopt = (l: ComposeEdit) => {
+    const was = cur.current;
+    const recipients = (e: ComposeEdit) => JSON.stringify([e.to, e.cc, e.bcc, e.replyTo]);
+    if (recipients(l) !== recipients(was)) fieldsRef.current?.replaced();
+    cur.current = editOf(l);
     setF(cur.current);
-    editorRef.current?.setValue(body);
+    editorRef.current?.setValue(l.body);
     // biome-ignore lint/correctness/useHookAtTopLevel: the saver's method, not a hook
-    saver.current?.useLatest(revision, cur.current);
+    saver.current?.useLatest(l.revision, cur.current);
   };
 
   // Reads the draft after a run or a decision; the newest read wins. Skipped in conflict, when the
@@ -432,7 +432,7 @@ function Compose({
       }
       if (s.status === "conflict" || s.dirty || l.revision <= s.revision) return;
       if (edits.current !== runEdits.current) return;
-      adopt(l.revision, l.body, l.subject);
+      adopt(l);
       setFromProgram(l.fromProgram);
       setApplied(true);
     } catch (e) {
@@ -632,7 +632,7 @@ function Compose({
     try {
       const r = await sv.run(op);
       if (r && !r.conflict) {
-        adopt(r.revision, r.body, r.subject);
+        adopt(r);
         setFromProgram(r.fromProgram);
         setSignature(sigOf(r));
         setAttachments(r.attachments);

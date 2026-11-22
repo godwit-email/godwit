@@ -90,6 +90,7 @@
   "compose_remove": "{arg1} を削除",
   "compose_reply_to": "返信先",
   "compose_reply_to_input": "返信先アドレス",
+  "compose_recipients_changed": "宛先が別の場所で変更されました。入力中のアドレスはまだ追加されていません。送信前に宛先を確認してください。",
   "compose_send": "送信",
   "mail_scheduled": "送信予定",
   "scheduled_note": "予約したメールは Godwit の実行中（ウィンドウまたはバックグラウンド）にのみ送信されます。その時刻に実行されていない場合は、次に Godwit を起動したときに送信されます。",

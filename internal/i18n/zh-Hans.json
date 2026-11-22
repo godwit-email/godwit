@@ -90,6 +90,7 @@
   "compose_remove": "移除 {arg1}",
   "compose_reply_to": "回复地址",
   "compose_reply_to_input": "填写回复地址",
+  "compose_recipients_changed": "收件人已在别处被修改。你正在输入的地址还没有加入，发送前请核对收件人。",
   "compose_send": "发送",
   "mail_scheduled": "定时邮件",
   "scheduled_note": "定时邮件只在 Godwit 运行时发出（开着窗口或在后台运行均可）。到时间时如果 Godwit 没有运行，会在下次启动时发出。",
