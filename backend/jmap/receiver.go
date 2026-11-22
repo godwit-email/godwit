@@ -288,7 +288,17 @@ func (s *round) keepLost(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return s.appear(ctx, mails, nil, true)
+	if err := s.appear(ctx, mails, nil, true); err != nil {
+		return err
+	}
+	// Local storage keeps a lost message's flags as it finds it again; the
+	// cursor moves past any change made meanwhile, so report the server's.
+	for _, e := range mails {
+		for _, m := range slices.Sorted(maps.Keys(e.MailboxIDs)) {
+			s.add(backend.FlagsChanged{Location: backend.Location{Folder: backend.FolderRef(m), Ref: backend.MessageRef(e.ID), ServerID: string(e.ID)}, Flags: flags(e.Keywords)})
+		}
+	}
+	return nil
 }
 
 // emailState is an Email/get of no ids: only the state. (email.Get leaves
