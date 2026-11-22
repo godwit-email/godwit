@@ -780,7 +780,7 @@ func fileURL(path string) string {
 // removes the copies.
 func (a *App) openAttachment(att core.AttachmentInfo) {
 	plat := a.plat
-	a.download(downloadOpen, []core.AttachmentInfo{att}, func(ctx context.Context) error {
+	a.download(downloadOpen, nil, []core.AttachmentInfo{att}, func(ctx context.Context) error {
 		var dst string
 		err := a.svc.FetchAttachments(ctx, []int64{att.ID}, func(src string, _ core.AttachmentInfo) error {
 			dir, err := a.tempDir(plat.TempDir())
@@ -809,7 +809,7 @@ func (a *App) saveAttachment(att core.AttachmentInfo) {
 			a.toastErr(err)
 			return
 		}
-		a.download(downloadSave, []core.AttachmentInfo{att}, func(ctx context.Context) error {
+		a.download(downloadSave, dst, []core.AttachmentInfo{att}, func(ctx context.Context) error {
 			return a.svc.FetchAttachments(ctx, []int64{att.ID}, func(src string, _ core.AttachmentInfo) error { return copyFile(src, dst) })
 		}, a.toastErr)
 	})
@@ -977,11 +977,12 @@ func (a *App) writeAttachmentsToDir(ctx context.Context, dir string, items []cor
 
 func (r *reader) finishAttachmentsSaved(msgID int64, saved int, err error) {
 	a := r.p.a
-	if err != nil {
+	cancelled := errors.Is(err, context.Canceled) // a chip's cancel stops the whole batch: say what it had saved
+	if err != nil && !cancelled {
 		a.toastErr(err)
 		return
 	}
-	if b := r.bodies[msgID]; b != nil {
+	if b := r.bodies[msgID]; b != nil && !cancelled {
 		clear(b.attSel)
 	}
 	if saved > 0 {
@@ -1062,7 +1063,11 @@ func (r *reader) resolveAttachmentConflict(mode attConflictMode) {
 func (r *reader) saveToFolder(msgID int64, dir string, items []core.AttachmentInfo, mode attConflictMode, existing map[string]bool) {
 	a := r.p.a
 	var saved int
-	a.download(downloadFolder, items, func(ctx context.Context) (err error) {
+	type folder struct {
+		dir  string
+		mode attConflictMode
+	}
+	a.download(downloadFolder, folder{dir, mode}, items, func(ctx context.Context) (err error) {
 		saved, err = a.writeAttachmentsToDir(ctx, dir, items, mode, existing)
 		return err
 	}, func(err error) {
@@ -2308,6 +2313,7 @@ func (r *reader) attachments(c *ui.Context, b *msgBody) {
 				chip := ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1.5)).Padding(th.Space(2), th.Space(2.5)).
 					Radius(t.Radius.Lg).AlignItems(ui.Center)
 				dragged := false
+				// shortcut: a copy the system removed still drags (a dead file URL), as DragDataFrom cannot decline a drag; stat at drag start once mygo can.
 				if path, ok := r.p.a.staged[att.ID]; ok { // dragging it out hands over its copy
 					if data, err := transfer.FileData(path); err == nil {
 						chip.DragData(data, transfer.DragOptions{Operations: transfer.Copy})

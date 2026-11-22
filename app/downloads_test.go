@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -175,4 +177,55 @@ func TestDownloadChipBusyAndCancel(t *testing.T) {
 	if h.calls("OpenPath") != 0 || len(h.app.toasts) != 0 {
 		t.Fatalf("after cancel: calls %q, toasts %v", h.plat.Calls(), h.app.toasts)
 	}
+}
+
+// Saving an attachment to a second path while the first save still downloads
+// writes both files.
+func TestDownloadSaveToTwoPathsWritesBoth(t *testing.T) {
+	h, atts := openWithAttachments(t, "report.pdf")
+	held := holdFetches(h, nil)
+	dir := t.TempDir()
+	paths := []string{filepath.Join(dir, "one.pdf"), filepath.Join(dir, "two.pdf")}
+	for i, p := range paths {
+		h.plat.mu.Lock()
+		h.plat.savePath = p
+		h.plat.mu.Unlock()
+		h.app.saveAttachment(atts[0])
+		h.until("the save queued", func() bool { return len(h.app.downloads) == i+1 })
+	}
+	close(held.release)
+	h.until("the queue empties", func() bool { return !h.app.Busy() })
+	for _, p := range paths {
+		if got, err := os.ReadFile(p); err != nil || string(got) != "%PDF-1.4 report.pdf" {
+			t.Fatalf("%s: %q, %v", p, got, err)
+		}
+	}
+}
+
+// Opening an attachment again right after cancelling its download, before the
+// cancelled fetch has returned, downloads and opens it.
+func TestDownloadAgainAfterCancelRuns(t *testing.T) {
+	h, atts := openWithAttachments(t, "report.pdf")
+	held := holdFetches(h, nil)
+	h.app.openAttachment(atts[0])
+	recv(t, held.started, "the fetch")
+	h.app.cancelDownload(atts[0].ID)
+	h.app.openAttachment(atts[0])
+	recv(t, held.ended, "the cancelled fetch to stop")
+	close(held.release)
+	h.until("the queue empties", func() bool { return !h.app.Busy() })
+	if n := h.calls("OpenPath"); n != 1 {
+		t.Fatalf("opened %d times", n)
+	}
+}
+
+// A save that fails after the download, writing to a folder that is gone,
+// still stages the now-cached attachment for its chip to drag.
+func TestDownloadFailedWriteStillStages(t *testing.T) {
+	h, atts := openWithAttachments(t, "report.pdf")
+	h.plat.mu.Lock()
+	h.plat.savePath = filepath.Join(t.TempDir(), "gone", "report.pdf")
+	h.plat.mu.Unlock()
+	h.app.saveAttachment(atts[0])
+	h.until("the cached attachment staged", func() bool { return h.app.staged[atts[0].ID] != "" })
 }

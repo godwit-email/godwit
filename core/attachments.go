@@ -94,37 +94,27 @@ func (s *Service) GetAttachment(ctx context.Context, attachmentID int64) (string
 // CachedAttachments returns, by ID, the cache file of each attachment already
 // on disk, for the interface to use without a download (ADR 0044). Offline, and
 // it does not mark them used: showing a chip is not a use. A local archive's
-// attachment counts as cached, read from its original.
+// attachment counts once extracted beside its original (archivePart).
 func (s *Service) CachedAttachments(ctx context.Context, attachmentIDs []int64) (map[int64]string, error) {
 	out := map[int64]string{}
 	if len(attachmentIDs) == 0 {
 		return out, nil
 	}
-	rows, err := s.db.Query(ctx, "SELECT a.id, a.cache_path, m.content_hash FROM attachments a JOIN messages m ON m.id = a.message_id WHERE a.id IN ("+
+	rows, err := s.db.Query(ctx, "SELECT a.id, a.cache_path, m.content_hash, m.account_id, a.part FROM attachments a JOIN messages m ON m.id = a.message_id WHERE a.id IN ("+
 		placeholders(len(attachmentIDs))+")", int64Args(attachmentIDs)...)
 	if err != nil {
 		return nil, err
 	}
-	var archived []int64
 	for _, r := range rows.Values {
-		id, p := store.Int(r[0]), store.Str(r[1])
-		if store.Str(r[2]) != "" {
-			archived = append(archived, id)
-		} else if _, err := os.Stat(p); p != "" && err == nil {
-			out[id] = p
+		p := store.Str(r[1])
+		if hash := store.Str(r[2]); hash != "" {
+			if p, err = filepath.Abs(filepath.Join(s.archivePartsDir(store.Int(r[3]), hash), store.Str(r[4]))); err != nil {
+				return nil, err
+			}
 		}
-	}
-	if len(archived) == 0 {
-		return out, nil
-	}
-	f := s.newAttachmentFetcher(ctx) // an archive's part neither dials nor touches
-	defer f.close()
-	for _, id := range archived {
-		if p, _, err := f.get(id); err == nil {
-			out[id] = p
-		} else if ctx.Err() != nil {
-			return nil, ctx.Err()
-		} // too large or unreadable: opening it says why
+		if _, err := os.Stat(p); p != "" && err == nil {
+			out[store.Int(r[0])] = p
+		}
 	}
 	return out, nil
 }

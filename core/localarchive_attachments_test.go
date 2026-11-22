@@ -78,8 +78,8 @@ func TestLocalArchiveAttachmentsReadFromOriginal(t *testing.T) {
 	read()
 }
 
-// A local archive's attachments are always cached: CachedAttachments names
-// the part read from the original, never opened before.
+// A local archive's attachment counts as cached once opened: CachedAttachments
+// names the part extracted beside the original, and extracts none itself.
 func TestLocalArchiveAttachmentsCountAsCached(t *testing.T) {
 	s := newTestService(t)
 	acc, inbox := newArchive(t, s)
@@ -93,6 +93,11 @@ func TestLocalArchiveAttachmentsCountAsCached(t *testing.T) {
 		}
 	}
 	got, err := s.CachedAttachments(ctx, []int64{id})
+	require.NoError(t, err)
+	require.Empty(t, got, "never opened, so not extracted")
+	_, _, err = s.GetAttachment(ctx, id)
+	require.NoError(t, err)
+	got, err = s.CachedAttachments(ctx, []int64{id})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	b, err := os.ReadFile(got[id])

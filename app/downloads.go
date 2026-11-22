@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 // thread.
 type download struct {
 	kind   downloadKind
+	dest   any // the save path, or the folder with its conflict choice; nil to open
 	ids    []int64
 	run    func(ctx context.Context) error // off the UI thread
 	done   func(err error)                 // UI thread
@@ -24,7 +26,7 @@ type download struct {
 }
 
 // downloadKind is the kind of destination: the same attachments queued twice
-// for one kind download once.
+// for one destination download once.
 type downloadKind int
 
 const (
@@ -43,25 +45,28 @@ const (
 )
 
 // download queues run for items unless the same attachments already wait,
-// or download, for the same kind of destination. UI thread.
-func (a *App) download(kind downloadKind, items []core.AttachmentInfo, run func(ctx context.Context) error, done func(error)) {
+// or download, for the same destination (dest, comparable). A cancelled one
+// still ending does not count. UI thread.
+func (a *App) download(kind downloadKind, dest any, items []core.AttachmentInfo, run func(ctx context.Context) error, done func(error)) {
 	ids := make([]int64, len(items))
 	for i, at := range items {
 		ids[i] = at.ID
 	}
-	if slices.ContainsFunc(a.downloads, func(d *download) bool { return d.kind == kind && slices.Equal(d.ids, ids) }) {
+	if slices.ContainsFunc(a.downloads, func(d *download) bool {
+		return d.kind == kind && d.dest == dest && slices.Equal(d.ids, ids) && d.ctx.Err() == nil
+	}) {
 		return
 	}
 	ctx, cancel := context.WithCancel(a.ctx) // Close cancels them all
 	staged := func(err error) {
-		if err == nil { // now in the cache: their chips can drag them out
+		if !errors.Is(err, context.Canceled) { // what reached the cache, even if writing it out failed, can drag out
 			a.stageCached(items)
 		}
 		if done != nil {
 			done(err)
 		}
 	}
-	a.downloads = append(a.downloads, &download{kind, ids, run, staged, ctx, cancel})
+	a.downloads = append(a.downloads, &download{kind, dest, ids, run, staged, ctx, cancel})
 	if len(a.downloads) == 1 {
 		a.runDownload()
 	}
@@ -155,8 +160,9 @@ func (a *App) stageCached(items []core.AttachmentInfo) {
 	})
 }
 
-// cancelDownload cancels every download of attachment id: a waiting one
-// leaves the queue, the running one's fetch stops. UI thread.
+// cancelDownload cancels every download of attachment id, with the rest of
+// its batch: a waiting one leaves the queue, the running one's fetch stops
+// and a Save all says how many it had saved. UI thread.
 func (a *App) cancelDownload(id int64) {
 	if len(a.downloads) == 0 {
 		return
