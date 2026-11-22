@@ -229,3 +229,34 @@ func TestDownloadFailedWriteStillStages(t *testing.T) {
 	h.app.saveAttachment(atts[0])
 	h.until("the cached attachment staged", func() bool { return h.app.staged[atts[0].ID] != "" })
 }
+
+// drainFetch hands over every file, as a stream draining what it had buffered
+// does, and cancels after the first.
+type drainFetch struct {
+	Service
+	cancel context.CancelFunc
+}
+
+func (s drainFetch) FetchAttachments(ctx context.Context, ids []int64, fn func(string, core.AttachmentInfo) error) error {
+	return s.Service.FetchAttachments(context.WithoutCancel(ctx), ids, func(p string, info core.AttachmentInfo) error {
+		err := fn(p, info)
+		s.cancel()
+		return err
+	})
+}
+
+// A Save all cancelled mid-batch writes nothing after the file in hand, though
+// files already fetched still arrive.
+func TestSaveAllWritesNothingAfterCancel(t *testing.T) {
+	h, atts := openWithAttachments(t, "a.pdf", "b.pdf")
+	ctx, cancel := context.WithCancel(context.Background())
+	h.app.svc = drainFetch{h.app.svc, cancel}
+	dir := t.TempDir()
+	saved, err := h.app.writeAttachmentsToDir(ctx, dir, atts, attConflictKeepBoth, nil)
+	if !errors.Is(err, context.Canceled) || saved != 1 {
+		t.Fatalf("saved %d, %v; want 1, context.Canceled", saved, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "b.pdf")); !os.IsNotExist(err) {
+		t.Errorf("b.pdf written after the cancel: %v", err)
+	}
+}

@@ -952,6 +952,9 @@ func (a *App) writeAttachmentsToDir(ctx context.Context, dir string, items []cor
 		}
 	}
 	err := a.svc.FetchAttachments(ctx, ids, func(src string, info core.AttachmentInfo) error {
+		if err := ctx.Err(); err != nil { // the stream still hands over what it had buffered: a cancel stops at the file in hand
+			return err
+		}
 		name := core.FileName(info.Filename, "attachment")
 		if mode == attConflictReplace && existing[name] && !sameWritten(name) {
 			dst := filepath.Join(dir, name)
