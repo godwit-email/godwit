@@ -29,7 +29,7 @@ var tools = []tool{
 		`{"type":"object","properties":{"folder_id":{"type":"integer","minimum":1},"unified":{"type":"string","enum":["inbox","starred"]},"cursor":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":50}},"additionalProperties":false}`, listThreads},
 	{"list_views", "List the user's views (saved lists of the conversations that meet a view's conditions, such as the built-in To handle): each view's ID and name, its groups, and how many of its conversations have unread mail. Read one with list_view_threads.", true,
 		`{"type":"object","additionalProperties":false}`, listViews},
-	{"list_view_threads", "List the conversations in a view (view: its ID or name from list_views), group by group in the view's order, then Other (those in no group), newest first in each. Each conversation says why it is there as Godwit's reader does: its group, and unreplied, new reply, waiting N days for a reply, or added by hand. It only reads; nothing is marked read or changed. For more of a group, pass its group ID and next_cursor back as group and cursor.", true,
+	{"list_view_threads", "List the conversations in a view (view: its ID or name from list_views), group by group in the view's order, then Other (those in no group), newest first in each. Each conversation says why it is there as Godwit's reader does: its group, and unreplied, new reply, waiting N days for a reply, or added by hand; and its reply date if it has one: the date (and time) by which the sender wants a reply, who set it, whether it is overdue, and the sender's words. It only reads; nothing is marked read or changed. For more of a group, pass its group ID and next_cursor back as group and cursor.", true,
 		`{"type":"object","properties":{"view":{"type":"string","minLength":1},"group":{"type":"string","minLength":1},"cursor":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":50}},"required":["view"],"additionalProperties":false}`, listViewThreads},
 	{"get_thread", "Get a conversation's messages, oldest first, without their bodies (use get_message).", true,
 		`{"type":"object","properties":{"thread_id":{"type":"integer","minimum":1}},"required":["thread_id"],"additionalProperties":false}`, getThread},
@@ -49,6 +49,8 @@ var tools = []tool{
 		`{"type":"object","properties":{"draft_id":{"type":"integer","minimum":1},"revision":{"type":"integer","minimum":1},"subject":{"type":"string"},"to":{"type":"array","items":{"type":"string"}},"cc":{"type":"array","items":{"type":"string"}},"body":{"type":"string"}},"required":["draft_id","revision"],"additionalProperties":false}`, updateDraft},
 	{"send_draft", "Ask Godwit to send a draft as it is at revision (from get_draft). The user's Send through MCP setting decides: off fails; confirm (the default) returns at once while Godwit asks the user, who may decline; direct queues it in the outbox. If the draft changed since revision, nothing is sent; read it again.", false,
 		`{"type":"object","properties":{"draft_id":{"type":"integer","minimum":1},"revision":{"type":"integer","minimum":1}},"required":["draft_id","revision"],"additionalProperties":false}`, sendDraft},
+	{"set_reply_deadline", "Sets or clears the date by which the sender wants your reply to a conversation that is waiting on you. Needs the message that asks for it; a quote must appear word for word in that message. Stored only on this device and shown with its source; it reorders the user's views and never sends, moves or changes mail. It cannot replace or clear a date the user set.", false,
+		`{"type":"object","properties":{"thread_id":{"type":"integer","minimum":1},"message_id":{"type":"integer","minimum":1},"date":{"type":"string","description":"YYYY-MM-DD in the user's calendar; empty clears it"},"time":{"type":"string","description":"HH:MM, the user's local time; leave out for the end of the day"},"quote":{"type":"string","maxLength":200}},"required":["thread_id","message_id","date"],"additionalProperties":false}`, setReplyDeadline},
 }
 
 var shows = []show{
@@ -212,6 +214,9 @@ func listViewThreads(ctx context.Context, c *rpc.Client, args json.RawMessage) (
 			untrusted(&b, id, "subject", r.Subject)
 			untrusted(&b, id, "participants", strings.Join(r.Participants, ", "))
 			untrusted(&b, id, "snippet", r.Snippet)
+			if r.Deadline != nil {
+				untrusted(&b, id, "reply_quote", r.Deadline.Quote)
+			}
 		}
 		if g.NextCursor != "" {
 			fmt.Fprintf(&b, "next_cursor: %s (pass with group %s)\n", g.NextCursor, g.ID)
@@ -236,7 +241,39 @@ func viewWhy(r core.ViewRow) string {
 	if r.Manual {
 		w = append(w, "added by hand")
 	}
-	return strings.Join(w, ", ")
+	why := strings.Join(w, ", ")
+	if d := r.Deadline; d != nil {
+		reply := strings.TrimSpace("reply by "+d.Date+" "+d.Time) + ", " + deadlineSources[d.Source]
+		if d.Overdue {
+			reply += ", overdue"
+		}
+		why = strings.TrimPrefix(why+" · "+reply, " · ")
+	}
+	return why
+}
+
+// deadlineSources say who set a reply date.
+var deadlineSources = map[string]string{core.DeadlineManual: "set by the user", core.DeadlineProgram: "set by an app",
+	core.DeadlineWit: "set by Wit", core.DeadlineAI: "found by the mail summary"}
+
+func setReplyDeadline(ctx context.Context, c *rpc.Client, args json.RawMessage) (string, error) {
+	var a struct {
+		ThreadID  int64  `json:"thread_id"`
+		MessageID int64  `json:"message_id"`
+		Date      string `json:"date"`
+		Time      string `json:"time"`
+		Quote     string `json:"quote"`
+	}
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
+	if err := c.Call(ctx, "SetThreadDeadline", nil, a.ThreadID, core.Deadline{Date: a.Date, Time: a.Time, MessageID: a.MessageID, Quote: a.Quote}); err != nil {
+		return "", err
+	}
+	if a.Date == "" {
+		return "reply date cleared", nil
+	}
+	return "reply date set", nil
 }
 
 func getThread(ctx context.Context, c *rpc.Client, args json.RawMessage) (string, error) {

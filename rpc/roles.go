@@ -16,12 +16,15 @@ const (
 // drafts, and RequestMCPSend, whose outcome core decides by the user's 通过 MCP 发送 setting. Nothing else
 // sends, and nothing here deletes, changes accounts, address books, settings,
 // extensions or model services, decides approvals or downloads attachments.
+// SetThreadDeadline sets or clears one conversation's 期限 on this device
+// only, as the program source: it sends nothing, changes no mail, and cannot
+// replace or clear one the user set (core checks the message it cites).
 var mcpMethods = map[string]bool{
 	"ListAccounts": true, "ListFolders": true, "ListThreads": true, "GetThread": true,
 	"ListMessages": true, "GetMessageText": true, "Search": true, "SearchContacts": true,
 	"ListDrafts": true, "GetDraft": true, "NewDraft": true, "SaveDraft": true,
 	"SavedViews": true, "ViewContents": true, "ViewGroupPage": true,
-	"RequestMCPSend": true,
+	"RequestMCPSend": true, "SetThreadDeadline": true,
 }
 
 // mcpDraftModes are the NewDraft modes the mcp role may use; forward is not

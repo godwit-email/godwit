@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
@@ -83,7 +84,7 @@ func cacheFiles(dataDir string) int {
 }
 
 var allTools = []string{"create_draft", "get_draft", "get_message", "get_thread", "list_accounts", "list_drafts",
-	"list_folders", "list_threads", "list_view_threads", "list_views", "search", "search_contacts", "send_draft", "show_draft", "show_mail", "update_draft"}
+	"list_folders", "list_threads", "list_view_threads", "list_views", "search", "search_contacts", "send_draft", "set_reply_deadline", "show_draft", "show_mail", "update_draft"}
 
 func TestMCPListTools(t *testing.T) {
 	e := coretest.New(t, coretest.WithoutAutoSync())
@@ -103,7 +104,7 @@ func TestMCPListTools(t *testing.T) {
 	}
 	assert.Equal(t, map[string]bool{"list_accounts": true, "list_folders": true, "list_threads": true, "get_thread": true,
 		"get_message": true, "list_views": true, "list_view_threads": true, "search": true, "search_contacts": true, "list_drafts": true, "get_draft": true, "show_draft": true, "show_mail": true,
-		"create_draft": false, "update_draft": false, "send_draft": false}, readOnly)
+		"create_draft": false, "update_draft": false, "send_draft": false, "set_reply_deadline": false}, readOnly)
 	assert.Contains(t, cs.InitializeResult().Instructions, "untrusted_email")
 	assert.NotContains(t, cs.InitializeResult().Instructions, "cannot send")
 	assert.Contains(t, cs.InitializeResult().Instructions, "Send through MCP")
@@ -294,6 +295,34 @@ func TestMCPListViewThreads(t *testing.T) {
 		require.NoError(t, err)
 	}
 	assert.True(t, strings.HasPrefix(ok(t, cs, "list_view_threads", map[string]any{"view": shadow}), fmt.Sprintf("view %s · \"Later\"\n", shadow)))
+}
+
+// set_reply_deadline writes a 期限 as another app, read back on
+// list_view_threads with the sender's words wrapped as mail; core's refusals
+// reach the agent as they are.
+func TestMCPSetReplyDeadline(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc := e.AddAccount(t, "alice@example.com")
+	e.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Quote", "Please confirm the quote by Friday."))
+	page, err := e.Svc.ListMessages(t.Context(), core.View{Unified: "inbox"}, "", 0)
+	require.NoError(t, err)
+	m := page.Items[0]
+	views, err := e.Svc.SavedViews(t.Context())
+	require.NoError(t, err)
+	cs, _ := bridge(t, e)
+	day := time.Now().AddDate(0, 0, 2).Format(time.DateOnly)
+
+	text, isErr := call(t, cs, "set_reply_deadline", map[string]any{"thread_id": m.ThreadID, "message_id": m.ID, "date": day, "quote": "by Monday"})
+	assert.True(t, isErr)
+	assert.Equal(t, core.ErrDeadlineQuote.Error(), text)
+
+	assert.Equal(t, "reply date set", ok(t, cs, "set_reply_deadline", map[string]any{"thread_id": m.ThreadID, "message_id": m.ID, "date": day, "time": "15:00", "quote": "confirm the quote by Friday"}))
+	list := ok(t, cs, "list_view_threads", map[string]any{"view": fmt.Sprint(views[0].ID)})
+	assert.Contains(t, list, fmt.Sprintf(" · unreplied · reply by %s 15:00, set by an app\n", day))
+	assert.Contains(t, list, fmt.Sprintf(`<untrusted_email id="thread-%d" field="reply_quote">confirm the quote by Friday</untrusted_email>`, m.ThreadID))
+
+	assert.Equal(t, "reply date cleared", ok(t, cs, "set_reply_deadline", map[string]any{"thread_id": m.ThreadID, "message_id": m.ID, "date": ""}))
+	assert.NotContains(t, ok(t, cs, "list_view_threads", map[string]any{"view": fmt.Sprint(views[0].ID)}), "reply by")
 }
 
 // Only the show tools carry a view (ADR 0022): each ui:// resource is the

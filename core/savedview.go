@@ -93,13 +93,15 @@ type SavedView struct {
 
 // ViewRow is a conversation in a view: Status is ReplyStatusUnreplied,
 // ReplyStatusWaiting or none, WaitingDays since the user's last mail, NewReply
-// that it is newer than its last archive, and Manual that it was added by hand.
+// that it is newer than its last archive, Manual that it was added by hand,
+// and Deadline its 期限 in effect (nil: none).
 type ViewRow struct {
 	ThreadSummary
 	Status      string
 	NewReply    bool
 	WaitingDays int
 	Manual      bool
+	Deadline    *Deadline
 }
 
 // ViewGroupPage is one page of a group or of 其他; Total counts all of it.
@@ -588,11 +590,22 @@ func (s *Service) groupPage(ctx context.Context, e *viewEval, d SavedViewDoc, al
 	if err != nil {
 		return ViewGroupPage{}, err
 	}
+	ids := make([]int64, len(rows))
+	for i, p := range rows {
+		ids[i] = p.id
+	}
+	deadlines, err := s.deadlinesIn(ctx, e.today, e.statuses, ids)
+	if err != nil {
+		return ViewGroupPage{}, err
+	}
 	page.Items = make([]ViewRow, len(rows))
 	for i, p := range rows {
 		r := e.row(p, waiting)
 		r.ThreadSummary = items[i]
 		r.Subject = subjects[p.id]
+		if d, ok := deadlines[p.id]; ok && d.Date != "" {
+			r.Deadline = &d
+		}
 		page.Items[i] = r
 	}
 	return page, nil

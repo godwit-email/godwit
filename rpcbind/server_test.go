@@ -74,7 +74,7 @@ func cacheFiles(dataDir string) int {
 func TestMCPAllowlistContents(t *testing.T) {
 	want := []string{"GetDraft", "GetMessageText", "GetThread", "ListAccounts", "ListDrafts", "ListFolders",
 		"ListMessages", "ListThreads", "NewDraft", "RequestMCPSend", "SaveDraft", "SavedViews", "Search", "SearchContacts",
-		"ViewContents", "ViewGroupPage"}
+		"SetThreadDeadline", "ViewContents", "ViewGroupPage"}
 	newMode := []json.RawMessage{json.RawMessage(`1`), json.RawMessage(`"new"`), json.RawMessage(`0`)}
 	var got []string
 	for m := range reflect.TypeFor[*core.Service]().Methods() {
@@ -293,6 +293,43 @@ func TestAuditExternal(t *testing.T) {
 	b, _ := json.Marshal(rows)
 	assert.NotContains(t, string(b), "secret plan")
 	assert.NotContains(t, string(b), "body text")
+}
+
+// mcp and full set a 期限 as program, read back on the view's rows; the
+// user's own (ui) keeps them out. Not egress, so no audit row.
+func TestSetThreadDeadlineOverLocalAPI(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	ctx := t.Context()
+	acc := e.AddAccount(t, "alice@example.com")
+	e.Deliver(t, acc.ID, "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Quote", "Please confirm by Friday."))
+	page, err := e.Svc.ListMessages(ctx, core.View{Unified: "inbox"}, "", 0)
+	require.NoError(t, err)
+	msg := page.Items[0]
+	views, err := e.Svc.SavedViews(ctx)
+	require.NoError(t, err)
+	dir := listen(t, e.Svc)
+	full, mcp, ui := dial(t, dir, rpc.RoleFull), dial(t, dir, rpc.RoleMCP), dial(t, dir, rpc.RoleUI)
+	day := func(d int) string { return time.Now().AddDate(0, 0, d).Format(time.DateOnly) }
+	read := func() *core.Deadline {
+		var got core.ViewContents
+		require.NoError(t, mcp.Call(ctx, "ViewContents", &got, views[0].ID, 50))
+		require.Len(t, got.Groups, 1)
+		require.Len(t, got.Groups[0].Items, 1)
+		return got.Groups[0].Items[0].Deadline
+	}
+
+	require.NoError(t, mcp.Call(ctx, "SetThreadDeadline", nil, msg.ThreadID, core.Deadline{Date: day(2), Time: "15:00", MessageID: msg.ID, Quote: "confirm by Friday"}))
+	assert.Equal(t, &core.Deadline{Date: day(2), Time: "15:00", MessageID: msg.ID, Quote: "confirm by Friday", Source: core.DeadlineProgram}, read())
+	require.NoError(t, full.Call(ctx, "SetThreadDeadline", nil, msg.ThreadID, core.Deadline{Date: day(3), MessageID: msg.ID, Source: core.DeadlineManual}))
+	assert.Equal(t, &core.Deadline{Date: day(3), MessageID: msg.ID, Source: core.DeadlineProgram}, read(), "the role decides the source, not the caller")
+
+	require.NoError(t, ui.Call(ctx, "SetThreadDeadline", nil, msg.ThreadID, core.Deadline{Date: day(4)}))
+	assert.Equal(t, &core.Deadline{Date: day(4), Source: core.DeadlineManual}, read())
+	var we *rpc.WireError
+	require.ErrorAs(t, mcp.Call(ctx, "SetThreadDeadline", nil, msg.ThreadID, core.Deadline{MessageID: msg.ID}), &we)
+	assert.Equal(t, "deadline_outranked", we.Data.Code)
+	assert.Equal(t, core.ErrDeadlineOutranked.Error(), we.Message)
+	assert.Empty(t, auditRows(t, e.DataDir))
 }
 
 // SendRevision sends as Send does, so it is audited as Send is.

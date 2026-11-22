@@ -866,6 +866,20 @@ var Migrations = [][]string{{
 	// Taking back a scheduled message copies send_at (Unix milliseconds) to
 	// its draft. Queuing the draft again clears it.
 	`ALTER TABLE drafts ADD COLUMN scheduled_for INTEGER`,
+}, {
+	// 期限 (GLOSSARY): the date the sender wants the user's reply by, one per
+	// conversation, read as in effect or not like 回复状态 and never cleaned
+	// up. due_date is a local calendar day, NULL for a user's "removed" marker;
+	// due_time '' is the end of that day. Local only: no IMAP keyword, no
+	// cross-device sync, no events_log row.
+	`CREATE TABLE thread_deadlines (
+		thread_id INTEGER PRIMARY KEY REFERENCES threads(id) ON DELETE CASCADE,
+		due_date TEXT,
+		due_time TEXT NOT NULL DEFAULT '',
+		source TEXT NOT NULL,
+		message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+		quote TEXT NOT NULL DEFAULT '',
+		set_at INTEGER NOT NULL)`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's
