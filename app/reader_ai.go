@@ -523,6 +523,9 @@ func (r *reader) aiTools(c *ui.Context) {
 // the translation's notice.
 func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
 	st := r.ai[m.ID]
+	if len(r.msgs) == 1 && !r.summaryOn(st) {
+		r.deadlineCard(c) // the 回复日期 in the summary's place
+	}
 	if st == nil {
 		return
 	}
@@ -546,6 +549,11 @@ func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
 	}
 }
 
+// summaryOn reports whether a message's summary panel shows.
+func (r *reader) summaryOn(st *msgAI) bool {
+	return st != nil && st.summary != nil && r.summaryShown(st)
+}
+
 // summaryPanel is m's summary while shown: under the sender of a message
 // read alone, under the subject of a thread (which summarizes its newest).
 func (r *reader) summaryPanel(c *ui.Context, m core.MessageSummary) {
@@ -553,7 +561,7 @@ func (r *reader) summaryPanel(c *ui.Context, m core.MessageSummary) {
 	if st == nil {
 		return
 	}
-	if sum := st.summary; sum != nil && r.summaryShown(st) {
+	if sum := st.summary; r.summaryOn(st) {
 		t, th := theme.Of(c), c.Theme()
 		meta := sum.model
 		if len(r.msgs) > 1 {
@@ -572,17 +580,22 @@ func (r *reader) summaryPanel(c *ui.Context, m core.MessageSummary) {
 				}
 			})
 			ui.Column(c).FillWidth().Gap(th.Space(2)).Children(func() {
+				digested := false // a digest carries the 回复日期 in its own 等你处理 line
 				switch {
 				case len(r.msgs) < 2:
 					r.output(c, sum)
 				case sum.done: // a digest, else (unreadable) its text as written
-					if d, ok := core.ParseThreadDigest(sum.text, r.threadIDs); ok {
+					var d core.ThreadDigest
+					if d, digested = core.ParseThreadDigest(sum.text, r.threadIDs); digested {
 						r.digest(c, d)
 					} else {
 						r.output(c, sum)
 					}
 				}
 				r.aiBodyState(c, sum, hasContent, func() { st.summary = r.summarize(m.ID) })
+				if r.deadline != nil && !digested {
+					r.todoRow(c, true, func() { r.deadlineLine(c) })
+				}
 			})
 		})
 	}
@@ -603,17 +616,31 @@ func (r *reader) digest(c *ui.Context, d core.ThreadDigest) {
 			}
 		})
 	}
-	if d.Todo != nil {
-		row := ui.Row(c).FillWidth().Gap(th.Space(2.5)).AlignItems(ui.Start)
-		if len(d.Progress) > 0 {
-			row.Margin(th.Space(0.5), 0, 0, 0).Padding(th.Space(2.5), 0, 0, 0).
-				BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border)
-		}
-		row.Children(func() {
-			kit.Badge(c, i18n.T("reader.ai.todo")).Shrink(0).Margin(th.Space(0.5), 0, 0, 0)
-			r.digestLine(c, d.Todo)
+	if d.Todo != nil || r.deadline != nil {
+		r.todoRow(c, len(d.Progress) > 0, func() {
+			if d.Todo != nil {
+				r.digestLine(c, d.Todo)
+			}
+			if r.deadline != nil {
+				r.deadlineLine(c)
+			}
 		})
 	}
+}
+
+// todoRow is the 等你处理 line: what waits on the user, under a hairline when
+// rule (something is above it).
+func (r *reader) todoRow(c *ui.Context, rule bool, body func()) {
+	t, th := theme.Of(c), c.Theme()
+	row := ui.Row(c).FillWidth().Gap(th.Space(2.5)).AlignItems(ui.Start)
+	if rule {
+		row.Margin(th.Space(0.5), 0, 0, 0).Padding(th.Space(2.5), 0, 0, 0).
+			BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border)
+	}
+	row.Children(func() {
+		kit.Badge(c, i18n.T("reader.ai.todo")).Shrink(0).Margin(th.Space(0.5), 0, 0, 0)
+		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(body)
+	})
 }
 
 // digestLine is a line of a digest, its cites inline as Wit's answers show

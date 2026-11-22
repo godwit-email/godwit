@@ -578,9 +578,20 @@ func (a *App) viewCondText(cd core.RuleCondition) string {
 	return a.pages[PageSettings].(*settingsPage).rules.condText(cd)
 }
 
-// loadWhy reads why the open conversation is in the view shown.
+// loadWhy reads why the open conversation is in the view shown, and its 回复日期.
 func (r *reader) loadWhy() {
 	a, k := r.p.a, r.key
+	if k[0] != 0 {
+		var d *core.Deadline
+		a.query(func(ctx context.Context) (err error) {
+			d, err = a.svc.ThreadDeadline(ctx, k[0])
+			return err
+		}, func(err error) {
+			if err == nil && r.key == k {
+				r.deadline = d
+			}
+		})
+	}
 	id, ok := savedViewOf(a.route.View)
 	if !ok || k[0] == 0 {
 		r.why = core.ViewReason{}
@@ -606,6 +617,8 @@ func (r *reader) viewBand(c *ui.Context) {
 	}
 	var icon, text string
 	switch {
+	case w.Status == core.ReplyStatusUnreplied && r.deadline != nil:
+		return // the 回复日期's 等你处理 line says it, in the summary's place
 	case w.Status == core.ReplyStatusUnreplied && w.NewReply:
 		icon, text = "reply", i18n.T("view.band.new_reply")
 	case w.Status == core.ReplyStatusUnreplied:
