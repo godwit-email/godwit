@@ -574,6 +574,8 @@
   "reader_save_as": "Zapisz jako…",
   "reader_attachments_select_all": "Zaznacz wszystko",
   "reader_attachments_select_item": "Zaznacz: {arg1}",
+  "reader_attachments_downloading": "Pobieranie {arg1}",
+  "reader_attachments_cancel_download": "Anuluj pobieranie {arg1}",
   "reader_attachments_count": "{arg1, plural, one {{arg1, number, ::group-off} załącznik} few {{arg1, number, ::group-off} załączniki} many {{arg1, number, ::group-off} załączników} other {{arg1, number, ::group-off} załącznika}}",
   "reader_attachments_selected": "Zaznaczono {arg1, number, ::group-off} z {arg2, number, ::group-off}",
   "reader_attachments_save_all": "Zapisz wszystkie…",

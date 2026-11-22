@@ -2396,8 +2396,23 @@ func (r *reader) attachments(c *ui.Context, b *msgBody) {
 							kit.Text(c, byteSize(att.Size), t.Text.Xs).TextColor(t.Muted)
 						})
 					})
-					kit.IconButton(c, "download", i18n.T("reader.save_as"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-						OnClick(func() { r.p.a.saveAttachment(att) })
+					if r.p.a.downloadState(att.ID) == downloadNone {
+						kit.IconButton(c, "download", i18n.T("reader.save_as"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
+							OnClick(func() { r.p.a.saveAttachment(att) })
+						return
+					}
+					// Queued or downloading: a spinner that turns into the cancel under the pointer or keyboard focus.
+					ui.Box(c).Shrink(0).Children(func() {
+						cancel := kit.IconButton(c.Key("cancel"), "x", i18n.Tf("reader.attachments.cancel_download", name), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
+							OnClick(func() { r.p.a.cancelDownload(att.ID) })
+						if chip.Hovered() || cancel.FocusVisible() {
+							return
+						}
+						cancel.Opacity(0)
+						ui.Box(c).Absolute().Left(0).Top(0).Right(0).Bottom(0).Center().PassThrough().Children(func() {
+							kit.Spinner(c).Size(theme.IconSm, theme.IconSm).Label(i18n.Tf("reader.attachments.downloading", name))
+						})
+					})
 				})
 			}
 		})

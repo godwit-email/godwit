@@ -1070,6 +1070,22 @@
       }
     }
   },
+  "reader_attachments_downloading": "Downloading {arg1}",
+  "@reader_attachments_downloading": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
+  "reader_attachments_cancel_download": "Cancel downloading {arg1}",
+  "@reader_attachments_cancel_download": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "reader_attachments_count": "{arg1, plural, one {{arg1, number, ::group-off} attachment} other {{arg1, number, ::group-off} attachments}}",
   "@reader_attachments_count": {
     "placeholders": {

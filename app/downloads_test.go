@@ -10,6 +10,7 @@ import (
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
+	"github.com/godwit-email/godwit/internal/i18n"
 )
 
 // heldFetch holds each FetchAttachments until release closes or its context
@@ -148,5 +149,30 @@ func TestDownloadKeepsInterfaceAndCloseCancels(t *testing.T) {
 	h.app.Close()
 	if err := recv(t, held.ended, "Close to stop the fetch"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("the fetch ended with %v", err)
+	}
+}
+
+// Opening an attachment shows its chip busy; the chip's cancel, under the
+// pointer, stops the fetch and puts the chip back, opening nothing.
+func TestDownloadChipBusyAndCancel(t *testing.T) {
+	h, _ := openWithAttachments(t, "report.pdf")
+	held := holdFetches(h, nil)
+	h.click("report.pdf")
+	recv(t, held.started, "the fetch")
+	h.tt.Move(1, 410) // off the chip: its spinner shows
+	busy := i18n.Tf("reader.attachments.downloading", "report.pdf")
+	h.until("the chip busy", func() bool { _, ok := h.tt.Find(busy); return ok })
+	if _, ok := h.tt.Find(i18n.T("reader.save_as")); ok {
+		t.Fatal("a busy chip still offers Save as")
+	}
+	h.hoverOn("report.pdf")
+	h.click(i18n.Tf("reader.attachments.cancel_download", "report.pdf"))
+	if err := recv(t, held.ended, "the fetch to stop"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("the fetch ended with %v", err)
+	}
+	h.until("the chip back", func() bool { _, ok := h.tt.Find(busy); return !ok && !h.app.Busy() })
+	h.see(i18n.T("reader.save_as"))
+	if h.calls("OpenPath") != 0 || len(h.app.toasts) != 0 {
+		t.Fatalf("after cancel: calls %q, toasts %v", h.plat.Calls(), h.app.toasts)
 	}
 }

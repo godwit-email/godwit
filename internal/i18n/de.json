@@ -574,6 +574,8 @@
   "reader_save_as": "Speichern unter…",
   "reader_attachments_select_all": "Alle auswählen",
   "reader_attachments_select_item": "{arg1} auswählen",
+  "reader_attachments_downloading": "{arg1} wird geladen",
+  "reader_attachments_cancel_download": "Laden von {arg1} abbrechen",
   "reader_attachments_count": "{arg1, plural, one {{arg1, number, ::group-off} Anhang} other {{arg1, number, ::group-off} Anhänge}}",
   "reader_attachments_selected": "{arg1, number, ::group-off} von {arg2, number, ::group-off} ausgewählt",
   "reader_attachments_save_all": "Alle speichern…",
