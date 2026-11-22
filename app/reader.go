@@ -838,17 +838,17 @@ func fileURL(path string) string {
 // removes the copies.
 func (a *App) openAttachment(att core.AttachmentInfo) {
 	plat := a.plat
-	a.do(func(ctx context.Context) error {
-		src, _, err := a.svc.GetAttachment(ctx, att.ID)
+	a.download(downloadOpen, []core.AttachmentInfo{att}, func(ctx context.Context) error {
+		var dst string
+		err := a.svc.FetchAttachments(ctx, []int64{att.ID}, func(src string, _ core.AttachmentInfo) error {
+			dir, err := a.tempDir(plat.TempDir())
+			if err != nil {
+				return err
+			}
+			dst = filepath.Join(dir, core.FileName(att.Filename, "attachment"))
+			return copyFile(src, dst)
+		})
 		if err != nil {
-			return err
-		}
-		dir, err := a.tempDir(plat.TempDir())
-		if err != nil {
-			return err
-		}
-		dst := filepath.Join(dir, core.FileName(att.Filename, "attachment"))
-		if err := copyFile(src, dst); err != nil {
 			return err
 		}
 		return plat.OpenPath(dst)
@@ -858,17 +858,19 @@ func (a *App) openAttachment(att core.AttachmentInfo) {
 // saveAttachment copies the attachment where the user chooses.
 func (a *App) saveAttachment(att core.AttachmentInfo) {
 	plat := a.plat
-	a.do(func(ctx context.Context) error {
-		dst, err := plat.SaveFile(core.FileName(att.Filename, "attachment"))
+	var dst string
+	a.do(func(context.Context) (err error) {
+		dst, err = plat.SaveFile(core.FileName(att.Filename, "attachment"))
+		return err
+	}, func(err error) {
 		if err != nil || dst == "" {
-			return err
+			a.toastErr(err)
+			return
 		}
-		src, _, err := a.svc.GetAttachment(ctx, att.ID)
-		if err != nil {
-			return err
-		}
-		return copyFile(src, dst)
-	}, a.toastErr)
+		a.download(downloadSave, []core.AttachmentInfo{att}, func(ctx context.Context) error {
+			return a.svc.FetchAttachments(ctx, []int64{att.ID}, func(src string, _ core.AttachmentInfo) error { return copyFile(src, dst) })
+		}, a.toastErr)
+	})
 }
 
 // copyFile copies an attachment out of the cache, marked as from the internet.
@@ -1057,9 +1059,8 @@ func (r *reader) saveAttachments(msgID int64, items []core.AttachmentInfo) {
 		dir       string
 		conflicts []string
 		existing  map[string]bool
-		saved     int
 	)
-	a.do(func(ctx context.Context) error {
+	a.do(func(context.Context) error {
 		var err error
 		dir, err = plat.OpenDirectory()
 		if err != nil || dir == "" {
@@ -1079,11 +1080,7 @@ func (r *reader) saveAttachments(msgID int64, items []core.AttachmentInfo) {
 				conflicts = append(conflicts, name)
 			}
 		}
-		if len(conflicts) > 0 {
-			return nil
-		}
-		saved, err = a.writeAttachmentsToDir(ctx, dir, items, attConflictKeepBoth, nil)
-		return err
+		return nil
 	}, func(err error) {
 		if err != nil {
 			a.toastErr(err)
@@ -1106,7 +1103,7 @@ func (r *reader) saveAttachments(msgID int64, items []core.AttachmentInfo) {
 			r.attConflictDlg = true
 			return
 		}
-		r.finishAttachmentsSaved(msgID, saved, nil)
+		r.saveToFolder(msgID, dir, items, attConflictKeepBoth, nil)
 	})
 }
 
@@ -1116,13 +1113,18 @@ func (r *reader) resolveAttachmentConflict(mode attConflictMode) {
 	if len(ask.items) == 0 || ask.dir == "" {
 		return
 	}
+	r.saveToFolder(ask.msgID, ask.dir, ask.items, mode, ask.existing)
+}
+
+// saveToFolder queues the download of items into dir.
+func (r *reader) saveToFolder(msgID int64, dir string, items []core.AttachmentInfo, mode attConflictMode, existing map[string]bool) {
 	a := r.p.a
 	var saved int
-	a.do(func(ctx context.Context) (err error) {
-		saved, err = a.writeAttachmentsToDir(ctx, ask.dir, ask.items, mode, ask.existing)
+	a.download(downloadFolder, items, func(ctx context.Context) (err error) {
+		saved, err = a.writeAttachmentsToDir(ctx, dir, items, mode, existing)
 		return err
 	}, func(err error) {
-		r.finishAttachmentsSaved(ask.msgID, saved, err)
+		r.finishAttachmentsSaved(msgID, saved, err)
 	})
 }
 

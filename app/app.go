@@ -303,6 +303,8 @@ type App struct {
 	customIcons map[int64]accountImage    // by account id: its uploaded icon (accountImage)
 	typeIcons   map[string]ui.ImageSource // by extension: the file manager's icon (typeIcon)
 
+	downloads []*download // attachment downloads, the running one first (downloads.go)
+
 	tempMu   sync.Mutex
 	tempDirs []string // made by tempDir; Close removes them
 
@@ -548,10 +550,11 @@ func (a *App) load() {
 }
 
 // Busy reports whether work the user started runs in this process and ends
-// with it: a model's or 识别模型's download, a local archive's import. UI thread.
+// with it: a model's or 识别模型's download, a local archive's import, an
+// attachment's download. UI thread.
 func (a *App) Busy() bool {
 	p := a.pages[PageSettings].(*settingsPage)
-	return len(p.models.downloads) > 0 || p.recognition.download != nil || len(a.mail.imports) > 0
+	return len(p.models.downloads) > 0 || p.recognition.download != nil || len(a.mail.imports) > 0 || len(a.downloads) > 0
 }
 
 // MailReady reports whether the initial load has settled on onboarding or a
@@ -563,7 +566,8 @@ func (a *App) MailReady() bool {
 	return a.route.Page == PageOnboarding || (a.route.Page == PageMail && !a.mail.list.loading)
 }
 
-// Close cancels all work in flight, whose done callbacks never run, closes
+// Close cancels all work in flight, attachment downloads included, whose
+// done callbacks never run, closes
 // the reader's body pages and removes the temporary copies of opened
 // attachments. UI thread.
 func (a *App) Close() {
