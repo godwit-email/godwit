@@ -86,6 +86,9 @@ type session struct {
 
 	key [2]int64        // the route's ThreadID and MessageID shown
 	why core.ViewReason // why it is in the view shown
+
+	deadline *core.Deadline // its 回复日期 in effect, nil for none
+
 	// entered is whether the thread's parts were drawn: a part that comes
 	// after enters with its motion; the thread itself comes at once (#667).
 	entered bool
@@ -1194,6 +1197,11 @@ func (r *reader) draw(c *ui.Context, next *session) {
 				// stays constant across p ∈ [0, 1] with zero clamp oscillation.
 				ui.Box(c).FillWidth().Height(max(0, r.headerH-curH))
 				ui.Column(c).FillWidth().Children(func() {
+					if !hasSum && len(r.msgs) > 1 && r.deadline != nil {
+						ui.Column(c).FillWidth().Padding(th.Space(4), th.Space(7), 0).Children(func() {
+							r.column(c).Children(func() { r.deadlineCard(c) }) // in the summary's place
+						})
+					}
 					if hasSum {
 						if m, ok := r.last(); ok {
 							// Thread summary scrolls with the content below the header's
@@ -1227,8 +1235,7 @@ func (r *reader) hasThreadSummary() bool {
 	if !ok {
 		return false
 	}
-	st := r.ai[m.ID]
-	return st != nil && st.summary != nil && r.summaryShown(st)
+	return r.summaryOn(r.ai[m.ID])
 }
 
 // headerCollapse returns the continuous scroll-linked collapse progress in [0, 1]

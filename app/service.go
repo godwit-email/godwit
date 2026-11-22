@@ -217,6 +217,7 @@ type Service interface {
 	ViewGroupPage(ctx context.Context, id int64, groupID, cursor string, limit int) (core.ViewGroupPage, error)
 	ViewTemplates(ctx context.Context) ([]core.ViewTemplate, error)
 	ViewWhy(ctx context.Context, id, threadID int64) (core.ViewReason, error)
+	ThreadDeadline(ctx context.Context, threadID int64) (*core.Deadline, error)
 	AddAddressBook(ctx context.Context, in core.AddressBookInput) (core.AddressBook, error)
 	ContactAvatar(ctx context.Context, addr string) (core.Avatar, error)
 	ListAddressBookPresets() []core.AddressBookPreset

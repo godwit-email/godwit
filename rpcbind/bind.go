@@ -279,6 +279,8 @@ var uiOnly = map[string]bool{
 	// Settings' 全部去掉 for other apps' and Wit's reply dates, the user's way out when an agent
 	// wrote many: no program wipes them in bulk, and the undo writes rows past setDeadline's checks.
 	"RemoveAppAndWitDeadlines": true, "UndoRemoveAppAndWitDeadlines": true,
+	// The reader's 回复日期 line; programs read the date with list_view_threads or ViewContents.
+	"ThreadDeadline": true,
 }
 
 // Expose picks the *core.Service methods callable by the full role: every

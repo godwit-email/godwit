@@ -34,5 +34,6 @@ SetUIReady
 StopUIBackend
 StoreLatestVersion
 SystemTranslatorLanguages
+ThreadDeadline
 TrayShown
 UndoRemoveAppAndWitDeadlines

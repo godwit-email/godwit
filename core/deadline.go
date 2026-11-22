@@ -80,6 +80,26 @@ func (s *Service) SetThreadDeadline(ctx context.Context, threadID int64, d Deadl
 	return s.setDeadline(ctx, source, threadID, d)
 }
 
+// ThreadDeadline is the conversation's dated 期限 in effect, nil for none:
+// what the reader shows, in a view or not, however long overdue.
+func (s *Service) ThreadDeadline(ctx context.Context, threadID int64) (*Deadline, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer end()
+	now := s.clk().Now()
+	statuses, err := s.replyStatuses(ctx, now.Unix())
+	if err != nil {
+		return nil, err
+	}
+	got, err := s.deadlinesIn(ctx, now, statuses, []int64{threadID})
+	if d, ok := got[threadID]; ok && d.Date != "" {
+		return &d, err
+	}
+	return nil, err
+}
+
 // setDeadline is the one write path of a 期限, for every source.
 func (s *Service) setDeadline(ctx context.Context, source string, threadID int64, d Deadline) error {
 	return s.changeDeadline(ctx, source, threadID, d, true)
@@ -131,8 +151,7 @@ func (s *Service) changeDeadline(ctx context.Context, source string, threadID in
 		d.MessageID, d.Quote = 0, ""
 	}
 	if d.Date == "" {
-		_, err := s.db.Execute(ctx, "DELETE FROM thread_deadlines WHERE thread_id = ?", threadID)
-		return err
+		return s.commitDeadline(ctx, sqlite.Statement{SQL: "DELETE FROM thread_deadlines WHERE thread_id = ?", Args: []any{threadID}})
 	}
 	d.Source = source
 	return s.writeDeadline(ctx, threadID, d, now)
@@ -177,11 +196,25 @@ func (s *Service) writeDeadline(ctx context.Context, threadID int64, d Deadline,
 	if d.MessageID != 0 {
 		msg = d.MessageID
 	}
-	_, err := s.db.Execute(ctx, `INSERT INTO thread_deadlines(thread_id, due_date, due_time, source, message_id, quote, set_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+	return s.commitDeadline(ctx, sqlite.Statement{SQL: `INSERT INTO thread_deadlines(thread_id, due_date, due_time, source, message_id, quote, set_at) VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(thread_id) DO UPDATE SET due_date = excluded.due_date, due_time = excluded.due_time, source = excluded.source,
 		message_id = excluded.message_id, quote = excluded.quote, set_at = excluded.set_at`,
-		threadID, date, d.Time, d.Source, msg, d.Quote, now.Unix())
-	return err
+		Args: []any{threadID, date, d.Time, d.Source, msg, d.Quote, now.Unix()}})
+}
+
+// bumpDeadlineVersion moves the 期限's version, which views' paging cursors carry.
+var bumpDeadlineVersion = sqlite.Statement{SQL: `INSERT INTO meta(key, value) VALUES ('reply_dates_version', '1')
+	ON CONFLICT(key) DO UPDATE SET value = CAST(value AS INTEGER) + 1`}
+
+// commitDeadline writes st and moves the 期限's version with it: a view's
+// paging cursor carries the version, so a page never mixes two orders. The
+// views then reread, rows and order changed.
+func (s *Service) commitDeadline(ctx context.Context, st sqlite.Statement) error {
+	if _, err := s.db.Transaction(ctx, []sqlite.Statement{st, bumpDeadlineVersion}); err != nil {
+		return err
+	}
+	s.publishView()
+	return nil
 }
 
 // deadlinesIn is the 期限 in effect for each of threadIDs that has one, read
@@ -271,6 +304,9 @@ func (s *Service) RemoveAppAndWitDeadlines(ctx context.Context) ([]RemovedDeadli
 		threads = append(threads, store.Int(r[0]))
 	}
 	if len(threads) > 0 {
+		if _, err := s.db.Transaction(ctx, []sqlite.Statement{bumpDeadlineVersion}); err != nil {
+			return out, err
+		}
 		s.bus.Publish(events.Event{Type: events.MessagesChanged, ThreadIDs: threads})
 	}
 	return out, nil
@@ -301,7 +337,7 @@ func (s *Service) UndoRemoveAppAndWitDeadlines(ctx context.Context, removed []Re
 	if len(stmts) == 0 {
 		return nil
 	}
-	if _, err := s.db.Transaction(ctx, stmts); err != nil {
+	if _, err := s.db.Transaction(ctx, append(stmts, bumpDeadlineVersion)); err != nil {
 		return err
 	}
 	s.bus.Publish(events.Event{Type: events.MessagesChanged, ThreadIDs: threads})

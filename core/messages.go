@@ -195,6 +195,23 @@ func encodeCursor(date, id int64) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("%d:%d", date, id)))
 }
 
+// encodeViewCursor is a view page's cursor after p, by viewOrder's key.
+func encodeViewCursor(p placedThread) string {
+	return base64.RawURLEncoding.EncodeToString(fmt.Appendf(nil, "%d:%d:%d", p.due, p.date, p.id))
+}
+
+func decodeViewCursor(c string) (placedThread, error) {
+	var p placedThread
+	b, err := base64.RawURLEncoding.DecodeString(c)
+	if err == nil {
+		_, err = fmt.Sscanf(string(b), "%d:%d:%d", &p.due, &p.date, &p.id)
+	}
+	if err != nil {
+		return p, fmt.Errorf("invalid cursor: %w", err)
+	}
+	return p, nil
+}
+
 func decodeCursor(c string) (date, id int64, err error) {
 	b, err := base64.RawURLEncoding.DecodeString(c)
 	if err == nil {
