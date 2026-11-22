@@ -413,7 +413,7 @@ function Compose({
     cur.current = editOf(l);
     flushSync(() => {
       setF(cur.current);
-      if ("accounts" in l) setAccounts(l.accounts); // the account may be one added since the window opened
+      setAccounts(l.accounts); // the account may be one added since the window opened
       setFrom(l.from);
       setFromProgram(l.fromProgram);
       setSignature(sigOf(l));

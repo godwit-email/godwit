@@ -280,12 +280,16 @@ func TestComposeDecideRecipients(t *testing.T) {
 	a := f.propose(t, llm, inlineNew)
 	s := f.stored(t, d.ID)
 	s.To, s.Bcc = []string{"ann@example.com"}, []string{"eve@example.com"}
-	_, err := f.e.Svc.SaveDraft(t.Context(), s)
+	s, err := f.e.Svc.SaveDraft(t.Context(), s)
+	require.NoError(t, err)
+	added := f.e.AddAccount(t, "new@example.com") // after the window opened
+	_, err = f.e.Svc.SetDraftAccount(t.Context(), d.ID, added.ID, s.Revision)
 	require.NoError(t, err)
 	bc, err := f.page.Decide(f.ctx(1), a.ID, false)
 	require.NoError(t, err)
 	require.False(t, bc.Conflict)
 	assert.Equal(t, []string{"eve@example.com"}, bc.Bcc)
 	assert.Equal(t, []string{"ann@example.com"}, bc.To)
-	assert.Equal(t, s.AccountID, bc.From)
+	assert.Equal(t, added.ID, bc.From)
+	assert.Contains(t, bc.Accounts, Account{ID: added.ID, Email: added.Email})
 }

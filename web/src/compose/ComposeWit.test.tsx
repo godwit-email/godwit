@@ -235,6 +235,7 @@ const inline: Review = {
 };
 const change = (body: string, revision: number): BodyChange => ({
   revision,
+  accounts: state.accounts,
   from: state.from,
   quote: state.quote,
   to: state.to,
