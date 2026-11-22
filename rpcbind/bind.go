@@ -276,6 +276,8 @@ var uiOnly = map[string]bool{
 	// 批准并发送 on a program's draft (ADR 0043): the approval stands for the user's click,
 	// so no program may give it. It sends nothing SendRevision could not.
 	"ApproveDraft": true,
+	// The reader's 回复日期 line; programs read the date with list_view_threads or ViewContents.
+	"ThreadDeadline": true,
 }
 
 // Expose picks the *core.Service methods callable by the full role: every

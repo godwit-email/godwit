@@ -247,13 +247,14 @@ func (s *Service) validViewConditions(ctx context.Context, match string, conds [
 
 // viewEval is what compiling and placing share: the state read once per call.
 type viewEval struct {
-	now      int64
-	statuses map[int64]replyStatus
-	notIn    string // the condition on messages m that they count in a conversation
-	unread   string // the condition on messages m that they are unread: your own sent mail never is
-	wrote    string // the condition on messages m that they are the user's, or from who they wrote to
-	wroteTo  string // its argument
-	today    time.Time
+	now        int64
+	statuses   map[int64]replyStatus
+	notIn      string // the condition on messages m that they count in a conversation
+	unread     string // the condition on messages m that they are unread: your own sent mail never is
+	wrote      string // the condition on messages m that they are the user's, or from who they wrote to
+	wroteTo    string // its argument
+	today      time.Time
+	replyDates string // the 期限's version (meta reply_dates_version), bumped by every write
 }
 
 func (s *Service) newViewEval(ctx context.Context) (*viewEval, error) {
@@ -300,7 +301,15 @@ func (s *Service) newViewEval(ctx context.Context) (*viewEval, error) {
 	const bare = `CASE WHEN instr(m.from_addr, '<') > 0 AND instr(m.from_addr, '>') > instr(m.from_addr, '<')
 		THEN substr(m.from_addr, instr(m.from_addr, '<') + 1, instr(m.from_addr, '>') - instr(m.from_addr, '<') - 1) ELSE trim(m.from_addr) END`
 	wrote := "(lower(" + bare + ") IN (SELECT value FROM json_each(?)) OR " + shownIn("("+inSent+")") + ")"
-	return &viewEval{now: now, statuses: statuses, notIn: notIn, unread: unread, wrote: wrote, wroteTo: string(list), today: s.clk().Now()}, nil
+	version, err := s.db.Query(ctx, "SELECT value FROM meta WHERE key = 'reply_dates_version'")
+	if err != nil {
+		return nil, err
+	}
+	replyDates := "0"
+	if len(version.Values) > 0 {
+		replyDates = store.Str(version.Values[0][0])
+	}
+	return &viewEval{now: now, statuses: statuses, notIn: notIn, unread: unread, wrote: wrote, wroteTo: string(list), today: s.clk().Now(), replyDates: replyDates}, nil
 }
 
 // inThread is the condition on threads t that a message of it meets cond,
@@ -449,9 +458,23 @@ type placedThread struct {
 	group    int
 	unread   bool
 	manual   bool
+	deadline *Deadline // its 期限 while lifted: in effect, dated, at most 7 days overdue
+	due      int64     // when deadline passes, 0 without one
 }
 
-// placed lists the conversations of d, newest first, each in the first group
+// viewOrder is the order of every group, 其他 too: a conversation with a 期限
+// first, soonest (so overdue) first, then the rest newest first.
+func viewOrder(a, b placedThread) int {
+	if (a.due == 0) != (b.due == 0) {
+		if a.due != 0 {
+			return -1
+		}
+		return 1
+	}
+	return cmp.Or(cmp.Compare(a.due, b.due), cmp.Compare(b.date, a.date), cmp.Compare(b.id, a.id))
+}
+
+// placed lists the conversations of d in viewOrder, each in the first group
 // it meets: membership and placement come before any paging, so a group is
 // never empty because its rows are on a later page.
 // shortcut: reads every member on each call; page in SQL by group if large views get slow.
@@ -505,9 +528,23 @@ func (s *Service) placed(ctx context.Context, e *viewEval, viewID int64, d Saved
 		return nil, err
 	}
 	out := make([]placedThread, len(rows.Values))
+	ids := make([]int64, len(rows.Values))
 	for i, r := range rows.Values {
 		out[i] = placedThread{id: store.Int(r[0]), date: store.Int(r[1]), group: int(store.Int(r[2])), unread: store.Int(r[3]) != 0, manual: store.Int(r[4]) != 0}
+		ids[i] = out[i].id
 	}
+	deadlines, err := s.deadlinesIn(ctx, e.today, e.statuses, ids)
+	if err != nil {
+		return nil, err
+	}
+	y, m, day := e.today.Date()
+	cut := time.Date(y, m, day-7, 0, 0, 0, 0, e.today.Location()).Format(time.DateOnly) // more than 7 days overdue is no longer lifted
+	for i, p := range out {
+		if d, ok := deadlines[p.id]; ok && d.Date >= cut {
+			out[i].deadline, out[i].due = &d, deadlineEnd(d, e.today.Location()).Unix()
+		}
+	}
+	slices.SortFunc(out, viewOrder)
 	return out, nil
 }
 
@@ -563,17 +600,19 @@ func (s *Service) groupPage(ctx context.Context, e *viewEval, d SavedViewDoc, al
 		}
 	}
 	page.Total = len(rows)
-	if c, ok := strings.CutPrefix(cursor, strconv.FormatInt(rev, 10)+"."); ok {
-		date, id, err := decodeCursor(c)
+	// A cursor holds the document's revision and the 期限's version: an edit to
+	// either reorders, so a cursor from before one starts over.
+	prefix := strconv.FormatInt(rev, 10) + "." + e.replyDates + "."
+	if c, ok := strings.CutPrefix(cursor, prefix); ok {
+		after, err := decodeViewCursor(c)
 		if err != nil {
 			return ViewGroupPage{}, err
 		}
-		rows = slices.DeleteFunc(rows, func(p placedThread) bool { return p.date > date || p.date == date && p.id >= id })
+		rows = slices.DeleteFunc(rows, func(p placedThread) bool { return viewOrder(p, after) <= 0 })
 	}
 	limit = clampLimit(limit)
 	if len(rows) > limit {
-		last := rows[limit-1]
-		page.NextCursor = strconv.FormatInt(rev, 10) + "." + encodeCursor(last.date, last.id)
+		page.NextCursor = prefix + encodeViewCursor(rows[limit-1])
 		rows = rows[:limit]
 	}
 	items := make([]ThreadSummary, len(rows))
@@ -590,22 +629,12 @@ func (s *Service) groupPage(ctx context.Context, e *viewEval, d SavedViewDoc, al
 	if err != nil {
 		return ViewGroupPage{}, err
 	}
-	ids := make([]int64, len(rows))
-	for i, p := range rows {
-		ids[i] = p.id
-	}
-	deadlines, err := s.deadlinesIn(ctx, e.today, e.statuses, ids)
-	if err != nil {
-		return ViewGroupPage{}, err
-	}
 	page.Items = make([]ViewRow, len(rows))
 	for i, p := range rows {
 		r := e.row(p, waiting)
 		r.ThreadSummary = items[i]
 		r.Subject = subjects[p.id]
-		if d, ok := deadlines[p.id]; ok && d.Date != "" {
-			r.Deadline = &d
-		}
+		r.Deadline = p.deadline
 		page.Items[i] = r
 	}
 	return page, nil

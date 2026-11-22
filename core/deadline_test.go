@@ -210,3 +210,91 @@ func TestDeadlineOverdue(t *testing.T) {
 	require.NoError(t, e.s.SetThreadDeadline(bg, tid, Deadline{Date: e.day(-1), Time: "23:59", MessageID: q}))
 	assert.True(t, e.deadlineOf(t, "q@x").Overdue)
 }
+
+// order is the subjects of a document's 其他, in the order it lists them.
+func (e *sendEnv) order(t *testing.T, d SavedViewDoc) []string {
+	t.Helper()
+	got, err := e.s.PreviewView(bg, d, 0, 200)
+	require.NoError(t, err)
+	var out []string
+	for _, g := range got.Groups {
+		for _, r := range g.Items {
+			out = append(out, r.Subject)
+		}
+	}
+	return out
+}
+
+// dated puts five unreplied conversations, a newest, and gives four a reply
+// date: c in 3 days, b tomorrow at 09:00, e 2 days overdue, d 9 days overdue.
+func dated(t *testing.T) *sendEnv {
+	e := newSendEnv(t, false)
+	for i, s := range []string{"a", "b", "c", "d", "e"} {
+		e.put(t, "INBOX", eml(s+"@x", "bob@a.example", "alice@example.com", s, e.viewAt(float64(i)+0.5), "Reply soon."))
+	}
+	e.sync(t)
+	for s, d := range map[string]Deadline{"c": {Date: e.day(3)}, "b": {Date: e.day(1), Time: "09:00"}, "e": {Date: e.day(-2)}, "d": {Date: e.day(-9)}} {
+		d.MessageID = e.idOf(t, s+"@x")
+		require.NoError(t, e.s.SetThreadDeadline(bg, e.threadOf(t, s+"@x"), d), s)
+	}
+	return e
+}
+
+// Every view lists conversations with a reply date first, soonest (so
+// overdue) first; one more than 7 days overdue goes back among the rest,
+// newest first, and its row stops showing it.
+func TestViewSortsByReplyDate(t *testing.T) {
+	e := dated(t)
+	assert.Equal(t, []string{"e", "b", "c", "a", "d"}, e.order(t, SavedViewDoc{Match: MatchAll}))
+	assert.Equal(t, e.day(-2), e.deadlineOf(t, "e@x").Date)
+	assert.True(t, e.deadlineOf(t, "e@x").Overdue)
+	assert.Nil(t, e.deadlineOf(t, "d@x"), "more than 7 days overdue")
+}
+
+// The reader reads a conversation's reply date outside any view, more than 7
+// days overdue too; a removed one reads as none.
+func TestThreadDeadline(t *testing.T) {
+	e := dated(t)
+	got, err := e.s.ThreadDeadline(bg, e.threadOf(t, "d@x"))
+	require.NoError(t, err)
+	assert.Equal(t, &Deadline{Date: e.day(-9), MessageID: e.idOf(t, "d@x"), Source: DeadlineProgram, Overdue: true}, got)
+
+	got, err = e.s.ThreadDeadline(bg, e.threadOf(t, "a@x"))
+	require.NoError(t, err)
+	assert.Nil(t, got, "none")
+	require.NoError(t, e.s.SetThreadDeadline(WithUISession(t.Context(), e.s), e.threadOf(t, "c@x"), Deadline{}))
+	got, err = e.s.ThreadDeadline(bg, e.threadOf(t, "c@x"))
+	require.NoError(t, err)
+	assert.Nil(t, got, "removed by the user")
+}
+
+// Pages follow the order; a reply date written mid-paging reorders, so the
+// next page starts over instead of repeating or skipping a row.
+func TestViewPagingAcrossAReplyDate(t *testing.T) {
+	e := dated(t)
+	id, err := e.s.SaveView(bg, SavedView{Name: "All", Icon: "team", Doc: SavedViewDoc{Match: MatchAll}})
+	require.NoError(t, err)
+	first, err := e.s.ViewContents(bg, id, 2)
+	require.NoError(t, err)
+	page := first.Groups[0]
+	var seen []string
+	for {
+		for _, r := range page.Items {
+			seen = append(seen, r.Subject)
+		}
+		if page.NextCursor == "" {
+			break
+		}
+		page, err = e.s.ViewGroupPage(bg, id, ViewGroupOther, page.NextCursor, 2)
+		require.NoError(t, err)
+	}
+	assert.Equal(t, []string{"e", "b", "c", "a", "d"}, seen)
+
+	require.NoError(t, e.s.SetThreadDeadline(bg, e.threadOf(t, "a@x"), Deadline{Date: e.day(2), MessageID: e.idOf(t, "a@x")}))
+	again, err := e.s.ViewGroupPage(bg, id, ViewGroupOther, first.Groups[0].NextCursor, 2)
+	require.NoError(t, err)
+	assert.Equal(t, "e", again.Items[0].Subject, "a cursor from before the write starts over")
+	next, err := e.s.ViewGroupPage(bg, id, ViewGroupOther, again.NextCursor, 2)
+	require.NoError(t, err)
+	assert.Equal(t, "a", next.Items[0].Subject)
+}

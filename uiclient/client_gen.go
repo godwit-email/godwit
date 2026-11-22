@@ -905,6 +905,10 @@ func (cl *Client) TestPluginModel(ctx context.Context, ref string) (core.CapStat
 	return call[core.CapStatus](cl, ctx, "TestPluginModel", ref)
 }
 
+func (cl *Client) ThreadDeadline(ctx context.Context, threadID int64) (*core.Deadline, error) {
+	return call[*core.Deadline](cl, ctx, "ThreadDeadline", threadID)
+}
+
 func (cl *Client) ThreadLabels(ctx context.Context, threadIDs []int64) (map[int64][]core.AppliedLabel, error) {
 	return call[map[int64][]core.AppliedLabel](cl, ctx, "ThreadLabels", threadIDs)
 }
