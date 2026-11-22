@@ -2,12 +2,15 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/godwit-email/godwit/core/store"
+	"github.com/godwit-email/godwit/internal/i18n"
 )
 
 // Sources of a 期限, highest first: manual > program = wit > ai. A lower one
@@ -78,6 +81,16 @@ func (s *Service) SetThreadDeadline(ctx context.Context, threadID int64, d Deadl
 
 // setDeadline is the one write path of a 期限, for every source.
 func (s *Service) setDeadline(ctx context.Context, source string, threadID int64, d Deadline) error {
+	return s.changeDeadline(ctx, source, threadID, d, true)
+}
+
+// checkDeadline is whether setDeadline would take d now, writing nothing: a
+// Wit call it refuses goes back to the model before the user is asked.
+func (s *Service) checkDeadline(ctx context.Context, source string, threadID int64, d Deadline) error {
+	return s.changeDeadline(ctx, source, threadID, d, false)
+}
+
+func (s *Service) changeDeadline(ctx context.Context, source string, threadID int64, d Deadline, write bool) error {
 	if d.Date != "" {
 		if _, err := time.Parse(time.DateOnly, d.Date); err != nil {
 			return ErrDeadlineInvalid
@@ -98,19 +111,23 @@ func (s *Service) setDeadline(ctx context.Context, source string, threadID int64
 		return err
 	}
 	cur, has := current[threadID]
-	if source == DeadlineManual {
-		if d.Date == "" && has && cur.Source != DeadlineManual {
-			// Removing another source's date leaves a marker that keeps them out.
-			return s.writeDeadline(ctx, threadID, Deadline{Source: DeadlineManual}, now)
-		}
-		d.MessageID, d.Quote = 0, ""
-	} else {
+	if source != DeadlineManual {
 		if has && deadlineRank(cur.Source) < deadlineRank(source) {
 			return ErrDeadlineOutranked
 		}
 		if err := s.checkDeadlineMessage(ctx, threadID, statuses[threadID], d); err != nil {
 			return err
 		}
+	}
+	if !write {
+		return nil
+	}
+	if source == DeadlineManual {
+		if d.Date == "" && has && cur.Source != DeadlineManual {
+			// Removing another source's date leaves a marker that keeps them out.
+			return s.writeDeadline(ctx, threadID, Deadline{Source: DeadlineManual}, now)
+		}
+		d.MessageID, d.Quote = 0, ""
 	}
 	if d.Date == "" {
 		_, err := s.db.Execute(ctx, "DELETE FROM thread_deadlines WHERE thread_id = ?", threadID)
@@ -214,4 +231,64 @@ func deadlineEnd(d Deadline, loc *time.Location) time.Time {
 	}
 	t, _ := time.ParseInLocation(time.DateOnly, d.Date, loc)
 	return t.AddDate(0, 0, 1)
+}
+
+// witDeadlineArgs is a set_reply_deadline call: the model names the message by
+// its mail id; Prepare records the message and its conversation.
+type witDeadlineArgs struct {
+	ID        int    `json:"id"`
+	MessageID int64  `json:"message_id"`
+	ThreadID  int64  `json:"thread_id"`
+	Date      string `json:"date"`
+	Time      string `json:"time,omitempty"`
+	Quote     string `json:"quote,omitempty"`
+}
+
+func (a witDeadlineArgs) deadline() Deadline {
+	return Deadline{Date: a.Date, Time: a.Time, MessageID: a.MessageID, Quote: a.Quote}
+}
+
+// prepareWitDeadline resolves the mail id and runs setDeadline's checks, so a
+// call they refuse never reaches the user; the summary names the
+// conversation and the date in the interface's language.
+func (s *Service) prepareWitDeadline(ctx context.Context, _ Conversation, args json.RawMessage) (prepared, error) {
+	var in witDeadlineArgs
+	if err := json.Unmarshal(args, &in); err != nil {
+		return prepared{}, err
+	}
+	var err error
+	if in.MessageID, err = s.mailOf(ctx, runOf(ctx), in.ID); err != nil {
+		return prepared{}, err
+	}
+	m, err := s.GetMessageText(ctx, in.MessageID)
+	if err != nil {
+		return prepared{}, err
+	}
+	in.ThreadID = m.ThreadID
+	if err := s.checkDeadline(ctx, DeadlineWit, in.ThreadID, in.deadline()); err != nil {
+		return prepared{}, err
+	}
+	summary := i18n.Tf("wit.deadline.clear", m.Subject)
+	if in.Date != "" {
+		day, _ := time.ParseInLocation(time.DateOnly, in.Date, time.Local) // checkDeadline parsed it
+		summary = i18n.Tf("wit.deadline.set", m.Subject, strings.TrimSpace(i18n.FullDate(day)+" "+in.Time))
+	}
+	b, err := json.Marshal(in)
+	return prepared{Args: b, Summary: summary, TargetKind: "thread", TargetID: in.ThreadID}, err
+}
+
+// applyWitDeadline writes the approved date through setDeadline, which checks
+// it again: the conversation may have been replied to since.
+func (s *Service) applyWitDeadline(ctx context.Context, a Approval) ([]sqlite.Statement, any, any, error) {
+	var in witDeadlineArgs
+	if err := json.Unmarshal(a.Args, &in); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := s.setDeadline(ctx, DeadlineWit, in.ThreadID, in.deadline()); err != nil {
+		return nil, nil, nil, err
+	}
+	if in.Date == "" {
+		return nil, map[string]any{"cleared": true}, nil, nil
+	}
+	return nil, map[string]any{"set": strings.TrimSpace(in.Date + " " + in.Time)}, nil, nil
 }

@@ -2736,6 +2736,26 @@
   "wit_tool_reply_to_mail": "Reply to mail",
   "wit_tool_forward_mail": "Forward mail",
   "wit_tool_delete_draft": "Delete draft",
+  "wit_tool_set_reply_deadline": "Set a reply date",
+  "wit_deadline_set": "Reply to “{arg1}” by {arg2}",
+  "@wit_deadline_set": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      },
+      "arg2": {
+        "type": "String"
+      }
+    }
+  },
+  "wit_deadline_clear": "Remove the reply date of “{arg1}”",
+  "@wit_deadline_clear": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "wit_action_move_to_trash": "Move to Trash",
   "wit_action_archive_mail": "Archive",
   "wit_action_mark_as_spam": "Spam",

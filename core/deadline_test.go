@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -209,4 +210,75 @@ func TestDeadlineOverdue(t *testing.T) {
 	assert.False(t, e.deadlineOf(t, "q@x").Overdue, "due by the end of today")
 	require.NoError(t, e.s.SetThreadDeadline(bg, tid, Deadline{Date: e.day(-1), Time: "23:59", MessageID: q}))
 	assert.True(t, e.deadlineOf(t, "q@x").Overdue)
+}
+
+// witOn gives e's service a default model on a fake openai service, for Wit.
+func (e *sendEnv) witOn(t *testing.T) *testllm.Server {
+	t.Helper()
+	srv := testllm.Start(t, "openai")
+	_, err := e.s.AddModelService(bg, ModelServiceInput{Name: "x", Kind: "openai", BaseURL: srv.URL, APIKey: "k", Models: []string{"m1"}})
+	require.NoError(t, err)
+	st, err := e.s.GetSettings(bg)
+	require.NoError(t, err)
+	st.DefaultModel = "x/m1"
+	_, err = e.s.SetSettings(bg, st)
+	require.NoError(t, err)
+	return srv
+}
+
+// Wit sets a reply date, source wit, once the user approves; 本次对话都允许
+// approves its later calls, which still cannot replace or clear the user's own
+// date. A call the checks refuse goes back to the model with no approval.
+func TestDeadlineWit(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("q@x", "bob@a.example", "alice@example.com", "quote", e.viewAt(1), "Please confirm the quote by Friday."))
+	e.sync(t)
+	srv := e.witOn(t)
+	conv, err := e.s.NewConversation(bg, "ask", 0)
+	require.NoError(t, err)
+	sub, unsub := e.s.SubscribeConversation(conv.ID)
+	defer unsub()
+	set := func(args string) testllm.Turn {
+		return testllm.Turn{Calls: []testllm.Call{{Name: "set_reply_deadline", Args: args}}}
+	}
+	ask := func(turns ...testllm.Turn) WitEvent {
+		srv.Script(append(turns, testllm.Turn{Text: []string{"ok"}})...)
+		ch, err := e.s.Ask(bg, conv.ID, "Bob needs a reply by Friday")
+		require.NoError(t, err)
+		evs := drainWit(t, ch)
+		return evs[len(evs)-1]
+	}
+
+	last := ask(found("quote"), set(`{"id":1,"date":"`+e.day(3)+`","time":"15:00","quote":"by  Friday"}`))
+	require.Equal(t, "interrupted", last.Kind, "%+v", last.Err)
+	require.Len(t, last.Approvals, 1)
+	a := last.Approvals[0]
+	assert.True(t, a.SessionAllow, "no destination: grantable for the conversation")
+	assert.Contains(t, a.Summary, "quote", "names the conversation")
+	assert.Contains(t, a.Summary, "15:00")
+	assert.Nil(t, e.deadlineOf(t, "q@x"), "nothing before the approval")
+
+	require.NoError(t, e.s.ResolveApprovalForConversation(bg, a.ID))
+	for waitTerminal(t, sub).Kind != "done" {
+	}
+	q := e.idOf(t, "q@x")
+	assert.Equal(t, &Deadline{Date: e.day(3), Time: "15:00", MessageID: q, Quote: "by  Friday", Source: DeadlineWit}, e.deadlineOf(t, "q@x"))
+
+	// Granted: a later call applies at once, and the run goes on.
+	last = ask(set(`{"id":1,"date":"` + e.day(4) + `"}`))
+	require.Len(t, last.Approvals, 1)
+	assert.Equal(t, "done", last.Approvals[0].State)
+	for waitTerminal(t, sub).Kind != "done" {
+	}
+	assert.Equal(t, &Deadline{Date: e.day(4), MessageID: q, Source: DeadlineWit}, e.deadlineOf(t, "q@x"))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM audit_log WHERE tool = 'set_reply_deadline' AND decision = ?", decisionSession))
+
+	// Refused by the checks, or by the user's own date, granted or not: no approval, no change.
+	assert.Equal(t, "done", ask(set(`{"id":1,"date":"`+e.day(4)+`","quote":"by Monday"}`)).Kind)
+	require.NoError(t, e.s.SetThreadDeadline(WithUISession(t.Context(), e.s), e.threadOf(t, "q@x"), Deadline{Date: e.day(5)}))
+	assert.Equal(t, "done", ask(set(`{"id":1,"date":"`+e.day(6)+`"}`), set(`{"id":1,"date":""}`)).Kind)
+	assert.Equal(t, &Deadline{Date: e.day(5), Source: DeadlineManual}, e.deadlineOf(t, "q@x"))
+	assert.Equal(t, 2, e.count(t, "SELECT count(*) FROM approvals WHERE tool = 'set_reply_deadline'"))
+	reqs := srv.Requests()
+	assert.Contains(t, string(reqs[len(reqs)-1].Messages), ErrDeadlineOutranked.Error(), "the model is told why")
 }
