@@ -4,6 +4,25 @@ import type { ReactNode } from "react";
 import type { Approval, BodyChange, ComposeState, Review, RunStart, WitEvent } from "@/mygo";
 import { type Legacy, legacy } from "@/wit/fixtures";
 import { ComposePage } from "./ComposePage";
+import type * as Saver from "./saver";
+
+// Runs at the moment the saver takes a stored revision: a send from then on passes it.
+const atLatest = vi.hoisted(() => ({ f: undefined as (() => void) | undefined }));
+vi.mock("./saver", async (importOriginal) => {
+  const m = await importOriginal<typeof Saver>();
+  return {
+    ...m,
+    createSaver: (...a: Parameters<typeof m.createSaver>) => {
+      const s = m.createSaver(...a);
+      const use = s.useLatest.bind(s);
+      s.useLatest = (r, snap) => {
+        atLatest.f?.();
+        use(r, snap);
+      };
+      return s;
+    },
+  };
+});
 
 const h = vi.hoisted(() => ({ wit: new Set<(e: WitEvent) => void>(), editorMounts: 0 }));
 vi.mock("@/mygo", () => ({
@@ -1012,6 +1031,26 @@ test("a reload shows the recipients and attachments changed behind the window", 
   expect(await screen.findByRole("button", { name: "移除 eve@x.com" })).toBeInTheDocument();
   expect(screen.getByText("plan.pdf")).toBeInTheDocument();
   expect(screen.queryByRole("alert")).toBeNull(); // nothing was being typed
+});
+
+test("the saver takes a reload's revision only once its recipients and account show", async () => {
+  vi.mocked(api.latest).mockResolvedValue({
+    ...latest("Wit 写的", 9),
+    accounts: [...state.accounts, { id: 2, email: "new@x.com" }], // added since the window opened
+    from: 2,
+    bcc: ["eve@x.com"],
+  });
+  let shown: [boolean, string | null] | undefined;
+  atLatest.f = () => {
+    shown = [
+      !!screen.queryByRole("button", { name: "移除 eve@x.com" }),
+      screen.getByRole("button", { name: "发件账户" }).textContent,
+    ];
+  };
+  await setup();
+  emit({ kind: "done" });
+  await waitFor(() => expect(shown).toEqual([true, "new@x.com"]));
+  atLatest.f = undefined;
 });
 
 test("a row being typed in stays open when a reload empties it", async () => {
