@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.39.4](https://github.com/godwit-email/godwit/compare/v1.39.3...v1.39.4) (2026-11-22)
+
+
+### Bug Fixes
+
+* **compose:** keep the word before the caret when a rangeless replacement is punctuation only ([#823](https://github.com/godwit-email/godwit/issues/823)) ([8e44967](https://github.com/godwit-email/godwit/commit/8e44967203ac28d38f3a924518b3703e747022e4))
+* **mail:** keep flex layout properties in received html ([#830](https://github.com/godwit-email/godwit/issues/830)) ([8ff5f27](https://github.com/godwit-email/godwit/commit/8ff5f279fd0f670817ca39ae7f8f09c40e9a35b5))
+* **ui:** say 只收信 and keep text on the red fill white in the dark ([#819](https://github.com/godwit-email/godwit/issues/819)) ([5ce2a12](https://github.com/godwit-email/godwit/commit/5ce2a12d356d227f99da74c6f342858b4162e368))
+
 ## [1.39.3](https://github.com/godwit-email/godwit/compare/v1.39.2...v1.39.3) (2026-11-18)
 
 
