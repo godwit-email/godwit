@@ -204,6 +204,7 @@ func TestOpenDraftInOutbox(t *testing.T) {
 	if err := h.env.Svc.Send(context.Background(), ds[0].ID); err != nil {
 		t.Fatal(err)
 	}
+	h.see("正在发送")                                // 折叠时只显示最新提示，别让发送提示盖住接下来的只读提示。
 	h.post(func() { h.app.OpenDraft(ds[0].ID) }) // from a row drawn before the send, or from Wit
 	h.see("这封邮件在发件箱里，取消发送后才能修改。")
 	h.noCompose()
