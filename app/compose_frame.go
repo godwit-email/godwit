@@ -2,6 +2,7 @@ package app
 
 import (
 	"sync"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/godwit-email/godwit/internal/i18n"
@@ -23,6 +24,16 @@ type ComposeFrame struct {
 	toasts        []ui.Toast
 	bar, field    ui.Rect // the page's, in its own coordinates
 	origin        ui.Rect // where the view is in the window, as last laid out
+	later         *laterAsk
+}
+
+// laterAsk is send later as the page asked for it: the dialog's time, and
+// where the page waits for the time chosen (0 when cancelled). UI thread
+// only, once set.
+type laterAsk struct {
+	at              time.Time
+	open, confirmed bool
+	reply           chan int64
 }
 
 // NewComposeFrame is the frame of view, which invalidate draws again.
@@ -55,6 +66,23 @@ func (f *ComposeFrame) SetToastBar(bar, field ui.Rect) {
 	f.set(func() { f.bar, f.field = bar, field })
 }
 
+// SendLater opens send later at at, unix ms, and waits for the time chosen,
+// 0 when cancelled. An ask still open is cancelled.
+// shortcut: a window closed with the dialog open leaves the page's call waiting; answer it on close if that ever matters.
+func (f *ComposeFrame) SendLater(at int64) int64 {
+	reply := make(chan int64, 1)
+	f.set(func() {
+		if f.later != nil {
+			select {
+			case f.later.reply <- 0:
+			default:
+			}
+		}
+		f.later = &laterAsk{at: time.UnixMilli(at), open: true, reply: reply}
+	})
+	return <-reply
+}
+
 // Origin is where the page's view is in the window: page coordinates (a
 // menu's) plus it are the window's.
 func (f *ComposeFrame) Origin() (x, y int) {
@@ -71,7 +99,7 @@ func (a *App) ComposeView(f *ComposeFrame) func(*ui.Context) {
 		kit.NewFrame(c)
 		t, th := theme.Of(c), c.Theme()
 		f.mu.Lock()
-		title, status, toasts, bar, field := f.title, f.status, f.toasts, f.bar, f.field
+		title, status, toasts, bar, field, later := f.title, f.status, f.toasts, f.bar, f.field, f.later
 		f.toasts = nil
 		f.mu.Unlock()
 		for _, ts := range toasts {
@@ -99,6 +127,9 @@ func (a *App) ComposeView(f *ComposeFrame) func(*ui.Context) {
 					ui.Rect{X: o.X + field.X, Y: o.Y + field.Y, W: field.W, H: field.H})
 			}
 		})
+		if later != nil {
+			a.sendLater(c, f, later)
+		}
 		kit.ToastHost(c, i18n.T("toast.close"))
 		root := a.windowFill(t)
 		if a.vibrancy {
@@ -106,6 +137,44 @@ func (a *App) ComposeView(f *ComposeFrame) func(*ui.Context) {
 		}
 		c.Root().Background(root) // last, as View: overlays reset it
 	}
+}
+
+// sendLater draws the send later dialog l over f's page, and answers the
+// page as it closes: the time chosen, or 0. A time not in the future is
+// refused; days before today cannot be chosen.
+func (a *App) sendLater(c *ui.Context, f *ComposeFrame, l *laterAsk) {
+	now := a.clock.Now()
+	kit.DateTimeDialog(c, &l.open, &l.at, kit.DateTimeDialogOpts{
+		DateTimeOpts: kit.DateTimeOpts{
+			Min: now, Date: i18n.T("compose.send_later.date"), Time: i18n.T("compose.send_later.time"),
+			PrevMonth: i18n.T("common.previous_month"), NextMonth: i18n.T("common.next_month"),
+		},
+		Title: i18n.T("compose.send_later.title"), Note: i18n.T("compose.send_later.note"),
+		Confirm: i18n.T("compose.send_later.schedule"), Cancel: i18n.T("common.cancel"), Close: i18n.T("common.close"),
+		Readout: func(at time.Time) string { return kit.Readout(c.Locale(), at, now) },
+		Check: func(at time.Time) string {
+			if !at.After(a.clock.Now()) {
+				return i18n.T("compose.send_later.past")
+			}
+			return ""
+		},
+	}, func() { l.confirmed = true })
+	if l.open {
+		return
+	}
+	at := int64(0)
+	if l.confirmed {
+		at = l.at.UnixMilli()
+	}
+	select {
+	case l.reply <- at:
+	default: // answered already: a newer ask replaced it
+	}
+	f.mu.Lock()
+	if f.later == l {
+		f.later = nil
+	}
+	f.mu.Unlock()
 }
 
 // windowFill is a window's own color under its pages: clear over the

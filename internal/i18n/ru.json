@@ -57,6 +57,8 @@
   "common_continue": "Продолжить",
   "common_delete": "Удалить",
   "common_done": "Готово",
+  "common_next_month": "Следующий месяц",
+  "common_previous_month": "Предыдущий месяц",
   "common_retry": "Повторить",
   "common_save": "Сохранить",
   "compose_attach": "Прикрепить файлы",

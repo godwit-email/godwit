@@ -287,7 +287,7 @@ func calendar(c *ui.Context, at *time.Time, o DateTimeOpts) {
 			*at = onDay(*at, d)
 		}
 	}
-	grid := ui.Column(c).Width(cell * 7).Shrink(0).Focusable().Role(ui.RoleTable).Label(o.Date)
+	grid := ui.Column(c).Width(th.Space(7 * 9)).Shrink(0).Focusable().Role(ui.RoleTable).Label(o.Date) // seven days wide
 	st := ui.Local(grid, pickerKey{}, func() pickerMonth { return pickerMonth{} })
 	if !st.followed.Equal(day0(*at)) { // the month follows the day the app or the keys set
 		st.followed = day0(*at)

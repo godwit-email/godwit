@@ -57,6 +57,8 @@
   "common_continue": "繼續",
   "common_delete": "刪除",
   "common_done": "完成",
+  "common_next_month": "下個月",
+  "common_previous_month": "上個月",
   "common_retry": "重試",
   "common_save": "儲存",
   "compose_attach": "加入附件",

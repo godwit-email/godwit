@@ -81,6 +81,8 @@
   "common_continue": "Continue",
   "common_delete": "Delete",
   "common_done": "Done",
+  "common_next_month": "Next month",
+  "common_previous_month": "Previous month",
   "common_retry": "Retry",
   "common_save": "Save",
   "compose_attach": "Attach files",

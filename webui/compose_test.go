@@ -284,7 +284,7 @@ func TestComposeBoundSurface(t *testing.T) {
 	}
 	sort.Strings(names)
 	assert.Equal(t, []string{"AddAttachments", "Answer", "Ask", "CheckCited", "Closed", "Decide", "DecideAll", "DecideWithArgs", "Finish", "Follow", "Latest", "Load",
-		"Models", "OpenCited", "OpenLink", "OpenModels", "PopupMenu", "RemoveAttachment", "Review", "Rewrite", "Save", "SearchContacts", "SearchMail", "Send", "SetAccount",
+		"Models", "OpenCited", "OpenLink", "OpenModels", "PopupMenu", "RemoveAttachment", "Review", "Rewrite", "Save", "SearchContacts", "SearchMail", "Send", "SendLater", "SetAccount",
 		"SetModel", "Skill", "Stop", "TitleBar", "Toast", "ToastBar", "Undo", "WitInfo"}, names)
 }
 
@@ -714,6 +714,31 @@ func TestComposeReleaseDuringDialog(t *testing.T) {
 	}
 	assert.True(t, f.gone(t, empty.ID))
 	assert.Empty(t, f.stored(t, kept.ID).Attachments)
+}
+
+// SendLater opens send later on the calling window at the page's time and
+// passes the time chosen back, 0 for none; a page with no window to show it
+// on gets none.
+func TestComposeSendLater(t *testing.T) {
+	var win int
+	var initial int64
+	p := NewComposePage(NewCompose(), PageDeps{
+		WinOf: func(context.Context) (int, bool) { return 3, true },
+		SendLater: func(w int, at int64) int64 {
+			win, initial = w, at
+			return at + 60_000
+		},
+	})
+	at, err := p.SendLater(t.Context(), 1_800_000_000_000)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1_800_000_060_000), at)
+	assert.Equal(t, 3, win)
+	assert.Equal(t, int64(1_800_000_000_000), initial)
+
+	p = NewComposePage(NewCompose(), PageDeps{WinOf: func(context.Context) (int, bool) { return 0, false }})
+	at, err = p.SendLater(t.Context(), 1_800_000_000_000)
+	assert.ErrorIs(t, err, ErrNoDraft)
+	assert.Zero(t, at)
 }
 
 // PopupMenu shows the page's entries on the calling window and passes the
