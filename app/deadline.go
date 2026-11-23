@@ -15,8 +15,21 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
+// rowStatus is a row's third line: its status (viewLine) and its 回复日期
+// (deadlineText), the date alone with no icon where the row has no status.
+func rowStatus(now time.Time, it mailItem) (icon, line, due string, overdue bool) {
+	icon, line = viewLine(it)
+	if it.Deadline != nil {
+		due, overdue = deadlineText(now, *it.Deadline)
+		if it.Status == "" {
+			icon, line = "", ""
+		}
+	}
+	return icon, line, due, overdue
+}
+
 // deadlineText is a row's 回复日期 after its status, and whether it is
-// overdue (only then in Danger): 今天, 明天前, this week's day, next week's,
+// overdue (only then in DangerText): 今天, 明天前, this week's day, next week's,
 // else the date.
 func deadlineText(now time.Time, d core.Deadline) (string, bool) {
 	day, err := time.ParseInLocation(time.DateOnly, d.Date, now.Location())

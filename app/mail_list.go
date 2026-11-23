@@ -1619,15 +1619,7 @@ func (p *mailPage) row(c *ui.Context, it mailItem, toggleStar func()) ui.Element
 			} else {
 				ui.Text(c, subject).TextColor(ink).SingleLine()
 			}
-			icon, line := p.viewLine(it)
-			var due string
-			var overdue bool
-			if it.Deadline != nil {
-				due, overdue = deadlineText(p.a.clock.Now(), *it.Deadline)
-				if it.Status == "" {
-					icon, line = "", "" // the date alone, with no icon
-				}
-			}
+			icon, line, due, overdue := rowStatus(p.a.clock.Now(), it)
 			if line != "" || due != "" {
 				ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).TextColor(t.Muted).Children(func() {
 					if icon != "" {
@@ -1642,7 +1634,7 @@ func (p *mailPage) row(c *ui.Context, it mailItem, toggleStar func()) ui.Element
 						}
 						date := kit.Text(c, due, t.Text.Xs).SingleLine().Shrink(0)
 						if overdue {
-							date.TextColor(t.Danger)
+							date.TextColor(t.DangerText)
 						}
 					}
 				})

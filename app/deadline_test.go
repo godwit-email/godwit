@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,6 +36,36 @@ func TestDeadlineRowText(t *testing.T) {
 		got, overdue := deadlineText(now, c.d)
 		if got != c.want || overdue != c.overdue {
 			t.Errorf("%+v: got %q %v, want %q %v", c.d, got, overdue, c.want, c.overdue)
+		}
+	}
+}
+
+// TestRowStatusLine: an unreplied row says 未回复 and its reply date, never
+// when it came or how long it has waited; a 待跟进 row keeps its wait.
+func TestRowStatusLine(t *testing.T) {
+	now := time.Date(2026, 11, 23, 10, 0, 0, 0, time.Local) // a Monday
+	ago := func(days int) time.Time { return now.AddDate(0, 0, -days) }
+	unreplied := func(came time.Time, d *core.Deadline) mailItem {
+		return mailItem{Status: core.ReplyStatusUnreplied, Date: came, Deadline: d}
+	}
+	for _, c := range []struct {
+		it      mailItem
+		want    string
+		overdue bool
+	}{
+		{unreplied(now, nil), "未回复", false},
+		{unreplied(ago(12), nil), "未回复", false},
+		{unreplied(now, &core.Deadline{Date: "2026-11-23"}), "未回复 · 今天", false},
+		{unreplied(ago(1), &core.Deadline{Date: "2026-11-24", Time: "15:00"}), "未回复 · 明天 15:00 前", false},
+		{unreplied(ago(3), &core.Deadline{Date: "2026-11-21", Overdue: true}), "未回复 · 已过期 2 天", true},
+		{unreplied(ago(2), &core.Deadline{Date: "2026-11-27"}), "未回复 · 周五前", false},
+		{mailItem{Status: core.ReplyStatusWaiting, WaitingDays: 4, Date: ago(4), Deadline: &core.Deadline{Date: "2026-11-26"}}, "对方未回复 · 已等 4 天 · 周四前", false},
+		{mailItem{Date: ago(2), Deadline: &core.Deadline{Date: "2026-11-27"}}, "周五前", false},
+	} {
+		_, line, due, overdue := rowStatus(now, c.it)
+		got := strings.Join(slices.DeleteFunc([]string{line, due}, func(s string) bool { return s == "" }), " · ")
+		if got != c.want || overdue != c.overdue {
+			t.Errorf("%+v: got %q %v, want %q %v", c.it, got, overdue, c.want, c.overdue)
 		}
 	}
 }
@@ -91,7 +122,7 @@ func TestViewRowReplyDate(t *testing.T) {
 	h := datedHarness(t, core.SavedViewDoc{Match: core.MatchAll, Conditions: []core.RuleCondition{condFromAcme},
 		Groups: []core.ViewGroup{{ID: "r", Name: "R", Match: core.MatchAll, Conditions: []core.RuleCondition{{Field: core.FieldReply, Op: core.OpIs, Value: core.ViewReplyUnreplied}}}}})
 	h.waitMail("the dates", func() bool { return h.tt.HasText("明天前") && h.tt.HasText("已过期 1 天") })
-	h.see(i18n.T("view.status.unreplied.today"))
+	h.see("未回复")
 	if got := h.items()[0].Subject; got != "late" {
 		t.Fatalf("first row %q, want the overdue one", got)
 	}
@@ -102,7 +133,7 @@ func TestViewRowReplyDate(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.waitMail("the date alone", func() bool {
-		return h.tt.HasText("明天前") && !h.tt.HasText(i18n.T("view.status.unreplied.today"))
+		return h.tt.HasText("明天前") && !h.tt.HasText("未回复")
 	})
 }
 

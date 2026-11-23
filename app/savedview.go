@@ -223,20 +223,14 @@ func viewDaysAgo(now, t time.Time) int {
 }
 
 // viewLine is a row's status for its third line, "" for none: the row shows
-// its preview instead. Only a view's rows have one.
-func (p *mailPage) viewLine(it mailItem) (icon, text string) {
+// its preview instead. Only a view's rows have one. An unreplied row's says
+// nothing of when it came: the row's time says that.
+func viewLine(it mailItem) (icon, text string) {
 	switch {
 	case it.Status == core.ReplyStatusUnreplied && it.NewReply:
 		return "reply", i18n.T("view.status.new_reply")
 	case it.Status == core.ReplyStatusUnreplied:
-		switch n := viewDaysAgo(p.a.clock.Now(), it.Date); {
-		case n <= 0:
-			return "reply", i18n.T("view.status.unreplied.today")
-		case n == 1:
-			return "reply", i18n.T("view.status.unreplied.yesterday")
-		default:
-			return "reply", i18n.Tf("view.status.unreplied.days", n)
-		}
+		return "reply", i18n.T("view.status.unreplied")
 	case it.Status == core.ReplyStatusWaiting:
 		return "time", i18n.Tf("view.status.waiting", it.WaitingDays)
 	case it.Manual:
