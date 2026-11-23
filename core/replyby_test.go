@@ -90,7 +90,7 @@ func TestSummaryCarriesReplyDate(t *testing.T) {
 	assert.Contains(t, system, "REPLY BY: YYYY-MM-DD [HH:MM] | none\nQUOTE: ")
 	assert.Contains(t, system, "calendar in Asia/Shanghai")
 
-	require.NoError(t, e.s.SetThreadDeadline(bg, tid, Deadline{MessageID: q})) // an app clears it
+	require.NoError(t, e.setThreadDeadline(bg, tid, Deadline{MessageID: q})) // an app clears it
 	require.Nil(t, e.deadlineOf(t, "q@x"))
 	assert.Equal(t, text, e.summarize(t, "Asia/Shanghai", Target{Kind: "message", ID: q}), "from the cache, the same")
 	assert.Len(t, srv.Requests(), 1)
