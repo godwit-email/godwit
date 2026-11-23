@@ -927,19 +927,29 @@ func (s *Service) resolveModel(ctx context.Context, override string) (ai.Resolve
 // SmallModel when small, else DefaultModel. A SmallModel that is unset or names
 // a removed service or model falls back to DefaultModel; other errors return.
 func (s *Service) resolveTask(ctx context.Context, override string, small bool) (ai.ResolvedModel, string, error) {
-	if override == "" && small {
-		st, err := s.loadSettings(ctx)
-		if err != nil {
-			return ai.ResolvedModel{}, "", err
-		}
-		if st.SmallModel != "" {
-			m, ref, err := s.resolveRef(ctx, st.SmallModel)
-			if !errors.Is(err, ErrModelServiceNotFound) && !errors.Is(err, ErrModelNotFound) {
-				return m, ref, err
-			}
+	if override != "" {
+		return s.resolveRef(ctx, override)
+	}
+	st, err := s.loadSettings(ctx)
+	if err != nil {
+		return ai.ResolvedModel{}, "", err
+	}
+	return s.resolveTaskIn(ctx, st, small)
+}
+
+// resolveTaskIn is resolveTask with no override, under settings st (as
+// loadSettings reads them, the gateway's default in them).
+func (s *Service) resolveTaskIn(ctx context.Context, st Settings, small bool) (ai.ResolvedModel, string, error) {
+	if small && st.SmallModel != "" {
+		m, ref, err := s.resolveRef(ctx, st.SmallModel)
+		if !errors.Is(err, ErrModelServiceNotFound) && !errors.Is(err, ErrModelNotFound) {
+			return m, ref, err
 		}
 	}
-	return s.resolveRef(ctx, override)
+	if st.DefaultModel == "" {
+		return ai.ResolvedModel{}, "", ErrAINotConfigured
+	}
+	return s.resolveRef(ctx, st.DefaultModel)
 }
 
 // TaskModel is the "slug/model" skill runs on (quick replies when skill is

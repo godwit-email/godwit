@@ -503,6 +503,17 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 	}
 	stmts := []sqlite.Statement{stmt}
 	arrive := st.SummaryMode == SummaryArrive && stored.SummaryMode != SummaryArrive
+	if arrive { // what it is chosen with, by the settings saved: mail from before stays, and a change of service pauses it
+		eff := st
+		if gw != "" {
+			eff.DefaultModel = gw
+		}
+		c, err := s.arrivalChoiceNow(ctx, eff)
+		if err != nil {
+			return Settings{}, err
+		}
+		stmts = append(stmts, c)
+	}
 	if e, ok := apiAudit(ctx, "SetSettings", 0); ok && (mcpSendRank(st.MCPSend) > mcpSendRank(stored.MCPSend) || arrive) {
 		stmts = append(stmts, gateway.Audit(e, s.secrets.Redact))
 	}
@@ -516,15 +527,6 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 			err = errors.Join(err, rerr)
 		}
 		return err
-	}
-	if arrive { // what it is chosen with, by the row just saved: mail from before stays, and a change of service pauses it
-		c, err := s.arrivalChoiceNow(ctx)
-		if err == nil {
-			err = s.exec(ctx, c)
-		}
-		if err != nil {
-			return Settings{}, undo(err)
-		}
 	}
 	// the keychain after the row, which goes back if it fails, so the two never disagree
 	if err := s.saveProxyPassword(password, st, stored); err != nil {

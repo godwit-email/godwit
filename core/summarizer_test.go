@@ -155,18 +155,20 @@ func TestSummarizeUnreplied(t *testing.T) {
 	assert.Zero(t, n)
 }
 
-// 收到就总结 needs a model service to name: without one the level stays.
+// 收到就总结 needs a model service to name: without one the level stays,
+// and a program's raise that fails leaves no audit row (ADR 0003).
 func TestSummaryOnArrivalNeedsModel(t *testing.T) {
 	setFor(t, &SummaryOnArrival, true)
 	e := newSendEnv(t, false)
 	st, err := e.s.GetSettings(bg)
 	require.NoError(t, err)
 	st.SummaryMode = SummaryArrive
-	_, err = e.s.SetSettings(bg, st)
+	_, err = e.s.SetSettings(WithExternalSource(bg, AuditLocalAPI), st)
 	require.ErrorIs(t, err, ErrAINotConfigured)
 	st, err = e.s.GetSettings(bg)
 	require.NoError(t, err)
 	assert.Equal(t, SummaryOff, st.SummaryMode)
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM audit_log WHERE tool = 'SetSettings'"))
 }
 
 // 收到就总结 is offered only behind SummaryOnArrival; one chosen while it

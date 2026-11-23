@@ -88,18 +88,22 @@ type SummaryArrival struct {
 	Paused           bool
 }
 
-// summaryModel is the model a summary runs on now, as RunSkill resolves it.
-func (s *Service) summaryModel(ctx context.Context) (ai.ResolvedModel, string, error) {
+// summaryModel is the model a summary runs on under settings st, as RunSkill resolves it.
+func (s *Service) summaryModel(ctx context.Context, st Settings) (ai.ResolvedModel, string, error) {
 	sk, err := s.skill(ctx, "summarize")
 	if err != nil {
 		return ai.ResolvedModel{}, "", err
 	}
-	return s.resolveTask(ctx, sk.Model, sk.Tier == "small")
+	if sk.Model != "" {
+		return s.resolveRef(ctx, sk.Model)
+	}
+	return s.resolveTaskIn(ctx, st, sk.Tier == "small")
 }
 
-// currentChoice is an arrivalChoice for the summary model now, after seq after.
-func (s *Service) currentChoice(ctx context.Context, after int64) (arrivalChoice, error) {
-	m, ref, err := s.summaryModel(ctx)
+// currentChoice is an arrivalChoice for the summary model under settings
+// st, after seq after.
+func (s *Service) currentChoice(ctx context.Context, st Settings, after int64) (arrivalChoice, error) {
+	m, ref, err := s.summaryModel(ctx, st)
 	if err != nil {
 		return arrivalChoice{}, err
 	}
@@ -125,14 +129,14 @@ func (c arrivalChoice) same(o arrivalChoice) bool {
 	return c.Service == o.Service && c.OnDevice == o.OnDevice
 }
 
-// arrivalChoiceNow is a choice of 收到就总结 made now, to store beside the
-// settings that choose it.
-func (s *Service) arrivalChoiceNow(ctx context.Context) (sqlite.Statement, error) {
+// arrivalChoiceNow is a choice of 收到就总结 made now with settings st, to
+// store with them.
+func (s *Service) arrivalChoiceNow(ctx context.Context, st Settings) (sqlite.Statement, error) {
 	rows, err := s.db.Query(ctx, "SELECT COALESCE(MAX(seq), 0) FROM events_log")
 	if err != nil {
 		return sqlite.Statement{}, err
 	}
-	c, err := s.currentChoice(ctx, store.Int(rows.Values[0][0]))
+	c, err := s.currentChoice(ctx, st, store.Int(rows.Values[0][0]))
 	if err != nil {
 		return sqlite.Statement{}, err
 	}
@@ -165,7 +169,7 @@ func (s *Service) arrivalOn(ctx context.Context) (arrivalChoice, bool, error) {
 	if err != nil || !ok {
 		return c, false, err
 	}
-	now, err := s.currentChoice(ctx, c.After)
+	now, err := s.currentChoice(ctx, st, c.After)
 	if noModel(err) {
 		return c, false, nil
 	}
@@ -187,7 +191,11 @@ func (s *Service) SummaryArrivalState(ctx context.Context) (SummaryArrival, erro
 	if chosen {
 		out.Service = c.Name
 	}
-	now, err := s.currentChoice(ctx, c.After)
+	st, err := s.loadSettings(ctx)
+	if err != nil {
+		return SummaryArrival{}, err
+	}
+	now, err := s.currentChoice(ctx, st, c.After)
 	if noModel(err) {
 		return out, nil
 	}
@@ -214,7 +222,11 @@ func (s *Service) ConfirmSummaryService(ctx context.Context) error {
 	if err != nil || !ok {
 		return err
 	}
-	now, err := s.currentChoice(ctx, c.After)
+	st, err := s.loadSettings(ctx)
+	if err != nil {
+		return err
+	}
+	now, err := s.currentChoice(ctx, st, c.After)
 	if err != nil {
 		return err
 	}
