@@ -175,7 +175,7 @@ func maskTrace(b []byte) string {
 		}
 		flushText()
 		s := strings.TrimRight(line, "\r\n")
-		if n, sync, ok := literalSize(s); ok {
+		if n, sync, ok := literalSize(s); ok && statusText(s) == len(s) { // a status's text holds no literal
 			if server || !sync {
 				lit = n
 			} else {
@@ -249,7 +249,9 @@ func isSyntax(c byte) bool {
 // Each is in traceWords too, so it shows.
 var numKeys = map[string]bool{}
 
-// statusWords open a status response, whose text after its [code] is for people.
+// statusWords open a status response, whose text after its [code] is for
+// people. It and wordLists are matched in any case: they mask, and IMAP
+// keywords are case-insensitive. Lists that keep a number need capitals.
 var statusWords = map[string]bool{"OK": true, "NO": true, "BAD": true, "BYE": true, "PREAUTH": true}
 
 // wordLists are the items whose ( ) lists flags or labels: user words, so a
@@ -287,7 +289,7 @@ func maskLine(s string, fetch bool) string {
 	tag, _, _ := strings.Cut(s, " ")
 	tagged := isTag(tag) && isCommandWord(nextWord(s, len(tag)))
 	start := tagged || strings.HasPrefix(s, "* ")
-	text := statusText(s, tag, tagged)
+	text := statusText(s)
 	var out strings.Builder
 	prev := "" // the last word outside quotes and sections
 	afterKey, section, quoted := false, false, false
@@ -298,7 +300,7 @@ func maskLine(s string, fetch bool) string {
 			case c == '"' && !(quoted && escaped(s, i)):
 				quoted = !quoted
 			case quoted:
-			case c == '(' && (words > 0 || wordLists[prev] && strings.HasSuffix(s[:i], prev+" ")):
+			case c == '(' && (words > 0 || wordLists[strings.ToUpper(prev)] && strings.HasSuffix(s[:i], prev+" ")):
 				words++
 			case c == ')' && words > 0:
 				words--
@@ -347,16 +349,13 @@ func maskLine(s string, fetch bool) string {
 // statusText is where a status response's text starts (OK, NO, BAD, BYE,
 // PREAUTH, after a [code] if any), 0 for a continuation ("+ "), len(s) if s
 // is neither: the text is for people, so no number in it is a protocol field.
-func statusText(s, tag string, tagged bool) int {
+func statusText(s string) int {
 	if strings.HasPrefix(s, "+") { // a continuation: all text
 		return 0
 	}
-	rest, ok := strings.CutPrefix(s, "* ")
-	if tagged {
-		rest, ok = s[len(tag)+1:], true
-	}
+	tag, rest, _ := strings.Cut(s, " ")
 	w, after, _ := strings.Cut(rest, " ")
-	if !ok || !statusWords[w] {
+	if tag != "*" && !isTag(tag) || !statusWords[strings.ToUpper(w)] {
 		return len(s)
 	}
 	i := len(s) - len(after)

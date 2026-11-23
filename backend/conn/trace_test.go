@@ -59,6 +59,8 @@ func TestMaskTraceKeepsOnlyProtocolNumbers(t *testing.T) {
 		"+ Ready for 13800138000":                          ". xxxxx xxx 00000000000",
 		"* 1 FETCH (UID 42 FLAGS (UID 13800138000) UID 5)": "* 1 FETCH (UID 42 FLAGS (UID 00000000000) UID 5)", // flags are user words
 		"T6 UID STORE 4 +FLAGS (COUNT 77)":                 "T6 UID STORE 4 +FLAGS (COUNT 00)",
+		"* ok [UIDNEXT 5] 13800138000":                     "* xx [UIDNEXT 5] 00000000000", // keywords are case-insensitive
+		"* 1 FETCH (UID 42 flags (UID 13800138000))":       "* 1 FETCH (UID 42 xxxxx (UID 00000000000))",
 		"+ SEARCH 13800138000":                             ". SEARCH 00000000000",                 // a continuation's text is for people
 		"* LIST () \"/\" BODY[13800138000]<5>":             "* LIST () \".\" BODY[00000000000]<0>", // a section only in a FETCH
 		"T8 UID FETCH 7 (BODY.PEEK[2.1]<0.40>)":            "T8 UID FETCH 7 (BODY.PEEK[2.1]<0.40>)",
@@ -87,6 +89,14 @@ func TestMaskTraceKeepsNoNumberInALiteral(t *testing.T) {
 		". xxxxx\n" +
 		"..xxxxxx.0000\n" +
 		"T3 OK [APPENDUID 1 11] xxxx"
+	assert.Equal(t, want, maskTrace([]byte(raw)))
+}
+
+// A status response's text ending like a literal ({100}) is no literal: the
+// responses after it still show.
+func TestMaskTraceTakesNoLiteralFromStatusText(t *testing.T) {
+	raw := "* OK ready {100}\r\n* 1 FETCH (UID 42)\r\nT1 NO bad {9}\r\n* 2 EXISTS\r\n"
+	want := "* OK xxxxx {000}\n* 1 FETCH (UID 42)\nT1 NO xxx {0}\n* 2 EXISTS"
 	assert.Equal(t, want, maskTrace([]byte(raw)))
 }
 
