@@ -219,6 +219,32 @@ func TestReaderReplyDateSingle(t *testing.T) {
 	}
 }
 
+// TestReaderReplyDateSingleSummary: a message alone with its summary has
+// its 等你处理 card under the subject as a thread has it, not in the summary.
+func TestReaderReplyDateSingleSummary(t *testing.T) {
+	h, acc, _ := aiHarness(t, true, noQuick)
+	h.resize(1440, 900)
+	h.useBackendClock()
+	h.put(acc, "INBOX", coretest.Msg("Bob <bob@example.com>", acc.Email, "Lone ask", "Please reply by Friday."))
+	h.syncNow(acc)
+	page, err := h.env.Svc.ListThreads(context.Background(), core.View{Unified: "inbox"}, "", 10)
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("threads %+v, %v", page.Items, err)
+	}
+	msgs := h.messages(page.Items[0].ID)
+	if _, err := h.env.Svc.SetThreadDeadline(context.Background(), msgs[0].ThreadID, core.Deadline{Date: "2027-01-15", MessageID: msgs[0].ID}); err != nil {
+		t.Fatal(err)
+	}
+	h.openThreadWith(msgs[0].ThreadID)
+	r := h.app.mail.reader
+	h.until("the summary", func() bool { return r.summaryOn(r.ai[msgs[0].ID]) })
+	h.see("对方希望 周五（1月15日）前回复")
+	if n := h.countExact("等你处理"); n != 1 {
+		t.Fatalf("%d 等你处理 lines", n)
+	}
+	h.seeCardOnTop("Lone ask", "发给 我")
+}
+
 // seeCardOnTop checks the 等你处理 card is above the message (whose header
 // says to), its label in line with the title: the badge's text 6 in from
 // its side, as kit.Badge has it.

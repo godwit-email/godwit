@@ -595,7 +595,7 @@ func (r *reader) summaryPanel(c *ui.Context, m core.MessageSummary) {
 					}
 				}
 				r.aiBodyState(c, sum, hasContent, func() { st.summary = r.summarize(m.ID) })
-				if r.todoShown() && !digested {
+				if len(r.msgs) > 1 && r.todoShown() && !digested { // a message alone has it under the subject
 					r.todoRow(c, true, func() { r.replyDate(c, false) })
 				}
 			})

@@ -1209,8 +1209,8 @@ func (r *reader) draw(c *ui.Context, next *session) {
 				// stays constant across p ∈ [0, 1] with zero clamp oscillation.
 				ui.Box(c).FillWidth().Height(max(0, r.headerH-curH))
 				ui.Column(c).FillWidth().Children(func() {
-					// a message alone has it here too, unless its summary under the sender carries it
-					if !hasSum && (len(r.msgs) > 1 || len(r.msgs) == 1 && !r.summaryOn(r.ai[r.msgs[0].ID])) && r.todoShown() {
+					// a message alone has it here too, its summary under the sender or not
+					if !hasSum && len(r.msgs) > 0 && r.todoShown() {
 						ui.Column(c).FillWidth().Padding(th.Space(4), th.Space(7), 0).Children(func() {
 							r.column(c).Children(func() { r.deadlineCard(c) }) // in the summary's place
 						})
