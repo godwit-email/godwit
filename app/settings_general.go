@@ -557,9 +557,21 @@ func (p *settingsPage) summaryLevel(c *ui.Context, st *core.Settings) {
 		}
 		sel := max(0, slices.IndexFunc(levels, func(o kit.Option[string]) bool { return o.Value == st.SummaryMode }))
 		tabs := kit.Tabs(c, &sel, kit.TabsOpts{}, kit.TabLabels(labels...)).Label(i18n.T("settings.summary"))
-		st.SummaryMode = levels[sel].Value
+		if v := levels[sel].Value; v == core.SummaryArrive && st.SummaryMode != core.SummaryArrive {
+			p.arriveAsk = true // mail leaves unattended from now on: the user agrees to where first (ADR 0003)
+		} else {
+			st.SummaryMode = v
+		}
 		return tabs
 	})
+	kit.Dialog(c, &p.arriveAsk, i18n.T("settings.summary.arrive.title"),
+		kit.DialogOpts{Size: kit.DialogSm, Desc: i18n.Tf("settings.summary.arrive.help", a.arrival.Current), Close: i18n.T("common.close")}, nil, func() {
+			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { p.arriveAsk = false })
+			kit.Button(c, i18n.T("settings.summary.arrive.confirm"), kit.ButtonOpts{Disabled: a.arrival.Current == ""}).OnClick(func() {
+				p.arriveAsk = false
+				st.SummaryMode = core.SummaryArrive
+			})
+		})
 	if st.SummaryMode != core.SummaryArrive {
 		return
 	}

@@ -2410,6 +2410,8 @@
   "settings_summary_open_help": "Opening a conversation summarizes its newest message.",
   "settings_summary_arrive": "As mail arrives",
   "settings_summary_arrive_help": "As new mail that needs your reply arrives (sent straight to you by a person, not answered yet), the whole conversation goes to {arg1} to be summarized, with when the sender hopes for a reply, which sorts To handle. It goes once for each such new message, masked as usual. Mail you open is summarized too.",
+  "settings_summary_arrive_title": "Summarize mail as it arrives?",
+  "settings_summary_arrive_confirm": "Turn on",
   "settings_summary_arrive_stopped": "New mail is no longer summarized as it arrives; reply dates already found stay.",
   "settings_summary_help_stopped": "{arg1} {arg2}",
   "settings_summary_paused": "Switched to {arg1}; confirm to go on",

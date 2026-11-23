@@ -1344,6 +1344,8 @@
   "settings_summary_open_help": "Beim Öffnen einer Unterhaltung wird ihre neueste E-Mail zusammengefasst.",
   "settings_summary_arrive": "Beim Eingang",
   "settings_summary_arrive_help": "Sobald neue E-Mails eintreffen, auf die du antworten solltest (von einer Person direkt an dich, noch unbeantwortet), geht die ganze Unterhaltung an {arg1} zum Zusammenfassen, samt der Frist, bis zu der eine Antwort erhofft wird; danach sortiert „Zu erledigen“. Das geschieht einmal pro solcher neuen Nachricht, wie gewohnt maskiert. Geöffnete E-Mails werden ebenfalls zusammengefasst.",
+  "settings_summary_arrive_title": "Mails beim Eingang zusammenfassen?",
+  "settings_summary_arrive_confirm": "Einschalten",
   "settings_summary_arrive_stopped": "Neue E-Mails werden nicht mehr beim Eingang zusammengefasst; gefundene Antwortfristen bleiben.",
   "settings_summary_help_stopped": "{arg1} {arg2}",
   "settings_summary_paused": "Zu {arg1} gewechselt; bestätige, um fortzufahren",

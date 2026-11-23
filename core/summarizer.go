@@ -93,7 +93,7 @@ type arrivalChoice struct {
 
 // SummaryArrival is 收到就总结's state for the settings page: Service is the
 // model service it was chosen with ("" never chosen), Current the one
-// summaries use now ("" none). Paused: they differ, and nothing is summarized
+// summaries use now with its host, "name (host)" ("" none). Paused: they differ, and nothing is summarized
 // on arrival until ConfirmSummaryService.
 type SummaryArrival struct {
 	Service, Current string
@@ -215,7 +215,7 @@ func (s *Service) SummaryArrivalState(ctx context.Context) (SummaryArrival, erro
 		return out, nil
 	}
 	out.Current, out.Paused = now.Name, chosen && !now.same(c)
-	if out.Paused && now.Host != "" { // the user confirms where mail goes (ADR 0003): name the host
+	if now.Host != "" { // what the user agrees to names where mail goes (ADR 0003), not just a name they can edit
 		out.Current += " (" + now.Host + ")"
 	}
 	return out, err

@@ -1339,6 +1339,8 @@
   "settings_summary_open_help": "Bij het openen van een gesprek wordt het nieuwste bericht samengevat.",
   "settings_summary_arrive": "Bij binnenkomst",
   "settings_summary_arrive_help": "Zodra er nieuwe mail binnenkomt waarop je moet antwoorden (door een persoon rechtstreeks aan jou gestuurd, nog niet beantwoord), gaat het hele gesprek naar {arg1} om samen te vatten, met de datum waarvoor een antwoord gehoopt wordt, die „Te behandelen” sorteert. Dat gebeurt één keer per zo’n nieuw bericht, zoals altijd gemaskeerd. Mail die je opent wordt ook samengevat.",
+  "settings_summary_arrive_title": "Mail samenvatten bij aankomst?",
+  "settings_summary_arrive_confirm": "Inschakelen",
   "settings_summary_arrive_stopped": "Nieuwe mail wordt niet meer bij binnenkomst samengevat; gevonden antwoorddatums blijven.",
   "settings_summary_help_stopped": "{arg1} {arg2}",
   "settings_summary_paused": "Overgestapt op {arg1}; bevestig om door te gaan",

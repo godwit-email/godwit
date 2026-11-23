@@ -1339,6 +1339,8 @@
   "settings_summary_open_help": "Ao abrir uma conversa, resume a mensagem mais recente.",
   "settings_summary_arrive": "Ao receber",
   "settings_summary_arrive_help": "Assim que chega um e-mail novo que precisa da sua resposta (enviado diretamente a você por uma pessoa, ainda sem resposta), a conversa inteira vai para {arg1} para ser resumida, com a data até a qual esperam sua resposta, que ordena “Por tratar”. Vai uma vez para cada nova mensagem assim, mascarada como sempre. Os e-mails que você abre também são resumidos.",
+  "settings_summary_arrive_title": "Resumir os e-mails ao chegarem?",
+  "settings_summary_arrive_confirm": "Ativar",
   "settings_summary_arrive_stopped": "E-mails novos não são mais resumidos ao receber; as datas de resposta já encontradas ficam.",
   "settings_summary_help_stopped": "{arg1} {arg2}",
   "settings_summary_paused": "Mudou para {arg1}; confirme para continuar",

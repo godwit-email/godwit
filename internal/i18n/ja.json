@@ -1339,6 +1339,8 @@
   "settings_summary_open_help": "会話を開くと、その最新のメールを自動で要約します。",
   "settings_summary_arrive": "受信したとき",
   "settings_summary_arrive_help": "返信が必要な新着メール（人から直接届き、まだ返信していないもの）が届くと、会話全体を {arg1} に送って要約し、相手がいつまでに返信を望んでいるかを見つけて「未処理」を並べ替えます。このような新着メールが届くたびに 1 回送り、いつもどおりマスキングします。開いたメールも要約します。",
+  "settings_summary_arrive_title": "受信時に要約しますか？",
+  "settings_summary_arrive_confirm": "オンにする",
   "settings_summary_arrive_stopped": "新着メールは受信時に要約されなくなりました。見つかった返信期日はそのまま残ります。",
   "settings_summary_help_stopped": "{arg1}{arg2}",
   "settings_summary_paused": "{arg1} に切り替わりました。確認すると続行します",

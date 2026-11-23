@@ -1339,6 +1339,8 @@
   "settings_summary_open_help": "Bir konuşmayı açınca en yeni e-postasını özetler.",
   "settings_summary_arrive": "Gelir gelmez",
   "settings_summary_arrive_help": "Yanıtınızı bekleyen yeni bir e-posta geldiğinde (bir kişi doğrudan size göndermiş, henüz yanıtlamamışsınız), konuşmanın tamamı özetlenmek üzere {arg1} hizmetine gönderilir ve ne zamana kadar yanıt beklendiği bulunur; buna göre “İşlenecek” sıralanır. Böyle her yeni ileti için bir kez gönderilir, her zamanki gibi maskelenir. Açtığınız e-postalar da özetlenir.",
+  "settings_summary_arrive_title": "Postalar gelince özetlensin mi?",
+  "settings_summary_arrive_confirm": "Aç",
   "settings_summary_arrive_stopped": "Yeni e-postalar artık gelir gelmez özetlenmiyor; bulunan yanıt tarihleri kalır.",
   "settings_summary_help_stopped": "{arg1} {arg2}",
   "settings_summary_paused": "{arg1} hizmetine geçildi; devam etmek için onaylayın",

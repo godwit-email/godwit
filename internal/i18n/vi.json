@@ -1339,6 +1339,8 @@
   "settings_summary_open_help": "Khi mở một cuộc trò chuyện, tự động tóm tắt thư mới nhất của nó.",
   "settings_summary_arrive": "Khi nhận thư",
   "settings_summary_arrive_help": "Khi có thư mới cần bạn trả lời (người thật gửi thẳng cho bạn, bạn chưa trả lời), cả cuộc trò chuyện được gửi đến {arg1} để tóm tắt, kèm hạn mà người gửi mong bạn trả lời, dùng để sắp xếp “Cần xử lý”. Mỗi thư mới như vậy gửi một lần, vẫn che giấu như thường. Thư bạn mở cũng được tóm tắt.",
+  "settings_summary_arrive_title": "Tóm tắt thư khi nhận?",
+  "settings_summary_arrive_confirm": "Bật",
   "settings_summary_arrive_stopped": "Thư mới không còn được tóm tắt khi nhận nữa; các hạn trả lời đã tìm thấy vẫn giữ.",
   "settings_summary_help_stopped": "{arg1} {arg2}",
   "settings_summary_paused": "Đã chuyển sang {arg1}; xác nhận để tiếp tục",

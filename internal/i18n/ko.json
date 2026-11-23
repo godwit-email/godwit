@@ -1339,6 +1339,8 @@
   "settings_summary_open_help": "대화를 열면 가장 최근 메일을 자동으로 요약합니다.",
   "settings_summary_arrive": "받을 때",
   "settings_summary_arrive_help": "답장이 필요한 새 메일(사람이 직접 보냈고 아직 답장하지 않은 메일)이 오면 대화 전체를 {arg1}에 보내 요약하고, 상대가 언제까지 답장을 바라는지 찾아 「처리 필요」를 정렬합니다. 이런 새 메일이 올 때마다 한 번 보내며, 평소처럼 마스킹합니다. 연 메일도 요약합니다.",
+  "settings_summary_arrive_title": "메일이 도착하면 요약할까요?",
+  "settings_summary_arrive_confirm": "켜기",
   "settings_summary_arrive_stopped": "새 메일은 더 이상 받을 때 요약하지 않습니다. 이미 찾은 답장 기한은 남습니다.",
   "settings_summary_help_stopped": "{arg1} {arg2}",
   "settings_summary_paused": "{arg1}(으)로 바뀌었습니다. 확인하면 계속합니다",

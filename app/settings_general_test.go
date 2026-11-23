@@ -193,6 +193,9 @@ func TestSettingsSummarySegments(t *testing.T) {
 			t.Fatalf("no %s segment", c.level)
 		}
 		h.click(c.level)
+		if c.mode == core.SummaryArrive { // it asks first
+			h.click(i18n.T("settings.summary.arrive.confirm"))
+		}
 		h.until(c.level+" saved", func() bool {
 			st, err := h.env.Svc.GetSettings(context.Background())
 			return err == nil && st.SummaryMode == c.mode
@@ -224,10 +227,11 @@ func TestSettingsSummaryOnArrival(t *testing.T) {
 		st, err := h.env.Svc.GetSettings(ctx)
 		return err == nil && st.SummaryMode == core.SummaryArrive
 	})
-	h.see("需要你回复的新邮件（真人直接发给你、你还没回的）一到，就把整个会话发给 test 总结，并找出对方希望你在什么时候之前回复，给「待处理」排序。会话每来一封这样的新信发一次，照常脱敏。打开别的邮件时也会总结。")
+	h.until("the service and its host", func() bool { return strings.HasPrefix(h.app.arrival.Current, "test (127.0.0.1:") })
+	h.see(i18n.Tf("settings.summary.arrive.help", h.app.arrival.Current))
 
 	h.click("总结最近 30 天要回的邮件…")
-	h.see("会把 1 个会话发给 test 总结，照常脱敏。")
+	h.see(i18n.Tf("settings.summary.backfill.ask", 1, h.app.arrival.Current))
 	h.click("开始总结")
 	h.until("queued", func() bool {
 		n, err := h.env.Svc.CountUnrepliedToSummarize(ctx)
@@ -421,4 +425,44 @@ func TestSettingsProxyMode(t *testing.T) {
 			t.Errorf("%s: %+v, want general", q, m)
 		}
 	}
+}
+
+// Choosing 收到就总结 asks first, naming the service and the host new mail
+// would go to; only 开启 saves it, 取消 keeps the level as it was.
+func TestSettingsSummaryOnArrivalAsksFirst(t *testing.T) {
+	old := core.SummaryOnArrival
+	core.SummaryOnArrival = true
+	t.Cleanup(func() { core.SummaryOnArrival = old })
+	h, _ := withAccount(t)
+	h.env.LLM(t).Release()
+	ctx := context.Background()
+	h.waitMail("the model in the settings", func() bool { return h.app.settings.DefaultModel != "" })
+	mode := func() string {
+		st, err := h.env.Svc.GetSettings(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return st.SummaryMode
+	}
+	before := mode()
+	h.openSettings("features")
+	h.until("the destination", func() bool { return strings.Contains(h.app.arrival.Current, "(127.0.0.1:") })
+	ask := i18n.Tf("settings.summary.arrive.help", h.app.arrival.Current)
+
+	h.click(i18n.T("settings.summary.arrive"))
+	h.see(i18n.T("settings.summary.arrive.title"))
+	h.see(ask)
+	h.drain()
+	if got := mode(); got != before {
+		t.Fatalf("saved %q before the user agreed", got)
+	}
+	h.click(i18n.T("common.cancel"))
+	h.drain()
+	if got := mode(); got != before {
+		t.Fatalf("cancel saved %q", got)
+	}
+
+	h.click(i18n.T("settings.summary.arrive"))
+	h.click(i18n.T("settings.summary.arrive.confirm"))
+	h.until("saved", func() bool { return mode() == core.SummaryArrive })
 }

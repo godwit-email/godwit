@@ -1339,6 +1339,8 @@
   "settings_summary_open_help": "Quando apri una conversazione, ne riassume il messaggio più recente.",
   "settings_summary_arrive": "All’arrivo",
   "settings_summary_arrive_help": "Appena arriva una nuova email che richiede la tua risposta (inviata direttamente a te da una persona, ancora senza risposta), l’intera conversazione va a {arg1} per essere riassunta, con la data entro cui si spera nella tua risposta, che ordina «Da gestire». Avviene una volta per ogni nuovo messaggio di questo tipo, mascherato come sempre. Anche le email che apri vengono riassunte.",
+  "settings_summary_arrive_title": "Riassumere la posta all’arrivo?",
+  "settings_summary_arrive_confirm": "Attiva",
   "settings_summary_arrive_stopped": "Le nuove email non vengono più riassunte all’arrivo; le date di risposta già trovate restano.",
   "settings_summary_help_stopped": "{arg1} {arg2}",
   "settings_summary_paused": "Passato a {arg1}; conferma per continuare",

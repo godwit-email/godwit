@@ -90,6 +90,7 @@ type settingsPage struct {
 	appDates    int   // reply dates other apps and Wit set (AI 功能); -1 until read
 	backfillN   int   // 总结最近 30 天要回的邮件's count, asked about while backfillAsk
 	backfillAsk bool
+	arriveAsk   bool // 收到就总结 picked: asks first, naming where mail would go
 
 	// The signature page, made once (NewSignatureView), and the signature
 	// it shows; sigPosted is a switch queued.

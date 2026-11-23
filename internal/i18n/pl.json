@@ -1344,6 +1344,8 @@
   "settings_summary_open_help": "Po otwarciu rozmowy podsumowuje jej najnowszą wiadomość.",
   "settings_summary_arrive": "Po nadejściu",
   "settings_summary_arrive_help": "Gdy nadejdzie nowa wiadomość, na którą masz odpowiedzieć (wysłana bezpośrednio do ciebie przez człowieka, jeszcze bez odpowiedzi), cała rozmowa trafia do {arg1} do podsumowania, wraz z terminem, do którego nadawca liczy na odpowiedź; według niego sortuje się „Do załatwienia”. Dzieje się to raz na każdą taką nową wiadomość, z maskowaniem jak zwykle. Otwierane wiadomości też są podsumowywane.",
+  "settings_summary_arrive_title": "Podsumowywać pocztę po nadejściu?",
+  "settings_summary_arrive_confirm": "Włącz",
   "settings_summary_arrive_stopped": "Nowe wiadomości nie są już podsumowywane po nadejściu; znalezione terminy odpowiedzi zostają.",
   "settings_summary_help_stopped": "{arg1} {arg2}",
   "settings_summary_paused": "Zmieniono na {arg1}; potwierdź, aby kontynuować",
