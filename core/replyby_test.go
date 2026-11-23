@@ -230,3 +230,23 @@ func TestReplyByCheck(t *testing.T) {
 		}
 	}
 }
+
+// The two lines are held back however the stream is cut; an ordinary line cut
+// across events stays whole, even when its next part starts like one of them.
+func TestReplyByHoldStream(t *testing.T) {
+	for name, events := range map[string][]string{
+		"continued line":   {"- Please review the ", "quote: confirm the price by Friday.\n", "REPLY BY: none\nQUOTE: \n"},
+		"lines cut midway": {"- a\nREP", "LY BY: 2026-11-28\nQU", "OTE: by Friday\n- b"},
+		"one event":        {"- a\nREPLY BY: 2026-11-28\nQUOTE: by Friday\n- b"},
+		"continued twice":  {"- x ", "rep", "ly by: tomorrow\n- y"},
+	} {
+		var h replyByHold
+		var got string
+		for _, e := range events {
+			got += h.feed(e)
+		}
+		got += h.flush()
+		assert.Equal(t, stripReplyBy(strings.Join(events, "")), got, name)
+		assert.NotContains(t, got, "REPLY BY:", name)
+	}
+}

@@ -144,8 +144,13 @@ func stripReplyBy(text string) string {
 
 // replyByHold passes a summary on as it streams, without replyByFormat's
 // two lines (parseReplyBy's REPLY BY: and QUOTE:): a line that may become
-// one is held until it reads otherwise.
-type replyByHold struct{ held string }
+// one is held until it reads otherwise. mid: part of the current line has
+// been passed on, so what follows up to its end is that line's, never one
+// of the two.
+type replyByHold struct {
+	held string
+	mid  bool
+}
 
 func (h *replyByHold) feed(s string) string {
 	h.held += s
@@ -155,23 +160,23 @@ func (h *replyByHold) feed(s string) string {
 		if !ok {
 			break
 		}
-		if !replyByLine(line, true) {
+		if h.mid || !replyByLine(line, true) {
 			out.WriteString(line + "\n")
 		}
-		h.held = rest
+		h.held, h.mid = rest, false
 	}
-	if !replyByLine(h.held, false) {
+	if h.held != "" && (h.mid || !replyByLine(h.held, false)) {
 		out.WriteString(h.held)
-		h.held = ""
+		h.held, h.mid = "", true
 	}
 	return out.String()
 }
 
 // flush is what is held when the summary ends.
 func (h *replyByHold) flush() string {
-	s := h.held
-	h.held = ""
-	if replyByLine(s, true) {
+	s, mid := h.held, h.mid
+	h.held, h.mid = "", false
+	if !mid && replyByLine(s, true) {
 		return ""
 	}
 	return s
