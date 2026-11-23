@@ -177,6 +177,25 @@ func TestParseInvalidUTF8Headers(t *testing.T) {
 	assert.Contains(t, p.Text, "报销")
 }
 
+func TestParseSplitAndQuotedEncodedWords(t *testing.T) {
+	// #882: a GBK character cut across two encoded words, in B and in Q, and
+	// encoded words inside a quoted display name (Foxmail and others send it)
+	p, err := mail.Parse([]byte("Subject: =?gb2312?B?sQ==?=\r\n =?GB2312?Q?=A8=CF=FA=B5=A5?=\r\n" +
+		"From: =?GBK?B?1cXI?= =?gbk?B?/bfh?= <a@example.cn>\r\n" +
+		"To: \"=?GBK?B?1cXI/Q==?=\" <b@example.cn>, \"=?UTF-8?B?5p2O5Zub?=\" <c@example.cn>\r\n" +
+		"Cc: =?UTF-8?B?5p2O?= =?GBK?B?1cXI/Q==?= <d@example.cn>\r\n\r\nbody\r\n"))
+	require.NoError(t, err)
+	assert.Equal(t, "报销单", p.Subject)
+	assert.Equal(t, "张三丰 <a@example.cn>", p.From)
+	assert.Equal(t, []string{"张三 <b@example.cn>", "李四 <c@example.cn>"}, p.To)
+	assert.Equal(t, []string{"李张三 <d@example.cn>"}, p.Cc, "words in different charsets are decoded one by one")
+
+	// words that are not adjacent keep the text between them
+	p, err = mail.Parse([]byte("Subject: =?GBK?B?1cXI/Q==?= x =?GBK?B?1cXI/Q==?=\r\n\r\nbody\r\n"))
+	require.NoError(t, err)
+	assert.Equal(t, "张三 x 张三", p.Subject)
+}
+
 func TestParseBrokenBoundary(t *testing.T) {
 	// no closing boundary: the first part is recovered and the damage is reported
 	p, err := mail.Parse([]byte("Subject: x\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\nhello\r\n"))

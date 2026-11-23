@@ -106,9 +106,8 @@ func fmtAddr(a *gomail.Address) string {
 }
 
 func addrs(h *gomail.Header, key string) []string {
-	l, _ := h.AddressList(key) // partial lists are still useful
 	var out []string
-	for _, a := range l {
+	for _, a := range addressList(h, key) {
 		out = append(out, fmtAddr(a))
 	}
 	return out
@@ -143,7 +142,7 @@ func Parse(raw []byte) (*Parsed, error) {
 	}
 	h := gomail.Header{Header: e.Header}
 	p := &Parsed{}
-	p.Subject, _ = h.Subject()
+	p.Subject = headerText(&h, "Subject")
 	p.Subject = strings.ToValidUTF8(p.Subject, "\uFFFD") // a utf-8 encoded word is not validated when decoded
 	p.MessageID, _ = h.MessageID()
 	p.Date, _ = h.Date()
