@@ -219,8 +219,8 @@ func TestReaderReplyDateSingle(t *testing.T) {
 	}
 }
 
-// TestReaderReplyDateSingleSummary: a message alone with its summary has
-// its 等你处理 card under the subject as a thread has it, not in the summary.
+// TestReaderReplyDateSingleSummary: a message alone with its summary carries
+// its 等你处理 line in that summary, under the sender, and in no card of its own.
 func TestReaderReplyDateSingleSummary(t *testing.T) {
 	h, acc, _ := aiHarness(t, true, noQuick)
 	h.resize(1440, 900)
@@ -242,7 +242,11 @@ func TestReaderReplyDateSingleSummary(t *testing.T) {
 	if n := h.countExact("等你处理"); n != 1 {
 		t.Fatalf("%d 等你处理 lines", n)
 	}
-	h.seeCardOnTop("Lone ask", "发给 我")
+	label, _ := h.tt.Find("等你处理")
+	head, _ := h.tt.Find("发给 我")
+	if label.Y <= head.Y {
+		t.Fatalf("等你处理 at %v, the message's header at %v: not in the summary under it", label, head)
+	}
 }
 
 // TestReaderBandReplyDateOutsideView: opened outside any view, a
