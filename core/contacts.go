@@ -53,9 +53,11 @@ type ContactDetail struct {
 }
 
 // SenderArchive is what ArchiveSender moved, each message with the folder
-// it left and the one it went to, and how many it left in the inbox.
+// it left and the one it went to, the archive marks it replaced, and how many
+// it left in the inbox.
 type SenderArchive struct {
 	Moved   []ArchivedMessage
+	Marks   []ArchiveMarkBefore
 	Skipped int
 }
 
@@ -839,6 +841,11 @@ func (s *Service) ArchiveSender(ctx context.Context, addr string) (SenderArchive
 			if err != nil {
 				return res, err
 			}
+			marks, err := s.markNewestArchived(ctx, ts)
+			if err != nil {
+				return res, err
+			}
+			res.Marks = append(res.Marks, marks...)
 			if err := s.move(ctx, acc, ts, 0, archive[acc]); err != nil {
 				return res, err
 			}
@@ -848,12 +855,18 @@ func (s *Service) ArchiveSender(ctx context.Context, addr string) (SenderArchive
 	return res, nil
 }
 
-// UndoArchive moves a's messages back to the folders they left, those still
-// where it put them; ones moved since or gone stay. The check and the move
-// hold the edit lock together, so a move elsewhere meanwhile wins.
+// UndoArchive puts back the archive marks a replaced and moves a's messages
+// back to the folders they left, those still where it put them; ones moved
+// since or gone stay. The check and the move hold the edit lock together, so
+// a move elsewhere meanwhile wins.
 func (s *Service) UndoArchive(ctx context.Context, a SenderArchive) error {
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
+	if stmts := archiveMarkRestores(a.Marks); len(stmts) > 0 {
+		if _, err := s.db.Transaction(ctx, stmts); err != nil {
+			return err
+		}
+	}
 	ids, err := s.resolve(ctx, archivedIDs(a.Moved))
 	if err != nil {
 		return err

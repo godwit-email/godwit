@@ -1197,6 +1197,33 @@ func (s *Service) ArchiveMessages(ctx context.Context, ids []int64, folderID int
 		return ArchiveUndo{}, err
 	}
 	var undo ArchiveUndo
+	for _, t := range moving {
+		if t.folder != folderID {
+			undo.Moved = append(undo.Moved, ArchivedMessage{ID: t.id, From: t.folder, To: folderID})
+		}
+	}
+	if undo.Marks, err = s.markNewestArchived(ctx, ts); err != nil {
+		return ArchiveUndo{}, err
+	}
+	if err := s.move(ctx, acc, moving, 0, folderID); err != nil {
+		return ArchiveUndo{}, err
+	}
+	return undo, nil
+}
+
+// markNewestArchived marks the conversations whose newest counted message is
+// among ts, archived, and returns the marks it replaced.
+func (s *Service) markNewestArchived(ctx context.Context, ts []target) ([]ArchiveMarkBefore, error) {
+	marks, err := s.newestArchived(ctx, ts)
+	if err != nil {
+		return nil, err
+	}
+	return s.markArchived(ctx, marks)
+}
+
+// newestArchived are the marks of the conversations whose newest counted
+// message is among ts.
+func (s *Service) newestArchived(ctx context.Context, ts []target) (map[int64]archiveMark, error) {
 	threads := map[int64]bool{}
 	inIDs := map[int64]bool{}
 	for _, t := range ts {
@@ -1205,31 +1232,20 @@ func (s *Service) ArchiveMessages(ctx context.Context, ids []int64, folderID int
 			threads[t.thread] = true
 		}
 	}
-	for _, t := range moving {
-		if t.folder != folderID {
-			undo.Moved = append(undo.Moved, ArchivedMessage{ID: t.id, From: t.folder, To: folderID})
-		}
-	}
 	var list []any
 	for t := range threads {
 		list = append(list, t)
 	}
 	marks, copies, err := s.newestCounted(ctx, list)
 	if err != nil {
-		return ArchiveUndo{}, err
+		return nil, err
 	}
 	for t, c := range copies {
 		if !slices.ContainsFunc(c, func(id int64) bool { return inIDs[id] }) {
 			delete(marks, t) // an older message of it: its newest still counts
 		}
 	}
-	if undo.Marks, err = s.markArchived(ctx, marks); err != nil {
-		return ArchiveUndo{}, err
-	}
-	if err := s.move(ctx, acc, moving, 0, folderID); err != nil {
-		return ArchiveUndo{}, err
-	}
-	return undo, nil
+	return marks, nil
 }
 
 // ArchiveThreads archives whole conversations, as a view does: copies
@@ -1304,10 +1320,26 @@ func (s *Service) UndoArchiveThreads(ctx context.Context, u ArchiveUndo) error {
 		return err
 	}
 	defer end()
+	if err := s.UndoArchive(ctx, SenderArchive{Moved: u.Moved, Marks: u.Marks}); err != nil {
+		return err
+	}
+	if len(u.Moved) == 0 {
+		var threads []int64
+		for _, m := range u.Marks {
+			threads = append(threads, m.ThreadID)
+		}
+		s.bus.Publish(events.Event{Type: events.MessagesChanged, ThreadIDs: threads})
+	}
+	return nil
+}
+
+// archiveMarkRestores put back the marks an archive replaced.
+func archiveMarkRestores(marks []ArchiveMarkBefore) []sqlite.Statement {
+	if len(marks) == 0 {
+		return nil
+	}
 	stmts := []sqlite.Statement{bumpDeadlineVersion} // a 期限 in effect changes with the mark
-	var threads []int64
-	for _, m := range u.Marks {
-		threads = append(threads, m.ThreadID)
+	for _, m := range marks {
 		if m.Had {
 			stmts = append(stmts, sqlite.Statement{SQL: "UPDATE archive_marks SET message_id_hdr = ?, date = ?, archived_at = ?, archived_version = ? WHERE thread_id = ?",
 				Args: []any{m.MID, m.Date, m.ArchivedAt, m.ArchivedVersion, m.ThreadID}})
@@ -1315,18 +1347,7 @@ func (s *Service) UndoArchiveThreads(ctx context.Context, u ArchiveUndo) error {
 			stmts = append(stmts, sqlite.Statement{SQL: "DELETE FROM archive_marks WHERE thread_id = ?", Args: []any{m.ThreadID}})
 		}
 	}
-	if len(u.Marks) > 0 {
-		if _, err := s.db.Transaction(ctx, stmts); err != nil {
-			return err
-		}
-	}
-	if err := s.UndoArchive(ctx, SenderArchive{Moved: u.Moved}); err != nil {
-		return err
-	}
-	if len(u.Moved) == 0 {
-		s.bus.Publish(events.Event{Type: events.MessagesChanged, ThreadIDs: threads})
-	}
-	return nil
+	return stmts
 }
 
 // ViewTemplate is a view to start from.

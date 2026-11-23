@@ -680,6 +680,46 @@ func TestManualDeadlineEndsOnArchive(t *testing.T) {
 	assert.Equal(t, want, got.Deadline)
 }
 
+// Every archive in Godwit, not only a list's or a view's, ends the user's own
+// date and takes the conversation out of 回复状态; its undo brings both back.
+func TestEveryArchiveEndsManualDeadline(t *testing.T) {
+	for name, archive := range map[string]func(e *sendEnv, q int64) (undo func() error){
+		"sender": func(e *sendEnv, _ int64) func() error {
+			res, err := e.s.ArchiveSender(bg, "bob@a.example")
+			require.NoError(t, err)
+			require.Len(t, res.Moved, 1)
+			return func() error { return e.s.UndoArchive(bg, res) }
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newSendEnv(t, false)
+			e.put(t, "INBOX", eml("q@x", "bob@a.example", "alice@example.com", "quote", e.viewAt(1), "Reply by Friday?"))
+			e.sync(t)
+			tid, q := e.threadOf(t, "q@x"), e.idOf(t, "q@x")
+			require.Equal(t, ReplyStatusUnreplied, e.replyOf(t, "q@x").Kind)
+			require.NoError(t, e.setThreadDeadline(WithUISession(t.Context(), e.s), tid, Deadline{Date: e.day(4)}))
+			want := &Deadline{Date: e.day(4), Source: DeadlineManual}
+			deadline := func() *Deadline {
+				got, err := e.s.ThreadDeadline(bg, tid)
+				require.NoError(t, err)
+				return got.Deadline
+			}
+
+			e.clock.Advance(time.Minute)
+			undo := archive(e, q)
+			assert.Nil(t, deadline(), "archiving ends it")
+			assert.Empty(t, e.replyOf(t, "q@x").Kind, "and takes it out of 回复状态")
+			if undo == nil {
+				return
+			}
+			require.NoError(t, undo())
+			assert.Equal(t, want, deadline(), "undoing the archive brings it back")
+			assert.Equal(t, ReplyStatusUnreplied, e.replyOf(t, "q@x").Kind)
+			assert.Zero(t, e.count(t, "SELECT count(*) FROM archive_marks"), "the mark it replaced: none")
+		})
+	}
+}
+
 // Removing a summary's or a program's date keeps programs out until the
 // conversation is archived; after that, new mail can carry one again.
 func TestRemovedDeadlineHoldsUntilArchive(t *testing.T) {
