@@ -236,6 +236,27 @@ func TestDeadlineOverdue(t *testing.T) {
 	assert.True(t, e.deadlineOf(t, "q@x").Overdue)
 }
 
+// A reply date's day and time are the user's, in the interface's zone, as the
+// summary that wrote it read them, not the process's.
+func TestDeadlineInUserZone(t *testing.T) {
+	e := newSendEnv(t, false)
+	if _, off := e.clock.Now().Zone(); off > 12*3600 {
+		t.Skip("needs a zone at least 2 hours ahead of the clock's")
+	}
+	e.s.SetTimeZone("Pacific/Kiritimati") // UTC+14
+	zone, err := time.LoadLocation("Pacific/Kiritimati")
+	require.NoError(t, err)
+	e.put(t, "INBOX", eml("q@x", "bob@a.example", "alice@example.com", "quote", e.viewAt(3), "Reply by Friday."))
+	e.sync(t)
+	tid := e.threadOf(t, "q@x")
+	at := e.clock.Now().In(zone).Add(-time.Hour)
+	require.NoError(t, e.setThreadDeadline(bg, tid, Deadline{Date: at.Format(time.DateOnly), Time: at.Format("15:04"), MessageID: e.idOf(t, "q@x")}))
+	assert.True(t, e.deadlineOf(t, "q@x").Overdue, "an hour ago, there")
+	got, err := e.s.ThreadDeadline(bg, tid)
+	require.NoError(t, err)
+	assert.True(t, got.Deadline.Overdue)
+}
+
 // order is the subjects of a document's 其他, in the order it lists them.
 func (e *sendEnv) order(t *testing.T, d SavedViewDoc) []string {
 	t.Helper()

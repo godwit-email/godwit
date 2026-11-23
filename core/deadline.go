@@ -129,7 +129,7 @@ func (s *Service) ThreadDeadline(ctx context.Context, threadID int64) (ReaderDea
 		return ReaderDeadline{}, err
 	}
 	defer end()
-	now := s.clk().Now()
+	now := s.userNow(ctx)
 	statuses, err := s.replyStatuses(ctx, now.Unix())
 	if err != nil {
 		return ReaderDeadline{}, err
@@ -175,7 +175,7 @@ func (s *Service) deadlineWrites(ctx context.Context, source string, threadID in
 	if _, err := time.Parse("15:04", d.Time); (d.Time != "" && (err != nil || d.Date == "")) || utf8.RuneCountInString(d.Quote) > MaxDeadlineQuote {
 		return nil, ErrDeadlineInvalid
 	}
-	now := s.clk().Now()
+	now := s.userNow(ctx)
 	statuses, err := s.replyStatuses(ctx, now.Unix())
 	if err != nil {
 		return nil, err
@@ -462,7 +462,7 @@ func (s *Service) prepareWitDeadline(ctx context.Context, _ Conversation, args j
 	}
 	summary := i18n.Tf("wit.deadline.clear", m.Subject)
 	if in.Date != "" {
-		day, _ := time.ParseInLocation(time.DateOnly, in.Date, time.Local) // checkDeadline parsed it
+		day, _ := time.ParseInLocation(time.DateOnly, in.Date, s.userNow(ctx).Location()) // checkDeadline parsed it
 		summary = i18n.Tf("wit.deadline.set", m.Subject, strings.TrimSpace(i18n.FullDate(day)+" "+in.Time))
 	}
 	b, err := json.Marshal(in)

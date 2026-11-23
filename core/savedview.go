@@ -331,7 +331,7 @@ func (s *Service) newViewEval(ctx context.Context) (*viewEval, error) {
 	if len(version.Values) > 0 {
 		replyDates = store.Str(version.Values[0][0])
 	}
-	e := &viewEval{now: now, statuses: statuses, notIn: notIn, unread: unread, wrote: wrote, wroteTo: string(list), today: s.clk().Now(), replyDates: replyDates}
+	e := &viewEval{now: now, statuses: statuses, notIn: notIn, unread: unread, wrote: wrote, wroteTo: string(list), today: s.userNow(ctx), replyDates: replyDates}
 	rows, err := s.db.Query(ctx, "SELECT thread_id FROM thread_deadlines")
 	if err != nil {
 		return nil, err
