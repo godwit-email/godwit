@@ -1550,8 +1550,8 @@ func TestContextMenuHeadingsMarkAllRead(t *testing.T) {
 	}
 }
 
-// Search results and sent mail are no view to mark read: their list's own
-// space offers no 全部已读.
+// Search results, sent mail and trash are no view to mark read: their list's
+// own space offers no 全部已读.
 func TestContextMenuBlankListNoMarkAllRead(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	base := h.clock.Now()
@@ -1559,6 +1559,8 @@ func TestContextMenuBlankListNoMarkAllRead(t *testing.T) {
 	h.put(accs[0], "INBOX", coretest.Msg("carol@example.com", "alice@example.com", "invoice two", "body", at(base, 2)))
 	h.put(accs[0], "Sent", coretest.Msg("alice@example.com", "bob@example.com", "sent one", "body", at(base, 1)))
 	h.put(accs[0], "Sent", coretest.Msg("alice@example.com", "carol@example.com", "sent two", "body", at(base, 2)))
+	h.put(accs[0], "Trash", coretest.Msg("dave@example.com", "alice@example.com", "trashed one", "body", at(base, 1)))
+	h.put(accs[0], "Trash", coretest.Msg("erin@example.com", "alice@example.com", "trashed two", "body", at(base, 2)))
 	h.syncNow(accs[0])
 	h.waitMail("two unread mails", func() bool { return len(h.items()) == 2 && h.app.mail.inboxUnread() == 2 })
 	markRead := i18n.T("mail.mark_all_read")
@@ -1581,5 +1583,13 @@ func TestContextMenuBlankListNoMarkAllRead(t *testing.T) {
 	h.rightClickBelow("sent one", "sent two")
 	if menu := h.tt.Menu(); slices.Contains(menu, markRead) {
 		t.Fatalf("sent folder's menu %v has %q", menu, markRead)
+	}
+
+	trash := h.folderOf(accs[0], "trash")
+	h.post(func() { h.app.navigate(Route{Page: PageMail, View: core.View{FolderID: trash.ID}}) })
+	h.waitMail("trashed mail", func() bool { return len(h.items()) == 2 && h.tt.HasText("trashed two") })
+	h.rightClickBelow("trashed one", "trashed two")
+	if menu := h.tt.Menu(); slices.Contains(menu, markRead) {
+		t.Fatalf("trash's menu %v has %q", menu, markRead)
 	}
 }

@@ -658,7 +658,8 @@ func (p *mailPage) inboxUnread() int {
 
 // viewUnread is the unread mail a view counts: what 全部已读 would mark read.
 // ok is false for a view that does not count mail that way: the outbox, a
-// saved view or label no longer there, and a folder of drafts or sent mail.
+// saved view or label no longer there, and a folder of drafts, sent mail, junk
+// or trash, whose sidebar menus offer no 全部已读 either.
 func (p *mailPage) viewUnread(v core.View) (n int, ok bool) {
 	if id, saved := savedViewOf(v); saved {
 		b, found := p.savedView(id)
@@ -680,7 +681,7 @@ func (p *mailPage) viewUnread(v core.View) (n int, ok bool) {
 	case v.Unified == "starred":
 		return p.starredUnreadTotal, true
 	case v.Unified == "" && v.FolderID != 0:
-		if f, found := p.folder(v.FolderID); found && f.Role != "drafts" && f.Role != "sent" {
+		if f, found := p.folder(v.FolderID); found && !slices.Contains([]string{"drafts", "sent", "junk", "trash"}, f.Role) {
 			return f.Unread, true
 		}
 	}
