@@ -224,7 +224,7 @@ func (a *App) replyDatePopover(c *ui.Context, anchor ui.Element, ds *dateSetter,
 			kit.Text(c, title, t.Text.Xs).FontWeight(500).TextColor(t.Muted)
 			ui.Column(c).FillWidth().Children(func() {
 				for i, p := range replyDatePresets(a.clock.Now()) {
-					kit.MenuItem(c.Key(i), false).FillWidth().Label(p.label+" "+monthDay(p.day)).OnClick(func() { set(core.Deadline{Date: p.day.Format(time.DateOnly)}) }).Children(func() {
+					kit.MenuItem(c.Key(i), false).FillWidth().Label(p.label + " " + monthDay(p.day)).OnClick(func() { set(core.Deadline{Date: p.day.Format(time.DateOnly)}) }).Children(func() {
 						kit.Text(c, p.label, t.Text.Sm).Grow(1).Shrink(1)
 						kit.Text(c, monthDay(p.day), t.Text.Sm).TextColor(t.Muted).Shrink(0)
 					})
