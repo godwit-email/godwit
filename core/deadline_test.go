@@ -206,6 +206,29 @@ func TestDeadlineSurvivesAThreadMerge(t *testing.T) {
 	assert.Equal(t, DeadlineWit, got.Source)
 }
 
+// A merge keeps the date that is still in effect: A's date ended when the user
+// replied, B's is on mail newer than that reply, so B's survives though A's
+// would win on source and date alone.
+func TestDeadlineMergeKeepsTheOneInEffect(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("a@x", "bob@acme.example", "alice@example.com", "a", e.viewAt(5), "Reply by Monday."))
+	e.put(t, "INBOX", eml("b@x", "bob@acme.example", "alice@example.com", "b", e.viewAt(1), "Reply by Thursday."))
+	e.sync(t)
+	require.NoError(t, e.s.setDeadline(bg, DeadlineProgram, e.threadOf(t, "a@x"), Deadline{Date: e.day(2), MessageID: e.idOf(t, "a@x")}))
+	require.NoError(t, e.s.setDeadline(bg, DeadlineProgram, e.threadOf(t, "b@x"), Deadline{Date: e.day(4), MessageID: e.idOf(t, "b@x")}))
+	e.put(t, "INBOX", eml("r@x", "alice@example.com", "bob@acme.example", "Re: a", e.viewAt(3), "Will do.", "In-Reply-To: <a@x>", "References: <a@x>"))
+	e.sync(t)
+	require.Nil(t, e.deadlineOf(t, "a@x"), "A's date ended with the reply")
+
+	e.put(t, "INBOX", eml("m@x", "bob@acme.example", "alice@example.com", "bridge", e.viewAt(2), "z", "References: <a@x> <b@x>"))
+	e.sync(t)
+	require.Equal(t, e.threadOf(t, "a@x"), e.threadOf(t, "b@x"))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM thread_deadlines"))
+	got := e.deadlineOf(t, "b@x")
+	require.NotNil(t, got, "B's date is still in effect after the merge")
+	assert.Equal(t, e.day(4), got.Date)
+}
+
 // A date never becomes state that leaves the machine later (ADR 0003): writing
 // or clearing one adds no events_log row (so no rule run or plugin hook) and
 // changes no flag or keyword the server would get.
