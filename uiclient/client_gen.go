@@ -841,6 +841,10 @@ func (cl *Client) SetSkillEnabled(ctx context.Context, name string, enabled bool
 	return callErr(cl, ctx, "SetSkillEnabled", name, enabled)
 }
 
+func (cl *Client) SetThreadDeadline(ctx context.Context, threadID int64, d core.Deadline) (core.RemovedDeadline, error) {
+	return call[core.RemovedDeadline](cl, ctx, "SetThreadDeadline", threadID, d)
+}
+
 func (cl *Client) SetUIForeground(ctx context.Context, on bool) error {
 	return callErr(cl, ctx, "SetUIForeground", on)
 }
@@ -913,8 +917,8 @@ func (cl *Client) TestPluginModel(ctx context.Context, ref string) (core.CapStat
 	return call[core.CapStatus](cl, ctx, "TestPluginModel", ref)
 }
 
-func (cl *Client) ThreadDeadline(ctx context.Context, threadID int64) (*core.Deadline, error) {
-	return call[*core.Deadline](cl, ctx, "ThreadDeadline", threadID)
+func (cl *Client) ThreadDeadline(ctx context.Context, threadID int64) (core.ReaderDeadline, error) {
+	return call[core.ReaderDeadline](cl, ctx, "ThreadDeadline", threadID)
 }
 
 func (cl *Client) ThreadLabels(ctx context.Context, threadIDs []int64) (map[int64][]core.AppliedLabel, error) {
@@ -959,6 +963,10 @@ func (cl *Client) UndoRemoveAppAndWitDeadlines(ctx context.Context, removed []co
 
 func (cl *Client) UndoRuleRun(ctx context.Context, runID int64) (int, error) {
 	return call[int](cl, ctx, "UndoRuleRun", runID)
+}
+
+func (cl *Client) UndoSetThreadDeadline(ctx context.Context, before core.RemovedDeadline) error {
+	return callErr(cl, ctx, "UndoSetThreadDeadline", before)
 }
 
 func (cl *Client) UninstallPlugin(ctx context.Context, name string) error {

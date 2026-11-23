@@ -593,8 +593,8 @@ func (r *reader) summaryPanel(c *ui.Context, m core.MessageSummary) {
 					}
 				}
 				r.aiBodyState(c, sum, hasContent, func() { st.summary = r.summarize(m.ID) })
-				if r.deadline != nil && !digested {
-					r.todoRow(c, true, func() { r.deadlineLine(c) })
+				if (r.deadline != nil || r.unreplied) && !digested {
+					r.todoRow(c, true, func() { r.replyDate(c, false) })
 				}
 			})
 		})
@@ -616,14 +616,12 @@ func (r *reader) digest(c *ui.Context, d core.ThreadDigest) {
 			}
 		})
 	}
-	if d.Todo != nil || r.deadline != nil {
+	if d.Todo != nil || r.deadline != nil || r.unreplied {
 		r.todoRow(c, len(d.Progress) > 0, func() {
 			if d.Todo != nil {
 				r.digestLine(c, d.Todo)
 			}
-			if r.deadline != nil {
-				r.deadlineLine(c)
-			}
+			r.replyDate(c, d.Todo != nil)
 		})
 	}
 }

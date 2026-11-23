@@ -281,6 +281,8 @@ var uiOnly = map[string]bool{
 	"RemoveAppAndWitDeadlines": true, "UndoRemoveAppAndWitDeadlines": true,
 	// The reader's 回复日期 line; programs read the date with list_view_threads or ViewContents.
 	"ThreadDeadline": true,
+	// 撤销 after the user sets, changes or removes a 回复日期: it writes any source's row past setDeadline's checks.
+	"UndoSetThreadDeadline": true,
 }
 
 // Expose picks the *core.Service methods callable by the full role: every

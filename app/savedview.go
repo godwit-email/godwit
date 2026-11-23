@@ -590,13 +590,13 @@ func (a *App) viewCondText(cd core.RuleCondition) string {
 func (r *reader) loadWhy() {
 	a, k := r.p.a, r.key
 	if k[0] != 0 {
-		var d *core.Deadline
+		var d core.ReaderDeadline
 		a.query(func(ctx context.Context) (err error) {
 			d, err = a.svc.ThreadDeadline(ctx, k[0])
 			return err
 		}, func(err error) {
 			if err == nil && r.key == k {
-				r.deadline = d
+				r.deadline, r.unreplied = d.Deadline, d.Unreplied
 			}
 		})
 	}
@@ -616,6 +616,19 @@ func (r *reader) loadWhy() {
 	})
 }
 
+// unrepliedText says the conversation waits on the user's reply, and how long.
+func (r *reader) unrepliedText() string {
+	if r.why.NewReply {
+		return i18n.T("view.band.new_reply")
+	}
+	if m, ok := r.last(); ok {
+		if n := viewDaysAgo(r.p.a.clock.Now(), m.Date); n > 1 {
+			return i18n.Tf("view.band.unreplied.days", n)
+		}
+	}
+	return i18n.T("view.band.unreplied")
+}
+
 // viewBand is the status above the conversation, in a view, with 写催促信
 // while it waits on someone.
 func (r *reader) viewBand(c *ui.Context) {
@@ -625,17 +638,10 @@ func (r *reader) viewBand(c *ui.Context) {
 	}
 	var icon, text string
 	switch {
-	case w.Status == core.ReplyStatusUnreplied && r.deadline != nil:
-		return // the 回复日期's 等你处理 line says it, in the summary's place
-	case w.Status == core.ReplyStatusUnreplied && w.NewReply:
-		icon, text = "reply", i18n.T("view.band.new_reply")
+	case w.Status == core.ReplyStatusUnreplied && (r.deadline != nil || r.unreplied):
+		return // the 等你处理 line says it, in the summary's place
 	case w.Status == core.ReplyStatusUnreplied:
-		icon, text = "reply", i18n.T("view.band.unreplied")
-		if m, ok := r.last(); ok {
-			if n := viewDaysAgo(r.p.a.clock.Now(), m.Date); n > 1 {
-				text = i18n.Tf("view.band.unreplied.days", n)
-			}
-		}
+		icon, text = "reply", r.unrepliedText()
 	case w.Status == core.ReplyStatusWaiting:
 		icon, text = "time", i18n.Tf("view.band.waiting", w.Days)
 	default:

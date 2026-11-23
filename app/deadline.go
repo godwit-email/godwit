@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+	"fmt"
 	"slices"
 	"strconv"
 	"time"
@@ -113,17 +115,169 @@ func (r *reader) deadlineLine(c *ui.Context) {
 		if source != "" {
 			kit.Text(c, source, t.Text.Xs).TextColor(t.Muted)
 		}
+		r.dateButtons(c)
 	})
 }
 
-// deadlineCard is the 回复日期 where no summary shows: the summary's card with
-// only its 等你处理 line.
+// replyDate is the 等你处理 line's 回复日期: the date, or, on a conversation
+// waiting on the user with none, its 回复状态 (unless todo, the summary's
+// to-do, says what waits) and 设回复日期.
+func (r *reader) replyDate(c *ui.Context, todo bool) {
+	if r.deadline != nil {
+		r.deadlineLine(c)
+		return
+	}
+	if !r.unreplied {
+		return
+	}
+	if !todo {
+		ui.Text(c, r.unrepliedText()).LineHeight(theme.LineReading).TextColor(theme.Of(c).Foreground).Shrink(1)
+	}
+	r.dateButtons(c)
+}
+
+// dateButtons are 改日期 and 去掉 under a 回复日期, 设回复日期 with none.
+func (r *reader) dateButtons(c *ui.Context) {
+	a, tid, d := r.p.a, r.key[0], r.deadline
+	ui.Row(c).Gap(c.Theme().Space(3)).AlignItems(ui.Center).Children(func() {
+		label := i18n.T("reader.deadline.set")
+		if d != nil {
+			label = i18n.T("reader.deadline.change")
+		}
+		b := kit.Button(c, label, kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).OnClick(func() { r.datePick.start(d) })
+		a.replyDatePopover(c, b, &r.datePick, tid)
+		if d != nil && kit.Button(c, i18n.T("reader.deadline.remove"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).Clicked() {
+			a.setReplyDate(tid, core.Deadline{})
+		}
+	})
+}
+
+// deadlineCard is the 等你处理 line where no summary shows: the summary's
+// card with only that line.
 func (r *reader) deadlineCard(c *ui.Context) {
-	if r.deadline == nil {
+	if r.deadline == nil && !r.unreplied {
 		return
 	}
 	t, th := theme.Of(c), c.Theme()
 	kit.Block(c, ui.Column(c), kit.ToneCard).Radius(t.Radius.Xl).FillWidth().Padding(th.Space(3), th.Space(4)).Children(func() {
-		r.todoRow(c, false, func() { r.deadlineLine(c) })
+		r.todoRow(c, false, func() { r.replyDate(c, false) })
+	})
+}
+
+// dateSetter is 改日期's popover: whether it is open, and the date and time typed.
+type dateSetter struct {
+	open       bool
+	date, time string
+}
+
+// start opens the popover on d's date and time (none: empty).
+func (ds *dateSetter) start(d *core.Deadline) {
+	*ds = dateSetter{open: true}
+	if d != nil {
+		ds.date, ds.time = d.Date, d.Time
+	}
+}
+
+// replyDatePreset is one of the popover's days.
+type replyDatePreset struct {
+	label string
+	day   time.Time
+}
+
+// replyDatePresets are 今天, 明天, this week's 周五 and 下周一 from now, each
+// day once: 周五 drops when it is today or tomorrow, 下周一 when it is tomorrow.
+func replyDatePresets(now time.Time) []replyDatePreset {
+	wd := int(now.Weekday())
+	var out []replyDatePreset
+	for _, p := range []struct {
+		label string
+		days  int
+	}{
+		{i18n.T("view.deadline.today"), 0},
+		{i18n.T("view.deadline.tomorrow"), 1},
+		{i18n.T("mail.weekday.5"), (5 - wd + 7) % 7},
+		{i18n.Tf("view.deadline.next_week", i18n.T("mail.weekday.1")), 7 - (wd+6)%7},
+	} {
+		day := time.Date(now.Year(), now.Month(), now.Day()+p.days, 0, 0, 0, 0, now.Location())
+		if !slices.ContainsFunc(out, func(o replyDatePreset) bool { return o.day.Equal(day) }) {
+			out = append(out, replyDatePreset{p.label, day})
+		}
+	}
+	return out
+}
+
+// replyDatePopover is 改日期's popover on anchor while ds is open: the
+// presets with their dates, a date and optional time to type with 设定, and,
+// with a model set, the way to have summaries find reply dates.
+func (a *App) replyDatePopover(c *ui.Context, anchor ui.Element, ds *dateSetter, threadID int64) {
+	if !ds.open {
+		return
+	}
+	set := func(d core.Deadline) {
+		ds.open = false
+		a.setReplyDate(threadID, d)
+	}
+	kit.PopoverAt(c, anchor, &ds.open, ui.AnchorBottomLeft, ui.AnchorTopLeft, theme.PopupOffset, func() {
+		t, th := theme.Of(c), c.Theme()
+		title := i18n.T("reader.deadline.title")
+		ui.Column(c).Width(theme.SyncMenuWidth).Gap(th.Space(2)).Label(title).Children(func() {
+			kit.Text(c, title, t.Text.Xs).FontWeight(500).TextColor(t.Muted)
+			ui.Column(c).FillWidth().Children(func() {
+				for i, p := range replyDatePresets(a.clock.Now()) {
+					kit.MenuItem(c.Key(i), false).FillWidth().Label(p.label+" "+monthDay(p.day)).OnClick(func() { set(core.Deadline{Date: p.day.Format(time.DateOnly)}) }).Children(func() {
+						kit.Text(c, p.label, t.Text.Sm).Grow(1).Shrink(1)
+						kit.Text(c, monthDay(p.day), t.Text.Sm).TextColor(t.Muted).Shrink(0)
+					})
+				}
+			})
+			kit.Separator(c, false)
+			_, dateErr := time.Parse(time.DateOnly, ds.date)
+			_, timeErr := time.Parse("15:04", ds.time)
+			ui.Row(c).FillWidth().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
+				kit.Input(c, &ds.date, kit.InputOpts{Placeholder: "YYYY-MM-DD", Size: kit.SizeSm, Invalid: ds.date != "" && dateErr != nil}).
+					Label(i18n.T("reader.deadline.date_field")).Grow(1).Shrink(1).MinWidth(0)
+				kit.Input(c, &ds.time, kit.InputOpts{Placeholder: "HH:MM", Size: kit.SizeSm, Invalid: ds.time != "" && timeErr != nil}).
+					Label(i18n.T("reader.deadline.time_field")).Width(th.Space(16)).Shrink(0)
+				ok := dateErr == nil && (ds.time == "" || timeErr == nil) // no time: the end of the day
+				if kit.Button(c, i18n.T("reader.deadline.apply"), kit.ButtonOpts{Size: kit.SizeSm, Disabled: !ok}).Shrink(0).Clicked() && ok {
+					set(core.Deadline{Date: ds.date, Time: ds.time})
+				}
+			})
+			if a.settings.DefaultModel != "" { // shortcut: summarize-on-arrival is not a setting yet; offered whenever a model is set, opening AI 功能
+				kit.Separator(c, false)
+				if kit.Button(c, i18n.T("reader.deadline.on_arrival"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).Clicked() {
+					ds.open = false
+					a.navigate(Route{Page: PageSettings, Settings: "features"})
+				}
+			}
+		})
+	})
+}
+
+// setReplyDate sets (d.Date "": removes) the conversation's 回复日期 as the
+// user's, with a toast whose 撤销 puts back what was there.
+func (a *App) setReplyDate(threadID int64, d core.Deadline) {
+	var before core.RemovedDeadline
+	a.do(func(ctx context.Context) (err error) {
+		before, err = a.svc.SetThreadDeadline(ctx, threadID, d)
+		return err
+	}, func(err error) {
+		if err != nil {
+			a.toastErr(err)
+			return
+		}
+		title := i18n.T("reader.deadline.removed")
+		if d.Date != "" {
+			title = i18n.T("reader.deadline.set_done")
+		}
+		now := a.clock.Now()
+		a.toasts = append(a.toasts, ui.Toast{ID: fmt.Sprintf("reply-date-%d", now.UnixNano()), Title: title, Action: i18n.T("compose.undo"),
+			Timeout: viewUndoWindow, Data: kit.ToastData{Deadline: now.Add(viewUndoWindow)}, OnAction: func() {
+				a.do(func(ctx context.Context) error { return a.svc.UndoSetThreadDeadline(ctx, before) }, func(err error) {
+					if err != nil {
+						a.toastErr(err)
+					}
+				})
+			}})
 	})
 }

@@ -87,14 +87,16 @@ func displayName(from string) string {
 type mailPage struct {
 	a *App
 
-	devPath string    // dev: the HTML file just written, to copy
-	view    core.View // what the list shows
-	threads bool      // items are threads (Settings.ThreadView when loaded)
-	items   []mailItem
-	cursor  string // where the next page starts; "" once all is loaded
-	list    latest // a page or a refresh in flight: one at a time; a reload drops the one before
-	stalled bool   // the last page failed: no more pages until a refresh
-	older   olderLoad
+	devPath  string     // dev: the HTML file just written, to copy
+	dateFor  string     // the row whose 设回复日期… popover is open, by its key
+	datePick dateSetter // that popover
+	view     core.View  // what the list shows
+	threads  bool       // items are threads (Settings.ThreadView when loaded)
+	items    []mailItem
+	cursor   string // where the next page starts; "" once all is loaded
+	list     latest // a page or a refresh in flight: one at a time; a reload drops the one before
+	stalled  bool   // the last page failed: no more pages until a refresh
+	older    olderLoad
 	// leaving are the rows advance moved off and the list still shows, until
 	// the next reload: a second action before it must not move back to one.
 	leaving map[string]bool
@@ -176,6 +178,14 @@ func (l *listSel) reset() { *l = listSel{list: &ui.ListState{}, cur: -1} }
 
 // key is the row's identity in the list and its choice: thread and message
 // IDs are separate sequences.
+// threadID is the conversation of the row.
+func (it mailItem) threadID() int64 {
+	if it.Thread {
+		return it.ID
+	}
+	return it.Msg.ThreadID
+}
+
 func (it mailItem) key() string {
 	if it.Thread {
 		return "t:" + strconv.FormatInt(it.ID, 10)
@@ -997,7 +1007,11 @@ func (p *mailPage) listView(c *ui.Context) {
 			return
 		}
 		it := rows[es[i].row]
-		p.item(c, it).ContextMenu(func(m *ui.Menu) {
+		row := p.item(c, it)
+		if p.dateFor == it.key() {
+			p.a.replyDatePopover(c, row, &p.datePick, it.threadID())
+		}
+		row.ContextMenu(func(m *ui.Menu) {
 			on := []mailItem{it}
 			if ls.sel.Has(it.key()) {
 				on = p.chosen(rows)
@@ -1048,6 +1062,15 @@ func (p *mailPage) listView(c *ui.Context) {
 			securitySubmenu(m, func(reason string) bool { return len(on) == 1 && on[0].Security.Reason == reason }, func(reason string) { p.applySecurity(on, reason) })
 			m.Separator()
 			p.viewMenu(m, on)
+			if len(on) == 1 && on[0].threadID() != 0 {
+				if m.Item(i18n.T("mail.menu.set_deadline")).Icon(menuIcon("time")).Chosen() {
+					p.dateFor = on[0].key()
+					p.datePick.start(on[0].Deadline)
+				}
+				if on[0].Deadline != nil && m.Item(i18n.T("mail.menu.remove_deadline")).Icon(menuIcon("x")).Chosen() {
+					p.a.setReplyDate(on[0].threadID(), core.Deadline{})
+				}
+			}
 			if len(on) == 1 { // for mail like this one: a rule, or blocking its sender
 				if role := p.currentFolderRole(); role != "sent" && role != "drafts" {
 					m.Separator()

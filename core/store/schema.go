@@ -880,6 +880,10 @@ var Migrations = [][]string{{
 		message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
 		quote TEXT NOT NULL DEFAULT '',
 		set_at INTEGER NOT NULL)`,
+}, {
+	// When a conversation was archived in Godwit: it ends a 期限 the user set
+	// before then. Older marks read 0, as archived before any.
+	`ALTER TABLE archive_marks ADD COLUMN archived_at INTEGER NOT NULL DEFAULT 0`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

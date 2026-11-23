@@ -57,7 +57,8 @@ var (
 	ErrDeadlineOutranked  = errors.New("a reply date the user set, or one from a higher source, is in effect; it cannot be replaced or cleared")
 )
 
-// SetThreadDeadline sets or (with d.Date "") clears a conversation's 期限. The
+// SetThreadDeadline sets or (with d.Date "") clears a conversation's 期限, and
+// returns the row it replaced (Source "": none) for UndoSetThreadDeadline. The
 // caller decides its source: Godwit's interface (RoleUI) writes manual, every
 // other caller program. A program's write names a message from someone else
 // in the conversation, which is 未回复 and not replied to or archived since
@@ -67,51 +68,87 @@ var (
 // Not egress (ADR 0003), so no audit row: it writes one local row, which no
 // rule reads, no notification or request follows, no IMAP keyword or
 // cross-device sync carries, and no events_log row (so no plugin hook) records.
-func (s *Service) SetThreadDeadline(ctx context.Context, threadID int64, d Deadline) error {
+func (s *Service) SetThreadDeadline(ctx context.Context, threadID int64, d Deadline) (RemovedDeadline, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
-		return err
+		return RemovedDeadline{}, err
 	}
 	defer end()
 	source := DeadlineProgram
 	if uiSessionFromContext(ctx) != nil {
 		source = DeadlineManual
 	}
-	return s.setDeadline(ctx, source, threadID, d)
+	before := RemovedDeadline{ThreadID: threadID}
+	return before, s.changeDeadline(ctx, source, threadID, d, true, &before)
 }
 
-// ThreadDeadline is the conversation's dated 期限 in effect, nil for none:
-// what the reader shows, in a view or not, however long overdue.
-func (s *Service) ThreadDeadline(ctx context.Context, threadID int64) (*Deadline, error) {
+// UndoSetThreadDeadline writes back the row SetThreadDeadline returned, as it
+// was (Source "": none), over whatever is there now: 撤销 on the toast after
+// the user sets, changes or removes a 回复日期.
+func (s *Service) UndoSetThreadDeadline(ctx context.Context, before RemovedDeadline) error {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
-		return nil, err
+		return err
+	}
+	defer end()
+	if before.Source != "" && before.Source != DeadlineManual && before.Source != DeadlineProgram && before.Source != DeadlineWit && before.Source != DeadlineAI {
+		return ErrDeadlineInvalid
+	}
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
+	if before.Source == "" {
+		return s.commitDeadline(ctx, sqlite.Statement{SQL: "DELETE FROM thread_deadlines WHERE thread_id = ?", Args: []any{before.ThreadID}})
+	}
+	// The thread or message may be gone since: the SELECT skips the one, the subquery NULLs the other.
+	return s.commitDeadline(ctx, sqlite.Statement{SQL: `INSERT INTO thread_deadlines(thread_id, due_date, due_time, source, message_id, quote, set_at)
+		SELECT id, NULLIF(?, ''), ?, ?, (SELECT id FROM messages WHERE id = ?), ?, ? FROM threads WHERE id = ?
+		ON CONFLICT(thread_id) DO UPDATE SET due_date = excluded.due_date, due_time = excluded.due_time, source = excluded.source,
+		message_id = excluded.message_id, quote = excluded.quote, set_at = excluded.set_at`,
+		Args: []any{before.Date, before.Time, before.Source, before.MessageID, before.Quote, before.SetAt, before.ThreadID}})
+}
+
+// ReaderDeadline is what the reader's 等你处理 line says of a conversation:
+// its dated 期限 in effect (nil for none) and whether it is 未回复.
+type ReaderDeadline struct {
+	Deadline  *Deadline
+	Unreplied bool
+}
+
+// ThreadDeadline is the conversation's dated 期限 in effect, in a view or
+// not, however long overdue, and its 回复状态: what the reader shows.
+func (s *Service) ThreadDeadline(ctx context.Context, threadID int64) (ReaderDeadline, error) {
+	ctx, end, err := s.begin(ctx, 0)
+	if err != nil {
+		return ReaderDeadline{}, err
 	}
 	defer end()
 	now := s.clk().Now()
 	statuses, err := s.replyStatuses(ctx, now.Unix())
 	if err != nil {
-		return nil, err
+		return ReaderDeadline{}, err
 	}
 	got, err := s.deadlinesIn(ctx, now, statuses, []int64{threadID})
+	out := ReaderDeadline{Unreplied: statuses[threadID].Kind == ReplyStatusUnreplied}
 	if d, ok := got[threadID]; ok && d.Date != "" {
-		return &d, err
+		out.Deadline = &d
 	}
-	return nil, err
+	return out, err
 }
 
 // setDeadline is the one write path of a 期限, for every source.
 func (s *Service) setDeadline(ctx context.Context, source string, threadID int64, d Deadline) error {
-	return s.changeDeadline(ctx, source, threadID, d, true)
+	return s.changeDeadline(ctx, source, threadID, d, true, nil)
 }
 
 // checkDeadline is whether setDeadline would take d now, writing nothing: a
 // Wit call it refuses goes back to the model before the user is asked.
 func (s *Service) checkDeadline(ctx context.Context, source string, threadID int64, d Deadline) error {
-	return s.changeDeadline(ctx, source, threadID, d, false)
+	return s.changeDeadline(ctx, source, threadID, d, false, nil)
 }
 
-func (s *Service) changeDeadline(ctx context.Context, source string, threadID int64, d Deadline, write bool) error {
+// changeDeadline checks d and, if write, writes it; before, if not nil, gets
+// the row it replaces.
+func (s *Service) changeDeadline(ctx context.Context, source string, threadID int64, d Deadline, write bool, before *RemovedDeadline) error {
 	if d.Date != "" {
 		if _, err := time.Parse(time.DateOnly, d.Date); err != nil {
 			return ErrDeadlineInvalid
@@ -142,6 +179,16 @@ func (s *Service) changeDeadline(ctx context.Context, source string, threadID in
 	}
 	if !write {
 		return nil
+	}
+	if before != nil {
+		rows, err := s.db.Query(ctx, "SELECT COALESCE(due_date, ''), due_time, COALESCE(message_id, 0), quote, source, set_at FROM thread_deadlines WHERE thread_id = ?", threadID)
+		if err != nil {
+			return err
+		}
+		if len(rows.Values) > 0 {
+			r := rows.Values[0]
+			*before = RemovedDeadline{ThreadID: threadID, Date: store.Str(r[0]), Time: store.Str(r[1]), MessageID: store.Int(r[2]), Quote: store.Str(r[3]), Source: store.Str(r[4]), SetAt: store.Int(r[5])}
+		}
 	}
 	if source == DeadlineManual {
 		if d.Date == "" && has && cur.Source != DeadlineManual {
@@ -221,7 +268,8 @@ func (s *Service) commitDeadline(ctx context.Context, st sqlite.Statement) error
 // now with the 回复状态 statuses: what sorting, rows and list_view_threads
 // show. A manual entry with no date (the user removed another's) is in the
 // result with Date "", so that it keeps lower sources out; callers that show
-// dates skip it. An ai, program or wit date is in effect while the
+// dates skip it. A manual entry is in effect until the conversation is
+// archived in Godwit after it was set. An ai, program or wit date is in effect while the
 // conversation is 未回复 and its message is newer than the latest reply and
 // archive (replyStatus.Settled).
 func (s *Service) deadlinesIn(ctx context.Context, now time.Time, statuses map[int64]replyStatus, threadIDs []int64) (map[int64]Deadline, error) {
@@ -230,8 +278,8 @@ func (s *Service) deadlinesIn(ctx context.Context, now time.Time, statuses map[i
 		return out, nil
 	}
 	rows, err := s.db.Query(ctx, `SELECT d.thread_id, COALESCE(d.due_date, ''), d.due_time, d.source, COALESCE(d.message_id, 0), d.quote, d.set_at,
-		COALESCE(m.thread_id, 0), COALESCE(m.date, 0) FROM thread_deadlines d LEFT JOIN messages m ON m.id = d.message_id
-		WHERE d.thread_id IN (SELECT value FROM json_each(?))`, intList(threadIDs))
+		COALESCE(m.thread_id, 0), COALESCE(m.date, 0), COALESCE(a.archived_at, 0) FROM thread_deadlines d LEFT JOIN messages m ON m.id = d.message_id
+		LEFT JOIN archive_marks a ON a.thread_id = d.thread_id WHERE d.thread_id IN (SELECT value FROM json_each(?))`, intList(threadIDs))
 	if err != nil {
 		return nil, err
 	}
@@ -239,7 +287,8 @@ func (s *Service) deadlinesIn(ctx context.Context, now time.Time, statuses map[i
 		tid := store.Int(r[0])
 		d := Deadline{Date: store.Str(r[1]), Time: store.Str(r[2]), Source: store.Str(r[3]), MessageID: store.Int(r[4]), Quote: store.Str(r[5])}
 		if d.Source == DeadlineManual {
-			if !manualDeadlineInEffect(tid, store.Int(r[6])) {
+			// Archived in Godwit since it was set. shortcut: an archive on another device writes no mark, so it leaves the date; read it from the mail's folders if users miss it.
+			if store.Int(r[9]) > store.Int(r[6]) {
 				continue
 			}
 		} else if st := statuses[tid]; store.Int(r[7]) != tid || st.Kind != ReplyStatusUnreplied || store.Int(r[8]) <= st.Settled {
@@ -253,7 +302,8 @@ func (s *Service) deadlinesIn(ctx context.Context, now time.Time, statuses map[i
 	return out, nil
 }
 
-// RemovedDeadline is one row RemoveAppAndWitDeadlines took away, as stored.
+// RemovedDeadline is one row RemoveAppAndWitDeadlines took away, or the one
+// SetThreadDeadline replaced, as stored.
 type RemovedDeadline struct {
 	ThreadID  int64
 	Date      string
@@ -343,10 +393,6 @@ func (s *Service) UndoRemoveAppAndWitDeadlines(ctx context.Context, removed []Re
 	s.bus.Publish(events.Event{Type: events.MessagesChanged, ThreadIDs: threads})
 	return nil
 }
-
-// manualDeadlineInEffect is whether a manual 期限 set at setAt is in effect.
-// shortcut: always, until #848 ends it at the conversation's next archive (archive_marks.archived_at).
-func manualDeadlineInEffect(threadID, setAt int64) bool { return true }
 
 // deadlineEnd is when d passes: its time, or the end of its day, in loc.
 func deadlineEnd(d Deadline, loc *time.Location) time.Time {

@@ -108,7 +108,7 @@ func TestSettingsRemoveAppDates(t *testing.T) {
 	h, acc := withAccount(t)
 	m := h.deliverOne(acc, coretest.Msg("Bob <bob@a.example>", acc.Email, "Quote", "Please confirm by Friday."))
 	date := time.Now().AddDate(0, 0, 3).Format(time.DateOnly)
-	if err := h.env.Svc.SetThreadDeadline(context.Background(), m.ThreadID, core.Deadline{Date: date, MessageID: m.ID}); err != nil {
+	if _, err := h.env.Svc.SetThreadDeadline(context.Background(), m.ThreadID, core.Deadline{Date: date, MessageID: m.ID}); err != nil {
 		t.Fatal(err)
 	}
 	count := func() int {

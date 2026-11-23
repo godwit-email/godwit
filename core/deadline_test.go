@@ -1,8 +1,10 @@
 package core
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/stretchr/testify/assert"
@@ -27,6 +29,12 @@ func (e *sendEnv) deadlineOf(t *testing.T, mid string) *Deadline {
 	return nil
 }
 
+// setThreadDeadline is SetThreadDeadline's error.
+func (e *sendEnv) setThreadDeadline(ctx context.Context, threadID int64, d Deadline) error {
+	_, err := e.s.SetThreadDeadline(ctx, threadID, d)
+	return err
+}
+
 // day is the local calendar day d days after the clock's now.
 func (e *sendEnv) day(d int) string { return e.clock.Now().AddDate(0, 0, d).Format("2006-01-02") }
 
@@ -37,7 +45,7 @@ func TestDeadlineProgramSetsAndReads(t *testing.T) {
 	require.Nil(t, e.deadlineOf(t, "q@x"))
 
 	in := Deadline{Date: e.day(3), Time: "15:00", MessageID: e.idOf(t, "q@x"), Quote: "confirm the  quote\nby Friday"}
-	require.NoError(t, e.s.SetThreadDeadline(bg, e.threadOf(t, "q@x"), in))
+	require.NoError(t, e.setThreadDeadline(bg, e.threadOf(t, "q@x"), in))
 	want := in
 	want.Source = DeadlineProgram
 	assert.Equal(t, &want, e.deadlineOf(t, "q@x"))
@@ -51,7 +59,7 @@ func TestDeadlineProgramRejections(t *testing.T) {
 	e.put(t, "Sent", eml("mine@x", "alice@example.com", "dan@a.example", "mine", e.viewAt(1), "Tell me by Friday."))
 	e.sync(t)
 	tid, q := e.threadOf(t, "q@x"), e.idOf(t, "q@x")
-	set := func(d Deadline) error { return e.s.SetThreadDeadline(bg, tid, d) }
+	set := func(d Deadline) error { return e.setThreadDeadline(bg, tid, d) }
 
 	for _, c := range []struct {
 		name   string
@@ -70,25 +78,25 @@ func TestDeadlineProgramRejections(t *testing.T) {
 		{"a time with no date", tid, Deadline{Time: "15:00", MessageID: q}, ErrDeadlineInvalid},
 		{"a long quote", tid, Deadline{Date: e.day(2), MessageID: q, Quote: strings.Repeat("x", MaxDeadlineQuote+1)}, ErrDeadlineInvalid},
 	} {
-		assert.ErrorIs(t, e.s.SetThreadDeadline(bg, c.thread, c.d), c.want, c.name)
+		assert.ErrorIs(t, e.setThreadDeadline(bg, c.thread, c.d), c.want, c.name)
 	}
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM thread_deadlines"), "nothing was written")
 
 	// The user's own date, and the marker they leave removing another's, keep programs out.
 	ui := WithUISession(t.Context(), e.s)
 	require.NoError(t, set(Deadline{Date: e.day(2), MessageID: q}))
-	require.NoError(t, e.s.SetThreadDeadline(ui, tid, Deadline{}), "the user removes the program's date")
+	require.NoError(t, e.setThreadDeadline(ui, tid, Deadline{}), "the user removes the program's date")
 	assert.Nil(t, e.deadlineOf(t, "q@x"))
 	assert.ErrorIs(t, set(Deadline{Date: e.day(3), MessageID: q}), ErrDeadlineOutranked, "clear, then write")
 	assert.ErrorIs(t, set(Deadline{MessageID: q}), ErrDeadlineOutranked)
-	require.NoError(t, e.s.SetThreadDeadline(ui, tid, Deadline{Date: e.day(4)}))
+	require.NoError(t, e.setThreadDeadline(ui, tid, Deadline{Date: e.day(4)}))
 	assert.Equal(t, &Deadline{Date: e.day(4), Source: DeadlineManual}, e.deadlineOf(t, "q@x"))
 	assert.ErrorIs(t, set(Deadline{Date: e.day(3), MessageID: q}), ErrDeadlineOutranked, "overwriting the user's")
 	assert.ErrorIs(t, set(Deadline{MessageID: q}), ErrDeadlineOutranked, "clearing the user's")
 	assert.Equal(t, &Deadline{Date: e.day(4), Source: DeadlineManual}, e.deadlineOf(t, "q@x"))
 
 	// The user removing their own date leaves nothing behind.
-	require.NoError(t, e.s.SetThreadDeadline(ui, tid, Deadline{}))
+	require.NoError(t, e.setThreadDeadline(ui, tid, Deadline{}))
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM thread_deadlines"))
 	require.NoError(t, set(Deadline{Date: e.day(3), MessageID: q}))
 }
@@ -102,7 +110,7 @@ func TestDeadlinePrecedence(t *testing.T) {
 	require.NoError(t, e.s.setDeadline(bg, DeadlineAI, tid, Deadline{Date: e.day(1), MessageID: q}))
 	require.NoError(t, e.s.setDeadline(bg, DeadlineWit, tid, Deadline{Date: e.day(2), MessageID: q}), "wit replaces ai")
 	assert.ErrorIs(t, e.s.setDeadline(bg, DeadlineAI, tid, Deadline{Date: e.day(1), MessageID: q}), ErrDeadlineOutranked)
-	require.NoError(t, e.s.SetThreadDeadline(bg, tid, Deadline{Date: e.day(3), MessageID: q}), "program replaces wit")
+	require.NoError(t, e.setThreadDeadline(bg, tid, Deadline{Date: e.day(3), MessageID: q}), "program replaces wit")
 	assert.Equal(t, DeadlineProgram, e.deadlineOf(t, "q@x").Source)
 	assert.Equal(t, e.day(3), e.deadlineOf(t, "q@x").Date)
 }
@@ -114,7 +122,7 @@ func TestDeadlineEndsWithReplyAndArchive(t *testing.T) {
 	e.put(t, "INBOX", eml("q@x", "bob@a.example", "alice@example.com", "quote", e.viewAt(1), "Reply by Friday."))
 	e.sync(t)
 	tid, q := e.threadOf(t, "q@x"), e.idOf(t, "q@x")
-	require.NoError(t, e.s.SetThreadDeadline(bg, tid, Deadline{Date: e.day(2), MessageID: q}))
+	require.NoError(t, e.setThreadDeadline(bg, tid, Deadline{Date: e.day(2), MessageID: q}))
 	require.NotNil(t, e.deadlineOf(t, "q@x"))
 
 	d, err := e.s.NewDraft(bg, e.acc.ID, "reply", q)
@@ -146,8 +154,8 @@ func TestDeadlineEndsWithReplyAndArchive(t *testing.T) {
 	require.Equal(t, tid, e.threadOf(t, "q2@x"))
 	require.Equal(t, ReplyStatusUnreplied, e.replyOf(t, "q2@x").Kind)
 	assert.Nil(t, e.deadlineOf(t, "q@x"), "a reply from another client, synced from Sent, ended it")
-	assert.ErrorIs(t, e.s.SetThreadDeadline(bg, tid, Deadline{Date: e.day(2), MessageID: q}), ErrDeadlineNotWaiting, "the old mail was answered")
-	require.NoError(t, e.s.SetThreadDeadline(bg, tid, Deadline{Date: e.day(2), MessageID: e.idOf(t, "q2@x")}))
+	assert.ErrorIs(t, e.setThreadDeadline(bg, tid, Deadline{Date: e.day(2), MessageID: q}), ErrDeadlineNotWaiting, "the old mail was answered")
+	require.NoError(t, e.setThreadDeadline(bg, tid, Deadline{Date: e.day(2), MessageID: e.idOf(t, "q2@x")}))
 	require.NotNil(t, e.deadlineOf(t, "q@x"))
 
 	// Archived on another device: its mail leaves the inbox for Archive.
@@ -155,7 +163,7 @@ func TestDeadlineEndsWithReplyAndArchive(t *testing.T) {
 	e.put(t, "INBOX", eml("p2@x", "dan@a.example", "alice@example.com", "Re: phone", e.viewAt(0.5), "And?", "In-Reply-To: <p@x>"))
 	e.sync(t)
 	require.Equal(t, e.threadOf(t, "p@x"), e.threadOf(t, "p2@x"))
-	assert.ErrorIs(t, e.s.SetThreadDeadline(bg, e.threadOf(t, "p@x"), Deadline{Date: e.day(2), MessageID: e.idOf(t, "p@x")}), ErrDeadlineNotWaiting)
+	assert.ErrorIs(t, e.setThreadDeadline(bg, e.threadOf(t, "p@x"), Deadline{Date: e.day(2), MessageID: e.idOf(t, "p@x")}), ErrDeadlineNotWaiting)
 }
 
 // Merging conversations keeps one date: the highest source's, then the earliest.
@@ -196,11 +204,11 @@ func TestDeadlineStaysLocal(t *testing.T) {
 		return e.rows(t, "SELECT (SELECT count(*) FROM events_log), (SELECT count(*) FROM ops), (SELECT COALESCE(flags, '') FROM messages WHERE id = ?)", q)
 	}
 	before := state()
-	require.NoError(t, e.s.SetThreadDeadline(bg, tid, Deadline{Date: e.day(2), MessageID: q, Quote: "Friday"}))
+	require.NoError(t, e.setThreadDeadline(bg, tid, Deadline{Date: e.day(2), MessageID: q, Quote: "Friday"}))
 	removed, err := e.s.RemoveAppAndWitDeadlines(bg)
 	require.NoError(t, err)
 	require.NoError(t, e.s.UndoRemoveAppAndWitDeadlines(bg, removed))
-	require.NoError(t, e.s.SetThreadDeadline(WithUISession(t.Context(), e.s), tid, Deadline{}))
+	require.NoError(t, e.setThreadDeadline(WithUISession(t.Context(), e.s), tid, Deadline{}))
 	assert.Equal(t, before, state())
 }
 
@@ -209,9 +217,9 @@ func TestDeadlineOverdue(t *testing.T) {
 	e.put(t, "INBOX", eml("q@x", "bob@a.example", "alice@example.com", "quote", e.viewAt(3), "Reply by Friday."))
 	e.sync(t)
 	tid, q := e.threadOf(t, "q@x"), e.idOf(t, "q@x")
-	require.NoError(t, e.s.SetThreadDeadline(bg, tid, Deadline{Date: e.day(0), MessageID: q}))
+	require.NoError(t, e.setThreadDeadline(bg, tid, Deadline{Date: e.day(0), MessageID: q}))
 	assert.False(t, e.deadlineOf(t, "q@x").Overdue, "due by the end of today")
-	require.NoError(t, e.s.SetThreadDeadline(bg, tid, Deadline{Date: e.day(-1), Time: "23:59", MessageID: q}))
+	require.NoError(t, e.setThreadDeadline(bg, tid, Deadline{Date: e.day(-1), Time: "23:59", MessageID: q}))
 	assert.True(t, e.deadlineOf(t, "q@x").Overdue)
 }
 
@@ -239,7 +247,7 @@ func dated(t *testing.T) *sendEnv {
 	e.sync(t)
 	for s, d := range map[string]Deadline{"c": {Date: e.day(3)}, "b": {Date: e.day(1), Time: "09:00"}, "e": {Date: e.day(-2)}, "d": {Date: e.day(-9)}} {
 		d.MessageID = e.idOf(t, s+"@x")
-		require.NoError(t, e.s.SetThreadDeadline(bg, e.threadOf(t, s+"@x"), d), s)
+		require.NoError(t, e.setThreadDeadline(bg, e.threadOf(t, s+"@x"), d), s)
 	}
 	return e
 }
@@ -282,15 +290,15 @@ func TestThreadDeadline(t *testing.T) {
 	e := dated(t)
 	got, err := e.s.ThreadDeadline(bg, e.threadOf(t, "d@x"))
 	require.NoError(t, err)
-	assert.Equal(t, &Deadline{Date: e.day(-9), MessageID: e.idOf(t, "d@x"), Source: DeadlineProgram, Overdue: true}, got)
+	assert.Equal(t, &Deadline{Date: e.day(-9), MessageID: e.idOf(t, "d@x"), Source: DeadlineProgram, Overdue: true}, got.Deadline)
 
 	got, err = e.s.ThreadDeadline(bg, e.threadOf(t, "a@x"))
 	require.NoError(t, err)
-	assert.Nil(t, got, "none")
-	require.NoError(t, e.s.SetThreadDeadline(WithUISession(t.Context(), e.s), e.threadOf(t, "c@x"), Deadline{}))
+	assert.Equal(t, ReaderDeadline{Unreplied: true}, got, "none, on a conversation waiting on the user")
+	require.NoError(t, e.setThreadDeadline(WithUISession(t.Context(), e.s), e.threadOf(t, "c@x"), Deadline{}))
 	got, err = e.s.ThreadDeadline(bg, e.threadOf(t, "c@x"))
 	require.NoError(t, err)
-	assert.Nil(t, got, "removed by the user")
+	assert.Nil(t, got.Deadline, "removed by the user")
 }
 
 // Pages follow the order; a reply date written mid-paging reorders, so the
@@ -315,7 +323,7 @@ func TestViewPagingAcrossAReplyDate(t *testing.T) {
 	}
 	assert.Equal(t, []string{"e", "b", "c", "a", "d"}, seen)
 
-	require.NoError(t, e.s.SetThreadDeadline(bg, e.threadOf(t, "a@x"), Deadline{Date: e.day(2), MessageID: e.idOf(t, "a@x")}))
+	require.NoError(t, e.setThreadDeadline(bg, e.threadOf(t, "a@x"), Deadline{Date: e.day(2), MessageID: e.idOf(t, "a@x")}))
 	again, err := e.s.ViewGroupPage(bg, id, ViewGroupOther, first.Groups[0].NextCursor, 2)
 	require.NoError(t, err)
 	assert.Equal(t, "e", again.Items[0].Subject, "a cursor from before the write starts over")
@@ -387,7 +395,7 @@ func TestDeadlineWit(t *testing.T) {
 
 	// Refused by the checks, or by the user's own date, granted or not: no approval, no change.
 	assert.Equal(t, "done", ask(set(`{"id":1,"date":"`+e.day(4)+`","quote":"by Monday"}`)).Kind)
-	require.NoError(t, e.s.SetThreadDeadline(WithUISession(t.Context(), e.s), e.threadOf(t, "q@x"), Deadline{Date: e.day(5)}))
+	require.NoError(t, e.setThreadDeadline(WithUISession(t.Context(), e.s), e.threadOf(t, "q@x"), Deadline{Date: e.day(5)}))
 	assert.Equal(t, "done", ask(set(`{"id":1,"date":"`+e.day(6)+`"}`), set(`{"id":1,"date":""}`)).Kind)
 	assert.Equal(t, &Deadline{Date: e.day(5), Source: DeadlineManual}, e.deadlineOf(t, "q@x"))
 	assert.Equal(t, 2, e.count(t, "SELECT count(*) FROM approvals WHERE tool = 'set_reply_deadline'"))
@@ -434,7 +442,7 @@ func TestRemoveAppAndWitDeadlines(t *testing.T) {
 	v = version()
 
 	// Meanwhile the user sets their own date on one: undo leaves it.
-	require.NoError(t, e.s.SetThreadDeadline(WithUISession(t.Context(), e.s), e.threadOf(t, "w@x"), Deadline{Date: e.day(5)}))
+	require.NoError(t, e.setThreadDeadline(WithUISession(t.Context(), e.s), e.threadOf(t, "w@x"), Deadline{Date: e.day(5)}))
 	v = version()
 	require.NoError(t, e.s.UndoRemoveAppAndWitDeadlines(bg, removed))
 	assert.Greater(t, version(), v, "paging cursors start over")
@@ -461,7 +469,7 @@ func TestViewDeadlineCondition(t *testing.T) {
 	e.sync(t)
 	set := func(mid string, d Deadline) {
 		d.MessageID = e.idOf(t, mid+"@x")
-		require.NoError(t, e.s.SetThreadDeadline(bg, e.threadOf(t, mid+"@x"), d), mid)
+		require.NoError(t, e.setThreadDeadline(bg, e.threadOf(t, mid+"@x"), d), mid)
 	}
 	set("soon", Deadline{Date: e.day(2)})
 	set("today", Deadline{Date: e.day(0)})
@@ -470,8 +478,8 @@ func TestViewDeadlineCondition(t *testing.T) {
 	set("overdue", Deadline{Date: e.day(-1)})
 	set("removed", Deadline{Date: e.day(1)})
 	ui := WithUISession(t.Context(), e.s)
-	require.NoError(t, e.s.SetThreadDeadline(ui, e.threadOf(t, "removed@x"), Deadline{}), "the user removes it")
-	require.NoError(t, e.s.SetThreadDeadline(ui, e.threadOf(t, "mine@x"), Deadline{Date: e.day(1)}), "the user's own date, on a conversation with no 回复状态")
+	require.NoError(t, e.setThreadDeadline(ui, e.threadOf(t, "removed@x"), Deadline{}), "the user removes it")
+	require.NoError(t, e.setThreadDeadline(ui, e.threadOf(t, "mine@x"), Deadline{Date: e.day(1)}), "the user's own date, on a conversation with no 回复状态")
 
 	for value, want := range map[string][]string{
 		RuleYes:             {"later", "mine", "overdue", "passed", "soon", "today"},
@@ -516,4 +524,115 @@ func TestDeadlineConditionIsViewOnly(t *testing.T) {
 			Conditions: []RuleCondition{cond(FieldDeadline, OpIs, v)}, Actions: []RuleAction{{Kind: ActionRead}}}})
 		assert.ErrorIs(t, err, ErrInvalidRule, v)
 	}
+}
+
+// The user's own date outlives their reply ("收到，周五前给你") and ends when
+// the conversation is archived after it was set; undoing the archive brings
+// it back. An archive from before the date was set leaves it.
+func TestManualDeadlineEndsOnArchive(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("q@x", "bob@a.example", "alice@example.com", "quote", e.viewAt(1), "Reply by Friday."))
+	e.sync(t)
+	tid, q := e.threadOf(t, "q@x"), e.idOf(t, "q@x")
+	ui := WithUISession(t.Context(), e.s)
+	_, err := e.s.ArchiveThreads(bg, []int64{tid})
+	require.NoError(t, err)
+	e.clock.Advance(time.Minute)
+	require.NoError(t, e.setThreadDeadline(ui, tid, Deadline{Date: e.day(4)}))
+	want := &Deadline{Date: e.day(4), Source: DeadlineManual}
+	got, err := e.s.ThreadDeadline(bg, tid)
+	require.NoError(t, err)
+	assert.Equal(t, want, got.Deadline, "an archive before the date leaves it")
+
+	d, err := e.s.NewDraft(bg, e.acc.ID, "reply", q)
+	require.NoError(t, err)
+	require.NoError(t, e.s.Send(bg, d.ID))
+	got, err = e.s.ThreadDeadline(bg, tid)
+	require.NoError(t, err)
+	assert.Equal(t, want, got.Deadline, "the user's reply leaves it")
+
+	e.clock.Advance(time.Minute)
+	undo, err := e.s.ArchiveThreads(bg, []int64{tid})
+	require.NoError(t, err)
+	got, err = e.s.ThreadDeadline(bg, tid)
+	require.NoError(t, err)
+	assert.Nil(t, got.Deadline, "archiving ends it")
+	require.NoError(t, e.s.UndoArchiveThreads(bg, undo))
+	got, err = e.s.ThreadDeadline(bg, tid)
+	require.NoError(t, err)
+	assert.Equal(t, want, got.Deadline, "undoing the archive brings it back")
+
+	// A mark from before archive times were kept counts as older than any date.
+	_, err = e.s.ArchiveThreads(bg, []int64{tid})
+	require.NoError(t, err)
+	_, err = e.s.db.Execute(bg, "UPDATE archive_marks SET archived_at = 0")
+	require.NoError(t, err)
+	got, err = e.s.ThreadDeadline(bg, tid)
+	require.NoError(t, err)
+	assert.Equal(t, want, got.Deadline)
+}
+
+// Removing a summary's or a program's date keeps programs out until the
+// conversation is archived; after that, new mail can carry one again.
+func TestRemovedDeadlineHoldsUntilArchive(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("q@x", "bob@a.example", "alice@example.com", "quote", e.viewAt(1), "Reply by Friday."))
+	e.sync(t)
+	tid, q := e.threadOf(t, "q@x"), e.idOf(t, "q@x")
+	require.NoError(t, e.s.setDeadline(bg, DeadlineAI, tid, Deadline{Date: e.day(2), MessageID: q}))
+	require.NoError(t, e.setThreadDeadline(WithUISession(t.Context(), e.s), tid, Deadline{}), "去掉")
+	assert.ErrorIs(t, e.setThreadDeadline(bg, tid, Deadline{Date: e.day(3), MessageID: q}), ErrDeadlineOutranked)
+	assert.ErrorIs(t, e.s.setDeadline(bg, DeadlineAI, tid, Deadline{Date: e.day(3), MessageID: q}), ErrDeadlineOutranked)
+
+	e.clock.Advance(time.Minute)
+	_, err := e.s.ArchiveThreads(bg, []int64{tid})
+	require.NoError(t, err)
+	e.put(t, "INBOX", eml("q2@x", "bob@a.example", "alice@example.com", "Re: quote", e.viewAt(0.5), "Now by Monday.", "In-Reply-To: <q@x>"))
+	e.sync(t)
+	require.Equal(t, tid, e.threadOf(t, "q2@x"))
+	require.NoError(t, e.setThreadDeadline(bg, tid, Deadline{Date: e.day(4), MessageID: e.idOf(t, "q2@x")}), "archived since")
+	assert.Equal(t, DeadlineProgram, e.deadlineOf(t, "q@x").Source)
+}
+
+// Setting, changing and removing a date each undo to the row as it was:
+// none, another source's date with its quote, or the "removed" marker.
+func TestUndoSetThreadDeadline(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("q@x", "bob@a.example", "alice@example.com", "quote", e.viewAt(1), "Please confirm by Friday."))
+	e.sync(t)
+	tid, q := e.threadOf(t, "q@x"), e.idOf(t, "q@x")
+	ui := WithUISession(t.Context(), e.s)
+	row := func() string {
+		rows, err := e.s.db.Query(bg, "SELECT COALESCE(due_date, 'NULL') || ' ' || source || ' ' || quote FROM thread_deadlines WHERE thread_id = ?", tid)
+		require.NoError(t, err)
+		if len(rows.Values) == 0 {
+			return ""
+		}
+		return rows.Values[0][0].(string)
+	}
+
+	before, err := e.s.SetThreadDeadline(ui, tid, Deadline{Date: e.day(2)})
+	require.NoError(t, err)
+	assert.Equal(t, RemovedDeadline{ThreadID: tid}, before)
+	require.NoError(t, e.s.UndoSetThreadDeadline(ui, before))
+	assert.Empty(t, row(), "undoing a set over none")
+
+	program := Deadline{Date: e.day(3), MessageID: q, Quote: "confirm by Friday"}
+	require.NoError(t, e.setThreadDeadline(bg, tid, program))
+	want := e.day(3) + " program confirm by Friday"
+	for _, d := range []Deadline{{Date: e.day(1), Time: "15:00"}, {}} { // change, then remove
+		before, err = e.s.SetThreadDeadline(ui, tid, d)
+		require.NoError(t, err)
+		require.NotEqual(t, want, row())
+		require.NoError(t, e.s.UndoSetThreadDeadline(ui, before))
+		assert.Equal(t, want, row())
+		assert.Equal(t, DeadlineProgram, e.deadlineOf(t, "q@x").Source)
+	}
+
+	require.NoError(t, e.setThreadDeadline(ui, tid, Deadline{}))
+	before, err = e.s.SetThreadDeadline(ui, tid, Deadline{Date: e.day(5)})
+	require.NoError(t, err)
+	require.NoError(t, e.s.UndoSetThreadDeadline(ui, before))
+	assert.Equal(t, "NULL manual ", row(), "the marker comes back")
+	assert.ErrorIs(t, e.setThreadDeadline(bg, tid, program), ErrDeadlineOutranked)
 }

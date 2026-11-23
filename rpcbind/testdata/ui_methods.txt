@@ -37,3 +37,4 @@ SystemTranslatorLanguages
 ThreadDeadline
 TrayShown
 UndoRemoveAppAndWitDeadlines
+UndoSetThreadDeadline
