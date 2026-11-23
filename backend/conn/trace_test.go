@@ -52,12 +52,14 @@ func TestMaskTraceKeepsOnlyProtocolNumbers(t *testing.T) {
 		"TOTAL COUNT 3 (incl. VAT)":     "xxxxx COUNT 0 (xxxx. xxx)",
 		"xx) UID 42 BODY[1] {12}":       "xx) UID 00 BODY[1] {12}",
 		// a status response's text, after its [code], is for people (#880)
-		"* OK [UIDNEXT 5] 13800138000":    "* OK [UIDNEXT 5] 00000000000",
-		"* NO [ALERT] SEARCH 13800138000": "* NO [ALERT] SEARCH 00000000000",
-		"T5 NO SEARCH 42 (x)":             "T5 NO SEARCH 00 (x)",
-		"* BYE (UID 7)":                   "* BYE (UID 0)",
-		"+ Ready for 13800138000":         ". xxxxx xxx 00000000000",
-		"* 1 FETCH (BODY[1] 77 UID 3)":    "* 1 FETCH (BODY[1] 00 UID 3)",
+		"* OK [UIDNEXT 5] 13800138000":                     "* OK [UIDNEXT 5] 00000000000",
+		"* NO [ALERT] SEARCH 13800138000":                  "* NO [ALERT] SEARCH 00000000000",
+		"T5 NO SEARCH 42 (x)":                              "T5 NO SEARCH 00 (x)",
+		"* BYE (UID 7)":                                    "* BYE (UID 0)",
+		"+ Ready for 13800138000":                          ". xxxxx xxx 00000000000",
+		"* 1 FETCH (UID 42 FLAGS (UID 13800138000) UID 5)": "* 1 FETCH (UID 42 FLAGS (UID 00000000000) UID 5)", // flags are user words
+		"T6 UID STORE 4 +FLAGS (COUNT 77)":                 "T6 UID STORE 4 +FLAGS (COUNT 00)",
+		"* 1 FETCH (BODY[1] 77 UID 3)":                     "* 1 FETCH (BODY[1] 00 UID 3)",
 	} {
 		assert.Equal(t, want, maskTrace([]byte(raw+"\r\n")), raw)
 	}

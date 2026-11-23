@@ -249,6 +249,10 @@ var numKeys = map[string]bool{}
 // statusWords open a status response, whose text after its [code] is for people.
 var statusWords = map[string]bool{"OK": true, "NO": true, "BAD": true, "BYE": true, "PREAUTH": true}
 
+// wordLists are the items whose ( ) lists flags or labels: user words, so a
+// UID among them is not the data item.
+var wordLists = map[string]bool{"FLAGS": true, "+FLAGS": true, "-FLAGS": true, "+FLAGS.SILENT": true, "-FLAGS.SILENT": true, "PERMANENTFLAGS": true, "X-GM-LABELS": true}
+
 // msgData are the words after "* N" that make N a message sequence number.
 var msgData = map[string]bool{"FETCH": true, "EXISTS": true, "EXPUNGE": true, "RECENT": true}
 
@@ -284,12 +288,17 @@ func maskLine(s string) string {
 	var out strings.Builder
 	prev := "" // the last word outside quotes and sections
 	afterKey, section, quoted := false, false, false
+	words := 0 // depth inside a list of user words: flags, labels
 	for i := 0; i < len(s); {
 		if c := s[i]; isSyntax(c) {
 			switch {
 			case c == '"' && !(quoted && escaped(s, i)):
 				quoted = !quoted
 			case quoted:
+			case c == '(' && (words > 0 || wordLists[prev] && strings.HasSuffix(s[:i], prev+" ")):
+				words++
+			case c == ')' && words > 0:
+				words--
 			case c == '[':
 				section = i > 0 && !isSyntax(s[i-1]) && sectionWords[prev]
 			case c == '<':
@@ -307,7 +316,7 @@ func maskLine(s string) string {
 		}
 		w, keep := s[i:j], false
 		switch {
-		case quoted, i >= text:
+		case quoted, i >= text, words > 0:
 		case i == 0:
 			keep = tagged
 		case section:
@@ -318,7 +327,7 @@ func maskLine(s string) string {
 		case isSet(w):
 			keep = start && afterKey || i == 2 && s[:2] == "* " && msgData[nextWord(s, j)]
 		}
-		if !quoted && !section {
+		if !quoted && !section && words == 0 {
 			afterKey = numKeys[w] || afterKey && keep
 			prev = w
 		}
