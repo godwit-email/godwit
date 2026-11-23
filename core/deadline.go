@@ -354,8 +354,11 @@ func (s *Service) RemoveAppAndWitDeadlines(ctx context.Context) ([]RemovedDeadli
 	defer end()
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
-	rows, err := s.db.Query(ctx, `DELETE FROM thread_deadlines WHERE source IN (?, ?)
-		RETURNING thread_id, COALESCE(due_date, ''), due_time, COALESCE(message_id, 0), quote, source, set_at`, DeadlineProgram, DeadlineWit)
+	// Read, then delete those threads' rows with the version bump in one
+	// transaction (Transaction returns no rows for a DELETE … RETURNING);
+	// every other 期限 write holds editMu too.
+	rows, err := s.db.Query(ctx, `SELECT thread_id, COALESCE(due_date, ''), due_time, COALESCE(message_id, 0), quote, source, set_at
+		FROM thread_deadlines WHERE source IN (?, ?)`, DeadlineProgram, DeadlineWit)
 	if err != nil {
 		return nil, err
 	}
@@ -366,12 +369,14 @@ func (s *Service) RemoveAppAndWitDeadlines(ctx context.Context) ([]RemovedDeadli
 			Quote: store.Str(r[4]), Source: store.Str(r[5]), SetAt: store.Int(r[6])})
 		threads = append(threads, store.Int(r[0]))
 	}
-	if len(threads) > 0 {
-		if _, err := s.db.Transaction(ctx, []sqlite.Statement{bumpDeadlineVersion}); err != nil {
-			return out, err
-		}
-		s.bus.Publish(events.Event{Type: events.MessagesChanged, ThreadIDs: threads})
+	if len(threads) == 0 {
+		return nil, nil
 	}
+	if _, err := s.db.Transaction(ctx, []sqlite.Statement{{SQL: "DELETE FROM thread_deadlines WHERE source IN (?, ?) AND thread_id IN (SELECT value FROM json_each(?))",
+		Args: []any{DeadlineProgram, DeadlineWit, intList(threads)}}, bumpDeadlineVersion}); err != nil {
+		return nil, err
+	}
+	s.bus.Publish(events.Event{Type: events.MessagesChanged, ThreadIDs: threads})
 	return out, nil
 }
 
