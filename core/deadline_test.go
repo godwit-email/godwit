@@ -694,6 +694,18 @@ func TestEveryArchiveEndsManualDeadline(t *testing.T) {
 			require.NoError(t, e.s.MoveToRole(bg, []int64{q}, "archive"))
 			return nil
 		},
+		"rule": func(e *sendEnv, _ int64) func() error {
+			id := e.saveRule(t, RuleDoc{Version: RuleVersion, Name: "archive", Trigger: TriggerReceive, Match: MatchAll,
+				Conditions: []RuleCondition{cond(FieldFrom, OpContains, "bob@")}, Actions: []RuleAction{{Kind: ActionArchive}}}, true)
+			n, err := e.s.RunRuleOnExisting(bg, id)
+			require.NoError(t, err)
+			require.Equal(t, 1, n)
+			return func() error {
+				kept, err := e.s.UndoRuleRun(bg, e.runOf(t, "q@x"))
+				assert.Zero(t, kept)
+				return err
+			}
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			e := newSendEnv(t, false)

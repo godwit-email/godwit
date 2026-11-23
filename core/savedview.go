@@ -1147,12 +1147,23 @@ func (s *Service) newestCounted(ctx context.Context, threads []any) (map[int64]a
 
 // markArchived records the marks and returns the ones they replace.
 func (s *Service) markArchived(ctx context.Context, marks map[int64]archiveMark) ([]ArchiveMarkBefore, error) {
+	stmts, before, err := s.archiveMarkWrites(ctx, marks)
+	if err != nil || len(stmts) == 0 {
+		return nil, err
+	}
+	_, err = s.db.Transaction(ctx, stmts)
+	return before, err
+}
+
+// archiveMarkWrites are the statements that record the marks, and the marks
+// they replace.
+func (s *Service) archiveMarkWrites(ctx context.Context, marks map[int64]archiveMark) ([]sqlite.Statement, []ArchiveMarkBefore, error) {
 	if len(marks) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	had, err := s.archiveMarks(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	stmts := []sqlite.Statement{bumpDeadlineVersion} // orders the archive against 期限 writes within a second
 	var before []ArchiveMarkBefore
@@ -1165,8 +1176,7 @@ func (s *Service) markArchived(ctx context.Context, marks map[int64]archiveMark)
 			archived_version = excluded.archived_version`,
 			Args: []any{tid, m.mid, m.date, now}})
 	}
-	_, err = s.db.Transaction(ctx, stmts)
-	return before, err
+	return stmts, before, nil
 }
 
 // ArchiveMessages moves the messages to folderID, the archive folder of their

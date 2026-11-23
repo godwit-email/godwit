@@ -1169,15 +1169,16 @@ type actionWrites struct {
 
 // rulePrior is what an action found, for undo (JSON in rule_action_results):
 // the label's row (Source "" for none), whether the flag was set, the folder
-// it moved the message from and to.
+// it moved the message from and to, the archive marks an archive replaced.
 type rulePrior struct {
-	LabelID  int64  `json:"label_id,omitempty"`
-	Source   string `json:"source,omitempty"`
-	Active   bool   `json:"active,omitempty"`
-	Had      bool   `json:"had,omitempty"`
-	From     int64  `json:"from,omitempty"`
-	To       int64  `json:"to,omitempty"`
-	FromAddr string `json:"from_addr,omitempty"`
+	LabelID  int64               `json:"label_id,omitempty"`
+	Source   string              `json:"source,omitempty"`
+	Active   bool                `json:"active,omitempty"`
+	Had      bool                `json:"had,omitempty"`
+	From     int64               `json:"from,omitempty"`
+	To       int64               `json:"to,omitempty"`
+	FromAddr string              `json:"from_addr,omitempty"`
+	Marks    []ArchiveMarkBefore `json:"marks,omitempty"`
 }
 
 func hasFlag(flags, f string) bool {
@@ -1231,15 +1232,28 @@ func (s *Service) ruleAction(ctx context.Context, a RuleAction, acc int64, t tar
 		if err != nil {
 			return actionWrites{}, "", err
 		}
-		if len(moving) == 0 {
-			return actionWrites{prior: rulePrior{From: to, To: to}}, "", nil
+		var w actionWrites
+		if a.Kind == ActionArchive { // marked as ArchiveMessages does
+			marks, err := s.newestArchived(ctx, []target{t})
+			if err != nil {
+				return actionWrites{}, "", err
+			}
+			if w.writes, w.prior.Marks, err = s.archiveMarkWrites(ctx, marks); err != nil {
+				return actionWrites{}, "", err
+			}
 		}
-		binned, from := a.Kind != ActionArchive, t.folder
+		w.prior.From, w.prior.To = to, to
+		if len(moving) == 0 {
+			return w, "", nil
+		}
+		binned := a.Kind != ActionArchive
+		w.prior.From = t.folder
 		if out := t.leaves(0, to, binned); len(out) > 0 {
-			from = out[0]
+			w.prior.From = out[0]
 		}
 		_, stmts := moveWrites(acc, []target{t}, 0, to, binned, s.clk().Now())
-		return actionWrites{prior: rulePrior{From: from, To: to}, writes: stmts}, "", nil
+		w.writes = append(w.writes, stmts...)
+		return w, "", nil
 	case ActionBlock:
 		addr := gomail.AddrKey(t.from)
 		blocked, err := s.readList(ctx, blockedSenders)
@@ -1503,6 +1517,7 @@ func (s *Service) undoAction(ctx context.Context, runID int64, idx int, kind str
 			}
 		}
 	case ActionArchive, ActionJunk, ActionTrash:
+		stmts = archiveMarkRestores(p.Marks) // as UndoArchive: whether the message moves back or not
 		if p.From == p.To {
 			break
 		}
@@ -1516,10 +1531,11 @@ func (s *Service) undoAction(ctx context.Context, runID int64, idx int, kind str
 		}
 		if ok = atDestination && len(rows.Values) > 0; ok {
 			if kind == ActionArchive {
-				stmts, err = s.archiveUndoWrites(ctx, acc, []target{t}, p.To, p.From)
+				back, err := s.archiveUndoWrites(ctx, acc, []target{t}, p.To, p.From)
 				if err != nil {
 					return false, err
 				}
+				stmts = append(stmts, back...)
 				break
 			}
 			binned, err := s.binned(ctx, acc, p.From)
