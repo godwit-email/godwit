@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
 	"slices"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/internal/i18n"
+	"github.com/godwit-email/godwit/internal/theme"
 )
 
 // TestDeadlineRowText: a row's reply date, as the design writes it, on a Wednesday.
@@ -178,7 +180,21 @@ func (h *harness) seeRefreshed(text string) {
 	h.waitMail(fmt.Sprintf("text %q", text), func() bool { return h.tt.HasText(text) })
 }
 
-// TestReaderChangeReplyDate: 改日期 opens the popover; a preset makes the
+// dateMenu is the native menu 改日期 and 设回复日期 open, as it should read
+// at now: the presets with their days, 选日期…, and 去掉 only with a date.
+func dateMenu(now time.Time, dated bool) []string {
+	var want []string
+	for _, p := range replyDatePresets(now) {
+		want = append(want, p.label+" · "+monthDay(p.day))
+	}
+	want = append(want, "-", "选日期…")
+	if dated {
+		want = append(want, "-", "去掉")
+	}
+	return want
+}
+
+// TestReaderChangeReplyDate: 改日期 opens a menu of presets; one makes the
 // date the user's, and the toast's 撤销 puts the program's back.
 func TestReaderChangeReplyDate(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
@@ -187,48 +203,135 @@ func TestReaderChangeReplyDate(t *testing.T) {
 	h.openThreadWith(tid)
 	h.see("对方希望 周五（1月15日）前回复")
 	h.click("改日期")
-	h.see("希望在什么时候之前回复")
-	h.see("下周一")
+	if got, want := h.tt.Menu(), dateMenu(time.Now(), true); !slices.Equal(got, want) {
+		t.Fatalf("menu %q, want %q", got, want)
+	}
 	tomorrow := time.Now().AddDate(0, 0, 1)
-	h.click(i18n.T("view.deadline.tomorrow") + " " + monthDay(tomorrow))
+	h.click(i18n.T("view.deadline.tomorrow") + " · " + monthDay(tomorrow))
 	h.until("the user's date", func() bool {
 		d := h.replyDateIn(tid)
 		return d != nil && d.Source == core.DeadlineManual && d.Date == tomorrow.Format(time.DateOnly)
 	})
 	h.seeRefreshed("你设的：")
+	if d := h.replyDateIn(tid); d.Time != "" {
+		t.Fatalf("a preset set a time: %+v", d)
+	}
 	h.click("撤销")
 	h.until("the program's date back", func() bool { d := h.replyDateIn(tid); return d != nil && d.Source == core.DeadlineProgram })
 	h.seeRefreshed("对方希望 周五（1月15日）前回复")
 }
 
-// TestReaderRemoveReplyDate: 去掉 leaves the unreplied line with 设回复日期,
-// and 撤销 brings the date back; the popover's own date and time set one.
+// TestReaderRemoveReplyDate: the menu's 去掉 leaves the unreplied line with
+// 设回复日期, whose menu has no 去掉, and 撤销 brings the date back.
 func TestReaderRemoveReplyDate(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	msgs := h.datedThread(accs[0])
 	tid := msgs[0].ThreadID
 	h.openThreadWith(tid)
 	h.see("对方希望 周五（1月15日）前回复")
+	if h.tt.HasText("去掉") {
+		t.Fatal("去掉 on the line, not only in the menu")
+	}
+	h.click("改日期")
 	h.click("去掉")
 	h.until("removed", func() bool { return h.replyDateIn(tid) == nil })
 	h.seeRefreshed(i18n.T("view.band.unreplied"))
-	h.see("设回复日期")
+	h.click("设回复日期")
+	if got, want := h.tt.Menu(), dateMenu(time.Now(), false); !slices.Equal(got, want) {
+		t.Fatalf("menu %q, want %q", got, want)
+	}
+	h.tt.CloseMenu()
 	h.click("撤销")
 	h.until("back", func() bool { return h.replyDateIn(tid) != nil })
 	h.seeRefreshed("对方希望 周五（1月15日）前回复")
-
-	h.click("去掉")
-	h.until("removed", func() bool { return h.replyDateIn(tid) == nil })
-	h.seeRefreshed("设回复日期")
-	h.click("设回复日期")
-	h.fill(i18n.T("reader.deadline.date_field"), "2027-02-03")
-	h.fill(i18n.T("reader.deadline.time_field"), "15:00")
-	h.click("设定")
-	h.until("set", func() bool { d := h.replyDateIn(tid); return d != nil && d.Date == "2027-02-03" && d.Time == "15:00" })
-	h.seeRefreshed("你设的：周三（2月3日）15:00 前回复")
 }
 
-// TestReaderSetReplyDateKeepsTodo: with no reply date, a thread summary's
+// dayCell is the calendar's name for day, as the dialog's day buttons say it
+// in the harness's locale (en).
+func dayCell(day time.Time) string { return day.Format("January 2, 2006") }
+
+// TestReaderPickReplyDate: 选日期… opens the dialog on today with any time;
+// 取消 sets nothing; a day with any time sets that day; with a time, one
+// gone by today is refused and a later day's is set.
+func TestReaderPickReplyDate(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.useBackendClock()
+	msgs := h.thread2(accs[0])
+	tid := msgs[0].ThreadID
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	h.clock.mu.Lock()
+	h.clock.now = today.Add(20 * time.Hour) // after the dialog's 18:00, so today's is gone by
+	h.clock.mu.Unlock()
+	later := today.AddDate(0, 0, 2)
+	h.openThreadWith(tid)
+
+	h.click("设回复日期")
+	h.click("选日期…")
+	h.see("希望在什么时候之前回复")
+	h.see(weekdayDay(today) + "前回复")
+	h.click("取消")
+	h.until("closed", func() bool { return !h.app.dateAsk.open })
+	if d := h.replyDateIn(tid); d != nil {
+		t.Fatalf("取消 set %+v", d)
+	}
+
+	h.click("设回复日期")
+	h.click("选日期…")
+	h.click(dayCell(later))
+	h.see(weekdayDay(later) + "前回复")
+	h.click("设定")
+	h.until("the day set", func() bool {
+		d := h.replyDateIn(tid)
+		return d != nil && d.Source == core.DeadlineManual && d.Date == later.Format(time.DateOnly) && d.Time == ""
+	})
+	h.seeRefreshed("你设的：" + weekdayDay(later) + "前回复")
+
+	h.click("改日期")
+	h.click("选日期…")
+	h.click("不限时间")
+	h.click(dayCell(today))
+	h.click("设定")
+	h.see("请选择一个将来的时间。")
+	if !h.app.dateAsk.open {
+		t.Fatal("a time gone by closed the dialog")
+	}
+	h.click(dayCell(later))
+	h.see(weekdayDay(later) + "18:00 前回复")
+	h.click("设定")
+	h.until("the day and time set", func() bool {
+		d := h.replyDateIn(tid)
+		return d != nil && d.Date == later.Format(time.DateOnly) && d.Time == "18:00"
+	})
+	h.seeRefreshed("你设的：" + weekdayDay(later) + "18:00 前回复")
+}
+
+// TestReplyDateShots writes the reader's 等你处理 line with a date and 选日期…'s
+// dialog to $GODWIT_SHOTS, at 1440×900.
+func TestReplyDateShots(t *testing.T) {
+	if os.Getenv("GODWIT_SHOTS") == "" {
+		t.Skip("GODWIT_SHOTS not set")
+	}
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.resize(1440, 900)
+	msgs := h.datedThread(accs[0])
+	h.openThreadWith(msgs[0].ThreadID)
+	h.see("对方希望 周五（1月15日）前回复")
+	settle := func() {
+		h.tt.Advance(2 * theme.MotionBase)
+		h.drain()
+		h.tt.Frame()
+	}
+	settle()
+	shoot(t, h.tt, "reply-line.png")
+	h.click("改日期")
+	h.click("选日期…")
+	h.see("希望在什么时候之前回复")
+	settle()
+	shoot(t, h.tt, "reply-dialog.png")
+}
+
+// TestReaderSetReplyDateKeepsTodo:with no reply date, a thread summary's
 // 等你处理 line keeps its to-do and offers 设回复日期.
 func TestReaderSetReplyDateKeepsTodo(t *testing.T) {
 	h, acc, _ := aiHarness(t, true, noQuick)
@@ -278,46 +381,42 @@ func TestMailMenuReplyDate(t *testing.T) {
 	}
 	h.click("设回复日期…")
 	h.see("希望在什么时候之前回复")
-	h.click(i18n.T("view.deadline.today") + " " + monthDay(time.Now()))
-	h.until("set", func() bool { d := h.replyDateIn(soon); return d != nil && d.Source == core.DeadlineManual })
+	h.click("设定")
+	h.until("set", func() bool {
+		d := h.replyDateIn(soon)
+		return d != nil && d.Source == core.DeadlineManual && d.Date == time.Now().Format(time.DateOnly) && d.Time == ""
+	})
 }
 
-// TestReplyDatePresets: 周五 drops when it is today or tomorrow, 下周一 when
-// it is tomorrow.
-// TestArrivalFooter: the date popover links 收到就总结 only while it is
-// offered; under it, it says new mail's dates come from it; chosen before,
-// that they no longer do.
+// TestArrivalFooter: the date dialog's note points to 收到就总结 only while
+// it is offered; under it, it says new mail's dates come from it; chosen
+// before, that they no longer do.
 func TestArrivalFooter(t *testing.T) {
 	old := core.SummaryOnArrival
 	t.Cleanup(func() { core.SummaryOnArrival = old })
 	model := core.Settings{DefaultModel: "x/m", SummaryMode: core.SummaryOpen}
 	arrive := core.Settings{DefaultModel: "x/m", SummaryMode: core.SummaryArrive}
 	for _, c := range []struct {
-		offered    bool
-		st         core.Settings
-		chosen     string
-		note, link string
+		offered bool
+		st      core.Settings
+		chosen  string
+		note    string
 	}{
-		{false, model, "", "", ""},
-		{true, core.Settings{SummaryMode: core.SummaryOff}, "", "", ""},
-		{true, model, "", "", "reader.deadline.on_arrival"},
-		{true, arrive, "x", "reader.deadline.by_arrival", "reader.deadline.settings"},
-		{true, model, "x", "reader.deadline.arrival_stopped", "reader.deadline.settings"},
+		{false, model, "", ""},
+		{true, core.Settings{SummaryMode: core.SummaryOff}, "", ""},
+		{true, model, "", "在设置的「AI 功能」里把邮件总结设为「收到就总结」，新邮件的回复日期会在收到时找出。"},
+		{true, arrive, "x", "新邮件的回复日期由邮件总结在收到时找出。"},
+		{true, model, "x", "新邮件不再在收到时总结。"},
 	} {
 		core.SummaryOnArrival = c.offered
-		note, link := arrivalFooter(&App{settings: c.st, arrival: core.SummaryArrival{Service: c.chosen}})
-		want := [2]string{c.note, c.link}
-		for i, k := range want {
-			if k != "" {
-				want[i] = i18n.T(k)
-			}
-		}
-		if [2]string{note, link} != want {
-			t.Errorf("%+v: %q %q, want %q", c, note, link, want)
+		if note := arrivalNote(&App{settings: c.st, arrival: core.SummaryArrival{Service: c.chosen}}); note != c.note {
+			t.Errorf("%+v: %q", c, note)
 		}
 	}
 }
 
+// TestReplyDatePresets: 周五 drops when it is today or tomorrow, 下周一 when
+// it is tomorrow.
 func TestReplyDatePresets(t *testing.T) {
 	for _, c := range []struct {
 		now  string

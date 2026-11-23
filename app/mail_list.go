@@ -87,16 +87,14 @@ func displayName(from string) string {
 type mailPage struct {
 	a *App
 
-	devPath  string     // dev: the HTML file just written, to copy
-	dateFor  string     // the row whose 设回复日期… popover is open, by its key
-	datePick dateSetter // that popover
-	view     core.View  // what the list shows
-	threads  bool       // items are threads (Settings.ThreadView when loaded)
-	items    []mailItem
-	cursor   string // where the next page starts; "" once all is loaded
-	list     latest // a page or a refresh in flight: one at a time; a reload drops the one before
-	stalled  bool   // the last page failed: no more pages until a refresh
-	older    olderLoad
+	devPath string    // dev: the HTML file just written, to copy
+	view    core.View // what the list shows
+	threads bool      // items are threads (Settings.ThreadView when loaded)
+	items   []mailItem
+	cursor  string // where the next page starts; "" once all is loaded
+	list    latest // a page or a refresh in flight: one at a time; a reload drops the one before
+	stalled bool   // the last page failed: no more pages until a refresh
+	older   olderLoad
 	// leaving are the rows advance moved off and the list still shows, until
 	// the next reload: a second action before it must not move back to one.
 	leaving map[string]bool
@@ -1008,9 +1006,6 @@ func (p *mailPage) listView(c *ui.Context) {
 		}
 		it := rows[es[i].row]
 		row := p.item(c, it)
-		if p.dateFor == it.key() {
-			p.a.replyDatePopover(c, row, &p.datePick, it.threadID())
-		}
 		row.ContextMenu(func(m *ui.Menu) {
 			on := []mailItem{it}
 			if ls.sel.Has(it.key()) {
@@ -1064,8 +1059,7 @@ func (p *mailPage) listView(c *ui.Context) {
 			p.viewMenu(m, on)
 			if len(on) == 1 && on[0].threadID() != 0 {
 				if m.Item(i18n.T("mail.menu.set_deadline")).Icon(menuIcon("time")).Chosen() {
-					p.dateFor = on[0].key()
-					p.datePick.start(on[0].Deadline)
+					p.a.pickReplyDate(on[0].threadID(), on[0].Deadline)
 				}
 				if on[0].Deadline != nil && m.Item(i18n.T("mail.menu.remove_deadline")).Icon(menuIcon("x")).Chosen() {
 					p.a.setReplyDate(on[0].threadID(), core.Deadline{})

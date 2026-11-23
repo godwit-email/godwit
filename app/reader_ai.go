@@ -632,7 +632,7 @@ func (r *reader) digest(c *ui.Context, d core.ThreadDigest) {
 }
 
 // todoRow is the 等你处理 line: what waits on the user, under a hairline when
-// rule (something is above it).
+// rule (something is above it), and at its right end the dateButton.
 func (r *reader) todoRow(c *ui.Context, rule bool, body func()) {
 	t, th := theme.Of(c), c.Theme()
 	row := ui.Row(c).FillWidth().Gap(th.Space(2.5)).AlignItems(ui.Start)
@@ -643,6 +643,7 @@ func (r *reader) todoRow(c *ui.Context, rule bool, body func()) {
 	row.Children(func() {
 		kit.Badge(c, i18n.T("reader.ai.todo")).Shrink(0).Margin(th.Space(0.5), 0, 0, 0)
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(body)
+		r.dateButton(c)
 	})
 }
 
