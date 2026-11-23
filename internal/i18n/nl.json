@@ -57,6 +57,8 @@
   "common_continue": "Doorgaan",
   "common_delete": "Verwijderen",
   "common_done": "Gereed",
+  "common_next_month": "Volgende maand",
+  "common_previous_month": "Vorige maand",
   "common_retry": "Opnieuw proberen",
   "common_save": "Opslaan",
   "compose_attach": "Bestanden bijvoegen",

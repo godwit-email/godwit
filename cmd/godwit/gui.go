@@ -176,6 +176,12 @@ func gui(ctx context.Context, dataDir, open string) int {
 			ox, oy := f.Origin() // the page sits under the native title bar
 			return witPopupMenu(mygo.WindowByID(winID), entries, ox+x, oy+y)
 		},
+		SendLater: func(winID int, at int64) int64 {
+			if f := frames.get(winID); f != nil {
+				return f.SendLater(at)
+			}
+			return 0
+		},
 		Toast: func(winID int, kind, text string) {
 			if f := frames.get(winID); f != nil {
 				f.Toast(kind, text)

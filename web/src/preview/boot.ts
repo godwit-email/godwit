@@ -135,6 +135,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "ComposePage.Stop": nothing,
         "ComposePage.OpenLink": nothing,
         // no native menu in a browser: picks the last entry (Send later…), to show what follows
+        "ComposePage.SendLater": async (at: number) => at,
         "ComposePage.PopupMenu": async (entries: { id: string }[]) => entries.at(-1)?.id ?? "",
         "ComposePage.OpenModels": nothing,
         "ComposePage.Models": async () => fx.witModels,

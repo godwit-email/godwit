@@ -176,6 +176,9 @@ type PageDeps struct {
 	// PopupMenu shows entries as a native menu at x, y of window winID's
 	// page and returns the ID chosen, "" for none.
 	PopupMenu func(winID int, entries []MenuEntry, x, y int) string
+	// SendLater opens send later on window winID at at, unix ms, and
+	// returns the time chosen, 0 when cancelled.
+	SendLater func(winID int, at int64) int64
 	// Emit sends a Wit event to a window or page (WitStream.Emit or
 	// EmitPage in production).
 	Emit func(t Target, ev WitEvent)
@@ -486,6 +489,17 @@ func (p *ComposePage) PopupMenu(ctx context.Context, entries []MenuEntry, x, y i
 		return "", err
 	}
 	return p.d.PopupMenu(win, entries, x, y), nil
+}
+
+// SendLater opens send later, the native dialog choosing a date and time,
+// on the calling window at at, unix ms, and returns the time chosen, 0 when
+// cancelled. It schedules nothing: the page sends at the time it returns.
+func (p *ComposePage) SendLater(ctx context.Context, at int64) (int64, error) {
+	win, ok := p.d.WinOf(ctx)
+	if !ok || p.d.SendLater == nil {
+		return 0, ErrNoDraft
+	}
+	return p.d.SendLater(win, at), nil
 }
 
 // Closed is the page's final flush for the close attempt gen, the payload

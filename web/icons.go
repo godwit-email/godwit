@@ -21,6 +21,7 @@ var RemixIcons = map[string]string{
 	"brain-4-fill":                   "node_modules/remixicon/icons/Health & Medical/brain-4-fill.svg",
 	"check":                          "node_modules/remixicon/icons/System/check-line.svg",
 	"chevron-down":                   "node_modules/remixicon/icons/Arrows/arrow-down-s-line.svg",
+	"chevron-left":                   "node_modules/remixicon/icons/Arrows/arrow-left-s-line.svg",
 	"chevron-right":                  "node_modules/remixicon/icons/Arrows/arrow-right-s-line.svg",
 	"circle-alert":                   "node_modules/remixicon/icons/System/error-warning-line.svg",
 	"circle-check":                   "node_modules/remixicon/icons/System/checkbox-circle-line.svg",
@@ -252,6 +253,7 @@ var BrandIcons = map[string]string{
 //go:embed node_modules/remixicon/icons/Arrows/arrow-left-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-right-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-up-line.svg
+//go:embed node_modules/remixicon/icons/Arrows/arrow-left-s-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-right-s-line.svg
 //go:embed node_modules/remixicon/icons/Arrows/arrow-right-up-line.svg
 //go:embed node_modules/remixicon/icons/Buildings/home-4-line.svg

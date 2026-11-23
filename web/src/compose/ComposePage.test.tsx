@@ -18,6 +18,7 @@ vi.mock("@/mygo", () => ({
     removeAttachment: vi.fn(),
     send: vi.fn(),
     popupMenu: vi.fn(),
+    sendLater: vi.fn(),
     setModel: vi.fn(),
     titleBar: vi.fn(),
     toast: vi.fn(),
@@ -582,19 +583,16 @@ test("send now from the menu after a warned send later sends now, not at its tim
   expect(api.send).toHaveBeenLastCalledWith(7, "", 0);
 });
 
-test("send later…: ⌘↩ in the dialog schedules, it does not send now", async () => {
+test("send later…: native's dialog picks the time, the draft is sent at it", async () => {
+  const at = Date.now() + 86_400_000;
   vi.mocked(api.popupMenu).mockImplementationOnce(async () => "later");
+  vi.mocked(api.sendLater).mockResolvedValueOnce(at);
   render(<ComposePage />);
   await body();
   await userEvent.click(screen.getByRole("button", { name: "发送选项" }));
-  (await screen.findByRole("slider", { name: "时间" })).focus();
-  await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
-  expect(api.send).toHaveBeenCalledTimes(1);
-  const at = vi.mocked(api.send).mock.calls[0][2];
-  expect(at).toBeGreaterThan(Date.now());
-  expect(api.send).toHaveBeenCalledWith(7, "", at);
+  expect(api.sendLater).toHaveBeenCalledTimes(1);
+  expect(api.send).toHaveBeenCalledExactlyOnceWith(7, "", at);
 });
-
 test("an edit clears the warnings", async () => {
   const w = { plugin: "p", message: "没有附件" };
   vi.mocked(api.send).mockResolvedValueOnce({ ...noWarnings, warnings: [w], digest: "d" });

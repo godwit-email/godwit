@@ -57,6 +57,8 @@
   "common_continue": "続ける",
   "common_delete": "削除",
   "common_done": "完了",
+  "common_next_month": "次の月",
+  "common_previous_month": "前の月",
   "common_retry": "再試行",
   "common_save": "保存",
   "compose_attach": "ファイルを添付",

@@ -57,6 +57,8 @@
   "common_continue": "继续",
   "common_delete": "删除",
   "common_done": "完成",
+  "common_next_month": "下个月",
+  "common_previous_month": "上个月",
   "common_retry": "重试",
   "common_save": "保存",
   "compose_attach": "添加附件",
