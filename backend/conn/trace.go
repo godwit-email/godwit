@@ -149,7 +149,7 @@ func maskTrace(b []byte) string {
 	}
 	// lit counts the literal bytes still to come; wait holds a client
 	// literal's size until the server's "+ " lets it start.
-	lit, wait, server := 0, 0, false
+	lit, wait, server, fetch := 0, 0, false, false
 	for line := range strings.Lines(string(b)) {
 		if lit >= len(line) {
 			lit -= len(line)
@@ -182,7 +182,10 @@ func maskTrace(b []byte) string {
 				wait = n
 			}
 		}
-		m := head + maskLine(s)
+		if head == "" { // a line after a literal goes on with the same response
+			fetch = fetchLine(s)
+		}
+		m := head + maskLine(s, fetch)
 		if len(m) > traceLineMax {
 			head := traceLineMax - traceLineTail
 			m = fmt.Sprintf("%s… (%d bytes cut) …%s", m[:head], len(m)-traceLineMax, m[len(m)-traceLineTail:])
@@ -272,18 +275,18 @@ func init() {
 // maskLine masks a command or response word by word. A number is kept only
 // where the IMAP grammar puts a protocol field, judged by what is around it,
 // not by its shape: mail text is full of short numbers (#859). Kept are the
-// command tag, "* N" before FETCH/EXISTS/EXPUNGE/RECENT, a section part or
-// partial (BODY[1.2]<0.300>), a literal size ({38} ending the line), and on a
+// command tag, "* N" before FETCH/EXISTS/EXPUNGE/RECENT, in a FETCH a section
+// part or partial (BODY[1.2]<0.300>), a literal size ({38} ending the line), and on a
 // line that starts a command or response, the numbers after a numKeys word.
 // Anything in a quoted string is content, and maskTrace never passes it a
 // literal's content: it counts each literal's bytes.
 // shortcut: a trace that begins inside a literal (it keeps only the last
 // traceMax bytes) shows that literal's lines as if protocol until the first
 // tag or "* "; drop lines up to then if a report ever shows mail there.
-func maskLine(s string) string {
+func maskLine(s string, fetch bool) string {
 	tag, _, _ := strings.Cut(s, " ")
 	tagged := isTag(tag) && isCommandWord(nextWord(s, len(tag)))
-	start := tagged || strings.HasPrefix(s, "* ") || strings.HasPrefix(s, "+ ")
+	start := tagged || strings.HasPrefix(s, "* ")
 	text := statusText(s, tag, tagged)
 	var out strings.Builder
 	prev := "" // the last word outside quotes and sections
@@ -300,9 +303,9 @@ func maskLine(s string) string {
 			case c == ')' && words > 0:
 				words--
 			case c == '[':
-				section = i > 0 && !isSyntax(s[i-1]) && sectionWords[prev]
+				section = fetch && i > 0 && !isSyntax(s[i-1]) && sectionWords[prev]
 			case c == '<':
-				section = i > 0 && s[i-1] == ']'
+				section = fetch && i > 0 && s[i-1] == ']'
 			case c == ']' || c == '>':
 				section = false
 			}
@@ -342,9 +345,12 @@ func maskLine(s string) string {
 }
 
 // statusText is where a status response's text starts (OK, NO, BAD, BYE,
-// PREAUTH, after a [code] if any), len(s) if s is not one: the text is for
-// people, so no number in it is a protocol field.
+// PREAUTH, after a [code] if any), 0 for a continuation ("+ "), len(s) if s
+// is neither: the text is for people, so no number in it is a protocol field.
 func statusText(s, tag string, tagged bool) int {
+	if strings.HasPrefix(s, "+") { // a continuation: all text
+		return 0
+	}
 	rest, ok := strings.CutPrefix(s, "* ")
 	if tagged {
 		rest, ok = s[len(tag)+1:], true
@@ -361,6 +367,13 @@ func statusText(s, tag string, tagged bool) int {
 		return len(s)
 	}
 	return i
+}
+
+// fetchLine reports whether s starts a FETCH command or response, the only
+// place a section (BODY[1.2]<0.300>) is one: elsewhere BODY[1] is a name.
+func fetchLine(s string) bool {
+	f := strings.Fields(s)
+	return len(f) > 2 && (f[0] == "*" && f[2] == "FETCH" || isTag(f[0]) && (f[1] == "FETCH" || f[1] == "UID" && f[2] == "FETCH"))
 }
 
 // escaped reports whether s[i] follows an odd run of backslashes.

@@ -50,7 +50,7 @@ func TestMaskTraceKeepsOnlyProtocolNumbers(t *testing.T) {
 		"* SORT 2 3 6":                  "* SORT 2 3 6",
 		"T2 FROM 55 (x)":                "T2 FROM 00 (x)",
 		"TOTAL COUNT 3 (incl. VAT)":     "xxxxx COUNT 0 (xxxx. xxx)",
-		"xx) UID 42 BODY[1] {12}":       "xx) UID 00 BODY[1] {12}",
+		"xx) UID 42 BODY[1] {12}":       "xx) UID 00 BODY[0] {12}",
 		// a status response's text, after its [code], is for people (#880)
 		"* OK [UIDNEXT 5] 13800138000":                     "* OK [UIDNEXT 5] 00000000000",
 		"* NO [ALERT] SEARCH 13800138000":                  "* NO [ALERT] SEARCH 00000000000",
@@ -59,6 +59,9 @@ func TestMaskTraceKeepsOnlyProtocolNumbers(t *testing.T) {
 		"+ Ready for 13800138000":                          ". xxxxx xxx 00000000000",
 		"* 1 FETCH (UID 42 FLAGS (UID 13800138000) UID 5)": "* 1 FETCH (UID 42 FLAGS (UID 00000000000) UID 5)", // flags are user words
 		"T6 UID STORE 4 +FLAGS (COUNT 77)":                 "T6 UID STORE 4 +FLAGS (COUNT 00)",
+		"+ SEARCH 13800138000":                             ". SEARCH 00000000000",                 // a continuation's text is for people
+		"* LIST () \"/\" BODY[13800138000]<5>":             "* LIST () \".\" BODY[00000000000]<0>", // a section only in a FETCH
+		"T8 UID FETCH 7 (BODY.PEEK[2.1]<0.40>)":            "T8 UID FETCH 7 (BODY.PEEK[2.1]<0.40>)",
 		"* 1 FETCH (BODY[1] 77 UID 3)":                     "* 1 FETCH (BODY[1] 00 UID 3)",
 	} {
 		assert.Equal(t, want, maskTrace([]byte(raw+"\r\n")), raw)
