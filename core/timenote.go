@@ -64,6 +64,11 @@ const timeSystem = `A user turn may begin with the current time; until another d
 	`Mail dates are in UTC: go by the user's local time for "today", "yesterday" and the times you tell the user, ` +
 	`and write dates as the language of your answer does, not as ISO YYYY-MM-DD.`
 
+// replyByDateNote goes before replyByFormat's lines, which a summary's own
+// rule (not ISO) would otherwise contradict.
+const replyByDateNote = `Write dates as the language of the summary does, not as ISO YYYY-MM-DD, except in the REPLY BY and QUOTE lines below: ` +
+	`REPLY BY is ISO YYYY-MM-DD, and QUOTE is copied word for word.`
+
 // timeNotePrefix starts the time note; timeNoteLayout is how it gives the time.
 const (
 	timeNotePrefix = "Current time: "

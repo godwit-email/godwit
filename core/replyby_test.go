@@ -89,6 +89,7 @@ func TestSummaryCarriesReplyDate(t *testing.T) {
 	require.NoError(t, json.Unmarshal(srv.Requests()[0].System, &system))
 	assert.Contains(t, system, "REPLY BY: YYYY-MM-DD [HH:MM] | none\nQUOTE: ")
 	assert.Contains(t, system, "calendar in Asia/Shanghai")
+	assert.Contains(t, system, replyByDateNote, "the skill's no-ISO rule names its exception")
 
 	require.NoError(t, e.setThreadDeadline(bg, tid, Deadline{MessageID: q})) // an app clears it
 	require.Nil(t, e.deadlineOf(t, "q@x"))

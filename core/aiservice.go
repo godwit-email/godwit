@@ -157,7 +157,7 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 	// (isBuiltinSummarize) and its 4,096-token context leave them no room.
 	replyAsk, now := "", s.userNow(ctx)
 	if name == "summarize" && (t.Kind == "message" || t.Kind == "thread") && !model.OnDevice && !s.summaryBare {
-		replyAsk = fmt.Sprintf(replyByFormat, zoneName(now))
+		replyAsk = replyByDateNote + "\n\n" + fmt.Sprintf(replyByFormat, zoneName(now))
 		system += "\n\n" + replyAsk
 	}
 
