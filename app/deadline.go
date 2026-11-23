@@ -296,6 +296,7 @@ func (a *App) replyDateDialog(c *ui.Context) {
 			Min: a.clock.Now(), Date: i18n.T("reader.deadline.date_field"), Time: i18n.T("reader.deadline.time_field"),
 			PrevMonth: i18n.T("common.previous_month"), NextMonth: i18n.T("common.next_month"),
 			Untimed: &q.untimed, AnyTime: i18n.T("reader.deadline.any_time"),
+			Locale: i18n.Locale(), // the interface language, as the strings and the readout
 		},
 		Title: i18n.T("reader.deadline.title"), Note: arrivalNote(a),
 		Confirm: i18n.T("reader.deadline.apply"), Cancel: i18n.T("common.cancel"), Close: i18n.T("common.close"),

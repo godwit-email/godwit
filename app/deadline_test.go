@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	mygoi18n "github.com/egoist/mygo/i18n"
+
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/internal/i18n"
@@ -363,8 +365,32 @@ func TestReaderRemoveReplyDate(t *testing.T) {
 }
 
 // dayCell is the calendar's name for day, as the dialog's day buttons say it
-// in the harness's locale (en).
-func dayCell(day time.Time) string { return day.Format("January 2, 2006") }
+// in the interface language (zh-Hans).
+func dayCell(day time.Time) string {
+	return fmt.Sprintf("%d年%d月%d日", day.Year(), day.Month(), day.Day())
+}
+
+// TestReplyDateDialogLanguage: 选日期…'s calendar is in the interface
+// language, its week starting on the region's first day.
+func TestReplyDateDialogLanguage(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.tt.SetRegion(mygoi18n.Region{Locale: "en-US", FirstWeekday: time.Sunday, HourCycle: 12})
+	msgs := h.datedThread(accs[0])
+	h.openThreadWith(msgs[0].ThreadID)
+	h.click("改日期")
+	h.click("选日期…")
+	h.see("希望在什么时候之前回复")
+	h.see(weekdayDay(time.Date(2027, 1, 15, 0, 0, 0, 0, time.Local)) + "前回复")
+	h.see("2027年1月")
+	sun, _ := h.tt.Find("周日")
+	mon, _ := h.tt.Find("周一")
+	if sun.X >= mon.X {
+		t.Errorf("周日 at %v, 周一 at %v: the week does not start on the region's Sunday", sun.X, mon.X)
+	}
+	if _, ok := h.tt.Access(dayCell(time.Date(2027, 1, 12, 0, 0, 0, 0, time.Local))); !ok {
+		t.Errorf("the days are not named in the interface language: %q", h.tt.Texts())
+	}
+}
 
 // TestReaderPickReplyDate: 选日期… opens the dialog on today with any time;
 // 取消 sets nothing; a day with any time sets that day; with a time, one
