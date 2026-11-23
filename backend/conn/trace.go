@@ -246,6 +246,9 @@ func isSyntax(c byte) bool {
 // Each is in traceWords too, so it shows.
 var numKeys = map[string]bool{}
 
+// statusWords open a status response, whose text after its [code] is for people.
+var statusWords = map[string]bool{"OK": true, "NO": true, "BAD": true, "BYE": true, "PREAUTH": true}
+
 // msgData are the words after "* N" that make N a message sequence number.
 var msgData = map[string]bool{"FETCH": true, "EXISTS": true, "EXPUNGE": true, "RECENT": true}
 
@@ -277,6 +280,7 @@ func maskLine(s string) string {
 	tag, _, _ := strings.Cut(s, " ")
 	tagged := isTag(tag) && isCommandWord(nextWord(s, len(tag)))
 	start := tagged || strings.HasPrefix(s, "* ") || strings.HasPrefix(s, "+ ")
+	text := statusText(s, tag, tagged)
 	var out strings.Builder
 	prev := "" // the last word outside quotes and sections
 	afterKey, section, quoted := false, false, false
@@ -303,7 +307,7 @@ func maskLine(s string) string {
 		}
 		w, keep := s[i:j], false
 		switch {
-		case quoted:
+		case quoted, i >= text:
 		case i == 0:
 			keep = tagged
 		case section:
@@ -326,6 +330,28 @@ func maskLine(s string) string {
 		i = j
 	}
 	return out.String()
+}
+
+// statusText is where a status response's text starts (OK, NO, BAD, BYE,
+// PREAUTH, after a [code] if any), len(s) if s is not one: the text is for
+// people, so no number in it is a protocol field.
+func statusText(s, tag string, tagged bool) int {
+	rest, ok := strings.CutPrefix(s, "* ")
+	if tagged {
+		rest, ok = s[len(tag)+1:], true
+	}
+	w, after, _ := strings.Cut(rest, " ")
+	if !ok || !statusWords[w] {
+		return len(s)
+	}
+	i := len(s) - len(after)
+	if strings.HasPrefix(after, "[") {
+		if k := strings.IndexByte(after, ']'); k >= 0 {
+			return i + k + 1
+		}
+		return len(s)
+	}
+	return i
 }
 
 // escaped reports whether s[i] follows an odd run of backslashes.

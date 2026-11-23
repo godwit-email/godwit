@@ -35,7 +35,7 @@ func TestMaskTraceKeepsOnlyProtocolNumbers(t *testing.T) {
 		"T12 UID STORE 5,9:12 +FLAGS.SILENT (\\Seen)":           "T12 UID STORE 5,9:12 +FLAGS.SILENT (\\Seen)",
 		"T13 UID FETCH 1:* (FLAGS) (CHANGEDSINCE 715194045007)": "T13 UID FETCH 1:* (FLAGS) (CHANGEDSINCE 715194045007)",
 		"* 5 EXISTS": "* 5 EXISTS",
-		"* OK [UIDVALIDITY 1700000000] [UIDNEXT 88]": "* OK [UIDVALIDITY 1700000000] [UIDNEXT 88]",
+		"* OK [UIDVALIDITY 1700000000] UIDs valid":      "* OK [UIDVALIDITY 1700000000] xxxx xxxxx",
 		"* SEARCH 2 3 81":                               "* SEARCH 2 3 81",
 		"* VANISHED (EARLIER) 1:5,9":                    "* VANISHED (EARLIER) 1:5,9",
 		"T4 OK [COPYUID 38505 304,319:320 3956:3958] x": "T4 OK [COPYUID 38505 304,319:320 3956:3958] x",
@@ -51,6 +51,13 @@ func TestMaskTraceKeepsOnlyProtocolNumbers(t *testing.T) {
 		"T2 FROM 55 (x)":                "T2 FROM 00 (x)",
 		"TOTAL COUNT 3 (incl. VAT)":     "xxxxx COUNT 0 (xxxx. xxx)",
 		"xx) UID 42 BODY[1] {12}":       "xx) UID 00 BODY[1] {12}",
+		// a status response's text, after its [code], is for people (#880)
+		"* OK [UIDNEXT 5] 13800138000":    "* OK [UIDNEXT 5] 00000000000",
+		"* NO [ALERT] SEARCH 13800138000": "* NO [ALERT] SEARCH 00000000000",
+		"T5 NO SEARCH 42 (x)":             "T5 NO SEARCH 00 (x)",
+		"* BYE (UID 7)":                   "* BYE (UID 0)",
+		"+ Ready for 13800138000":         ". xxxxx xxx 00000000000",
+		"* 1 FETCH (BODY[1] 77 UID 3)":    "* 1 FETCH (BODY[1] 00 UID 3)",
 	} {
 		assert.Equal(t, want, maskTrace([]byte(raw+"\r\n")), raw)
 	}
