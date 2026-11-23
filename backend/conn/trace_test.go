@@ -11,14 +11,14 @@ import (
 
 func TestMaskTrace(t *testing.T) {
 	raw := "T7 UID FETCH 1:* (UID FLAGS BODY.PEEK[1]<0.3000>)\r\n" +
-		"* 3 FETCH (UID 42 FLAGS (\\Seen $Personal) BODY[1]<0> {38}\r\n" +
+		"* 3 FETCH (UID 42 FLAGS (\\Seen $Personal) BODY[1]<0> {37}\r\n" +
 		"Hi Alice,\r\ncall 13800138000 today\r\n" +
 		"ok)\r\n" +
 		"* (\"Grüße\")\n" +
 		"T7 OK done\r\n" +
 		"* 4 FET"
 	want := "T7 UID FETCH 1:* (UID FLAGS BODY.PEEK[1]<0.3000>)\n" +
-		"* 3 FETCH (UID 42 FLAGS (\\Seen .xxxxxxxx) BODY[1]<0> {38}\n" +
+		"* 3 FETCH (UID 42 FLAGS (\\Seen .xxxxxxxx) BODY[1]<0> {37}\n" +
 		"… 35 bytes in 2 lines of text\n" +
 		"xx)\n" +
 		"* (\"xx????x\") <LF>\n" +
@@ -54,6 +54,28 @@ func TestMaskTraceKeepsOnlyProtocolNumbers(t *testing.T) {
 	} {
 		assert.Equal(t, want, maskTrace([]byte(raw+"\r\n")), raw)
 	}
+}
+
+// A literal's content is mail however much it looks like IMAP: the trace
+// counts its bytes from the {N} before it, and keeps no number in it. The
+// response going on after it, and the next, keep theirs. A client literal
+// waits for the server's "+ " before its bytes start (#880).
+func TestMaskTraceKeepsNoNumberInALiteral(t *testing.T) {
+	body := "* SEARCH 13800138000\r\nT3 OK [UIDNEXT 77] (x)\r\nsee {20}\r\nend"
+	raw := fmt.Sprintf("T2 UID FETCH 9 (BODY.PEEK[TEXT])\r\n* 3 FETCH (UID 9 BODY[TEXT] {%d}\r\n%s UID 9)\r\n", len(body), body) +
+		"* 4 FETCH (UID 10)\r\nT2 OK done\r\n" +
+		"T3 APPEND INBOX {13}\r\n+ Ready\r\n* SEARCH 4242\r\nT3 OK [APPENDUID 1 11] done\r\n"
+	want := "T2 UID FETCH 9 (BODY.PEEK[TEXT])\n" +
+		"* 3 FETCH (UID 9 BODY[TEXT] {59}\n" +
+		"… 56 bytes in 3 lines of text\n" +
+		"xxx UID 0)\n" +
+		"* 4 FETCH (UID 10)\n" +
+		"T2 OK xxxx\n" +
+		"T3 APPEND xxxxx {13}\n" +
+		". xxxxx\n" +
+		"..xxxxxx.0000\n" +
+		"T3 OK [APPENDUID 1 11] xxxx"
+	assert.Equal(t, want, maskTrace([]byte(raw)))
 }
 
 func TestMaskTraceCutsLongLines(t *testing.T) {

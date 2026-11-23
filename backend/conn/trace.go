@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"weak"
@@ -135,8 +136,8 @@ func init() {
 // maskTrace keeps a trace's IMAP syntax and masks its content, which may be
 // mail: a word not in traceWords becomes x's, a non-ASCII byte '?', each
 // keeping its length, so literal sizes can still be checked against what
-// follows. Runs of lines that are only text (literal content) shrink to their
-// size, and a long line is cut.
+// follows. Literal content, counted from its {N}, and runs of other lines that
+// are only text shrink to their size, and a long line is cut.
 func maskTrace(b []byte) string {
 	var out strings.Builder
 	textBytes, textLines := 0, 0
@@ -146,14 +147,42 @@ func maskTrace(b []byte) string {
 			textBytes, textLines = 0, 0
 		}
 	}
+	// lit counts the literal bytes still to come; wait holds a client
+	// literal's size until the server's "+ " lets it start.
+	lit, wait, server := 0, 0, false
 	for line := range strings.Lines(string(b)) {
-		if !protocolLine(line) {
+		if lit >= len(line) {
+			lit -= len(line)
 			textBytes += len(line)
 			textLines++
 			continue
 		}
+		head := ""
+		if lit > 0 { // the literal ends in this line: the response goes on after it
+			head, line, lit = maskWord(line[:lit]), line[lit:], 0
+		} else {
+			if wait > 0 && strings.HasPrefix(line, "+") {
+				lit, wait = wait, 0
+			} else if !strings.HasPrefix(line, "* ") {
+				wait = 0
+			}
+			if !protocolLine(line) {
+				textBytes += len(line)
+				textLines++
+				continue
+			}
+			server = strings.HasPrefix(line, "* ") || strings.HasPrefix(line, "+")
+		}
 		flushText()
-		m := maskLine(strings.TrimRight(line, "\r\n"))
+		s := strings.TrimRight(line, "\r\n")
+		if n, sync, ok := literalSize(s); ok {
+			if server || !sync {
+				lit = n
+			} else {
+				wait = n
+			}
+		}
+		m := head + maskLine(s)
 		if len(m) > traceLineMax {
 			head := traceLineMax - traceLineTail
 			m = fmt.Sprintf("%s… (%d bytes cut) …%s", m[:head], len(m)-traceLineMax, m[len(m)-traceLineTail:])
@@ -188,6 +217,18 @@ func protocolLine(line string) bool {
 		return true
 	}
 	return strings.ContainsAny(line, "(){}")
+}
+
+// literalSize reads the literal size ending s: {38}, or {38+} that is sent
+// without waiting for the server (sync false).
+func literalSize(s string) (n int, sync, ok bool) {
+	i := strings.LastIndexByte(s, '{')
+	if i < 0 || !strings.HasSuffix(s, "}") {
+		return 0, false, false
+	}
+	w := s[i+1 : len(s)-1]
+	n, err := strconv.Atoi(strings.TrimSuffix(w, "+"))
+	return n, !strings.HasSuffix(w, "+"), err == nil && n >= 0
 }
 
 // isTag reports whether w is one of go-imap's tags: T1, T2, ...
@@ -227,11 +268,11 @@ func init() {
 // command tag, "* N" before FETCH/EXISTS/EXPUNGE/RECENT, a section part or
 // partial (BODY[1.2]<0.300>), a literal size ({38} ending the line), and on a
 // line that starts a command or response, the numbers after a numKeys word.
-// Anything in a quoted string is content. A line that does not start one, the
-// rest of a response after a literal, begins with the literal's last line.
-// shortcut: a mail line the trace shows that starts like a command (T2 FROM)
-// or ends like a literal ({20}) keeps that tag or size; counting each
-// literal's bytes in maskTrace would tell mail from protocol for certain.
+// Anything in a quoted string is content, and maskTrace never passes it a
+// literal's content: it counts each literal's bytes.
+// shortcut: a trace that begins inside a literal (it keeps only the last
+// traceMax bytes) shows that literal's lines as if protocol until the first
+// tag or "* "; drop lines up to then if a report ever shows mail there.
 func maskLine(s string) string {
 	tag, _, _ := strings.Cut(s, " ")
 	tagged := isTag(tag) && isCommandWord(nextWord(s, len(tag)))
