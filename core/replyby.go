@@ -1,10 +1,14 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
+
+	"github.com/godwit-email/godwit/core/store"
 )
 
 // replyBy is the date by which the newest email from someone else wants the
@@ -87,4 +91,89 @@ func cutPrefixFold(s, prefix string) (string, bool) {
 		return s[len(prefix):], true
 	}
 	return "", false
+}
+
+// writeReplyBy makes a summary's valid reply date the 期限 of the
+// conversation of newest (the newest message the model got), source ai. A
+// date that does not read or check, or none, changes nothing: a follow-up
+// asking for no date keeps the one before. Nor does a summary of a message
+// older than its conversation's newest. setDeadline refusing it (a higher
+// source in effect, no longer waiting on the user) is no error of the summary.
+func (s *Service) writeReplyBy(ctx context.Context, text string, newest mailItem, loc *time.Location) {
+	r, _, err := parseReplyBy(text)
+	if err != nil || r.Date == "" || r.check(newest, loc) != nil {
+		return
+	}
+	rows, err := s.db.Query(ctx, `SELECT m.thread_id, (SELECT n.id FROM messages n WHERE n.thread_id = m.thread_id ORDER BY n.date DESC, n.id DESC LIMIT 1)
+		FROM messages m WHERE m.id = ?`, newest.MessageID)
+	if err == nil && len(rows.Values) > 0 && store.Int(rows.Values[0][1]) == newest.MessageID {
+		err = s.setDeadline(ctx, DeadlineAI, store.Int(rows.Values[0][0]), Deadline{Date: r.Date, Time: r.Time, MessageID: newest.MessageID, Quote: r.Quote})
+	}
+	if err != nil {
+		slog.Default().Debug("summary reply date not written", "err", err) // the errors carry no mail content
+	}
+}
+
+// zoneName is now's time zone for replyByFormat: its IANA name, else (Go's
+// time.Local has none) its UTC offset.
+// shortcut: an offset misses a DST change before the date; upgrade if SetTimeZone ever goes unset in the app.
+func zoneName(now time.Time) string {
+	if name := now.Location().String(); name != "Local" {
+		return name
+	}
+	return now.Format("UTC-07:00")
+}
+
+// stripReplyBy is a whole summary without replyByFormat's two lines, as a
+// replyByHold streams it.
+func stripReplyBy(text string) string {
+	var h replyByHold
+	return h.feed(text) + h.flush()
+}
+
+// replyByHold passes a summary on as it streams, without replyByFormat's
+// two lines (parseReplyBy's REPLY BY: and QUOTE:): a line that may become
+// one is held until it reads otherwise.
+type replyByHold struct{ held string }
+
+func (h *replyByHold) feed(s string) string {
+	h.held += s
+	var out strings.Builder
+	for {
+		line, rest, ok := strings.Cut(h.held, "\n")
+		if !ok {
+			break
+		}
+		if !replyByLine(line, true) {
+			out.WriteString(line + "\n")
+		}
+		h.held = rest
+	}
+	if !replyByLine(h.held, false) {
+		out.WriteString(h.held)
+		h.held = ""
+	}
+	return out.String()
+}
+
+// flush is what is held when the summary ends.
+func (h *replyByHold) flush() string {
+	s := h.held
+	h.held = ""
+	if replyByLine(s, true) {
+		return ""
+	}
+	return s
+}
+
+// replyByLine is whether line is one of the two lines, or, when it is not
+// whole yet, may still become one.
+func replyByLine(line string, whole bool) bool {
+	t := strings.TrimLeft(line, " \t")
+	for _, p := range []string{"REPLY BY:", "QUOTE:"} {
+		if _, ok := cutPrefixFold(t, p); ok || !whole && len(t) < len(p) && strings.EqualFold(p[:len(t)], t) {
+			return true
+		}
+	}
+	return false
 }
