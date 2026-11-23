@@ -243,7 +243,11 @@ func TestSettingsSummaryOnArrival(t *testing.T) {
 	if _, err := h.env.Svc.SetSettings(ctx, st); err != nil {
 		t.Fatal(err)
 	}
-	h.seeRefreshed("已换成 other，确认后继续")
+	paused, err := h.env.Svc.SummaryArrivalState(ctx)
+	if err != nil || !strings.HasPrefix(paused.Current, "other (127.0.0.1:") {
+		t.Fatalf("paused on %+v, %v: want the new service with its host", paused, err)
+	}
+	h.seeRefreshed(i18n.Tf("settings.summary.paused", paused.Current))
 	h.click("继续")
 	h.until("going on", func() bool {
 		got, err := h.env.Svc.SummaryArrivalState(ctx)

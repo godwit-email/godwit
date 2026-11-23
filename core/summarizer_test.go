@@ -200,7 +200,9 @@ func TestSummarizeOnArrivalPausesOnServiceChange(t *testing.T) {
 	assert.Empty(t, other.Requests())
 	got, err := e.s.SummaryArrivalState(bg)
 	require.NoError(t, err)
-	assert.Equal(t, SummaryArrival{Service: "x", Current: "y", Paused: true}, got)
+	require.True(t, got.Paused)
+	assert.Equal(t, "x", got.Service)
+	assert.Equal(t, "y ("+strings.TrimPrefix(other.URL, "http://")+")", got.Current, "another service names where mail would go")
 
 	require.NoError(t, e.s.ConfirmSummaryService(bg))
 	got, err = e.s.SummaryArrivalState(bg)

@@ -215,7 +215,7 @@ func (s *Service) SummaryArrivalState(ctx context.Context) (SummaryArrival, erro
 		return out, nil
 	}
 	out.Current, out.Paused = now.Name, chosen && !now.same(c)
-	if out.Paused && now.Service == c.Service && now.Host != c.Host && now.Host != "" { // the same service at another endpoint: say where
+	if out.Paused && now.Host != "" { // the user confirms where mail goes (ADR 0003): name the host
 		out.Current += " (" + now.Host + ")"
 	}
 	return out, err
