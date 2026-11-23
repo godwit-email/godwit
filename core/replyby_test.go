@@ -41,6 +41,8 @@ func TestParseReplyByMalformed(t *testing.T) {
 		"- a\nREPLY BY: 2026-11-28 9:30\nQUOTE: by 9:30":                     `time "9:30"`,
 		"- a\nREPLY BY: 2026-11-28 24:00\nQUOTE: by 24h":                     `time "24:00"`,
 		"- a\nREPLY BY: 2026-11-28 (Friday)\nQUOTE: by F":                    `time "(Friday)"`,
+		"- a\nREPLY BY: \nQUOTE: ":                                           "empty REPLY BY line",
+		"- a\nREPLY BY:\t \nQUOTE: by Friday":                                "empty REPLY BY line",
 		"- a\nREPLY BY: 2026-11-28":                                          "no QUOTE line",
 		"- a\nREPLY BY: 2026-11-28\nQUOTE: “ ”":                              "no QUOTE line",
 		"- a\nREPLY BY: 2026-11-28\nREPLY BY: 2026-11-29\nQUOTE: by Friday":  "more than one REPLY BY line",

@@ -43,6 +43,8 @@ func parseReplyBy(text string) (r replyBy, rest string, err error) {
 		return replyBy{}, rest, errors.New("more than one REPLY BY line")
 	case strings.EqualFold(dates[0], "none"):
 		return replyBy{}, rest, nil
+	case dates[0] == "": // trimmed: blank, or spaces alone
+		return replyBy{}, rest, errors.New("empty REPLY BY line")
 	}
 	f := strings.Fields(dates[0])
 	r.Date = f[0]
