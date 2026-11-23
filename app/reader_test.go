@@ -2427,3 +2427,89 @@ func TestReplySkipsOwnForward(t *testing.T) {
 		t.Errorf("a message read alone: replyTarget = %v, %v", m.ID, ok)
 	}
 }
+
+// watchFetch counts the fetches that may reach the server and the cache lookups.
+type watchFetch struct {
+	Service
+	fetches, asks *atomic.Int32
+}
+
+func (s watchFetch) FetchAttachments(ctx context.Context, ids []int64, fn func(string, core.AttachmentInfo) error) error {
+	s.fetches.Add(1)
+	return s.Service.FetchAttachments(ctx, ids, fn)
+}
+
+func (s watchFetch) CachedAttachments(ctx context.Context, ids []int64) (map[int64]string, error) {
+	defer s.asks.Add(1)
+	return s.Service.CachedAttachments(ctx, ids)
+}
+
+// TestReaderAttachmentsStagedForDrag: opening a message downloads none of its
+// attachments (ADR 0044); a cached one gets a copy under its own name to drag
+// out, kept for the run, and an uncached one gets its copy once it is opened.
+// The copies go with Close.
+func TestReaderAttachmentsStagedForDrag(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	data := []byte("%PDF-1.4 staged body")
+	m := h.deliverOne(accs[0], coretest.Msg("bob@example.com", accs[0].Email, "Report", "see attached",
+		coretest.Attachment("year report.pdf", "application/pdf", data),
+		coretest.Attachment("notes.txt", "text/plain", []byte("notes"))))
+	other := h.deliverOne(accs[0], coretest.Msg("carol@example.com", accs[0].Email, "Other", "nothing attached"))
+	ctx := context.Background()
+	full, err := h.env.Svc.GetMessage(ctx, m.ID, false)
+	if err != nil || len(full.Attachments) != 2 {
+		t.Fatalf("attachments %+v, %v", full.Attachments, err)
+	}
+	cached, uncached := full.Attachments[0], full.Attachments[1]
+	if cached.Filename != "year report.pdf" {
+		cached, uncached = uncached, cached
+	}
+	if _, _, err := h.env.Svc.GetAttachment(ctx, cached.ID); err != nil {
+		t.Fatal(err)
+	}
+	svc := watchFetch{h.app.svc, new(atomic.Int32), new(atomic.Int32)}
+	h.app.svc = svc
+
+	h.openThread(m.ThreadID)
+	h.see("year report.pdf")
+	h.until("the cached attachment staged", func() bool { return h.app.staged[cached.ID] != "" })
+	path := h.app.staged[cached.ID]
+	if got, err := os.ReadFile(path); err != nil || !bytes.Equal(got, data) {
+		t.Fatalf("staged %q: %q, %v", path, got, err)
+	}
+	if filepath.Base(path) != "year report.pdf" {
+		t.Fatalf("staged as %q, not under its own name", filepath.Base(path))
+	}
+	if p, ok := h.app.staged[uncached.ID]; ok {
+		t.Fatalf("the uncached attachment staged at %q", p)
+	}
+	if n := svc.fetches.Load(); n != 0 {
+		t.Fatalf("opening the message fetched %d times", n)
+	}
+
+	h.openThread(other.ThreadID)
+	h.see("Other")
+	asked := svc.asks.Load()
+	h.openThread(m.ThreadID)
+	h.see("year report.pdf")
+	h.until("the reopened message looked up", func() bool { return svc.asks.Load() > asked })
+	h.drain()
+	if p := h.app.staged[cached.ID]; p != path {
+		t.Fatalf("reopened, staged at %q, not the same %q", p, path)
+	}
+
+	h.click("notes.txt")
+	h.callArg("OpenPath")
+	h.until("the opened attachment staged", func() bool { return h.app.staged[uncached.ID] != "" })
+	opened := h.app.staged[uncached.ID]
+	if filepath.Base(opened) != "notes.txt" {
+		t.Fatalf("staged as %q, not under its own name", filepath.Base(opened))
+	}
+
+	h.app.Close()
+	for _, p := range []string{path, opened} {
+		if _, err := os.Stat(filepath.Dir(p)); !os.IsNotExist(err) {
+			t.Errorf("the staged copy's directory outlived Close: %v", err)
+		}
+	}
+}

@@ -29,6 +29,7 @@ type Service interface {
 	BeginPluginLogin(ctx context.Context, name string) (string, error)
 	BlockSender(ctx context.Context, from string) error
 	BlockedSenders(ctx context.Context) ([]string, error)
+	CachedAttachments(ctx context.Context, attachmentIDs []int64) (map[int64]string, error)
 	CancelOAuth(flowID string)
 	CancelOutbox(ctx context.Context, id int64) error
 	CancelPluginLogin(ctx context.Context, name, flow string) error
@@ -60,7 +61,6 @@ type Service interface {
 	FetchAttachments(ctx context.Context, attachmentIDs []int64, fn func(path string, info core.AttachmentInfo) error) (err error)
 	Find(ctx context.Context, q core.FindQuery) (core.FindResult, error)
 	FirstTimeRecipients(ctx context.Context, addrs []string) ([]string, error)
-	GetAttachment(ctx context.Context, attachmentID int64) (string, core.AttachmentInfo, error)
 	GetDraft(ctx context.Context, id int64) (core.Draft, error)
 	GetMessage(ctx context.Context, id int64, loadRemoteImages bool) (core.Message, error)
 	GetMessageLazyImages(ctx context.Context, id int64, loadRemoteImages bool) (core.Message, error)

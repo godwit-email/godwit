@@ -431,6 +431,17 @@ func (s *Graph) RenameFolder(folderID, newName string) {
 	}
 }
 
+// DeleteFolder deletes a folder on the server as another client would.
+func (s *Graph) DeleteFolder(folderID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if f := s.findFolderLocked(folderID); f != nil {
+		s.seq++
+		f.gone = true
+		f.modseq = s.seq
+	}
+}
+
 // MoveMessage moves immutableID into dstFolder on the server as another client would.
 func (s *Graph) MoveMessage(immutableID, dstFolder string) {
 	s.mu.Lock()

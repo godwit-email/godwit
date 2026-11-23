@@ -702,8 +702,13 @@ func (s *Service) UnblockSender(ctx context.Context, addr string) error {
 }
 
 // inJunk is whether folder f is junk, detected or given by the user, even
-// where another folder holds the role: ImagesAllowed and Message.InJunk agree.
+// where another folder holds the role.
 const inJunk = "'junk' IN (f.role, f.role_override)"
+
+// msgInJunk is whether message alias m shows in a junk folder, even if it
+// also shows in the inbox (a Gmail label): ImagesAllowed, SenderAvatar,
+// Message.InJunk and unsubscribing agree.
+const msgInJunk = "EXISTS (SELECT 1 FROM message_locations l JOIN folders f ON f.id = l.folder_id WHERE l.message_id = m.id AND l.shown AND " + inJunk + ")"
 
 // ImagesAllowed is whether message's remote images load without asking, by
 // the RemoteImages setting: never in a junk folder (From is unauthenticated);
@@ -718,7 +723,7 @@ func (s *Service) ImagesAllowed(ctx context.Context, message int64) (bool, error
 	if err != nil {
 		return false, err
 	}
-	rows, err := s.db.Query(ctx, "SELECT m.from_addr, "+inJunk+" FROM messages m JOIN folders f ON f.id = "+shownFolder+" WHERE m.id = ?", message)
+	rows, err := s.db.Query(ctx, "SELECT m.from_addr, "+msgInJunk+" FROM messages m WHERE m.id = ? AND "+shownFolder+" IS NOT NULL", message)
 	if err != nil || len(rows.Values) == 0 || store.Int(rows.Values[0][1]) != 0 {
 		return false, err
 	}

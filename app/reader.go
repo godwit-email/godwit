@@ -475,6 +475,7 @@ func (r *reader) loadBody(id int64) {
 		r.openView(id)
 		r.loadAvatar(id, b.avatarAllow)
 		r.loadUnsubscribe(id)
+		a.stageCached(m.Attachments)
 	})
 }
 
@@ -779,17 +780,17 @@ func fileURL(path string) string {
 // removes the copies.
 func (a *App) openAttachment(att core.AttachmentInfo) {
 	plat := a.plat
-	a.do(func(ctx context.Context) error {
-		src, _, err := a.svc.GetAttachment(ctx, att.ID)
+	a.download(downloadOpen, nil, []core.AttachmentInfo{att}, func(ctx context.Context) error {
+		var dst string
+		err := a.svc.FetchAttachments(ctx, []int64{att.ID}, func(src string, _ core.AttachmentInfo) error {
+			dir, err := a.tempDir(plat.TempDir())
+			if err != nil {
+				return err
+			}
+			dst = filepath.Join(dir, core.FileName(att.Filename, "attachment"))
+			return copyFile(src, dst)
+		})
 		if err != nil {
-			return err
-		}
-		dir, err := a.tempDir(plat.TempDir())
-		if err != nil {
-			return err
-		}
-		dst := filepath.Join(dir, core.FileName(att.Filename, "attachment"))
-		if err := copyFile(src, dst); err != nil {
 			return err
 		}
 		return plat.OpenPath(dst)
@@ -799,17 +800,19 @@ func (a *App) openAttachment(att core.AttachmentInfo) {
 // saveAttachment copies the attachment where the user chooses.
 func (a *App) saveAttachment(att core.AttachmentInfo) {
 	plat := a.plat
-	a.do(func(ctx context.Context) error {
-		dst, err := plat.SaveFile(core.FileName(att.Filename, "attachment"))
+	var dst string
+	a.do(func(context.Context) (err error) {
+		dst, err = plat.SaveFile(core.FileName(att.Filename, "attachment"))
+		return err
+	}, func(err error) {
 		if err != nil || dst == "" {
-			return err
+			a.toastErr(err)
+			return
 		}
-		src, _, err := a.svc.GetAttachment(ctx, att.ID)
-		if err != nil {
-			return err
-		}
-		return copyFile(src, dst)
-	}, a.toastErr)
+		a.download(downloadSave, dst, []core.AttachmentInfo{att}, func(ctx context.Context) error {
+			return a.svc.FetchAttachments(ctx, []int64{att.ID}, func(src string, _ core.AttachmentInfo) error { return copyFile(src, dst) })
+		}, a.toastErr)
+	})
 }
 
 // copyFile copies an attachment out of the cache, marked as from the internet.
@@ -949,6 +952,9 @@ func (a *App) writeAttachmentsToDir(ctx context.Context, dir string, items []cor
 		}
 	}
 	err := a.svc.FetchAttachments(ctx, ids, func(src string, info core.AttachmentInfo) error {
+		if err := ctx.Err(); err != nil { // the stream still hands over what it had buffered: a cancel stops at the file in hand
+			return err
+		}
 		name := core.FileName(info.Filename, "attachment")
 		if mode == attConflictReplace && existing[name] && !sameWritten(name) {
 			dst := filepath.Join(dir, name)
@@ -974,11 +980,12 @@ func (a *App) writeAttachmentsToDir(ctx context.Context, dir string, items []cor
 
 func (r *reader) finishAttachmentsSaved(msgID int64, saved int, err error) {
 	a := r.p.a
-	if err != nil {
+	cancelled := errors.Is(err, context.Canceled) // a chip's cancel stops the whole batch: say what it had saved
+	if err != nil && !cancelled {
 		a.toastErr(err)
 		return
 	}
-	if b := r.bodies[msgID]; b != nil {
+	if b := r.bodies[msgID]; b != nil && !cancelled {
 		clear(b.attSel)
 	}
 	if saved > 0 {
@@ -998,9 +1005,8 @@ func (r *reader) saveAttachments(msgID int64, items []core.AttachmentInfo) {
 		dir       string
 		conflicts []string
 		existing  map[string]bool
-		saved     int
 	)
-	a.do(func(ctx context.Context) error {
+	a.do(func(context.Context) error {
 		var err error
 		dir, err = plat.OpenDirectory()
 		if err != nil || dir == "" {
@@ -1020,11 +1026,7 @@ func (r *reader) saveAttachments(msgID int64, items []core.AttachmentInfo) {
 				conflicts = append(conflicts, name)
 			}
 		}
-		if len(conflicts) > 0 {
-			return nil
-		}
-		saved, err = a.writeAttachmentsToDir(ctx, dir, items, attConflictKeepBoth, nil)
-		return err
+		return nil
 	}, func(err error) {
 		if err != nil {
 			a.toastErr(err)
@@ -1047,7 +1049,7 @@ func (r *reader) saveAttachments(msgID int64, items []core.AttachmentInfo) {
 			r.attConflictDlg = true
 			return
 		}
-		r.finishAttachmentsSaved(msgID, saved, nil)
+		r.saveToFolder(msgID, dir, items, attConflictKeepBoth, nil)
 	})
 }
 
@@ -1057,13 +1059,22 @@ func (r *reader) resolveAttachmentConflict(mode attConflictMode) {
 	if len(ask.items) == 0 || ask.dir == "" {
 		return
 	}
+	r.saveToFolder(ask.msgID, ask.dir, ask.items, mode, ask.existing)
+}
+
+// saveToFolder queues the download of items into dir.
+func (r *reader) saveToFolder(msgID int64, dir string, items []core.AttachmentInfo, mode attConflictMode, existing map[string]bool) {
 	a := r.p.a
 	var saved int
-	a.do(func(ctx context.Context) (err error) {
-		saved, err = a.writeAttachmentsToDir(ctx, ask.dir, ask.items, mode, ask.existing)
+	type folder struct {
+		dir  string
+		mode attConflictMode
+	}
+	a.download(downloadFolder, folder{dir, mode}, items, func(ctx context.Context) (err error) {
+		saved, err = a.writeAttachmentsToDir(ctx, dir, items, mode, existing)
 		return err
 	}, func(err error) {
-		r.finishAttachmentsSaved(ask.msgID, saved, err)
+		r.finishAttachmentsSaved(msgID, saved, err)
 	})
 }
 
@@ -2302,8 +2313,20 @@ func (r *reader) attachments(c *ui.Context, b *msgBody) {
 				c := c.Key(att.ID)
 				name := core.FileName(att.Filename, "attachment")
 				checked := multi && b.attSel[att.ID]
-				kit.ChoiceCard(c, ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1.5)).Padding(th.Space(2), th.Space(2.5)).
-					Radius(t.Radius.Lg).AlignItems(ui.Center), kit.ChoiceCardOpts{Selected: checked}, func() {
+				chip := ui.Row(c).Width(theme.AttachmentWidth).Gap(th.Space(1.5)).Padding(th.Space(2), th.Space(2.5)).
+					Radius(t.Radius.Lg).AlignItems(ui.Center)
+				dragged := false
+				// shortcut: a copy the system removed still drags (a dead file URL), as DragDataFrom cannot decline a drag; stat at drag start once mygo can.
+				if path, ok := r.p.a.staged[att.ID]; ok { // dragging it out hands over its copy
+					if data, err := transfer.FileData(path); err == nil {
+						chip.DragData(data, transfer.DragOptions{Operations: transfer.Copy})
+						dragged = true
+					}
+				}
+				if !dragged && r.p.a.downloadState(att.ID) == downloadNone {
+					kit.Tooltip(c, chip, i18n.T("reader.attachments.drag_hint"))
+				}
+				kit.ChoiceCard(c, chip, kit.ChoiceCardOpts{Selected: checked}, func() {
 					if multi {
 						if kit.Checkbox(c.Key("sel"), &checked, "").Shrink(0).Label(i18n.Tf("reader.attachments.select_item", name)).Changed() {
 							if checked {
@@ -2329,8 +2352,23 @@ func (r *reader) attachments(c *ui.Context, b *msgBody) {
 							kit.Text(c, byteSize(att.Size), t.Text.Xs).TextColor(t.Muted)
 						})
 					})
-					kit.IconButton(c, "download", i18n.T("reader.save_as"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
-						OnClick(func() { r.p.a.saveAttachment(att) })
+					if r.p.a.downloadState(att.ID) == downloadNone {
+						kit.IconButton(c, "download", i18n.T("reader.save_as"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
+							OnClick(func() { r.p.a.saveAttachment(att) })
+						return
+					}
+					// Queued or downloading: a spinner that turns into the cancel under the pointer or keyboard focus.
+					ui.Box(c).Shrink(0).Children(func() {
+						cancel := kit.IconButton(c.Key("cancel"), "x", i18n.Tf("reader.attachments.cancel_download", name), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
+							OnClick(func() { r.p.a.cancelDownload(att.ID) })
+						if chip.Hovered() || cancel.FocusVisible() {
+							return
+						}
+						cancel.Opacity(0)
+						ui.Box(c).Absolute().Left(0).Top(0).Right(0).Bottom(0).Center().PassThrough().Children(func() {
+							kit.Spinner(c).Size(theme.IconSm, theme.IconSm).Label(i18n.Tf("reader.attachments.downloading", name))
+						})
+					})
 				})
 			}
 		})

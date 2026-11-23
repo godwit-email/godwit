@@ -343,10 +343,9 @@ func TestContractMailReadAttachmentsAndInline(t *testing.T) {
 		out["text"] = txt
 		require.Len(t, txt.Attachments, 3)
 
-		p1, info1, err := svc.GetAttachment(ctx, txt.Attachments[1].ID)
+		before, err := svc.CachedAttachments(ctx, []int64{txt.Attachments[1].ID})
 		require.NoError(t, err)
-		b1, rerr := os.ReadFile(p1)
-		out["singleAtt"] = map[string]any{"info": info1, "abs": filepath.IsAbs(p1), "data": string(b1), "readErr": fmt.Sprint(rerr)}
+		out["cachedBefore"] = len(before)
 
 		var batch []any
 		err = svc.FetchAttachments(ctx, []int64{txt.Attachments[1].ID, txt.Attachments[2].ID}, func(p string, info core.AttachmentInfo) error {
@@ -356,6 +355,12 @@ func TestContractMailReadAttachmentsAndInline(t *testing.T) {
 		})
 		out["batchErr"] = errSummary(err)
 		out["batch"] = batch
+
+		after, err := svc.CachedAttachments(ctx, []int64{txt.Attachments[1].ID, txt.Attachments[2].ID})
+		require.NoError(t, err)
+		p1 := after[txt.Attachments[1].ID]
+		b1, rerr := os.ReadFile(p1)
+		out["cached"] = map[string]any{"n": len(after), "abs": filepath.IsAbs(p1), "data": string(b1), "readErr": fmt.Sprint(rerr)}
 
 		var inlines []any
 		err = svc.InlineImages(ctx, m1ID, func(cid string, a mail.Attachment) {

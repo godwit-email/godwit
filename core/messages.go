@@ -60,8 +60,8 @@ type Message struct {
 	// TrackersBlocked counts the tracking pixels dropped from HTML, whatever
 	// the remote images setting or the sender's trust.
 	TrackersBlocked int
-	// InJunk: the folder is junk, detected or given (even where another
-	// folder holds the role), so its sender's images are never trusted.
+	// InJunk: one of the folders it shows in is junk, detected or given (even
+	// where another folder holds the role), so its sender's images are never trusted.
 	InJunk      bool
 	Attachments []AttachmentInfo
 	AuthResults string
@@ -679,7 +679,7 @@ func (s *Service) readMessage(ctx context.Context, id int64, loadRemoteImages, l
 	if err != nil {
 		return Message{}, err
 	}
-	rows, err := s.db.Query(ctx, "SELECT "+msgCols+", m.reply_to, m.body_text, m.body_html, m.body_truncated, "+inJunk+" FROM messages m LEFT JOIN folders f ON f.id = "+shownFolder+" WHERE m.id = ?", id)
+	rows, err := s.db.Query(ctx, "SELECT "+msgCols+", m.reply_to, m.body_text, m.body_html, m.body_truncated, "+msgInJunk+" FROM messages m WHERE m.id = ?", id)
 	if err != nil {
 		return Message{}, err
 	}

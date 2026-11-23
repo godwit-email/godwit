@@ -117,6 +117,10 @@ func (cl *Client) BlockedSenders(ctx context.Context) ([]string, error) {
 	return call[[]string](cl, ctx, "BlockedSenders")
 }
 
+func (cl *Client) CachedAttachments(ctx context.Context, attachmentIDs []int64) (map[int64]string, error) {
+	return call[map[int64]string](cl, ctx, "CachedAttachments", attachmentIDs)
+}
+
 func (cl *Client) CachedImage(ctx context.Context, src string) (core.CachedImageFile, error) {
 	return call[core.CachedImageFile](cl, ctx, "CachedImage", src)
 }
@@ -283,10 +287,6 @@ func (cl *Client) FirstTimeRecipients(ctx context.Context, addrs []string) ([]st
 
 func (cl *Client) ForgetImageFailure(urls []string) {
 	callVoid(cl, context.Background(), "ForgetImageFailure", urls)
-}
-
-func (cl *Client) GetAttachment(ctx context.Context, attachmentID int64) (string, core.AttachmentInfo, error) {
-	return call2[string, core.AttachmentInfo](cl, ctx, "GetAttachment", attachmentID)
 }
 
 func (cl *Client) GetConversation(ctx context.Context, id int64) (core.Conversation, error) {

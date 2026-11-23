@@ -593,3 +593,37 @@ func TestMoveWhoseReplyWasLost(t *testing.T) {
 	assert.Equal(t, msg, e.id("a@x"))
 	assert.Empty(t, received(e.events()), "the user's own move is no new mail")
 }
+
+// A folder deleted and another created with its name, in one page (#860):
+// the new row does not collide with the old one's name, and an op queued
+// into the old folder stays tied to it rather than to the new one.
+func TestRecreatedSameNameFolder(t *testing.T) {
+	e := newEnv(t)
+	r := raw("a@x")
+	pages := []backend.Page{{Changes: []backend.Change{
+		backend.FolderUpdated{Folder: backend.Folder{Ref: "f0", Name: "INBOX"}},
+		backend.FolderUpdated{Folder: backend.Folder{Ref: "f1", Name: "Work"}},
+		backend.MessageAppeared{Location: backend.Location{Folder: "f0", Ref: "x"}, Backfill: true,
+			Content: &backend.Content{Size: int64(len(r)), Date: time.Now(), Raw: r}},
+	}}, {Changes: []backend.Change{
+		backend.FolderUpdated{Folder: backend.Folder{Ref: "f0", Name: "INBOX"}},
+		backend.FolderUpdated{Folder: backend.Folder{Ref: "f2", Name: "Work"}},
+		backend.FolderGone{Ref: "f1"},
+	}}}
+	e.fake.OnSync = func(_ backend.SyncRequest, commit func(backend.Page) error) (bool, error) {
+		p := pages[0]
+		pages = pages[1:]
+		return false, commit(p)
+	}
+	e.sync()
+	old := e.folder("Work")
+	op := e.queueMove("a@x", "INBOX", "Work")
+
+	e.sync()
+	assert.Equal(t, [][]any{{"f2"}}, e.rows("SELECT server_ref FROM folders WHERE name = 'Work'"))
+	assert.NotEqual(t, old, e.folder("Work"))
+	state, _, _ := e.op(op)
+	assert.Equal(t, "pending", state)
+	assert.Equal(t, [][]any{{old}}, e.rows("SELECT dst_folder_id FROM ops WHERE id = ?", op), "the op keeps the old folder")
+	assert.Equal(t, []string{"a@x INBOX x shown"}, e.where())
+}

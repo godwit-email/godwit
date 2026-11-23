@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"weak"
@@ -110,16 +111,16 @@ func firstLine(s string) string {
 const TracePrefix = "imap> "
 
 // traceWords are the IMAP words a masked trace keeps as they are. Everything
-// else that is not syntax or a number is masked, since it may be mail.
+// else that is not syntax, or a number maskLine keeps, is masked: it may be mail.
 var traceWords = map[string]bool{}
 
 func init() {
 	for _, w := range strings.Fields(`
 		OK NO BAD BYE PREAUTH CAPABILITY ENABLE ENABLED ID NIL LOGOUT NOOP IDLE DONE
 		SELECT EXAMINE CLOSE UNSELECT LIST LSUB STATUS NAMESPACE SEARCH ESEARCH SORT THREAD
-		FETCH STORE COPY MOVE APPEND EXPUNGE EXPUNGED EXISTS RECENT UID MODSEQ CHANGEDSINCE VANISHED
+		FETCH STORE COPY MOVE APPEND EXPUNGE EXPUNGED EXISTS RECENT UID MODSEQ CHANGEDSINCE VANISHED EARLIER
 		MESSAGES UIDNEXT UIDVALIDITY UNSEEN HIGHESTMODSEQ NOMODSEQ PERMANENTFLAGS READ-ONLY READ-WRITE
-		COPYUID APPENDUID ALERT TRYCREATE CLOSED RETURN MIN MAX COUNT ALL SINCE BEFORE ON NOT OR
+		COPYUID APPENDUID MODIFIED ALERT TRYCREATE CLOSED RETURN MIN MAX COUNT ALL SINCE BEFORE ON NOT OR
 		FLAGS +FLAGS -FLAGS +FLAGS.SILENT -FLAGS.SILENT INTERNALDATE ENVELOPE BODYSTRUCTURE
 		BODY BODY.PEEK BINARY BINARY.PEEK BINARY.SIZE RFC822 RFC822.SIZE RFC822.HEADER RFC822.TEXT
 		HEADER HEADER.FIELDS HEADER.FIELDS.NOT TEXT MIME
@@ -135,8 +136,8 @@ func init() {
 // maskTrace keeps a trace's IMAP syntax and masks its content, which may be
 // mail: a word not in traceWords becomes x's, a non-ASCII byte '?', each
 // keeping its length, so literal sizes can still be checked against what
-// follows. Runs of lines that are only text (literal content) shrink to their
-// size, and a long line is cut.
+// follows. Literal content, counted from its {N}, and runs of other lines that
+// are only text shrink to their size, and a long line is cut.
 func maskTrace(b []byte) string {
 	var out strings.Builder
 	textBytes, textLines := 0, 0
@@ -146,14 +147,45 @@ func maskTrace(b []byte) string {
 			textBytes, textLines = 0, 0
 		}
 	}
+	// lit counts the literal bytes still to come; wait holds a client
+	// literal's size until the server's "+ " lets it start.
+	lit, wait, server, fetch := 0, 0, false, false
 	for line := range strings.Lines(string(b)) {
-		if !protocolLine(line) {
+		if lit >= len(line) {
+			lit -= len(line)
 			textBytes += len(line)
 			textLines++
 			continue
 		}
+		head := ""
+		if lit > 0 { // the literal ends in this line: the response goes on after it
+			head, line, lit = maskWord(line[:lit]), line[lit:], 0
+		} else {
+			if wait > 0 && strings.HasPrefix(line, "+") {
+				lit, wait = wait, 0
+			} else if !strings.HasPrefix(line, "* ") {
+				wait = 0
+			}
+			if !protocolLine(line) {
+				textBytes += len(line)
+				textLines++
+				continue
+			}
+			server = strings.HasPrefix(line, "* ") || strings.HasPrefix(line, "+")
+		}
 		flushText()
-		m := maskLine(strings.TrimRight(line, "\r\n"))
+		s := strings.TrimRight(line, "\r\n")
+		if n, sync, ok := literalSize(s); ok && statusText(s) == len(s) { // a status's text holds no literal
+			if server || !sync {
+				lit = n
+			} else {
+				wait = n
+			}
+		}
+		if head == "" { // a line after a literal goes on with the same response
+			fetch = fetchLine(s)
+		}
+		m := head + maskLine(s, fetch)
 		if len(m) > traceLineMax {
 			head := traceLineMax - traceLineTail
 			m = fmt.Sprintf("%s… (%d bytes cut) …%s", m[:head], len(m)-traceLineMax, m[len(m)-traceLineTail:])
@@ -190,6 +222,18 @@ func protocolLine(line string) bool {
 	return strings.ContainsAny(line, "(){}")
 }
 
+// literalSize reads the literal size ending s: {38}, or {38+} that is sent
+// without waiting for the server (sync false).
+func literalSize(s string) (n int, sync, ok bool) {
+	i := strings.LastIndexByte(s, '{')
+	if i < 0 || !strings.HasSuffix(s, "}") {
+		return 0, false, false
+	}
+	w := s[i+1 : len(s)-1]
+	n, err := strconv.Atoi(strings.TrimSuffix(w, "+"))
+	return n, !strings.HasSuffix(w, "+"), err == nil && n >= 0
+}
+
 // isTag reports whether w is one of go-imap's tags: T1, T2, ...
 func isTag(w string) bool {
 	return len(w) > 1 && w[0] == 'T' && strings.Trim(w[1:], "0123456789") == ""
@@ -199,11 +243,75 @@ func isSyntax(c byte) bool {
 	return strings.IndexByte(" ()[]{}<>\"\r\n", c) >= 0
 }
 
-func maskLine(s string) string {
+// numKeys are the IMAP words a number follows as a protocol field: a FETCH
+// data item (UID 42), a status item or response code ([UIDNEXT 5]), or a
+// command's or search result's sequence set (UID FETCH 1:*, SEARCH 2 3).
+// Each is in traceWords too, so it shows.
+var numKeys = map[string]bool{}
+
+// statusWords open a status response, whose text after its [code] is for
+// people. It and wordLists are matched in any case: they mask, and IMAP
+// keywords are case-insensitive. Lists that keep a number need capitals.
+var statusWords = map[string]bool{"OK": true, "NO": true, "BAD": true, "BYE": true, "PREAUTH": true}
+
+// wordLists are the items whose ( ) lists flags or labels: user words, so a
+// UID among them is not the data item.
+var wordLists = map[string]bool{"FLAGS": true, "+FLAGS": true, "-FLAGS": true, "+FLAGS.SILENT": true, "-FLAGS.SILENT": true, "PERMANENTFLAGS": true, "X-GM-LABELS": true}
+
+// msgData are the words after "* N" that make N a message sequence number.
+var msgData = map[string]bool{"FETCH": true, "EXISTS": true, "EXPUNGE": true, "RECENT": true}
+
+// sectionWords are the FETCH items whose [ ] holds a section, with numbered parts.
+var sectionWords = map[string]bool{"BODY": true, "BODY.PEEK": true, "BINARY": true, "BINARY.PEEK": true, "BINARY.SIZE": true}
+
+func init() {
+	for _, w := range strings.Fields(`
+		UID RFC822.SIZE BINARY.SIZE MODSEQ X-GM-MSGID X-GM-THRID
+		MESSAGES UIDNEXT UIDVALIDITY UNSEEN RECENT HIGHESTMODSEQ CHANGEDSINCE MODIFIED
+		COPYUID APPENDUID VANISHED EARLIER SEARCH SORT ALL MIN MAX COUNT
+		FETCH STORE COPY MOVE EXPUNGE`) {
+		numKeys[w] = true
+	}
+}
+
+// maskLine masks a command or response word by word. A number is kept only
+// where the IMAP grammar puts a protocol field, judged by what is around it,
+// not by its shape: mail text is full of short numbers (#859). Kept are the
+// command tag, "* N" before FETCH/EXISTS/EXPUNGE/RECENT, in a FETCH a section
+// part or partial (BODY[1.2]<0.300>), a literal size ({38} ending the line), and on a
+// line that starts a command or response, the numbers after a numKeys word.
+// Anything in a quoted string is content, and maskTrace never passes it a
+// literal's content: it counts each literal's bytes.
+// shortcut: a trace that begins inside a literal (it keeps only the last
+// traceMax bytes) shows that literal's lines as if protocol until the first
+// tag or "* "; drop lines up to then if a report ever shows mail there.
+func maskLine(s string, fetch bool) string {
+	tag, _, _ := strings.Cut(s, " ")
+	tagged := isTag(tag) && isCommandWord(nextWord(s, len(tag)))
+	start := tagged || strings.HasPrefix(s, "* ")
+	text := statusText(s)
 	var out strings.Builder
+	prev := "" // the last word outside quotes and sections
+	afterKey, section, quoted := false, false, false
+	words := 0 // depth inside a list of user words: flags, labels
 	for i := 0; i < len(s); {
-		if isSyntax(s[i]) {
-			out.WriteByte(s[i])
+		if c := s[i]; isSyntax(c) {
+			switch {
+			case c == '"' && !(quoted && escaped(s, i)):
+				quoted = !quoted
+			case quoted:
+			case c == '(' && (words > 0 || wordLists[strings.ToUpper(prev)] && strings.HasSuffix(s[:i], prev+" ")):
+				words++
+			case c == ')' && words > 0:
+				words--
+			case c == '[':
+				section = fetch && i > 0 && !isSyntax(s[i-1]) && sectionWords[prev]
+			case c == '<':
+				section = fetch && i > 0 && s[i-1] == ']'
+			case c == ']' || c == '>':
+				section = false
+			}
+			out.WriteByte(c)
 			i++
 			continue
 		}
@@ -211,18 +319,91 @@ func maskLine(s string) string {
 		for j < len(s) && !isSyntax(s[j]) {
 			j++
 		}
-		out.WriteString(maskWord(s[i:j]))
+		w, keep := s[i:j], false
+		switch {
+		case quoted, i >= text, words > 0:
+		case i == 0:
+			keep = tagged
+		case section:
+			keep = strings.Trim(w, "0123456789.") == ""
+		case s[i-1] == '{' && s[j:] == "}": // a literal size ends the line: {38}, or {38+} not synchronizing
+			n := strings.TrimSuffix(w, "+")
+			keep = n != "" && strings.Trim(n, "0123456789") == ""
+		case isSet(w):
+			keep = start && afterKey || i == 2 && s[:2] == "* " && msgData[nextWord(s, j)]
+		}
+		if !quoted && !section && words == 0 {
+			afterKey = numKeys[w] || afterKey && keep
+			prev = w
+		}
+		if keep {
+			out.WriteString(w)
+		} else {
+			out.WriteString(maskWord(w))
+		}
 		i = j
 	}
 	return out.String()
 }
 
-// maskWord keeps an IMAP word, a tag, a number up to 10 digits (a size, UID or
-// section part like 1.2), a sequence set or a system flag (\Seen), and masks
-// anything else: a longer number may be a phone number in mail text.
+// statusText is where a status response's text starts (OK, NO, BAD, BYE,
+// PREAUTH, after a [code] if any), 0 for a continuation ("+ "), len(s) if s
+// is neither: the text is for people, so no number in it is a protocol field.
+func statusText(s string) int {
+	if strings.HasPrefix(s, "+") { // a continuation: all text
+		return 0
+	}
+	tag, rest, _ := strings.Cut(s, " ")
+	w, after, _ := strings.Cut(rest, " ")
+	if tag != "*" && !isTag(tag) || !statusWords[strings.ToUpper(w)] {
+		return len(s)
+	}
+	i := len(s) - len(after)
+	if strings.HasPrefix(after, "[") {
+		if k := strings.IndexByte(after, ']'); k >= 0 {
+			return i + k + 1
+		}
+		return len(s)
+	}
+	return i
+}
+
+// fetchLine reports whether s starts a FETCH command or response, the only
+// place a section (BODY[1.2]<0.300>) is one: elsewhere BODY[1] is a name.
+func fetchLine(s string) bool {
+	f := strings.Fields(s)
+	return len(f) > 2 && (f[0] == "*" && f[2] == "FETCH" || isTag(f[0]) && (f[1] == "FETCH" || f[1] == "UID" && f[2] == "FETCH"))
+}
+
+// escaped reports whether s[i] follows an odd run of backslashes.
+func escaped(s string, i int) bool {
+	return (i-len(strings.TrimRight(s[:i], `\`)))%2 == 1
+}
+
+// isCommandWord reports whether w could be a command or status after a tag:
+// go-imap sends them in capitals (UID, CREATE, OK).
+func isCommandWord(w string) bool {
+	return w != "" && strings.Trim(w, "ABCDEFGHIJKLMNOPQRSTUVWXYZ-") == ""
+}
+
+// isSet reports whether w is a number or a sequence set (1:*,5).
+func isSet(w string) bool {
+	return strings.Trim(w, "0123456789:,*") == "" && strings.Trim(w, ":,*") != ""
+}
+
+// nextWord is the word after s[j:]'s spaces, "" if syntax comes first.
+func nextWord(s string, j int) string {
+	s = strings.TrimLeft(s[j:], " ")
+	if k := strings.IndexFunc(s, func(r rune) bool { return r < 0x80 && isSyntax(byte(r)) }); k >= 0 {
+		s = s[:k]
+	}
+	return s
+}
+
+// maskWord keeps an IMAP word, "*" or a system flag (\Seen), and masks
+// anything else, digits included: maskLine decides which numbers to keep.
 func maskWord(w string) string {
-	if traceWords[w] || w == "*" || isTag(w) || len(w) <= 10 && strings.Trim(w, "0123456789.") == "" ||
-		strings.ContainsAny(w, ":,") && strings.Trim(w, "0123456789:,*") == "" {
+	if traceWords[w] || w == "*" {
 		return w
 	}
 	if len(w) > 1 && w[0] == '\\' && strings.Trim(strings.ToLower(w[1:]), "abcdefghijklmnopqrstuvwxyz") == "" {

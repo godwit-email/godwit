@@ -377,3 +377,32 @@ func TestGraphUpdateAccountWindowWidensBackfills(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, msAll, 3)
 }
+
+// Outlook deleting a folder and creating another with the same name lands
+// both in one hierarchy page: the new folder's row must not collide with the
+// old one's name, or the account's sync stalls (#860).
+func TestGraphRecreatedSameNameFolderSyncs(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	setGraph(t, e, true)
+	oa := setupOutlookOAuth(t)
+	oa.GrantScope("Mail.ReadWrite Mail.Send offline_access")
+
+	srv := testmail.StartGraph(t)
+	srv.SetTokenValidator(oa.ValidAccess)
+	oldRef := srv.Folder("Projects")
+
+	flow := completeOAuth(t, e.Svc, oa, "alice@outlook.com")
+	acc, err := e.Svc.AddAccount(t.Context(), graphInput(t, srv, "alice@outlook.com", flow))
+	require.NoError(t, err)
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+
+	srv.DeleteFolder(oldRef)
+	newRef := srv.Folder("Projects")
+	require.NotEqual(t, oldRef, newRef)
+	srv.Deliver("Projects", coretest.Msg("bob@example.com", "alice@outlook.com", "In New Projects", "after recreate", coretest.MessageID("recreate@example.com")))
+
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	ms, err := e.Svc.Search(t.Context(), acc.ID, "In New Projects", 10)
+	require.NoError(t, err)
+	assert.Len(t, ms, 1, "the recreated folder syncs")
+}

@@ -91,6 +91,34 @@ func (s *Service) GetAttachment(ctx context.Context, attachmentID int64) (string
 	return path, info, err
 }
 
+// CachedAttachments returns, by ID, the cache file of each attachment already
+// on disk, for the interface to use without a download (ADR 0044). Offline, and
+// it does not mark them used: showing a chip is not a use. A local archive's
+// attachment counts once extracted beside its original (archivePart).
+func (s *Service) CachedAttachments(ctx context.Context, attachmentIDs []int64) (map[int64]string, error) {
+	out := map[int64]string{}
+	if len(attachmentIDs) == 0 {
+		return out, nil
+	}
+	rows, err := s.db.Query(ctx, "SELECT a.id, a.cache_path, m.content_hash, m.account_id, a.part FROM attachments a JOIN messages m ON m.id = a.message_id WHERE a.id IN ("+
+		placeholders(len(attachmentIDs))+")", int64Args(attachmentIDs)...)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows.Values {
+		p := store.Str(r[1])
+		if hash := store.Str(r[2]); hash != "" {
+			if p, err = filepath.Abs(filepath.Join(s.archivePartsDir(store.Int(r[3]), hash), store.Str(r[4]))); err != nil {
+				return nil, err
+			}
+		}
+		if _, err := os.Stat(p); p != "" && err == nil {
+			out[store.Int(r[0])] = p
+		}
+	}
+	return out, nil
+}
+
 // FetchedAttachment is one attachment cached on disk by FetchAttachmentsStream.
 type FetchedAttachment struct {
 	Path string
