@@ -253,10 +253,19 @@ func (s *Service) checkDeadlineMessage(ctx context.Context, threadID int64, st r
 	if st.Kind != ReplyStatusUnreplied || m.Date.Unix() <= st.Settled {
 		return ErrDeadlineNotWaiting
 	}
-	if !strings.Contains(strings.Join(strings.Fields(m.Text), " "), strings.Join(strings.Fields(d.Quote), " ")) {
+	if !quoteIn(m.Text, d.Quote, d.MessageID) {
 		return ErrDeadlineQuote
 	}
 	return nil
+}
+
+// quoteIn is whether quote is in text of message id, spaces aside, as written
+// or with both links as a model gets them (linkRefs: tracking parameters
+// dropped, long links as references), so a summary quoting what it was given
+// checks against the stored message too.
+func quoteIn(text, quote string, id int64) bool {
+	flat := func(s string) string { return strings.Join(strings.Fields(s), " ") }
+	return strings.Contains(flat(text), flat(quote)) || strings.Contains(flat(linkRefs(text, id)), flat(linkRefs(quote, id)))
 }
 
 // deadlineRowWrite writes r as its thread's row, over the one there if

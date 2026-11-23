@@ -130,6 +130,22 @@ func TestSummaryReplyDatePastADraft(t *testing.T) {
 	assert.Equal(t, e.day(4), got.Date)
 }
 
+// A tracking parameter the model never saw (linkRefs dropped it) does not
+// keep a quote with that link from checking against the stored message.
+func TestSummaryReplyDateTrackedLink(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("q@x", "bob@a.example", "alice@example.com", "quote", e.viewAt(1), "Please reply at https://a.example/x?utm_source=email&id=7 by Friday."))
+	e.sync(t)
+	q := e.idOf(t, "q@x")
+	srv := e.witOn(t)
+	srv.Script(testllm.Turn{Text: []string{"- Bob wants a reply.\nREPLY BY: " + e.day(3) + "\nQUOTE: Please reply at https://a.example/x?id=7 by Friday.\n"}})
+
+	e.summarize(t, "Asia/Shanghai", Target{Kind: "message", ID: q})
+	got := e.deadlineOf(t, "q@x")
+	require.NotNil(t, got, "the quote is the message's, links as the model got them")
+	assert.Equal(t, e.day(3), got.Date)
+}
+
 // Lines that do not read or do not check give no date, and the summary as
 // it was.
 func TestSummaryReplyDateRefused(t *testing.T) {
