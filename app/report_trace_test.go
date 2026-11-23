@@ -70,7 +70,8 @@ func TestReportURLCarriesNoBodyDigits(t *testing.T) {
 
 	h, _ := withAccount(t)
 	log.SetOutput(RecentLog)
-	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	log.SetFlags(0) // a timestamp's digits are not the body's
+	t.Cleanup(func() { log.SetOutput(os.Stderr); log.SetFlags(log.LstdFlags) })
 	conn.LogTrace(c, err)
 	h.app.toastErr(err)
 	h.click("报告问题")

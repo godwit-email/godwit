@@ -46,6 +46,11 @@ func TestMaskTraceKeepsOnlyProtocolNumbers(t *testing.T) {
 		"your code (482913) expires in {5} minutes":                                                         "xxxx xxxx (000000) xxxxxxx xx {0} xxxxxxx",
 		"T1000 (model 5)":               "x0000 (xxxxx 0)",
 		"call T9 at 13800138000 today)": "xxxx x0 xx 00000000000 xxxxx)",
+		"T9 CREATE \"Box 7\"":           "T9 xxxxxx \"xxx 0\"",
+		"* SORT 2 3 6":                  "* SORT 2 3 6",
+		"T2 FROM 55 (x)":                "T2 FROM 00 (x)",
+		"TOTAL COUNT 3 (incl. VAT)":     "xxxxx COUNT 0 (xxxx. xxx)",
+		"xx) UID 42 BODY[1] {12}":       "xx) UID 00 BODY[1] {12}",
 	} {
 		assert.Equal(t, want, maskTrace([]byte(raw+"\r\n")), raw)
 	}

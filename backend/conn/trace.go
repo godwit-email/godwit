@@ -119,7 +119,7 @@ func init() {
 		SELECT EXAMINE CLOSE UNSELECT LIST LSUB STATUS NAMESPACE SEARCH ESEARCH SORT THREAD
 		FETCH STORE COPY MOVE APPEND EXPUNGE EXPUNGED EXISTS RECENT UID MODSEQ CHANGEDSINCE VANISHED EARLIER
 		MESSAGES UIDNEXT UIDVALIDITY UNSEEN HIGHESTMODSEQ NOMODSEQ PERMANENTFLAGS READ-ONLY READ-WRITE
-		COPYUID APPENDUID ALERT TRYCREATE CLOSED RETURN MIN MAX COUNT ALL SINCE BEFORE ON NOT OR
+		COPYUID APPENDUID MODIFIED ALERT TRYCREATE CLOSED RETURN MIN MAX COUNT ALL SINCE BEFORE ON NOT OR
 		FLAGS +FLAGS -FLAGS +FLAGS.SILENT -FLAGS.SILENT INTERNALDATE ENVELOPE BODYSTRUCTURE
 		BODY BODY.PEEK BINARY BINARY.PEEK BINARY.SIZE RFC822 RFC822.SIZE RFC822.HEADER RFC822.TEXT
 		HEADER HEADER.FIELDS HEADER.FIELDS.NOT TEXT MIME
@@ -202,16 +202,20 @@ func isSyntax(c byte) bool {
 // numKeys are the IMAP words a number follows as a protocol field: a FETCH
 // data item (UID 42), a status item or response code ([UIDNEXT 5]), or a
 // command's or search result's sequence set (UID FETCH 1:*, SEARCH 2 3).
+// Each is in traceWords too, so it shows.
 var numKeys = map[string]bool{}
 
 // msgData are the words after "* N" that make N a message sequence number.
 var msgData = map[string]bool{"FETCH": true, "EXISTS": true, "EXPUNGE": true, "RECENT": true}
 
+// sectionWords are the FETCH items whose [ ] holds a section, with numbered parts.
+var sectionWords = map[string]bool{"BODY": true, "BODY.PEEK": true, "BINARY": true, "BINARY.PEEK": true, "BINARY.SIZE": true}
+
 func init() {
 	for _, w := range strings.Fields(`
 		UID RFC822.SIZE BINARY.SIZE MODSEQ X-GM-MSGID X-GM-THRID
-		MESSAGES UIDNEXT UIDVALIDITY UNSEEN RECENT HIGHESTMODSEQ CHANGEDSINCE
-		COPYUID APPENDUID VANISHED EARLIER SEARCH ALL MIN MAX COUNT
+		MESSAGES UIDNEXT UIDVALIDITY UNSEEN RECENT HIGHESTMODSEQ CHANGEDSINCE MODIFIED
+		COPYUID APPENDUID VANISHED EARLIER SEARCH SORT ALL MIN MAX COUNT
 		FETCH STORE COPY MOVE EXPUNGE`) {
 		numKeys[w] = true
 	}
@@ -220,17 +224,25 @@ func init() {
 // maskLine masks a command or response word by word. A number is kept only
 // where the IMAP grammar puts a protocol field, judged by what is around it,
 // not by its shape: mail text is full of short numbers (#859). Kept are the
-// command tag, "* N" before FETCH/EXISTS/EXPUNGE/RECENT, the numbers after a
-// numKeys word, a section part or partial (BODY[1.2]<0.300>) and a literal
-// size ({38} ending the line). Anything in a quoted string is content.
+// command tag, "* N" before FETCH/EXISTS/EXPUNGE/RECENT, a section part or
+// partial (BODY[1.2]<0.300>), a literal size ({38} ending the line), and on a
+// line that starts a command or response, the numbers after a numKeys word.
+// Anything in a quoted string is content. A line that does not start one, the
+// rest of a response after a literal, begins with the literal's last line.
+// shortcut: a mail line the trace shows that starts like a command (T2 FROM)
+// or ends like a literal ({20}) keeps that tag or size; counting each
+// literal's bytes in maskTrace would tell mail from protocol for certain.
 func maskLine(s string) string {
+	tag, _, _ := strings.Cut(s, " ")
+	tagged := isTag(tag) && isCommandWord(nextWord(s, len(tag)))
+	start := tagged || strings.HasPrefix(s, "* ") || strings.HasPrefix(s, "+ ")
 	var out strings.Builder
-	prev := ""                                  // the last word outside quotes and sections
-	run, section, quoted := false, false, false // run: numbers here follow a numKeys word
+	prev := "" // the last word outside quotes and sections
+	afterKey, section, quoted := false, false, false
 	for i := 0; i < len(s); {
 		if c := s[i]; isSyntax(c) {
 			switch {
-			case c == '"' && !(quoted && (i-len(strings.TrimRight(s[:i], `\`)))%2 == 1): // not an escaped \"
+			case c == '"' && !(quoted && escaped(s, i)):
 				quoted = !quoted
 			case quoted:
 			case c == '[':
@@ -252,17 +264,17 @@ func maskLine(s string) string {
 		switch {
 		case quoted:
 		case i == 0:
-			keep = isTag(w) && traceWords[nextWord(s, j)]
+			keep = tagged
 		case section:
 			keep = strings.Trim(w, "0123456789.") == ""
 		case s[i-1] == '{' && s[j:] == "}": // a literal size ends the line: {38}, or {38+} not synchronizing
 			n := strings.TrimSuffix(w, "+")
 			keep = n != "" && strings.Trim(n, "0123456789") == ""
 		case isSet(w):
-			keep = run || i == 2 && s[:2] == "* " && msgData[nextWord(s, j)]
+			keep = start && afterKey || i == 2 && s[:2] == "* " && msgData[nextWord(s, j)]
 		}
 		if !quoted && !section {
-			run = numKeys[w] || run && keep
+			afterKey = numKeys[w] || afterKey && keep
 			prev = w
 		}
 		if keep {
@@ -275,8 +287,16 @@ func maskLine(s string) string {
 	return out.String()
 }
 
-// sectionWords are the FETCH items whose [ ] holds a section, with numbered parts.
-var sectionWords = map[string]bool{"BODY": true, "BODY.PEEK": true, "BINARY": true, "BINARY.PEEK": true, "BINARY.SIZE": true}
+// escaped reports whether s[i] follows an odd run of backslashes.
+func escaped(s string, i int) bool {
+	return (i-len(strings.TrimRight(s[:i], `\`)))%2 == 1
+}
+
+// isCommandWord reports whether w could be a command or status after a tag:
+// go-imap sends them in capitals (UID, CREATE, OK).
+func isCommandWord(w string) bool {
+	return w != "" && strings.Trim(w, "ABCDEFGHIJKLMNOPQRSTUVWXYZ-") == ""
+}
 
 // isSet reports whether w is a number or a sequence set (1:*,5).
 func isSet(w string) bool {
