@@ -294,6 +294,7 @@ type App struct {
 	witOpen    func(conv int64) (version int64)                  // tells the Wit page the route's conversation
 	witCreated func(conv int64) (version int64)                  // the same, for the conversation its Ask made
 	witAsk     func(query string, quoted ...core.MessageSummary) // hands a question, quoting mail, to the Wit page, which asks it
+	arrival    core.SummaryArrival                               // 收到就总结's state, read with the tasks (refreshTasks)
 
 	link     string // the link waiting for confirmation
 	linkOpen bool   // the link dialog shows
@@ -700,19 +701,22 @@ func (a *App) do(fn func(ctx context.Context) error, done func(err error)) {
 	}()
 }
 
-// refreshTasks asks core which of the reader's tasks resolve a model, after
-// a load, a settings save and a model service change. Without a model they
+// refreshTasks asks core which of the reader's tasks resolve a model, and
+// 收到就总结's state, after a load, a settings save and a model service change. Without a model they
 // are hidden; any other error shows them, so their run reports it.
 func (a *App) refreshTasks() {
 	got := map[string]bool{}
+	var arrival core.SummaryArrival
 	a.tasks.Run(a, func(ctx context.Context) error {
 		for _, task := range []string{"summarize", "translate", ""} {
 			_, err := a.svc.TaskModel(ctx, task)
 			got[task] = !errors.Is(err, core.ErrAINotConfigured) && !errors.Is(err, core.ErrModelServiceNotFound) && !errors.Is(err, core.ErrModelNotFound)
 		}
 		got["labels"] = a.svc.LabelModelReady(ctx)
+		arrival, _ = a.svc.SummaryArrivalState(ctx) // shortcut: a failed read shows 收到就总结 as never chosen until the next refresh
 		return nil
 	}, func(error) {
+		a.arrival = arrival
 		if maps.Equal(a.taskModels, got) {
 			return
 		}

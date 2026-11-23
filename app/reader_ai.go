@@ -92,7 +92,7 @@ func fetchInto[T any](r *reader, f *fetch[T], force bool, get func(context.Conte
 // msgAI is the AI state of one message.
 type msgAI struct {
 	summary     *aiRun
-	sumShown    *bool // the Summary action's choice; nil follows Settings.Summary
+	sumShown    *bool // the Summary action's choice; nil follows Settings.SummaryMode
 	translation *aiRun
 	showTr      bool // the translation was asked to show
 	result      *aiResult
@@ -161,7 +161,7 @@ func shortLang(tag string) string {
 }
 
 // summaryShown reports whether a message's summary shows: with a model,
-// as the Summary action chose, else as Settings.Summary says.
+// as the Summary action chose, else as Settings.SummaryMode says.
 func (r *reader) summaryShown(st *msgAI) bool {
 	if !r.taskReady("summarize") {
 		return false
@@ -169,7 +169,12 @@ func (r *reader) summaryShown(st *msgAI) bool {
 	if st.sumShown != nil {
 		return *st.sumShown
 	}
-	return r.p.a.settings.Summary
+	return summaryOnOpen(r.p.a.settings)
+}
+
+// summaryOnOpen is whether 邮件总结 summarizes mail as it opens: any level but 关.
+func summaryOnOpen(st core.Settings) bool {
+	return st.SummaryMode == core.SummaryOpen || st.SummaryMode == core.SummaryArrive
 }
 
 // trShown reports whether a message shows its translation: asked for, and
@@ -209,11 +214,11 @@ func (r *reader) stopAI() {
 }
 
 // startFor starts what an expanded message shows by itself: its summary
-// (Settings.Summary with a model; the newest only, the one a thread shows)
+// (Settings.SummaryMode with a model; the newest only, the one a thread shows)
 // and its plugin cards. Each runs once.
 func (r *reader) startFor(id int64) {
 	st := r.state(id)
-	if last, _ := r.last(); id == last.ID && r.taskReady("summarize") && r.p.a.settings.Summary && st.summary == nil {
+	if last, _ := r.last(); id == last.ID && r.taskReady("summarize") && summaryOnOpen(r.p.a.settings) && st.summary == nil {
 		st.summary = r.summarize(id)
 	}
 	r.loadCards(id, false)
@@ -248,10 +253,10 @@ func (r *reader) reloadPluginParts() {
 }
 
 // gist is a folded message's one-line gist, asked for as its row shows (the
-// small model, under Settings.Summary): "" until it comes, and when it
+// small model, under Settings.SummaryMode): "" until it comes, and when it
 // fails or there is no model, so the row keeps the start of its text.
 func (r *reader) gist(id int64) string {
-	if !r.taskReady("") || !r.p.a.settings.Summary {
+	if !r.taskReady("") || !summaryOnOpen(r.p.a.settings) {
 		return ""
 	}
 	st, get := r.state(id), r.gistFn

@@ -173,6 +173,10 @@ func (cl *Client) CompleteContacts(ctx context.Context, query string, limit int)
 	return call[[]core.ContactCompletion](cl, ctx, "CompleteContacts", query, limit)
 }
 
+func (cl *Client) ConfirmSummaryService(ctx context.Context) error {
+	return callErr(cl, ctx, "ConfirmSummaryService")
+}
+
 func (cl *Client) ContactAvatar(ctx context.Context, addr string) (core.Avatar, error) {
 	return call[core.Avatar](cl, ctx, "ContactAvatar", addr)
 }
@@ -191,6 +195,10 @@ func (cl *Client) Contacts(ctx context.Context) ([]core.Contact, error) {
 
 func (cl *Client) CountAppAndWitDeadlines(ctx context.Context) (int, error) {
 	return call[int](cl, ctx, "CountAppAndWitDeadlines")
+}
+
+func (cl *Client) CountUnrepliedToSummarize(ctx context.Context) (int, error) {
+	return call[int](cl, ctx, "CountUnrepliedToSummarize")
 }
 
 func (cl *Client) CreateLabel(ctx context.Context, in core.LabelInput) (core.Label, error) {
@@ -887,6 +895,14 @@ func (cl *Client) Subscribe() (<-chan events.Event, func()) {
 
 func (cl *Client) SubscribeConversation(id int64) (<-chan core.WitEvent, func()) {
 	return streamStop[core.WitEvent](cl, "SubscribeConversation", id)
+}
+
+func (cl *Client) SummarizeUnreplied(ctx context.Context) (int, error) {
+	return call[int](cl, ctx, "SummarizeUnreplied")
+}
+
+func (cl *Client) SummaryArrivalState(ctx context.Context) (core.SummaryArrival, error) {
+	return call[core.SummaryArrival](cl, ctx, "SummaryArrivalState")
 }
 
 func (cl *Client) SyncAddressBook(ctx context.Context, id int64) error {

@@ -74,7 +74,7 @@ func shotMailWith(t *testing.T, set func(*core.Settings), design bool) *shotEnv 
 		if err != nil {
 			t.Fatal(err)
 		}
-		st.Summary, st.QuickReplies = true, true
+		st.SummaryMode, st.QuickReplies = core.SummaryOpen, true
 		if design {
 			st.AutoLabel = false // the labels are put by hand: the classifier would take the scripted model turns
 		}
@@ -380,7 +380,7 @@ func TestShots(t *testing.T) {
 		s.see("最近往来")
 		shot(s.harness, "ContactsPerson")
 	})
-	noAuto := func(st *core.Settings) { st.QuickReplies, st.Summary = false, false }
+	noAuto := func(st *core.Settings) { st.QuickReplies, st.SummaryMode = false, core.SummaryOff }
 
 	t.Run("SettingsRulesForward", func(t *testing.T) {
 		s := shotMail(t, noAuto)

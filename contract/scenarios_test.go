@@ -233,7 +233,7 @@ func TestSettings(t *testing.T) {
 			UILanguage: "en", ReadingLanguage: "de", ReplyLanguage: "reading", NoTranslate: []string{"fr", "es"},
 			LaunchAtLogin: true, BackgroundReceive: core.BackgroundReceiveStopOnClose, ShowTrayIcon: false, UnreadInMenuBar: true,
 			NotifyNewMail: false, NotifyPreview: false,
-			QuickReplies: true, Summary: true, ThreadView: false,
+			QuickReplies: true, SummaryMode: core.SummaryOpen, ThreadView: false,
 			DefaultModel: "svc/big", SmallModel: "svc/small", JudgeService: "judge", JudgeThreshold: 0.85, Translator: "plugin/dlx", LocalAPI: true, ExperimentalJMAP: true, ExperimentalEWS: true, ExperimentalPOP3: true, ExperimentalGraph: true, ExperimentalGmailAPI: true, SidebarWidth: 320, ListWidth: 400, SignatureDelimiter: true,
 			MaskCategories: core.MaskCategories{Names: core.MaskCategory{On: true, Action: core.MaskWarn}},
 			MaskWords:      []string{"Falcon"}, MaskWordsCase: true, MaskWordsWhole: true,

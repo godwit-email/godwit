@@ -484,7 +484,7 @@ func (p *settingsPage) aiFeaturesView(c *ui.Context) {
 		return func() { kit.FieldWith(c, kit.FieldOpts{Horizontal: true, Switch: on}, label, help, "", nil) }
 	}
 	settingsSection(c, "", "",
-		sw(&st.Summary, i18n.T("settings.summary"), i18n.T("settings.summary.help")),
+		func() { p.summaryLevel(c, st) },
 		sw(&st.QuickReplies, i18n.T("settings.quick_replies"), i18n.T("settings.quick_replies.help")),
 		sw(&st.RuleAI, i18n.T("settings.rule_ai"), i18n.T("settings.rule_ai.help")))
 	settingsSection(c, "", "", func() {
@@ -521,6 +521,75 @@ func (p *settingsPage) aiFeaturesView(c *ui.Context) {
 		}),
 		func() {
 			settingRow(c, i18n.T("settings.no_translate"), i18n.T("settings.no_translate.help"), func() ui.Element { return p.noTranslate(c) })
+		})
+}
+
+// summaryLevels are 邮件总结's levels: 收到就总结 only while core.SummaryOnArrival offers it.
+func summaryLevels() []kit.Option[string] {
+	opts := []kit.Option[string]{{Value: core.SummaryOff, Label: i18n.T("settings.summary.off")}, {Value: core.SummaryOpen, Label: i18n.T("settings.summary.open")}}
+	if core.SummaryOnArrival {
+		opts = append(opts, kit.Option[string]{Value: core.SummaryArrive, Label: i18n.T("settings.summary.arrive")})
+	}
+	return opts
+}
+
+// summaryLevel is 邮件总结's row and, under 收到就总结, its pause for a new
+// model service and its run over the last 30 days' mail.
+func (p *settingsPage) summaryLevel(c *ui.Context, st *core.Settings) {
+	a := p.a
+	desc := i18n.T("settings.summary.help")
+	switch {
+	case st.SummaryMode == core.SummaryArrive:
+		desc = i18n.Tf("settings.summary.arrive.help", a.arrival.Current)
+	case a.arrival.Service != "": // chosen before: what it found stays
+		desc = i18n.T("settings.summary.arrive.stopped")
+	}
+	settingRow(c, i18n.T("settings.summary"), desc, func() ui.Element {
+		return settingSelect(c, i18n.T("settings.summary"), &st.SummaryMode, summaryLevels())
+	})
+	if st.SummaryMode != core.SummaryArrive {
+		return
+	}
+	if a.arrival.Paused {
+		settingRow(c, i18n.Tf("settings.summary.paused", a.arrival.Current), "", func() ui.Element {
+			if rowButton(c, i18n.T("settings.summary.paused.go"), kit.Outline, false).Clicked() {
+				a.do(a.svc.ConfirmSummaryService, func(err error) {
+					if err != nil {
+						a.toastErr(err)
+					}
+					a.refreshTasks()
+				})
+			}
+			return ui.Element{}
+		})
+	}
+	settingRow(c, i18n.T("settings.summary.backfill"), i18n.T("settings.summary.backfill.help"), func() ui.Element {
+		if rowButton(c, i18n.T("settings.summary.backfill.go"), kit.Outline, false).Clicked() {
+			var n int
+			a.query(func(ctx context.Context) (err error) { n, err = a.svc.CountUnrepliedToSummarize(ctx); return err }, func(err error) {
+				switch {
+				case err != nil:
+					a.toastErr(err)
+				case n == 0:
+					a.toast(i18n.T("settings.summary.backfill.none"))
+				default:
+					p.backfillN, p.backfillAsk = n, true
+				}
+			})
+		}
+		return ui.Element{}
+	})
+	kit.Dialog(c, &p.backfillAsk, i18n.T("settings.summary.backfill.title"),
+		kit.DialogOpts{Size: kit.DialogSm, Desc: i18n.Tf("settings.summary.backfill.ask", p.backfillN, a.arrival.Current), Close: i18n.T("common.close")}, nil, func() {
+			kit.Button(c, i18n.T("common.cancel"), kit.ButtonOpts{Variant: kit.Outline}).OnClick(func() { p.backfillAsk = false })
+			kit.Button(c, i18n.T("settings.summary.backfill.start"), kit.ButtonOpts{}).OnClick(func() {
+				p.backfillAsk = false
+				a.do(func(ctx context.Context) error { _, err := a.svc.SummarizeUnreplied(ctx); return err }, func(err error) {
+					if err != nil {
+						a.toastErr(err)
+					}
+				})
+			})
 		})
 }
 

@@ -243,15 +243,37 @@ func (a *App) replyDatePopover(c *ui.Context, anchor ui.Element, ds *dateSetter,
 					set(core.Deadline{Date: ds.date, Time: ds.time})
 				}
 			})
-			if a.settings.DefaultModel != "" { // shortcut: summarize-on-arrival is not a setting yet; offered whenever a model is set, opening AI 功能
+			if note, link := arrivalFooter(a); link != "" { // 收到就总结, on AI 功能
 				kit.Separator(c, false)
-				if kit.Button(c, i18n.T("reader.deadline.on_arrival"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).Clicked() {
-					ds.open = false
-					a.navigate(Route{Page: PageSettings, Settings: "features"})
-				}
+				ui.Row(c).FillWidth().Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
+					if note != "" {
+						kit.Text(c, note, t.Text.Xs).TextColor(t.Muted).Shrink(1)
+					}
+					if kit.Button(c, link, kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).Shrink(0).Clicked() {
+						ds.open = false
+						a.navigate(Route{Page: PageSettings, Settings: "features"})
+					}
+				})
 			}
 		})
 	})
+}
+
+// arrivalFooter is the date popover's last line about 收到就总结: under it,
+// that it finds new mail's dates; chosen before, that it no longer does;
+// else, with a model and the level offered, the way to it. link "": none.
+func arrivalFooter(a *App) (note, link string) {
+	switch {
+	case !core.SummaryOnArrival:
+		return "", ""
+	case a.settings.SummaryMode == core.SummaryArrive:
+		return i18n.T("reader.deadline.by_arrival"), i18n.T("reader.deadline.settings")
+	case a.arrival.Service != "":
+		return i18n.T("reader.deadline.arrival_stopped"), i18n.T("reader.deadline.settings")
+	case a.settings.DefaultModel != "":
+		return "", i18n.T("reader.deadline.on_arrival")
+	}
+	return "", ""
 }
 
 // setReplyDate sets (d.Date "": removes) the conversation's 回复日期 as the

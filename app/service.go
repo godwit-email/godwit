@@ -191,6 +191,10 @@ type Service interface {
 	Subscribe() (<-chan events.Event, func())
 	SyncNow(ctx context.Context, accountID int64) error
 	TaskModel(ctx context.Context, skill string) (string, error)
+	SummaryArrivalState(ctx context.Context) (core.SummaryArrival, error)
+	ConfirmSummaryService(ctx context.Context) error
+	CountUnrepliedToSummarize(ctx context.Context) (int, error)
+	SummarizeUnreplied(ctx context.Context) (int, error)
 	TestCapability(ctx context.Context, id int64, in core.ModelServiceInput, c string) (core.CapStatus, error)
 	TestPluginModel(ctx context.Context, ref string) (core.CapStatus, error)
 	ThreadLabels(ctx context.Context, threadIDs []int64) (map[int64][]core.AppliedLabel, error)

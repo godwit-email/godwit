@@ -88,6 +88,8 @@ type settingsPage struct {
 	keychainSet bool  // the probe finished
 	imgSize     int64 // the remote image cache's bytes; -1 until read
 	appDates    int   // reply dates other apps and Wit set (AI 功能); -1 until read
+	backfillN   int   // 总结最近 30 天要回的邮件's count, asked about while backfillAsk
+	backfillAsk bool
 
 	// The signature page, made once (NewSignatureView), and the signature
 	// it shows; sigPosted is a switch queued.

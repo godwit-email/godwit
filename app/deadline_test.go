@@ -282,6 +282,40 @@ func TestMailMenuReplyDate(t *testing.T) {
 
 // TestReplyDatePresets: 周五 drops when it is today or tomorrow, 下周一 when
 // it is tomorrow.
+// TestArrivalFooter: the date popover links 收到就总结 only while it is
+// offered; under it, it says new mail's dates come from it; chosen before,
+// that they no longer do.
+func TestArrivalFooter(t *testing.T) {
+	old := core.SummaryOnArrival
+	t.Cleanup(func() { core.SummaryOnArrival = old })
+	model := core.Settings{DefaultModel: "x/m", SummaryMode: core.SummaryOpen}
+	arrive := core.Settings{DefaultModel: "x/m", SummaryMode: core.SummaryArrive}
+	for _, c := range []struct {
+		offered    bool
+		st         core.Settings
+		chosen     string
+		note, link string
+	}{
+		{false, model, "", "", ""},
+		{true, core.Settings{SummaryMode: core.SummaryOff}, "", "", ""},
+		{true, model, "", "", "reader.deadline.on_arrival"},
+		{true, arrive, "x", "reader.deadline.by_arrival", "reader.deadline.settings"},
+		{true, model, "x", "reader.deadline.arrival_stopped", "reader.deadline.settings"},
+	} {
+		core.SummaryOnArrival = c.offered
+		note, link := arrivalFooter(&App{settings: c.st, arrival: core.SummaryArrival{Service: c.chosen}})
+		want := [2]string{c.note, c.link}
+		for i, k := range want {
+			if k != "" {
+				want[i] = i18n.T(k)
+			}
+		}
+		if [2]string{note, link} != want {
+			t.Errorf("%+v: %q %q, want %q", c, note, link, want)
+		}
+	}
+}
+
 func TestReplyDatePresets(t *testing.T) {
 	for _, c := range []struct {
 		now  string

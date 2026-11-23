@@ -5,7 +5,9 @@ ApproveDraft
 CachedImage
 CachedImageDims
 CancelTrayQuit
+ConfirmSummaryService
 ContactAvatar
+CountUnrepliedToSummarize
 DevPreviewSignInCode
 DownloadRecognitionModelStream
 ExportAccountsFile
@@ -33,6 +35,8 @@ SetUIForeground
 SetUIReady
 StopUIBackend
 StoreLatestVersion
+SummarizeUnreplied
+SummaryArrivalState
 SystemTranslatorLanguages
 ThreadDeadline
 TrayShown

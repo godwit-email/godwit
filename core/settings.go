@@ -37,12 +37,16 @@ type Settings struct {
 	// BackgroundSync is what syncs while the window is behind another app:
 	// BackgroundSyncInbox (the default; "" too), whose other folders catch up
 	// when the window comes back, or BackgroundSyncAll.
-	BackgroundSync                    string
-	NotifyNewMail, NotifyPreview      bool
-	QuickReplies, Summary, ThreadView bool
-	ThreadCollapse                    bool // collapse runs of folded messages into an expandable card
-	ThreadCollapseThreshold           int  // a longer thread keeps its newest this many messages in sight and collapses the older; MinThreadCollapse to MaxThreadCollapse
-	DefaultModel, SmallModel          string
+	BackgroundSync               string
+	NotifyNewMail, NotifyPreview bool
+	QuickReplies, ThreadView     bool
+	// SummaryMode is 邮件总结: SummaryOff (the default; "" too), SummaryOpen
+	// (as mail opens) or SummaryArrive (收到就总结: new unreplied mail too, in
+	// the background, while SummaryOnArrival lets it be chosen).
+	SummaryMode              string
+	ThreadCollapse           bool // collapse runs of folded messages into an expandable card
+	ThreadCollapseThreshold  int  // a longer thread keeps its newest this many messages in sight and collapses the older; MinThreadCollapse to MaxThreadCollapse
+	DefaultModel, SmallModel string
 	// DefaultModelBy names the agent gateway whose file chooses DefaultModel
 	// (ADR 0041); "" when it is the user's own. Read, never saved: the user's
 	// own default stays stored beneath it and is the default again once the
@@ -181,11 +185,12 @@ type Settings struct {
 	// Chinese language tags name the script (zh-CN → zh-Hans, zh-TW → zh-Hant);
 	// 5 once the LightBackground switch became BackgroundSync; 6 once the
 	// KeepInBackground switch became BackgroundReceive; 7 once the default
-	// Density "compact" was renamed "standard".
+	// Density "compact" was renamed "standard"; 8 once the Summary switch
+	// became SummaryMode.
 	SettingsVersion int
 }
 
-const settingsVersion = 7
+const settingsVersion = 8
 
 // chineseScriptTag is the script tag a region-tagged Chinese setting became
 // in settings version 4.
@@ -272,7 +277,7 @@ func defaultSettings() Settings {
 	return Settings{Theme: "system", Density: "standard", FontSize: 14, SettingsVersion: settingsVersion, ReplyLanguage: "match", RemoteImages: "auto",
 		BackgroundReceive: BackgroundReceiveUntilQuit, ShowTrayIcon: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, BackgroundSync: BackgroundSyncInbox,
 		ThreadCollapse: true, ThreadCollapseThreshold: DefaultThreadCollapse, AutoLabel: true, LabelDisplay: LabelDisplayBoth, JudgeThreshold: 0.8,
-		MCPSend: MCPSendConfirm, Masking: true, MaskCategories: defaultMaskCategories(),
+		MCPSend: MCPSendConfirm, SummaryMode: SummaryOff, Masking: true, MaskCategories: defaultMaskCategories(),
 		SecurityWarnings: true, VerifiedBadge: true, SecurityAI: false, ProxyMode: ProxySystem}
 }
 
@@ -298,6 +303,8 @@ func (st Settings) validate(kept []mask.Rule) error {
 		return fmt.Errorf("invalid remote images mode %q", st.RemoteImages)
 	case !in(st.MCPSend, "", MCPSendOff, MCPSendConfirm, MCPSendDirect):
 		return fmt.Errorf("invalid MCP send level %q", st.MCPSend)
+	case summaryRank(st.SummaryMode) < 0:
+		return fmt.Errorf("invalid summary level %q", st.SummaryMode)
 	case !in(st.ProxyMode, "", ProxySystem, ProxyCustom, ProxyOff):
 		return fmt.Errorf("invalid proxy mode %q", st.ProxyMode)
 	case len(st.ProxyBypass) > MaxProxyBypass:
@@ -408,6 +415,7 @@ func (s *Service) storedSettings(ctx context.Context) (Settings, error) {
 		FontSize, SettingsVersion int
 		LightBackground           *bool // version 4's switch; off kept every folder syncing
 		KeepInBackground          *bool // version 5's switch; off quit as the window closed
+		Summary                   *bool // version 7's switch; on summarized as mail opened
 	} // the defaults must not stand in for the stored version
 	if err := json.Unmarshal(raw, &stored); err != nil {
 		return Settings{}, fmt.Errorf("stored settings: %w", err)
@@ -435,6 +443,12 @@ func (s *Service) storedSettings(ctx context.Context) (Settings, error) {
 	}
 	if stored.SettingsVersion < 7 && st.Density == "compact" {
 		st.Density = "standard"
+	}
+	if stored.SettingsVersion < 8 && stored.Summary != nil && *stored.Summary {
+		st.SummaryMode = SummaryOpen
+	}
+	if st.SummaryMode == SummaryArrive && !SummaryOnArrival { // chosen while it was offered: the level short of background reading
+		st.SummaryMode = SummaryOpen
 	}
 	st.JudgeThreshold = max(MinJudgeThreshold, min(MaxJudgeThreshold, st.JudgeThreshold)) // older builds allowed 0..1
 	st.ThreadCollapseThreshold = max(MinThreadCollapse, min(MaxThreadCollapse, st.ThreadCollapseThreshold))
@@ -488,20 +502,33 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 		return Settings{}, err
 	}
 	stmts := []sqlite.Statement{stmt}
-	if e, ok := apiAudit(ctx, "SetSettings", 0); ok && mcpSendRank(st.MCPSend) > mcpSendRank(stored.MCPSend) {
+	arrive := st.SummaryMode == SummaryArrive && stored.SummaryMode != SummaryArrive
+	if e, ok := apiAudit(ctx, "SetSettings", 0); ok && (mcpSendRank(st.MCPSend) > mcpSendRank(stored.MCPSend) || arrive) {
 		stmts = append(stmts, gateway.Audit(e, s.secrets.Redact))
 	}
 	if _, err := s.db.Transaction(ctx, stmts); err != nil {
 		return Settings{}, err
 	}
-	// the keychain after the row, which goes back if it fails, so the two never disagree
-	if err := s.saveProxyPassword(password, st, stored); err != nil {
+	undo := func(err error) error { // the row goes back
 		if prev, merr := settingStmt(stored); merr != nil {
 			err = errors.Join(err, merr)
 		} else if _, rerr := s.db.Execute(ctx, prev.SQL, prev.Args...); rerr != nil {
 			err = errors.Join(err, rerr)
 		}
-		return Settings{}, err
+		return err
+	}
+	if arrive { // what it is chosen with, by the row just saved: mail from before stays, and a change of service pauses it
+		c, err := s.arrivalChoiceNow(ctx)
+		if err == nil {
+			err = s.exec(ctx, c)
+		}
+		if err != nil {
+			return Settings{}, undo(err)
+		}
+	}
+	// the keychain after the row, which goes back if it fails, so the two never disagree
+	if err := s.saveProxyPassword(password, st, stored); err != nil {
+		return Settings{}, undo(err)
 	}
 	if password == "" && st.ProxyPasswordSet {
 		password = s.proxy.Load().password // kept as it is
@@ -513,6 +540,9 @@ func (s *Service) SetSettings(ctx context.Context, st Settings) (Settings, error
 	}
 	if securityOn(st) && (!securityOn(stored) || st.SecurityAI && !stored.SecurityAI) {
 		s.wakeSecurityScanner()
+	}
+	if arrive {
+		s.wakeSummarizer()
 	}
 	s.bus.Publish(events.Event{Type: events.SettingsChanged})
 	if gw != "" {

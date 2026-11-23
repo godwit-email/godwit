@@ -141,6 +141,75 @@ func TestSettingsRemoveAppDates(t *testing.T) {
 	}
 }
 
+// 邮件总结's levels: 收到就总结 only while core.SummaryOnArrival offers it.
+func TestSummaryLevelsGated(t *testing.T) {
+	old := core.SummaryOnArrival
+	t.Cleanup(func() { core.SummaryOnArrival = old })
+	for on, want := range map[bool][]string{false: {"关", "打开邮件时"}, true: {"关", "打开邮件时", "收到就总结"}} {
+		core.SummaryOnArrival = on
+		var got []string
+		for _, o := range summaryLevels() {
+			got = append(got, o.Label)
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("SummaryOnArrival %v: %v, want %v", on, got, want)
+		}
+	}
+}
+
+// TestSettingsSummaryOnArrival: 收到就总结 names the model service new
+// mail goes to, asks before it summarizes the last 30 days' unreplied mail,
+// pauses when the service changes until the user confirms, and says so once
+// another level is chosen.
+func TestSettingsSummaryOnArrival(t *testing.T) {
+	old := core.SummaryOnArrival
+	core.SummaryOnArrival = true
+	t.Cleanup(func() { core.SummaryOnArrival = old })
+	h, acc := withAccount(t)
+	h.env.LLM(t).Release()
+	h.deliverOne(acc, coretest.Msg("Bob <bob@a.example>", acc.Email, "Quote", "Please confirm by Friday."))
+	ctx := context.Background()
+	h.waitMail("the model in the settings", func() bool { return h.app.settings.DefaultModel != "" })
+	p := h.openSettings("features")
+	p.st.SummaryMode = core.SummaryArrive
+	h.drain()
+	h.tt.Frame()
+	h.until("saved", func() bool {
+		st, err := h.env.Svc.GetSettings(ctx)
+		return err == nil && st.SummaryMode == core.SummaryArrive
+	})
+	h.see("需要你回复的新邮件（真人直接发给你、你还没回的）一到，就把整个会话发给 test 总结，并找出对方希望你在什么时候之前回复，给「待处理」排序。会话每来一封这样的新信发一次，照常脱敏。打开别的邮件时也会总结。")
+
+	h.click("总结最近 30 天要回的邮件…")
+	h.see("会把 1 个会话发给 test 总结，照常脱敏。")
+	h.click("开始总结")
+	h.until("queued", func() bool {
+		n, err := h.env.Svc.CountUnrepliedToSummarize(ctx)
+		return err == nil && n == 0
+	})
+
+	h.env.LLMService(t, "other", "openai").Release()
+	st, err := h.env.Svc.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.DefaultModel = "other/m1"
+	if _, err := h.env.Svc.SetSettings(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	h.seeRefreshed("已换成 other，确认后继续")
+	h.click("继续")
+	h.until("going on", func() bool {
+		got, err := h.env.Svc.SummaryArrivalState(ctx)
+		return err == nil && !got.Paused && got.Service == "other"
+	})
+
+	p.st.SummaryMode = core.SummaryOpen
+	h.drain()
+	h.tt.Frame()
+	h.see("新邮件不再在收到时总结，已找到的回复日期保留。")
+}
+
 // TestThemeThumbFocusTip: Tab focus shows the tooltip too.
 func TestThemeThumbFocusTip(t *testing.T) {
 	h, _ := withAccount(t)

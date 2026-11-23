@@ -762,6 +762,25 @@ func TestAuditResendFailureStopsCall(t *testing.T) {
 // Widening Settings.MCPSend and granting extensions or MCP tools without
 // approval are persistent egress state (ADR 0003): full's calls are audited,
 // while ordinary settings changes and tightening are not.
+// A program raising 邮件总结 to 收到就总结, which sends mail to the model
+// service unattended from then on, is audited; the other levels are not.
+func TestAuditSummaryOnArrival(t *testing.T) {
+	old := core.SummaryOnArrival
+	core.SummaryOnArrival = true
+	t.Cleanup(func() { core.SummaryOnArrival = old })
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	e.LLM(t).Release()
+	ctx := t.Context()
+	full := dial(t, listen(t, e.Svc), rpc.RoleFull)
+	var st core.Settings
+	require.NoError(t, full.Call(ctx, "GetSettings", &st))
+	for _, level := range []string{core.SummaryOpen, core.SummaryArrive, core.SummaryArrive, core.SummaryOff} {
+		st.SummaryMode = level
+		require.NoError(t, full.Call(ctx, "SetSettings", &st, st), level)
+	}
+	assert.Equal(t, [][]any{{"local_api", "SetSettings", nil, ""}}, auditRows(t, e.DataDir))
+}
+
 func TestAuditSendSettingsAndGrants(t *testing.T) {
 	e := coretest.New(t, coretest.WithoutAutoSync())
 	ctx := t.Context()

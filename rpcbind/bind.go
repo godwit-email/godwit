@@ -283,6 +283,10 @@ var uiOnly = map[string]bool{
 	"ThreadDeadline": true,
 	// 撤销 after the user sets, changes or removes a 回复日期: it writes any source's row past setDeadline's checks.
 	"UndoSetThreadDeadline": true,
+	// 收到就总结's controls on AI 功能: going on with a new model service and summarizing the
+	// last 30 days' unreplied mail send mail to a model unattended, so only the user's click
+	// gives them; the two reads only feed those controls.
+	"SummaryArrivalState": true, "ConfirmSummaryService": true, "CountUnrepliedToSummarize": true, "SummarizeUnreplied": true,
 }
 
 // Expose picks the *core.Service methods callable by the full role: every

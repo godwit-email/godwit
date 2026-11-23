@@ -24,9 +24,9 @@ func TestSettingsDefaults(t *testing.T) {
 	s := settingsService(t, t.TempDir(), "")
 	got, err := s.GetSettings(t.Context())
 	require.NoError(t, err)
-	assert.Equal(t, Settings{Theme: "system", Density: "standard", FontSize: 14, SettingsVersion: 7, ReplyLanguage: "match",
+	assert.Equal(t, Settings{Theme: "system", Density: "standard", FontSize: 14, SettingsVersion: 8, ReplyLanguage: "match",
 		BackgroundReceive: "until_quit", ShowTrayIcon: true, UnreadOnAppIcon: true, NotifyNewMail: true, NotifyPreview: true, ThreadView: true, ThreadCollapse: true, ThreadCollapseThreshold: 5, RemoteImages: "auto", AutoLabel: true, LabelDisplay: "both", JudgeThreshold: 0.8, BackgroundSync: "inbox",
-		MCPSend: "confirm", Masking: true, MaskCategories: defaultMaskCategories(),
+		MCPSend: "confirm", SummaryMode: "off", Masking: true, MaskCategories: defaultMaskCategories(),
 		SecurityWarnings: true, VerifiedBadge: true, ProxyMode: "system"}, got)
 }
 
@@ -279,6 +279,33 @@ func TestSettingsDensityMigration(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, want, got.Density, stored)
 	}
+}
+
+// Version 7's Summary switch became SummaryMode: on summarizes as mail
+// opens, off not at all, so nobody gains background reading on upgrade.
+func TestSettingsSummaryMigration(t *testing.T) {
+	for stored, want := range map[string]string{
+		`{"Summary":true,"SettingsVersion":7}`:                     SummaryOpen,
+		`{"Summary":false,"SettingsVersion":7}`:                    SummaryOff,
+		`{"SettingsVersion":7}`:                                    SummaryOff,
+		`{"Summary":true,"SettingsVersion":3}`:                     SummaryOpen,
+		`{"SummaryMode":"open","SettingsVersion":8}`:               SummaryOpen,
+		`{"Summary":true,"SummaryMode":"off","SettingsVersion":8}`: SummaryOff,
+	} {
+		s := settingsService(t, t.TempDir(), "")
+		_, err := s.db.Execute(t.Context(), "INSERT INTO settings(key, value) VALUES ('app', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", stored)
+		require.NoError(t, err)
+		got, err := s.GetSettings(t.Context())
+		require.NoError(t, err)
+		assert.Equal(t, want, got.SummaryMode, stored)
+	}
+	s := settingsService(t, t.TempDir(), "")
+	got, err := s.GetSettings(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, SummaryOff, got.SummaryMode, "off by default")
+	got.SummaryMode = "always"
+	_, err = s.SetSettings(t.Context(), got)
+	assert.Error(t, err)
 }
 
 // Version 5's KeepInBackground switch became BackgroundReceive: on keeps

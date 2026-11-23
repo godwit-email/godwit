@@ -37,7 +37,7 @@ func aiHarness(t *testing.T, llm bool, set func(*core.Settings), setup ...func(*
 		if err != nil {
 			t.Fatal(err)
 		}
-		st.Summary, st.QuickReplies = true, true // off by default; these tests read them unless set turns them off
+		st.SummaryMode, st.QuickReplies = core.SummaryOpen, true // off by default; these tests read them unless set turns them off
 		if set != nil {
 			set(&st)
 		}
@@ -52,8 +52,8 @@ func aiHarness(t *testing.T, llm bool, set func(*core.Settings), setup ...func(*
 }
 
 func noQuick(st *core.Settings)   { st.QuickReplies = false }
-func noSummary(st *core.Settings) { st.Summary = false }
-func noAuto(st *core.Settings)    { st.QuickReplies, st.Summary = false, false }
+func noSummary(st *core.Settings) { st.SummaryMode = core.SummaryOff }
+func noAuto(st *core.Settings)    { st.QuickReplies, st.SummaryMode = false, core.SummaryOff }
 
 // gateAfterFirstText makes r's skill runs pause after their first text
 // event until the returned release is called.
@@ -287,7 +287,7 @@ func TestSummaryFollowsSettings(t *testing.T) {
 	h.until("the summary done", func() bool { s := r.ai[m.ID]; return s != nil && s.summary != nil && s.summary.done })
 	h.see("m1")
 	n := llm.Requests()
-	h.setSettings(func(st *core.Settings) { st.Summary = false })
+	h.setSettings(func(st *core.Settings) { st.SummaryMode = core.SummaryOff })
 	h.until("the summary hidden", func() bool { return !h.tt.HasText("summarize") })
 	h.click("总结")
 	h.see("m1")

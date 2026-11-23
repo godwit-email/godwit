@@ -884,6 +884,14 @@ var Migrations = [][]string{{
 	// When a conversation was archived in Godwit: it ends a 期限 the user set
 	// before then. Older marks read 0, as archived before any.
 	`ALTER TABLE archive_marks ADD COLUMN archived_at INTEGER NOT NULL DEFAULT 0`,
+}, {
+	// 收到就总结 summarizes a conversation once per newest message: a row says
+	// that message was done (outcome done, blocked by 脱敏, or failed for good)
+	// or, queued, that the user asked for it among the last 30 days' mail.
+	`CREATE TABLE summary_checks (
+		message_id INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+		at INTEGER NOT NULL,
+		outcome TEXT NOT NULL)`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's
