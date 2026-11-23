@@ -24,14 +24,19 @@ const (
 	DeadlineAI      = "ai"      // the mail summary
 )
 
+// deadlineRank is source's place in that order, lower first; -1 for no
+// source. mailsync.DeadlineRankSQL is the same order in SQL, for thread merges
+// (TestDeadlineRankSQL checks they agree).
 func deadlineRank(source string) int {
 	switch source {
 	case DeadlineManual:
 		return 0
+	case DeadlineProgram, DeadlineWit:
+		return 1
 	case DeadlineAI:
 		return 2
 	}
-	return 1
+	return -1
 }
 
 // MaxDeadlineQuote caps a 期限's quote, in characters.
@@ -51,7 +56,7 @@ type Deadline struct {
 
 // Why SetThreadDeadline refuses a write; each says so to the program that tried.
 var (
-	ErrDeadlineInvalid    = errors.New("a reply date is YYYY-MM-DD, with an optional HH:MM time and a quote of at most 200 characters")
+	ErrDeadlineInvalid    = errors.New("a reply date is YYYY-MM-DD, with an optional HH:MM time and a quote of at most " + strconv.Itoa(MaxDeadlineQuote) + " characters")
 	ErrDeadlineMessage    = errors.New("a reply date needs a message from someone else in this conversation")
 	ErrDeadlineNotWaiting = errors.New("the conversation is not waiting on the user's reply to that message: it is replied to or archived since, or needs no reply")
 	ErrDeadlineQuote      = errors.New("the quote does not appear word for word in that message")
@@ -98,7 +103,7 @@ func (s *Service) UndoSetThreadDeadline(ctx context.Context, before RemovedDeadl
 		return err
 	}
 	defer end()
-	if before.Source != "" && before.Source != DeadlineManual && before.Source != DeadlineProgram && before.Source != DeadlineWit && before.Source != DeadlineAI {
+	if before.Source != "" && deadlineRank(before.Source) < 0 {
 		return ErrDeadlineInvalid
 	}
 	s.editMu.Lock()
@@ -106,12 +111,7 @@ func (s *Service) UndoSetThreadDeadline(ctx context.Context, before RemovedDeadl
 	if before.Source == "" {
 		return s.commitDeadline(ctx, sqlite.Statement{SQL: "DELETE FROM thread_deadlines WHERE thread_id = ?", Args: []any{before.ThreadID}})
 	}
-	// The thread or message may be gone since: the SELECT skips the one, the subquery NULLs the other.
-	return s.commitDeadline(ctx, sqlite.Statement{SQL: `INSERT INTO thread_deadlines(thread_id, due_date, due_time, source, message_id, quote, set_at)
-		SELECT id, NULLIF(?, ''), ?, ?, (SELECT id FROM messages WHERE id = ?), ?, ? FROM threads WHERE id = ?
-		ON CONFLICT(thread_id) DO UPDATE SET due_date = excluded.due_date, due_time = excluded.due_time, source = excluded.source,
-		message_id = excluded.message_id, quote = excluded.quote, set_at = excluded.set_at`,
-		Args: []any{before.Date, before.Time, before.Source, before.MessageID, before.Quote, before.SetAt, before.ThreadID}})
+	return s.commitDeadline(ctx, deadlineRowWrite(before, true))
 }
 
 // ReaderDeadline is what the reader's 等你处理 line says of a conversation:
@@ -172,7 +172,7 @@ func (s *Service) deadlineWrites(ctx context.Context, source string, threadID in
 			return nil, ErrDeadlineInvalid
 		}
 	}
-	if _, err := time.Parse("15:04", d.Time); d.Time != "" && (err != nil || d.Date == "") || utf8.RuneCountInString(d.Quote) > MaxDeadlineQuote {
+	if _, err := time.Parse("15:04", d.Time); (d.Time != "" && (err != nil || d.Date == "")) || utf8.RuneCountInString(d.Quote) > MaxDeadlineQuote {
 		return nil, ErrDeadlineInvalid
 	}
 	now := s.clk().Now()
@@ -194,27 +194,26 @@ func (s *Service) deadlineWrites(ctx context.Context, source string, threadID in
 		}
 	}
 	if before != nil {
-		rows, err := s.db.Query(ctx, "SELECT COALESCE(due_date, ''), due_time, COALESCE(message_id, 0), quote, source, set_at FROM thread_deadlines WHERE thread_id = ?", threadID)
+		rows, err := s.db.Query(ctx, "SELECT "+deadlineRowCols+" FROM thread_deadlines WHERE thread_id = ?", threadID)
 		if err != nil {
 			return nil, err
 		}
 		if len(rows.Values) > 0 {
-			r := rows.Values[0]
-			*before = RemovedDeadline{ThreadID: threadID, Date: store.Str(r[0]), Time: store.Str(r[1]), MessageID: store.Int(r[2]), Quote: store.Str(r[3]), Source: store.Str(r[4]), SetAt: store.Int(r[5])}
+			*before = deadlineRow(rows.Values[0])
 		}
 	}
 	if source == DeadlineManual {
 		if d.Date == "" && has && cur.Source != DeadlineManual {
 			// Removing another source's date leaves a marker that keeps them out.
-			return []sqlite.Statement{deadlineUpsert(threadID, Deadline{Source: DeadlineManual}, now)}, nil
+			return []sqlite.Statement{deadlineRowWrite(RemovedDeadline{ThreadID: threadID, Source: DeadlineManual, SetAt: now.Unix()}, true)}, nil
 		}
 		d.MessageID, d.Quote = 0, ""
 	}
 	if d.Date == "" {
 		return []sqlite.Statement{{SQL: "DELETE FROM thread_deadlines WHERE thread_id = ?", Args: []any{threadID}}}, nil
 	}
-	d.Source = source
-	return []sqlite.Statement{deadlineUpsert(threadID, d, now)}, nil
+	return []sqlite.Statement{deadlineRowWrite(RemovedDeadline{ThreadID: threadID, Date: d.Date, Time: d.Time, MessageID: d.MessageID,
+		Quote: d.Quote, Source: source, SetAt: now.Unix()}, true)}, nil
 }
 
 // checkDeadlineMessage is whether d's message can carry a 期限 from a source
@@ -248,18 +247,27 @@ func (s *Service) checkDeadlineMessage(ctx context.Context, threadID int64, st r
 	return nil
 }
 
-func deadlineUpsert(threadID int64, d Deadline, now time.Time) sqlite.Statement {
-	var date, msg any
-	if d.Date != "" {
-		date = d.Date
+// deadlineRowWrite writes r as its thread's row, over the one there if
+// replace, else only where there is none. The thread or message may be gone
+// since r was read: the SELECT skips the one, the subquery NULLs the other.
+func deadlineRowWrite(r RemovedDeadline, replace bool) sqlite.Statement {
+	conflict := "DO NOTHING"
+	if replace {
+		conflict = `DO UPDATE SET due_date = excluded.due_date, due_time = excluded.due_time, source = excluded.source,
+		message_id = excluded.message_id, quote = excluded.quote, set_at = excluded.set_at`
 	}
-	if d.MessageID != 0 {
-		msg = d.MessageID
-	}
-	return sqlite.Statement{SQL: `INSERT INTO thread_deadlines(thread_id, due_date, due_time, source, message_id, quote, set_at) VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(thread_id) DO UPDATE SET due_date = excluded.due_date, due_time = excluded.due_time, source = excluded.source,
-		message_id = excluded.message_id, quote = excluded.quote, set_at = excluded.set_at`,
-		Args: []any{threadID, date, d.Time, d.Source, msg, d.Quote, now.Unix()}}
+	return sqlite.Statement{SQL: `INSERT INTO thread_deadlines(thread_id, due_date, due_time, source, message_id, quote, set_at)
+		SELECT id, NULLIF(?, ''), ?, ?, (SELECT id FROM messages WHERE id = ?), ?, ? FROM threads WHERE id = ?
+		ON CONFLICT(thread_id) ` + conflict,
+		Args: []any{r.Date, r.Time, r.Source, r.MessageID, r.Quote, r.SetAt, r.ThreadID}}
+}
+
+// deadlineRowCols are the columns deadlineRow reads.
+const deadlineRowCols = "thread_id, COALESCE(due_date, ''), due_time, COALESCE(message_id, 0), quote, source, set_at"
+
+func deadlineRow(r []any) RemovedDeadline {
+	return RemovedDeadline{ThreadID: store.Int(r[0]), Date: store.Str(r[1]), Time: store.Str(r[2]), MessageID: store.Int(r[3]),
+		Quote: store.Str(r[4]), Source: store.Str(r[5]), SetAt: store.Int(r[6])}
 }
 
 // bumpDeadlineVersion moves the 期限's version, which views' paging cursors carry.
@@ -356,17 +364,15 @@ func (s *Service) RemoveAppAndWitDeadlines(ctx context.Context) ([]RemovedDeadli
 	defer s.editMu.Unlock()
 	// Read, then delete those threads' rows with the version bump in one
 	// transaction (Transaction returns no rows for a DELETE … RETURNING);
-	// every other 期限 write holds editMu too.
-	rows, err := s.db.Query(ctx, `SELECT thread_id, COALESCE(due_date, ''), due_time, COALESCE(message_id, 0), quote, source, set_at
-		FROM thread_deadlines WHERE source IN (?, ?)`, DeadlineProgram, DeadlineWit)
+	// every 期限 write but a thread merge holds editMu too.
+	rows, err := s.db.Query(ctx, "SELECT "+deadlineRowCols+" FROM thread_deadlines WHERE source IN (?, ?)", DeadlineProgram, DeadlineWit)
 	if err != nil {
 		return nil, err
 	}
 	var out []RemovedDeadline
 	var threads []int64
 	for _, r := range rows.Values {
-		out = append(out, RemovedDeadline{ThreadID: store.Int(r[0]), Date: store.Str(r[1]), Time: store.Str(r[2]), MessageID: store.Int(r[3]),
-			Quote: store.Str(r[4]), Source: store.Str(r[5]), SetAt: store.Int(r[6])})
+		out = append(out, deadlineRow(r))
 		threads = append(threads, store.Int(r[0]))
 	}
 	if len(threads) == 0 {
@@ -397,10 +403,7 @@ func (s *Service) UndoRemoveAppAndWitDeadlines(ctx context.Context, removed []Re
 			continue
 		}
 		threads = append(threads, d.ThreadID)
-		// The thread or message may be gone since: the SELECT skips the one, the subquery NULLs the other.
-		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO thread_deadlines(thread_id, due_date, due_time, source, message_id, quote, set_at)
-			SELECT id, ?, ?, ?, (SELECT id FROM messages WHERE id = ?), ?, ? FROM threads WHERE id = ? ON CONFLICT(thread_id) DO NOTHING`,
-			Args: []any{d.Date, d.Time, d.Source, d.MessageID, d.Quote, d.SetAt, d.ThreadID}})
+		stmts = append(stmts, deadlineRowWrite(d, false))
 	}
 	if len(stmts) == 0 {
 		return nil

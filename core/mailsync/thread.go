@@ -66,6 +66,11 @@ func planThread(ctx context.Context, db *store.DB, acc *account, p *mail.Parsed)
 	return plan, nil
 }
 
+// DeadlineRankSQL is a thread_deadlines row's source rank, lower first: core's
+// deadlineRank, which mailsync cannot import (core's TestDeadlineRankSQL
+// checks they agree).
+const DeadlineRankSQL = "CASE source WHEN 'manual' THEN 0 WHEN 'ai' THEN 2 ELSE 1 END"
+
 // mergeViewState moves what is kept per conversation for 视图 to target:
 // an exception (removed wins over added), the archive mark of the latest
 // archive, the replies, and one 期限: the highest source's (manual > program =
@@ -83,7 +88,7 @@ func mergeViewState(target int64, others []any) []sqlite.Statement {
 		{SQL: "UPDATE archive_marks SET thread_id = ? WHERE thread_id IN " + in, Args: args},
 		{SQL: "UPDATE reply_records SET thread_id = ? WHERE thread_id IN " + in, Args: args},
 		{SQL: `DELETE FROM thread_deadlines WHERE thread_id IN ` + inAll + ` AND thread_id != (SELECT thread_id FROM thread_deadlines WHERE thread_id IN ` + inAll + `
-			ORDER BY CASE source WHEN 'manual' THEN 0 WHEN 'ai' THEN 2 ELSE 1 END, due_date IS NULL, due_date, due_time = '', due_time, thread_id LIMIT 1)`,
+			ORDER BY ` + DeadlineRankSQL + `, due_date IS NULL, due_date, due_time = '', due_time, thread_id LIMIT 1)`,
 			Args: append(slices.Clone(all), all...)},
 		{SQL: "UPDATE thread_deadlines SET thread_id = ? WHERE thread_id IN " + in, Args: args},
 	}

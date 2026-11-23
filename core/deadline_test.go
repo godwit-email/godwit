@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/godwit-email/godwit/core/internal/testllm"
+	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -101,6 +102,16 @@ func TestDeadlineProgramRejections(t *testing.T) {
 	require.NoError(t, e.setThreadDeadline(ui, tid, Deadline{}))
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM thread_deadlines"))
 	require.NoError(t, set(Deadline{Date: e.day(3), MessageID: q}))
+}
+
+// A thread merge keeps the 期限 deadlineRank puts first.
+func TestDeadlineRankSQL(t *testing.T) {
+	e := newSendEnv(t, false)
+	for _, source := range []string{DeadlineManual, DeadlineProgram, DeadlineWit, DeadlineAI} {
+		rows, err := e.s.db.Query(bg, "SELECT "+mailsync.DeadlineRankSQL+" FROM (SELECT ? AS source)", source)
+		require.NoError(t, err)
+		assert.EqualValues(t, deadlineRank(source), rows.Values[0][0], source)
+	}
 }
 
 // Sources by precedence: the same level replaces, a lower one is refused.
