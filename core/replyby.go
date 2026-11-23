@@ -99,17 +99,23 @@ func cutPrefixFold(s, prefix string) (string, bool) {
 // conversation of newest (the newest message the model got), source ai. A
 // date that does not read or check, or none, changes nothing: a follow-up
 // asking for no date keeps the one before. Nor does a summary of a message
-// older than its conversation's newest. setDeadline refusing it (a higher
+// older than its conversation's newest counted one (drafts aside). setDeadline refusing it (a higher
 // source in effect, no longer waiting on the user) is no error of the summary.
 func (s *Service) writeReplyBy(ctx context.Context, text string, newest mailItem, loc *time.Location) {
 	r, _, err := parseReplyBy(text)
 	if err != nil || r.Date == "" || r.check(newest, loc) != nil {
 		return
 	}
-	rows, err := s.db.Query(ctx, `SELECT m.thread_id, (SELECT n.id FROM messages n WHERE n.thread_id = m.thread_id ORDER BY n.date DESC, n.id DESC LIMIT 1)
-		FROM messages m WHERE m.id = ?`, newest.MessageID)
-	if err == nil && len(rows.Values) > 0 && store.Int(rows.Values[0][1]) == newest.MessageID {
-		err = s.setDeadline(ctx, DeadlineAI, store.Int(rows.Values[0][0]), Deadline{Date: r.Date, Time: r.Time, MessageID: newest.MessageID, Quote: r.Quote})
+	// The newest counted mail, as 回复状态 has it: a draft synced from elsewhere is not one.
+	rows, err := s.db.Query(ctx, "SELECT thread_id FROM messages WHERE id = ?", newest.MessageID)
+	var statuses map[int64]replyStatus
+	if err == nil && len(rows.Values) > 0 {
+		statuses, err = s.replyStatuses(ctx, s.userNow(ctx).Unix())
+	}
+	if err == nil && len(rows.Values) > 0 {
+		if tid := store.Int(rows.Values[0][0]); statuses[tid].Newest == newest.MessageID {
+			err = s.setDeadline(ctx, DeadlineAI, tid, Deadline{Date: r.Date, Time: r.Time, MessageID: newest.MessageID, Quote: r.Quote})
+		}
 	}
 	if err != nil {
 		slog.Default().Debug("summary reply date not written", "err", err) // the errors carry no mail content

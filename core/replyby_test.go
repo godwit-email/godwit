@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"github.com/emersion/go-imap/v2"
 	"strings"
 	"testing"
 	"time"
@@ -98,6 +99,26 @@ func TestSummaryCarriesReplyDate(t *testing.T) {
 	assert.Equal(t, text, e.summarize(t, "Asia/Shanghai", Target{Kind: "message", ID: q}), "from the cache, the same")
 	assert.Len(t, srv.Requests(), 1)
 	assert.Nil(t, e.deadlineOf(t, "q@x"), "a cache hit writes no date")
+}
+
+// A newer reply draft synced from another device is not the conversation's
+// newest mail: the incoming message's summary still writes its date.
+func TestSummaryReplyDatePastADraft(t *testing.T) {
+	e := newSendEnv(t, false)
+	require.NoError(t, e.im.User.Create("Drafts", &imap.CreateOptions{SpecialUse: []imap.MailboxAttr{imap.MailboxAttrDrafts}}))
+	e.put(t, "INBOX", eml("q@x", "bob@a.example", "alice@example.com", "quote", e.viewAt(1), "Please confirm the quote by Friday."))
+	e.put(t, "Drafts", eml("d@x", "alice@example.com", "bob@a.example", "Re: quote", e.viewAt(0.5), "Will do.", "In-Reply-To: <q@x>"))
+	e.sync(t)
+	q := e.idOf(t, "q@x")
+	require.Equal(t, e.threadOf(t, "q@x"), e.threadOf(t, "d@x"))
+	srv := e.witOn(t)
+	srv.Script(testllm.Turn{Text: []string{"- Bob wants the quote confirmed.\nREPLY BY: " + e.day(3) + "\nQUOTE: Please confirm the quote by Friday.\n"}})
+
+	e.summarize(t, "Asia/Shanghai", Target{Kind: "message", ID: q})
+	got := e.deadlineOf(t, "q@x")
+	require.NotNil(t, got, "the draft is not the newest mail")
+	assert.Equal(t, e.day(3), got.Date)
+	assert.Equal(t, DeadlineAI, got.Source)
 }
 
 // Lines that do not read or do not check give no date, and the summary as
