@@ -73,10 +73,11 @@ const DeadlineRankSQL = "CASE source WHEN 'manual' THEN 0 WHEN 'ai' THEN 2 ELSE 
 
 // mergeViewState moves what is kept per conversation for 视图 to target:
 // an exception (removed wins over added), the archive mark of the latest
-// archive, the replies, and one 期限: a manual one, else the one on the newest
-// mail, as only it can still be in effect once the merged conversation's
-// replies count (and the newer request is the one that holds); then the
-// highest source's (program = wit > ai), then the earliest.
+// archive, the replies, and one 期限: a manual one; else, of those still in
+// effect once the merged conversation's replies and archives count (their mail
+// newer than settledSQL), the highest source's (program = wit > ai), as a
+// write would keep; then the one on the newest mail (the newer request
+// holds), then the earliest.
 func mergeViewState(target int64, others []any) []sqlite.Statement {
 	all := append([]any{target}, others...)
 	in, inAll := "("+marks(len(others))+")", "("+marks(len(all))+")"
@@ -94,11 +95,30 @@ func mergeViewState(target int64, others []any) []sqlite.Statement {
 		{SQL: "UPDATE archive_marks SET thread_id = ? WHERE thread_id IN " + in, Args: args},
 		{SQL: "UPDATE reply_records SET thread_id = ? WHERE thread_id IN " + in, Args: args},
 		{SQL: `DELETE FROM thread_deadlines WHERE thread_id IN ` + inAll + ` AND thread_id != (SELECT thread_id FROM thread_deadlines WHERE thread_id IN ` + inAll + `
-			ORDER BY source = 'manual' DESC, (SELECT m.date FROM messages m WHERE m.id = thread_deadlines.message_id) DESC NULLS LAST,
-			` + DeadlineRankSQL + `, due_date IS NULL, due_date, due_time = '', due_time, thread_id LIMIT 1)`,
-			Args: append(slices.Clone(all), all...)},
+			ORDER BY source = 'manual' DESC, (SELECT m.date FROM messages m WHERE m.id = thread_deadlines.message_id) > ` + settledSQL(inAll) + ` DESC,
+			` + DeadlineRankSQL + `, (SELECT m.date FROM messages m WHERE m.id = thread_deadlines.message_id) DESC NULLS LAST,
+			due_date IS NULL, due_date, due_time = '', due_time, thread_id LIMIT 1)`,
+			Args: append(append(slices.Clone(all), all...), slices.Repeat(all, 3)...)},
 		{SQL: "UPDATE thread_deadlines SET thread_id = ? WHERE thread_id IN " + in, Args: args},
 	}
+}
+
+// settledSQL is, for the threads in inAll (its three uses take all's args each),
+// when they were last replied to or archived, as 回复状态's Settled has it: a
+// reply queued here (not failed), an archive mark, or counted mail that is the
+// user's (from an account's address, or in Sent), answered, or archived.
+// Draft-only mail settles nothing. 0 when none.
+func settledSQL(inAll string) string {
+	role := "CASE WHEN f.role_override != '' THEN f.role_override ELSE f.role END"
+	return `COALESCE((SELECT max(x) FROM (
+		SELECT r.at AS x FROM reply_records r LEFT JOIN outbox o ON o.id = r.outbox_id WHERE r.thread_id IN ` + inAll + ` AND COALESCE(o.state, '') != 'failed'
+		UNION ALL SELECT a.date FROM archive_marks a WHERE a.thread_id IN ` + inAll + `
+		UNION ALL SELECT s.date FROM messages s WHERE s.thread_id IN ` + inAll + `
+			AND EXISTS (SELECT 1 FROM message_locations l JOIN folders f ON f.id = l.folder_id WHERE l.message_id = s.id AND l.shown AND ` + role + ` NOT IN ('drafts', 'trash', 'junk'))
+			AND (instr(COALESCE(s.flags, ''), '\Answered') > 0
+				OR EXISTS (SELECT 1 FROM accounts acc WHERE instr(lower(COALESCE(s.from_addr, '')), lower(acc.email)) > 0)
+				OR EXISTS (SELECT 1 FROM message_locations l JOIN folders f ON f.id = l.folder_id WHERE l.message_id = s.id AND l.shown AND ` + role + ` IN ('sent', 'archive'))
+					AND NOT EXISTS (SELECT 1 FROM message_locations l JOIN folders f ON f.id = l.folder_id WHERE l.message_id = s.id AND l.shown AND ` + role + ` = 'inbox')))), 0)`
 }
 
 func refThreads(ctx context.Context, db *store.DB, accountID int64, ids []string) ([]int64, error) {

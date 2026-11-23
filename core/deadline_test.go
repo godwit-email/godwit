@@ -255,6 +255,25 @@ func TestDeadlineMergeKeepsTheLatestArchive(t *testing.T) {
 		"B's newer mail, A's later archive")
 }
 
+// Both dates still in effect after a merge: the higher source wins, as a
+// write would, though the lower one is on newer mail.
+func TestDeadlineMergeKeepsSourceOrderAmongEffective(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("a@x", "bob@acme.example", "alice@example.com", "a", e.viewAt(3), "Reply by Monday."))
+	e.put(t, "INBOX", eml("b@x", "bob@acme.example", "alice@example.com", "b", e.viewAt(1), "Reply by Thursday."))
+	e.sync(t)
+	require.NoError(t, e.s.setDeadline(bg, DeadlineProgram, e.threadOf(t, "a@x"), Deadline{Date: e.day(2), MessageID: e.idOf(t, "a@x")}))
+	require.NoError(t, e.s.setDeadline(bg, DeadlineAI, e.threadOf(t, "b@x"), Deadline{Date: e.day(4), MessageID: e.idOf(t, "b@x")}))
+
+	e.put(t, "INBOX", eml("m@x", "bob@acme.example", "alice@example.com", "bridge", e.viewAt(2), "z", "References: <a@x> <b@x>"))
+	e.sync(t)
+	require.Equal(t, e.threadOf(t, "a@x"), e.threadOf(t, "b@x"))
+	got := e.deadlineOf(t, "b@x")
+	require.NotNil(t, got)
+	assert.Equal(t, DeadlineProgram, got.Source, "an app's date outranks the summary's")
+	assert.Equal(t, e.day(2), got.Date)
+}
+
 // A date never becomes state that leaves the machine later (ADR 0003): writing
 // or clearing one adds no events_log row (so no rule run or plugin hook) and
 // changes no flag or keyword the server would get.
