@@ -93,7 +93,7 @@ func TestReplyDateUIShots(t *testing.T) {
 		h.useBackendClock()
 		h.put(acc, "INBOX", coretest.Msg("财务部 <finance@corp.example>", acc.Email, "11 月差旅报销补充凭证", "请今天之内补交凭证。", coretest.Date(now.Add(-2*time.Hour))))
 		h.put(acc, "INBOX", coretest.Msg("陈默 <chen@corp.example>", acc.Email, "技术方案评审纪要", "评审纪要见下，请在周五前给意见。", ago(12)))
-		h.putSeen(acc, "Sent", coretest.Msg("Me <alice@example.com>", "Acme Cloud <sales@acme.example>", "Re: 年度合同续签", "续签合同已附上，请确认。", ago(4)))
+		h.putSeen(acc, "Sent", coretest.Msg("Me <alice@example.com>", "Acme Cloud <sales@acme.example>", "Re: 年度合同续签", "续签合同已附上，请确认。", coretest.Date(now.Add(-97*time.Hour))))
 		h.put(acc, "INBOX", coretest.Msg("周宁 <zhou@corp.example>", acc.Email, "下周例会时间", "下周例会改到周三下午可以吗？", ago(2)))
 		h.syncNow(acc)
 		toHandle(h, 4)
@@ -117,6 +117,10 @@ func TestReplyDateUIShots(t *testing.T) {
 		shot(h, "B3-follow-up-manual", "你设的："+weekdayDay(day(3))+"前回复")
 		h.click("下周例会时间")
 		shot(h, "B4-no-date-no-summary", "直接发给你，尚未回复，已等 2 天")
+		h.click("已发送") // outside any view
+		h.waitMail("the sent row", func() bool { return !h.app.mail.list.loading && len(h.items()) == 1 })
+		h.click("Re: 年度合同续签")
+		shot(h, "B5-follow-up-outside-view", i18n.T("view.follow_up"))
 	})
 
 	t.Run("S", func(t *testing.T) {
