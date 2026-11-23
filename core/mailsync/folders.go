@@ -70,13 +70,6 @@ func (s *syncRun) loadFolders(ctx context.Context) error {
 func (s *syncRun) applyFolders(ctx context.Context, updated []backend.Folder, gone []backend.FolderRef) error {
 	db, accountID, r := s.db, s.a.id, s.r
 	var stmts []sqlite.Statement
-	for _, f := range updated {
-		stmts = append(stmts, sqlite.Statement{
-			SQL: `INSERT INTO folders(account_id, server_ref, name, role, delim, role_since) VALUES (?, ?, ?, ?, ?, unixepoch())
-				ON CONFLICT(account_id, server_ref) DO UPDATE SET name = excluded.name, role = excluded.role, delim = excluded.delim`,
-			Args: []any{accountID, string(f.Ref), f.Name, string(f.Role), f.Delim},
-		})
-	}
 	var ids, tids, held []int64
 	if len(gone) > 0 {
 		stale := "account_id = ? AND server_ref IN (" + marks(len(gone)) + ")"
@@ -105,6 +98,14 @@ func (s *syncRun) applyFolders(ctx context.Context, updated []backend.Folder, go
 			sqlite.Statement{SQL: "DELETE FROM messages WHERE " + in + "shown) AND " + unlocated + keepPending + " AND NOT " + fmt.Sprintf(shownElsewhere, "messages.id"), Args: twice},
 			// With the folders go their locations; a message the server then holds nowhere is orphaned.
 			sqlite.Statement{SQL: "DELETE FROM folders WHERE " + stale, Args: staleArgs})
+	}
+	// After the deletes: a folder recreated under a gone one's name takes a new row (#860).
+	for _, f := range updated {
+		stmts = append(stmts, sqlite.Statement{
+			SQL: `INSERT INTO folders(account_id, server_ref, name, role, delim, role_since) VALUES (?, ?, ?, ?, ?, unixepoch())
+				ON CONFLICT(account_id, server_ref) DO UPDATE SET name = excluded.name, role = excluded.role, delim = excluded.delim`,
+			Args: []any{accountID, string(f.Ref), f.Name, string(f.Role), f.Delim},
+		})
 	}
 	if _, err := db.Transaction(ctx, append(stmts, tidyThreads(accountID, tids)...)); err != nil {
 		return err

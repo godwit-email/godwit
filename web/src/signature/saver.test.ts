@@ -111,6 +111,27 @@ describe("signatureSaver", () => {
     expect(api.save).toHaveBeenCalledTimes(4);
   });
 
+  it("an older version that fails after a newer one is queued is not retried over it", async () => {
+    const { api, s } = setup();
+    s.show(1);
+    await vi.advanceTimersByTimeAsync(0);
+    let fail: (e: Error) => void = () => {};
+    api.save.mockImplementationOnce(() => new Promise((_, rej) => (fail = rej)));
+    s.edit(1, "<p>old</p>");
+    await vi.advanceTimersByTimeAsync(600); // old's save in flight
+    s.edit(1, "<p>new</p>");
+    await vi.advanceTimersByTimeAsync(600); // new's save queued behind it
+    fail(new Error("disk"));
+    await vi.advanceTimersByTimeAsync(0);
+    s.flush(1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.save.mock.calls).toEqual([
+      [1, "<p>old</p>"],
+      [1, "<p>new</p>"],
+    ]);
+    expect(api.saved).toHaveBeenLastCalledWith(1, true);
+  });
+
   it("a failed save for A survives switching to B and typing there; a flush saves both", async () => {
     const { api, s } = setup();
     s.show(1);

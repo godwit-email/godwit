@@ -63,6 +63,33 @@ func TestTemporaryRejectionRetriesLater(t *testing.T) {
 	assert.Equal(t, "done", e.state(t))
 }
 
+// retry_now sends a retrying item at once; once the background has moved it
+// on (to send_uncertain, say, or out of the outbox), a stale retry_now does
+// nothing.
+func TestRetryNowOnlyWhileQueued(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.smtp.Reply("bob@example.com", testmail.AtRcpt, &smtp.SMTPError{Code: 421, Message: "Busy"}, false)
+	e.sendNew(t)
+	e.sync(t)
+	it := e.onlyItem(t)
+	require.Equal(t, "queued", it.State)
+
+	_, err := e.s.db.Execute(bg, "UPDATE outbox SET state = 'send_uncertain' WHERE id = ?", it.ID)
+	require.NoError(t, err)
+	e.smtp.Reply("bob@example.com", testmail.AtRcpt, nil, false)
+	require.NoError(t, e.s.ResolveOutbox(bg, it.ID, "retry_now"))
+	e.sync(t)
+	assert.Empty(t, e.smtp.Messages())
+	assert.Equal(t, "send_uncertain", e.state(t))
+
+	_, err = e.s.db.Execute(bg, "UPDATE outbox SET state = 'queued' WHERE id = ?", it.ID)
+	require.NoError(t, err)
+	require.NoError(t, e.s.ResolveOutbox(bg, it.ID, "retry_now"))
+	e.sync(t)
+	assert.Len(t, e.smtp.Messages(), 1, "sent before its time")
+	assert.NoError(t, e.s.ResolveOutbox(bg, it.ID, "retry_now"), "gone from the outbox")
+}
+
 // Each refusal in a row doubles the wait, up to an hour; nothing gives up.
 func TestRetryBackoffDoublesToAnHour(t *testing.T) {
 	e := newSendEnv(t, false)

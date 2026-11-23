@@ -272,3 +272,24 @@ func TestReviewSubjectOps(t *testing.T) {
 	assert.Equal(t, []ReviewOp{{Kind: "ins", Change: -1, Tokens: []ReviewToken{{Text: "Hello"}}}}, ops("", "Hello"), "no subject before")
 	assert.Empty(t, ops("Same", "Same"))
 }
+
+// A decision adopts the draft as stored: recipients and the account a
+// program changed since come with it, so the page shows what it would send.
+func TestComposeDecideRecipients(t *testing.T) {
+	f, d, llm := witFixture(t, inlineOld)
+	a := f.propose(t, llm, inlineNew)
+	s := f.stored(t, d.ID)
+	s.To, s.Bcc = []string{"ann@example.com"}, []string{"eve@example.com"}
+	s, err := f.e.Svc.SaveDraft(t.Context(), s)
+	require.NoError(t, err)
+	added := f.e.AddAccount(t, "new@example.com") // after the window opened
+	_, err = f.e.Svc.SetDraftAccount(t.Context(), d.ID, added.ID, s.Revision)
+	require.NoError(t, err)
+	bc, err := f.page.Decide(f.ctx(1), a.ID, false)
+	require.NoError(t, err)
+	require.False(t, bc.Conflict)
+	assert.Equal(t, []string{"eve@example.com"}, bc.Bcc)
+	assert.Equal(t, []string{"ann@example.com"}, bc.To)
+	assert.Equal(t, added.ID, bc.From)
+	assert.Contains(t, bc.Accounts, Account{ID: added.ID, Email: added.Email})
+}

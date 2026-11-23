@@ -19,9 +19,13 @@ export type FieldsEdit = Partial<{
   subject: string;
 }>;
 
-/** What the page's settle hook needs: typed-but-uncommitted addresses become addresses. */
+/**
+ * What the page needs: the settle hook makes typed-but-uncommitted addresses addresses; replaced
+ * says the recipients were replaced by the draft as stored, so text still typed shows the clash.
+ */
 export interface FieldsHandle {
   commitPending(): void;
+  replaced(): void;
 }
 
 const none: Record<AddressKey, string> = { to: "", cc: "", bcc: "", replyTo: "" };
@@ -68,6 +72,11 @@ export function Fields({
   frozenNow.current = frozen;
   const [pending, setPending] = useState(none);
   const [ccOpen, setCcOpen] = useState(false);
+  // The recipients changed elsewhere while an address was being typed: both kept, the clash shown
+  // until that text is committed or cleared.
+  const [clash, setClash] = useState(false);
+  const typing = Object.values(pending).some(Boolean);
+  if (clash && !typing) setClash(false);
   const lists: Record<AddressKey, string[]> = { to, cc, bcc, replyTo: replyTo ? [replyTo] : [] };
   const fromEmail = accounts.find((a) => a.id === from)?.email;
 
@@ -82,6 +91,9 @@ export function Fields({
     commitPending() {
       if (frozen) return;
       for (const k of Object.keys(none) as AddressKey[]) if (pending[k]) commitOne(k, pending[k]);
+    },
+    replaced() {
+      if (typing) setClash(true);
     },
   }));
 
@@ -124,7 +136,13 @@ export function Fields({
         {extra}
       </>,
     );
-  const showCc = ccOpen || cc.length > 0 || bcc.length > 0 || replyTo !== "";
+  // Text typed in a row keeps it open: a reload that empties the row must not hide what send would commit.
+  const showCc =
+    ccOpen ||
+    cc.length > 0 ||
+    bcc.length > 0 ||
+    replyTo !== "" ||
+    !!(pending.cc || pending.bcc || pending.replyTo);
   const bad = invalid([...to, ...cc, ...bcc, ...lists.replyTo]);
 
   return (
@@ -154,6 +172,11 @@ export function Fields({
       {bad.length > 0 && (
         <p className="col-span-2 border-b-[0.5px] py-2 text-xs text-destructive">
           {t("compose.invalid", bad.join(", "))}
+        </p>
+      )}
+      {clash && (
+        <p role="alert" className="col-span-2 border-b-[0.5px] py-2 text-xs text-destructive">
+          {t("compose.recipients_changed")}
         </p>
       )}
       {row(

@@ -185,7 +185,8 @@ const pageSize = 100
 // Sync implements backend.Receiver. It reports changes since the cursor and
 // the mail a window wider than the cursor's adds, or
 // everything in the window at first and after the server cannot calculate
-// changes (then each folder is reset first). It always syncs the whole
+// changes (then each folder is reset first, and stored mail the window left
+// out is found again by id). It always syncs the whole
 // account: Only is not used, nor are Pages and PageSize, so more is false.
 // shortcut: no 加载更早 (Older) on JMAP yet, so it is ErrUnsupported; add an
 // Email/query past each folder's window when core asks for it.
@@ -260,7 +261,44 @@ func (r *Receiver) full(ctx context.Context, req backend.SyncRequest, reset bool
 			return err
 		}
 	}
+	if reset && req.Local != nil {
+		if err := s.keepLost(ctx); err != nil {
+			return err
+		}
+	}
 	return s.flush(backend.Page{Account: cursor{mstate, estate, &req.Window}.encode(), Folders: states})
+}
+
+// keepLost reports again the stored mail that the resets left at no location
+// and the window did not find, as long as the server still has it: mail that
+// slid out of the window is not gone (#861).
+func (s *round) keepLost(ctx context.Context) error {
+	if err := s.flush(backend.Page{}); err != nil { // Lost reads the resets as stored
+		return err
+	}
+	lost, err := s.req.Local.Lost(ctx)
+	if err != nil || len(lost) == 0 {
+		return err
+	}
+	ids := make([]gojmap.ID, len(lost))
+	for i, id := range lost {
+		ids[i] = gojmap.ID(id)
+	}
+	mails, err := s.r.emails(ctx, ids)
+	if err != nil {
+		return err
+	}
+	if err := s.appear(ctx, mails, nil, true); err != nil {
+		return err
+	}
+	// Local storage keeps a lost message's flags as it finds it again; the
+	// cursor moves past any change made meanwhile, so report the server's.
+	for _, e := range mails {
+		for _, m := range slices.Sorted(maps.Keys(e.MailboxIDs)) {
+			s.add(backend.FlagsChanged{Location: backend.Location{Folder: backend.FolderRef(m), Ref: backend.MessageRef(e.ID), ServerID: string(e.ID)}, Flags: flags(e.Keywords)})
+		}
+	}
+	return nil
 }
 
 // emailState is an Email/get of no ids: only the state. (email.Get leaves

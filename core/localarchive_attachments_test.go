@@ -78,6 +78,33 @@ func TestLocalArchiveAttachmentsReadFromOriginal(t *testing.T) {
 	read()
 }
 
+// A local archive's attachment counts as cached once opened: CachedAttachments
+// names the part extracted beside the original, and extracts none itself.
+func TestLocalArchiveAttachmentsCountAsCached(t *testing.T) {
+	s := newTestService(t)
+	acc, inbox := newArchive(t, s)
+	raw, pdf, _ := archiveMailWithFiles(t)
+	m, err := s.GetMessage(ctx, importOne(t, s, acc, inbox, raw).ID, false)
+	require.NoError(t, err)
+	var id int64
+	for _, a := range m.Attachments {
+		if a.Filename == "a.pdf" {
+			id = a.ID
+		}
+	}
+	got, err := s.CachedAttachments(ctx, []int64{id})
+	require.NoError(t, err)
+	require.Empty(t, got, "never opened, so not extracted")
+	_, _, err = s.GetAttachment(ctx, id)
+	require.NoError(t, err)
+	got, err = s.CachedAttachments(ctx, []int64{id})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	b, err := os.ReadFile(got[id])
+	require.NoError(t, err)
+	require.Equal(t, pdf, b)
+}
+
 // The reader shows a local archive's cid images, read from the original.
 func TestLocalArchiveInlineImageShows(t *testing.T) {
 	s := newTestService(t)

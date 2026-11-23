@@ -3,13 +3,26 @@ package app
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/coretest"
 	"github.com/godwit-email/godwit/core/plugins"
+	"github.com/godwit-email/godwit/internal/kit"
 )
+
+// offersTranslator opens AI 功能 and waits until 翻译方式 offers label: the
+// translators and the directory's titles load after the page opens, and the
+// select's menu is made from what has loaded when it is clicked.
+func (h *harness) offersTranslator(label string) {
+	h.t.Helper()
+	p := h.aiTab(aiFeatures)
+	h.until("翻译方式 offering "+label, func() bool {
+		return slices.ContainsFunc(p.translatorOptions(""), func(o kit.Option[string]) bool { return o.Label == label })
+	})
+}
 
 // withNativeTranslator installs, grants and (if on) enables the native fixture dlx.
 func withNativeTranslator(t *testing.T, on bool) func(*coretest.Env) {
@@ -51,8 +64,7 @@ func TestReaderTranslatorOff(t *testing.T) {
 func TestTranslatorSetting(t *testing.T) {
 	h := newHarness(t, func(e *coretest.Env) { e.AddAccount(t, "alice@example.com") }, withNativeTranslator(t, true))
 	h.until("initial load", func() bool { return h.app.loaded })
-	h.aiTab(aiFeatures)
-	h.see("翻译方式")
+	h.offersTranslator("dlx")
 	h.click("模型（默认）")
 	h.click("dlx")
 	h.until("saved", func() bool {
@@ -79,7 +91,7 @@ func TestTranslatorSettingUsesRegistryTitle(t *testing.T) {
 	if _, err := h.env.Svc.InstallPluginFromRegistry(ctx, "dlx"); err != nil {
 		t.Fatal(err)
 	}
-	h.aiTab(aiFeatures)
+	h.offersTranslator("DLX 翻译")
 	h.click("模型（默认）")
 	h.click("DLX 翻译")
 	h.until("saved with the stable ID", func() bool {

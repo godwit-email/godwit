@@ -58,7 +58,9 @@ func TestImagesAllowed(t *testing.T) {
 	e.put(t, "INBOX", eml("b@x", "bob <carol@example.com>", "alice@example.com", "s", day, "b", "Reply-To: bob@example.com"))
 	e.put(t, "INBOX", eml("d@x", `"bob@example.com" <mallory@evil.example>`, "alice@example.com", "s", day, "b"))
 	e.put(t, "Junk", eml("c@x", "bob@example.com", "alice@example.com", "s", day, "b"))
+	e.put(t, "INBOX", eml("e@x", "Bob <bob@example.com>", "alice@example.com", "s", day, "b"))
 	e.sync(t)
+	showIn(t, e.s, e.idOf(t, "e@x"), e.folderID(t, "Junk")) // also in Junk, as a Gmail label can be
 	trusted := func(mid string) bool {
 		ok, err := e.s.ImagesAllowed(bg, e.idOf(t, mid))
 		require.NoError(t, err)
@@ -73,6 +75,7 @@ func TestImagesAllowed(t *testing.T) {
 	}
 	assert.True(t, trusted("a@x"), "automatic by default")
 	assert.False(t, trusted("c@x"), "but never in the junk folder")
+	assert.False(t, trusted("e@x"), "nor when the inbox also holds it (#858)")
 	mode("ask")
 	require.NoError(t, e.s.TrustImageSender(bg, "bob@example.com"))
 	assert.False(t, trusted("a@x"), "ask: even a trusted sender")
@@ -87,7 +90,7 @@ func TestImagesAllowed(t *testing.T) {
 	// Message.InJunk agrees, also once the role moved to another folder (the app offers no trust there).
 	require.NoError(t, e.s.SetRoleFolder(bg, e.acc.ID, "junk", e.folderID(t, "Spam2")))
 	assert.False(t, trusted("c@x"))
-	for mid, junk := range map[string]bool{"a@x": false, "c@x": true} {
+	for mid, junk := range map[string]bool{"a@x": false, "c@x": true, "e@x": true} {
 		m, err := e.s.GetMessage(bg, e.idOf(t, mid), false)
 		require.NoError(t, err)
 		assert.Equal(t, junk, m.InJunk, mid)

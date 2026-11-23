@@ -4,6 +4,25 @@ import type { ReactNode } from "react";
 import type { Approval, BodyChange, ComposeState, Review, RunStart, WitEvent } from "@/mygo";
 import { type Legacy, legacy } from "@/wit/fixtures";
 import { ComposePage } from "./ComposePage";
+import type * as Saver from "./saver";
+
+// Runs at the moment the saver takes a stored revision: a send from then on passes it.
+const atLatest = vi.hoisted(() => ({ f: undefined as (() => void) | undefined }));
+vi.mock("./saver", async (importOriginal) => {
+  const m = await importOriginal<typeof Saver>();
+  return {
+    ...m,
+    createSaver: (...a: Parameters<typeof m.createSaver>) => {
+      const s = m.createSaver(...a);
+      const use = s.useLatest.bind(s);
+      s.useLatest = (r, snap) => {
+        atLatest.f?.();
+        use(r, snap);
+      };
+      return s;
+    },
+  };
+});
 
 const h = vi.hoisted(() => ({ wit: new Set<(e: WitEvent) => void>(), editorMounts: 0 }));
 vi.mock("@/mygo", () => ({
@@ -216,6 +235,13 @@ const inline: Review = {
 };
 const change = (body: string, revision: number): BodyChange => ({
   revision,
+  accounts: state.accounts,
+  from: state.from,
+  quote: state.quote,
+  to: state.to,
+  cc: [],
+  bcc: [],
+  replyTo: "",
   subject: "",
   body,
   conflict: false,
@@ -993,4 +1019,64 @@ test.each([
   await screen.findByRole("region", { name: "正文修订" });
   const card = (await screen.findByText(a.tool)).parentElement as HTMLElement;
   expect(within(card).queryByRole("button", { name: "调整" })).toBeNull();
+});
+
+test("a reload shows the recipients and attachments changed behind the window", async () => {
+  vi.mocked(api.latest).mockResolvedValue({
+    ...latest("Wit 写的", 9),
+    bcc: ["eve@x.com"],
+    attachments: [{ id: 3, filename: "plan.pdf", size: 10 }],
+  });
+  await setup();
+  emit({ kind: "done" });
+  expect(await screen.findByRole("button", { name: "移除 eve@x.com" })).toBeInTheDocument();
+  expect(screen.getByText("plan.pdf")).toBeInTheDocument();
+  expect(screen.queryByRole("alert")).toBeNull(); // nothing was being typed
+});
+
+test("the saver takes a reload's revision only once its recipients and account show", async () => {
+  vi.mocked(api.latest).mockResolvedValue({
+    ...latest("Wit 写的", 9),
+    accounts: [...state.accounts, { id: 2, email: "new@x.com" }], // added since the window opened
+    from: 2,
+    bcc: ["eve@x.com"],
+  });
+  let shown: [boolean, string | null] | undefined;
+  atLatest.f = () => {
+    shown = [
+      !!screen.queryByRole("button", { name: "移除 eve@x.com" }),
+      screen.getByRole("button", { name: "发件账户" }).textContent,
+    ];
+  };
+  await setup();
+  emit({ kind: "done" });
+  await waitFor(() => expect(shown).toEqual([true, "new@x.com"]));
+  atLatest.f = undefined;
+});
+
+test("a row being typed in stays open when a reload empties it", async () => {
+  vi.mocked(api.load).mockResolvedValue({ ...state, cc: ["cat@x.com"] });
+  await setup();
+  const cc = screen.getByRole("combobox", { name: "抄送" });
+  await userEvent.type(cc, "dan@x.com");
+  vi.mocked(api.latest).mockResolvedValue({ ...latest("Wit 写的", 9), cc: [] });
+  emit({ kind: "done" });
+  expect(await screen.findByRole("alert")).toHaveTextContent("收件人已在别处被修改");
+  expect(screen.queryByRole("button", { name: "移除 cat@x.com" })).toBeNull();
+  expect(screen.getByRole("combobox", { name: "抄送" })).toHaveValue("dan@x.com");
+});
+
+test("an address being typed survives a reload that changes the recipients, and the clash shows", async () => {
+  await setup();
+  const to = screen.getByRole("combobox", { name: "收件人" });
+  await userEvent.type(to, "bob@x.com");
+  vi.mocked(api.latest).mockResolvedValue({ ...latest("Wit 写的", 9), to: ["ann@x.com"] });
+  emit({ kind: "done" });
+  expect(await screen.findByRole("button", { name: "移除 ann@x.com" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "移除 a@x.com" })).toBeNull();
+  expect(to).toHaveValue("bob@x.com");
+  expect(screen.getByRole("alert")).toHaveTextContent("收件人已在别处被修改");
+  await userEvent.type(to, "{Enter}");
+  expect(screen.getByRole("button", { name: "移除 bob@x.com" })).toBeInTheDocument();
+  expect(screen.queryByRole("alert")).toBeNull();
 });

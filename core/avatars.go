@@ -23,8 +23,6 @@ type Avatar struct {
 	Width, Height  int
 }
 
-const msgInJunk = "EXISTS (SELECT 1 FROM message_locations l JOIN folders f ON f.id = l.folder_id WHERE l.message_id = m.id AND l.shown AND " + inJunk + ")"
-
 // SenderAvatar loads the ordinary sender avatar under the current message's
 // remote-image policy. allowRemote is the user's explicit permission for this message.
 // Missing or unavailable sources are normal empty results.

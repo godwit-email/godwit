@@ -3,6 +3,7 @@ package mask_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -90,4 +91,78 @@ func TestLearnRestoresACategoryNowBlocked(t *testing.T) {
 	m := configured(t, mask.Config{Actions: map[string]string{mask.IDs: mask.Block}})
 	m.Learn(`{"messages":[{"role":"user","content":"card ` + card + `"}]}`)
 	assert.Equal(t, "card "+card, m.Restore(p))
+}
+
+// whole is texts read as one, after a subject's line, and where each stands.
+func whole(texts ...string) (string, [][2]int) {
+	var b strings.Builder
+	b.WriteString("Subject: Plans\n")
+	var nodes [][2]int
+	for _, t := range texts {
+		nodes = append(nodes, [2]int{b.Len(), b.Len() + len(t)})
+		b.WriteString(t)
+	}
+	return b.String(), nodes
+}
+
+// A code markup cuts in two is found by its label in another piece, and
+// each piece of it is masked wherever it stands, restoring as it was: but
+// a piece is not a value from then on, and the code is recorded once.
+func TestRequestWholeMasksTheCutsOfAValue(t *testing.T) {
+	m := configured(t, mask.Config{})
+	var got []mask.Hit
+	m.Record = func(_ string, hits []mask.Hit) { got = hits }
+	texts := []string{"验证码 ", "482", "913", "\n", "Call 913 later"}
+	w, nodes := whole(texts...)
+	out, err := m.RequestWhole(mask.Tag(context.Background(), "translate", nil), w, nodes, texts)
+	require.NoError(t, err)
+	assert.Equal(t, "验证码 ", out[0])
+	assert.True(t, strings.HasPrefix(out[1], "{{CODE_") && strings.HasPrefix(out[2], "{{CODE_") && out[1] != out[2], out)
+	assert.Equal(t, "Call "+out[2]+" later", out[4])
+	for i := range texts {
+		assert.Equal(t, texts[i], m.Restore(out[i]))
+	}
+	assert.Equal(t, []mask.Hit{{Kind: "CODE", Category: mask.Codes, First: "4", Len: 6, Action: mask.Mask}}, plain(got))
+	assert.Equal(t, "913 apples", masked(t, m, "913 apples"), "a piece is not learned")
+}
+
+// 仅警告 sends the pieces as they are and records the code whole; 拦截
+// sends nothing.
+func TestRequestWholeWarnsAndBlocksAValueAsAWhole(t *testing.T) {
+	texts := []string{"验证码", "482913"}
+	w, nodes := whole(texts[0], "\n", texts[1])
+	nodes = [][2]int{nodes[0], nodes[2]} // the line break is not sent
+
+	m := configured(t, mask.Config{Actions: map[string]string{mask.Codes: mask.Warn}})
+	var got []mask.Hit
+	m.Record = func(_ string, hits []mask.Hit) { got = hits }
+	out, err := m.RequestWhole(mask.Tag(context.Background(), "translate", nil), w, nodes, texts)
+	require.NoError(t, err)
+	assert.Equal(t, texts, out)
+	assert.Equal(t, []mask.Hit{{Kind: "CODE", Category: mask.Codes, First: "4", Len: 6, Action: mask.Warn}}, plain(got))
+
+	m = configured(t, mask.Config{Actions: map[string]string{mask.Codes: mask.Block}})
+	_, err = m.RequestWhole(context.Background(), w, nodes, texts)
+	var b *mask.BlockedError
+	require.ErrorAs(t, err, &b)
+	assert.Equal(t, []string{mask.Codes}, b.Categories)
+}
+
+// What each text holds on its own is masked as Text masks it, whatever
+// reading them whole finds: a word inside another, and two codes that,
+// read together, are no one code (#873).
+func TestRequestWholeMasksEachTextToo(t *testing.T) {
+	m := configured(t, mask.Config{Words: []string{"cat"}})
+	texts := []string{"concatenate"}
+	w, nodes := whole(texts...)
+	out, err := m.RequestWhole(context.Background(), w, nodes, texts)
+	require.NoError(t, err)
+	assert.NotContains(t, out[0], "cat")
+
+	m = configured(t, mask.Config{Actions: map[string]string{mask.Codes: mask.Block}})
+	texts = []string{"Your verification code is 482913.", "Your verification code is 731559."}
+	w, nodes = whole(texts[0], "\n", texts[1])
+	_, err = m.RequestWhole(context.Background(), w, [][2]int{nodes[0], nodes[2]}, texts)
+	var b *mask.BlockedError
+	require.ErrorAs(t, err, &b)
 }

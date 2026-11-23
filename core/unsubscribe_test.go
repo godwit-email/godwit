@@ -263,6 +263,7 @@ func TestNoUnsubscribe(t *testing.T) {
 		{"INBOX", "long@x", long},
 		{"Junk", "junk@x", "List-Unsubscribe: <mailto:u@shop.example>"},
 		{"INBOX", "nobrackets@x", "List-Unsubscribe: https://shop.example/u"},
+		{"INBOX", "both@x", "List-Unsubscribe: <mailto:u@shop.example>"},
 	} {
 		var hdr []string
 		if c.hdr != "" {
@@ -272,7 +273,8 @@ func TestNoUnsubscribe(t *testing.T) {
 			"Click https://shop.example/unsubscribe to unsubscribe.", hdr...))
 	}
 	e.sync(t)
-	for _, id := range []string{"plain@x", "long@x", "junk@x", "nobrackets@x"} {
+	showIn(t, e.s, e.idOf(t, "both@x"), e.folderID(t, "Junk")) // the inbox does not hide Junk
+	for _, id := range []string{"plain@x", "long@x", "junk@x", "nobrackets@x", "both@x"} {
 		u, err := e.s.UnsubscribeMethod(bg, e.idOf(t, id))
 		require.NoError(t, err, id)
 		assert.Equal(t, Unsubscribe{}, u, id)

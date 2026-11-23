@@ -678,3 +678,46 @@ func folderTotal(t *testing.T, e *coretest.Env, accountID int64, name string) in
 	}
 	return -1
 }
+
+// Recovering from an expired state keeps cached mail that slid out of the
+// sync window but is still on the server, and drops what the server deleted
+// meanwhile (#861).
+func TestJMAPStateExpiredKeepsMailOutsideWindow(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	acc := e.AddAccount(t, "alice@example.com", coretest.ViaJMAP())
+	_, err := e.Svc.UpdateAccount(t.Context(), acc.ID, core.AccountPatch{Sync: &core.SyncRange{Limit: 2}})
+	require.NoError(t, err)
+	srv := e.JMAP(acc.ID)
+	kept := srv.Deliver("INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Kept", "body"))
+	doomed := srv.Deliver("INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Doomed", "body"))
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	srv.Deliver("INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Newer1", "body"))
+	srv.Deliver("INBOX", coretest.Msg("bob@example.com", "alice@example.com", "Newer2", "body"))
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+	count := func(q string) int {
+		ms, err := e.Svc.Search(t.Context(), acc.ID, q, 10)
+		require.NoError(t, err)
+		return len(ms)
+	}
+	require.Equal(t, 1, count("Kept"), "cached before the window moved past it")
+
+	o := other(t, e, acc.ID)
+	res, err := o.Apply(t.Context(), backend.Purge{At: at(e, acc.ID, "INBOX", doomed)})
+	require.NoError(t, err)
+	require.Equal(t, backend.Done, res.Outcome)
+	res, err = o.Apply(t.Context(), backend.SetFlags{At: at(e, acc.ID, "INBOX", kept), Add: backend.Flags{Seen: true}})
+	require.NoError(t, err)
+	require.Equal(t, backend.Done, res.Outcome)
+	srv.ExpireState()
+	require.NoError(t, e.Svc.SyncNow(t.Context(), acc.ID))
+
+	ms, err := e.Svc.Search(t.Context(), acc.ID, "Kept", 10)
+	require.NoError(t, err)
+	require.Len(t, ms, 1, "still on the server, outside the window")
+	m, err := e.Svc.GetMessageText(t.Context(), ms[0].ID)
+	require.NoError(t, err)
+	assert.Equal(t, []string{`\Seen`}, m.Flags, "read elsewhere while the state expired")
+	assert.Zero(t, count("Doomed"), "deleted on the server")
+	assert.Equal(t, 1, count("Newer1"))
+	assert.Equal(t, 1, count("Newer2"))
+}

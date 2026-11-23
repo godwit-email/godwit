@@ -755,6 +755,29 @@ func TestGetAttachmentLazy(t *testing.T) {
 	assert.Equal(t, path, path2)
 }
 
+// CachedAttachments names the cache files on disk, offline, without marking
+// them used: showing a chip is not a use (ADR 0044).
+func TestCachedAttachmentsOnlyFilesOnDisk(t *testing.T) {
+	e := newSyncEnv(t)
+	e.put(t, "INBOX", withAttachments("c@x", "hi", 3))
+	e.sync(t)
+	ids := e.rows(t, "SELECT id FROM attachments ORDER BY id")
+	cachedID, uncachedID, evictedID := ids[0][0].(int64), ids[1][0].(int64), ids[2][0].(int64)
+	path, _, err := e.s.GetAttachment(bg, cachedID)
+	require.NoError(t, err)
+	gone, _, err := e.s.GetAttachment(bg, evictedID)
+	require.NoError(t, err)
+	require.NoError(t, os.Remove(gone)) // the row still names it
+	_, err = e.s.db.Execute(bg, "UPDATE attachments SET last_used = 1")
+	require.NoError(t, err)
+	e.im.Stop()
+
+	got, err := e.s.CachedAttachments(bg, []int64{cachedID, uncachedID, evictedID, 999999})
+	require.NoError(t, err)
+	assert.Equal(t, map[int64]string{cachedID: path}, got)
+	assert.Equal(t, 3, e.count(t, "SELECT count(*) FROM attachments WHERE last_used = 1"))
+}
+
 func TestFetchAttachmentsBatch(t *testing.T) {
 	e := newSyncEnv(t)
 	e.put(t, "INBOX", withAttachments("batch@x", "hi", 3))

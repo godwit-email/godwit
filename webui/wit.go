@@ -561,8 +561,19 @@ func (p *ComposePage) Follow(ctx context.Context) (WitHistory, error) {
 // editable HTML as stored, which the page adopts with the Change at once.
 type BodyChange struct {
 	Change
-	// Subject is the draft's subject as stored.
-	Subject string `json:"subject"`
+	// From (the sending account), To, Cc, Bcc, ReplyTo, Subject and Quote
+	// are the draft's as stored, as in ComposeState: a program may have
+	// changed them too, and the page sends the revision it adopts, so it
+	// must show them. Accounts lists the senders anew: From may be one
+	// added since the window opened.
+	Accounts []Account `json:"accounts"`
+	From     int64     `json:"from"`
+	Quote    string    `json:"quote"`
+	To       []string  `json:"to"`
+	Cc       []string  `json:"cc"`
+	Bcc      []string  `json:"bcc"`
+	ReplyTo  string    `json:"replyTo"`
+	Subject  string    `json:"subject"`
 	// Body is the editable HTML as stored.
 	Body string `json:"body"`
 	// FromProgram is core.Draft.FromProgram as stored: a Wit edit marks the
@@ -734,7 +745,13 @@ func bodyChange(ctx context.Context, svc Service, s *session, err error) (BodyCh
 	if err != nil {
 		return BodyChange{}, keyed(err)
 	}
-	return BodyChange{Change: ch, Subject: d.Subject, Body: s.adopt(d), FromProgram: d.FromProgram}, nil
+	accs, err := senders(ctx, svc)
+	if err != nil {
+		return BodyChange{}, keyed(err)
+	}
+	body := s.adopt(d)
+	return BodyChange{Change: ch, Accounts: accs, From: d.AccountID, Quote: mail.HTMLToText(s.quote), To: nz(d.To), Cc: nz(d.Cc),
+		Bcc: nz(d.Bcc), ReplyTo: d.ReplyTo, Subject: d.Subject, Body: body, FromProgram: d.FromProgram}, nil
 }
 
 // Undo takes back the latest edit Wit applied to the calling window's

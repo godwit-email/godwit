@@ -129,6 +129,15 @@ func (b boundTranslator) maskTexts(ctx context.Context, texts []string) ([]strin
 	return b.masker.RequestTexts(ctx, texts)
 }
 
+// maskWhole is maskTexts for texts, the distinct texts of read's nodes,
+// masked by what read holds whole (mask.RequestWhole).
+func (b boundTranslator) maskWhole(ctx context.Context, read bodyRead, texts []string) ([]string, error) {
+	if b.masker == nil || !b.masker.On() {
+		return texts, nil
+	}
+	return b.masker.RequestWhole(ctx, read.whole, read.nodes, texts)
+}
+
 // translatorFor is the plugin name as a translator: the system's for the
 // built-in system-translation when it is on, else a running plugin.
 func (s *Service) translatorFor(ctx context.Context, name string) (boundTranslator, error) {

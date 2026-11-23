@@ -82,11 +82,11 @@ func (m *Masker) hash(kind, v string) string {
 // account or a short one (shortName), while it is on.
 // shortcut: the table only grows, by each value masked; evict when it is seen to matter.
 func (m *Masker) placeholder(kind, v string, recognized, learnName bool) (string, error) {
-	hash := m.hash(kind, v)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if e, ok := m.values[hash]; ok && e != (entry{kind, v}) {
-		return "", errCollision
+	p, err := m.remember(kind, v)
+	if err != nil {
+		return "", err
 	}
 	n, lab := labeled[kind]
 	switch {
@@ -97,6 +97,23 @@ func (m *Masker) placeholder(kind, v string, recognized, learnName bool) (string
 		m.addName(v)
 	case lab && len(v) >= n && !slices.Contains(m.secrets, entry{kind, v}):
 		m.secrets = append(m.secrets, entry{kind, v})
+	}
+	return p, nil
+}
+
+// fragment is the placeholder of v, a piece of a value of kind, remembered
+// for Restore only: a piece is not known as a value from then on.
+func (m *Masker) fragment(kind, v string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.remember(kind, v)
+}
+
+// remember is v's placeholder, kept for Restore; m.mu is held.
+func (m *Masker) remember(kind, v string) (string, error) {
+	hash := m.hash(kind, v)
+	if e, ok := m.values[hash]; ok && e != (entry{kind, v}) {
+		return "", errCollision
 	}
 	m.values[hash] = entry{kind, v}
 	return "{{" + kind + "_" + hash + "}}", nil
@@ -141,25 +158,58 @@ func (m *Masker) Learn(text string) {
 // added to f; one of a category set to Block fails it (*BlockedError), even
 // where another value overlapped it, but only once all of s is masked.
 // Learning (f.learn) masks every value, whatever its category's action.
-func (m *Masker) text(s string, defuse, read bool, f *Found) (out string, err error) {
+func (m *Masker) text(s string, defuse, read bool, f *Found) (_ string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			out, err = "", fmt.Errorf("mask: %v", r)
+			err = fmt.Errorf("mask: %v", r)
+		}
+	}()
+	s, spans, block, err := m.spans(s, defuse, read, f)
+	if err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	last := 0
+	for _, sp := range spans {
+		p, err := m.placeholder(sp.kind, sp.value, sp.recognized, sp.own)
+		if err != nil {
+			return "", err
+		}
+		b.WriteString(s[last:sp.start])
+		b.WriteString(p)
+		last = sp.end
+	}
+	b.WriteString(s[last:])
+	if block != nil {
+		return b.String(), block
+	}
+	return b.String(), nil
+}
+
+// masked is a value text masks at s[start:end], as it reads: value.
+type masked struct {
+	span
+	value string
+}
+
+// spans is what text masks in s, and s as it masks it (defused), each
+// value found added to f, and the categories set to Block found in it.
+func (m *Masker) spans(s string, defuse, read bool, f *Found) (_ string, out []masked, block *BlockedError, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			out, block, err = nil, nil, fmt.Errorf("mask: %v", r)
 		}
 	}()
 	if defuse {
 		s = m.defuse(s)
 	}
-	var b strings.Builder
-	var block *BlockedError
-	last := 0
 	cc := m.cfg.Load()
 	view, at := unescaped(s)
 	known := append(m.nameSpans(view), m.secretSpans(view)...)
 	if read {
 		found, err := cc.recognizedSpans(view, m.foundSpans)
 		if err != nil {
-			return "", err
+			return "", nil, nil, err
 		}
 		known = append(known, found...)
 	}
@@ -187,19 +237,9 @@ func (m *Masker) text(s string, defuse, read bool, f *Found) (out string, err er
 			block = block.with(categories[sp.kind])
 			continue
 		}
-		p, err := m.placeholder(sp.kind, v, sp.recognized, sp.own)
-		if err != nil {
-			return "", err
-		}
-		b.WriteString(s[last:sp.start])
-		b.WriteString(p)
-		last = sp.end
+		out = append(out, masked{sp, v})
 	}
-	b.WriteString(s[last:])
-	if block != nil {
-		return b.String(), block
-	}
-	return b.String(), nil
+	return s, out, block, nil
 }
 
 // unescaped is s with its HTML character references (&#64;, &amp;) decoded,

@@ -105,7 +105,7 @@ Godwit keeps passwords, refresh tokens and API keys in the system keychain. A Li
 
 ```sh
 mkdir -p ~/.config/godwit ~/.local/share/godwit
-(umask 077 && openssl rand -hex 32 > ~/.config/godwit/keyring.key)
+(umask 077 && set -C && openssl rand -hex 32 > ~/.config/godwit/keyring.key)
 ```
 
 ```ini
@@ -113,7 +113,7 @@ Environment=GODWIT_KEYRING_FILE=%h/.local/share/godwit/keyring
 Environment=GODWIT_KEYRING_KEY_FILE=%h/.config/godwit/keyring.key
 ```
 
-The key file holds 64 hex characters and must not be readable by anyone else (0600 or narrower), or the backend refuses to start; so does setting only one of the two variables. Godwit creates the keyring file (0600), and a `.lock` file beside it, on the first credential it saves; its directory must exist. Backends of several data directories can share one keyring file. This works on Linux and macOS; on Windows, which always has its credential manager, the variables are refused. Without the variables nothing changes: credentials stay in the system keychain, and Godwit never falls back to a file on its own. Anyone with both files can read your credentials, so keep the key off backups that also hold the keyring.
+The key file holds 64 hex characters and must not be readable by anyone else (0600 or narrower), or the backend refuses to start; so does setting only one of the two variables. `set -C` makes the command fail instead of replacing a key that already exists: a new key cannot decrypt the old keyring, so every saved credential would have to be entered again. Godwit creates the keyring file (0600), and a `.lock` file beside it, on the first credential it saves; its directory must exist. Backends of several data directories can share one keyring file. This works on Linux and macOS; on Windows, which always has its credential manager, the variables are refused. Without the variables nothing changes: credentials stay in the system keychain, and Godwit never falls back to a file on its own. Anyone with both files can read your credentials, so keep the key off backups that also hold the keyring.
 
 ## Development
 
