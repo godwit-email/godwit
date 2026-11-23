@@ -119,6 +119,15 @@ func TestSummaryReplyDatePastADraft(t *testing.T) {
 	require.NotNil(t, got, "the draft is not the newest mail")
 	assert.Equal(t, e.day(3), got.Date)
 	assert.Equal(t, DeadlineAI, got.Source)
+
+	// The thread's summary, the draft last among its mail, checks and writes against q too.
+	require.NoError(t, e.setThreadDeadline(bg, e.threadOf(t, "q@x"), Deadline{MessageID: q}))
+	require.Nil(t, e.deadlineOf(t, "q@x"))
+	srv.Script(testllm.Turn{Text: []string{"PROGRESS\n- Bob wants the quote confirmed.\nREPLY BY: " + e.day(4) + "\nQUOTE: Please confirm the quote by Friday.\n"}})
+	e.summarize(t, "Asia/Shanghai", Target{Kind: "thread", ID: e.threadOf(t, "q@x")})
+	got = e.deadlineOf(t, "q@x")
+	require.NotNil(t, got, "a thread summary with the draft last")
+	assert.Equal(t, e.day(4), got.Date)
 }
 
 // Lines that do not read or do not check give no date, and the summary as

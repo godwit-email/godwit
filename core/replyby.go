@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -96,25 +97,27 @@ func cutPrefixFold(s, prefix string) (string, bool) {
 }
 
 // writeReplyBy makes a summary's valid reply date the 期限 of the
-// conversation of newest (the newest message the model got), source ai. A
-// date that does not read or check, or none, changes nothing: a follow-up
-// asking for no date keeps the one before. Nor does a summary of a message
-// older than its conversation's newest counted one (drafts aside). setDeadline refusing it (a higher
-// source in effect, no longer waiting on the user) is no error of the summary.
-func (s *Service) writeReplyBy(ctx context.Context, text string, newest mailItem, loc *time.Location) {
+// conversation of items (the mail the model got), source ai, checked against
+// the conversation's newest counted message as 回复状态 has it (a draft synced
+// from elsewhere is not one), which must be among items: a summary of an older
+// message writes nothing. A date that does not read or check, or none,
+// changes nothing: a follow-up asking for no date keeps the one before.
+// setDeadline refusing it (a higher source in effect, no longer waiting on the
+// user) is no error of the summary.
+func (s *Service) writeReplyBy(ctx context.Context, text string, items []mailItem, loc *time.Location) {
 	r, _, err := parseReplyBy(text)
-	if err != nil || r.Date == "" || r.check(newest, loc) != nil {
+	if err != nil || r.Date == "" || len(items) == 0 {
 		return
 	}
-	// The newest counted mail, as 回复状态 has it: a draft synced from elsewhere is not one.
-	rows, err := s.db.Query(ctx, "SELECT thread_id FROM messages WHERE id = ?", newest.MessageID)
+	rows, err := s.db.Query(ctx, "SELECT thread_id FROM messages WHERE id = ?", items[0].MessageID)
 	var statuses map[int64]replyStatus
 	if err == nil && len(rows.Values) > 0 {
 		statuses, err = s.replyStatuses(ctx, s.userNow(ctx).Unix())
 	}
 	if err == nil && len(rows.Values) > 0 {
-		if tid := store.Int(rows.Values[0][0]); statuses[tid].Newest == newest.MessageID {
-			err = s.setDeadline(ctx, DeadlineAI, tid, Deadline{Date: r.Date, Time: r.Time, MessageID: newest.MessageID, Quote: r.Quote})
+		tid := store.Int(rows.Values[0][0])
+		if i := slices.IndexFunc(items, func(it mailItem) bool { return it.MessageID == statuses[tid].Newest }); i >= 0 && r.check(items[i], loc) == nil {
+			err = s.setDeadline(ctx, DeadlineAI, tid, Deadline{Date: r.Date, Time: r.Time, MessageID: items[i].MessageID, Quote: r.Quote})
 		}
 	}
 	if err != nil {

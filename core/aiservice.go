@@ -252,7 +252,7 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 				if replyAsk != "" {
 					// Only the model's run writes: a hit is the same messages' summary,
 					// whose date was written (or refused) when it ran.
-					s.writeReplyBy(ctx, o, items[len(items)-1], now.Location())
+					s.writeReplyBy(ctx, o, items, now.Location())
 				}
 			}
 			// The terminal event always fits: once ctx is done the reader may be
