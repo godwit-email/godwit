@@ -2,7 +2,7 @@ package core
 
 import (
 	"encoding/json"
-	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -53,26 +53,106 @@ func TestParseReplyByMalformed(t *testing.T) {
 	}
 }
 
-// The eval's lines go after a message's and a thread's summary prompt, and
-// are cached apart; with none set, summarize asks as before.
-func TestSummarizeAppendsReplyByLines(t *testing.T) {
-	e := newSkillEnv(t)
-	e.srv.Script(testllm.Turn{Text: []string{"- a"}}, testllm.Turn{Text: []string{"PROGRESS\n- x <mail id=\"1\"/>"}}, testllm.Turn{Text: []string{"- b"}})
-	e.s.summaryAppend = fmt.Sprintf(replyByFormat, "Asia/Shanghai")
-	e.run(t, "summarize", Target{Kind: "message", ID: e.msg})
-	e.run(t, "summarize", Target{Kind: "thread", ID: 1})
-	e.s.summaryAppend = ""
-	e.run(t, "summarize", Target{Kind: "message", ID: e.msg})
-	require.Len(t, e.srv.Requests(), 3, "no summary from the cache")
-	var system [3]string
-	for i, r := range e.srv.Requests() {
-		require.NoError(t, json.Unmarshal(r.System, &system[i]))
+// summarize is the summary of tg as the reader gets it, in the user's time
+// zone zone.
+func (e *sendEnv) summarize(t *testing.T, zone string, tg Target) string {
+	t.Helper()
+	ch, err := e.s.RunSkill(WithTimeZone(bg, zone), "summarize", tg)
+	require.NoError(t, err)
+	var b strings.Builder
+	for ev := range ch {
+		require.NotEqual(t, "error", ev.Kind, "%v", ev.Err)
+		if ev.Kind == "text" {
+			assert.NotContains(t, ev.Text, "REP", "no part of a machine line streams out")
+			b.WriteString(ev.Text)
+		}
 	}
-	assert.Contains(t, system[0], "REPLY BY: YYYY-MM-DD [HH:MM] | none\nQUOTE: ")
-	assert.Contains(t, system[0], "Asia/Shanghai")
-	assert.Contains(t, system[1], "PROGRESS")
-	assert.Contains(t, system[1], "REPLY BY:")
-	assert.NotContains(t, system[2], "REPLY BY")
+	return b.String()
+}
+
+// A summary of a message or a thread asks for the reply date in the user's
+// time zone; a valid one becomes the conversation's 期限 (source ai), and
+// the two lines never reach the reader, streamed or from the cache. Only the
+// model's run writes it: a cache hit does not put back a date removed since.
+func TestSummaryCarriesReplyDate(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("q@x", "bob@a.example", "alice@example.com", "quote", e.viewAt(1), "Please confirm the quote by Friday."))
+	e.sync(t)
+	srv := e.witOn(t)
+	srv.Script(testllm.Turn{Text: []string{"- Bob wants the quote confirmed.\nREP", "LY BY: " + e.day(3) + " 15:00\nQU", "OTE: “Please confirm the quote by Friday.”\n"}})
+	q, tid := e.idOf(t, "q@x"), e.threadOf(t, "q@x")
+
+	text := e.summarize(t, "Asia/Shanghai", Target{Kind: "message", ID: q})
+	assert.Equal(t, "- Bob wants the quote confirmed.", strings.TrimSpace(text))
+	assert.Equal(t, &Deadline{Date: e.day(3), Time: "15:00", MessageID: q, Quote: "Please confirm the quote by Friday.", Source: DeadlineAI}, e.deadlineOf(t, "q@x"))
+	var system string
+	require.NoError(t, json.Unmarshal(srv.Requests()[0].System, &system))
+	assert.Contains(t, system, "REPLY BY: YYYY-MM-DD [HH:MM] | none\nQUOTE: ")
+	assert.Contains(t, system, "calendar in Asia/Shanghai")
+
+	require.NoError(t, e.s.SetThreadDeadline(bg, tid, Deadline{MessageID: q})) // an app clears it
+	require.Nil(t, e.deadlineOf(t, "q@x"))
+	assert.Equal(t, text, e.summarize(t, "Asia/Shanghai", Target{Kind: "message", ID: q}), "from the cache, the same")
+	assert.Len(t, srv.Requests(), 1)
+	assert.Nil(t, e.deadlineOf(t, "q@x"), "a cache hit writes no date")
+}
+
+// Lines that do not read or do not check give no date, and the summary as
+// it was.
+func TestSummaryReplyDateRefused(t *testing.T) {
+	e := newSendEnv(t, false)
+	answers := [][2]string{
+		{"quote", "REPLY BY: " + e.day(3) + "\nQUOTE: Please confirm the price by Friday."},
+		{"range", "REPLY BY: " + e.day(-30) + "\nQUOTE: Please confirm the quote by Friday."},
+		{"none", "REPLY BY: none\nQUOTE:"},
+		{"bad", "REPLY BY: Friday\nQUOTE: Please confirm the quote by Friday."},
+	}
+	var turns []testllm.Turn
+	for _, a := range answers {
+		e.put(t, "INBOX", eml(a[0]+"@x", "bob@a.example", "alice@example.com", a[0], e.viewAt(1), "Please confirm the quote by Friday."))
+		turns = append(turns, testllm.Turn{Text: []string{"- Bob asks.\n" + a[1]}})
+	}
+	e.sync(t)
+	e.witOn(t).Script(turns...)
+	for _, a := range answers {
+		assert.Equal(t, "- Bob asks.", strings.TrimSpace(e.summarize(t, "UTC", Target{Kind: "message", ID: e.idOf(t, a[0]+"@x")})), a[0])
+		assert.Nil(t, e.deadlineOf(t, a[0]+"@x"), a[0])
+	}
+}
+
+// A newer message's date replaces the older one's; a follow-up asking for
+// no date keeps it, and so does a summary of the older message alone.
+func TestSummaryReplyDateAcrossMessages(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("q1@x", "bob@a.example", "alice@example.com", "quote", e.viewAt(3), "Please confirm the quote by Friday."))
+	e.sync(t)
+	srv := e.witOn(t)
+	answer := func(lines string) testllm.Turn {
+		return testllm.Turn{Text: []string{"PROGRESS\n- Bob asked <mail id=\"1\"/>\nTODO: confirm\n" + lines}}
+	}
+	srv.Script(answer("REPLY BY: " + e.day(3) + "\nQUOTE: Please confirm the quote by Friday."))
+	e.summarize(t, "UTC", Target{Kind: "message", ID: e.idOf(t, "q1@x")})
+	q1 := e.idOf(t, "q1@x")
+	require.Equal(t, &Deadline{Date: e.day(3), MessageID: q1, Quote: "Please confirm the quote by Friday.", Source: DeadlineAI}, e.deadlineOf(t, "q1@x"))
+
+	e.put(t, "INBOX", eml("q2@x", "bob@a.example", "alice@example.com", "Re: quote", e.viewAt(2), "Just a reminder.", "In-Reply-To: <q1@x>", "References: <q1@x>"))
+	e.sync(t)
+	tid := e.threadOf(t, "q1@x")
+	require.Equal(t, tid, e.threadOf(t, "q2@x"))
+	srv.Script(answer("REPLY BY: none\nQUOTE:"))
+	assert.Equal(t, "PROGRESS\n- Bob asked <mail id=\"1\"/>\nTODO: confirm", strings.TrimSpace(e.summarize(t, "UTC", Target{Kind: "thread", ID: tid})))
+	assert.Equal(t, q1, e.deadlineOf(t, "q1@x").MessageID, "a reminder keeps the date")
+
+	e.put(t, "INBOX", eml("q3@x", "bob@a.example", "alice@example.com", "Re: quote", e.viewAt(1), "Change of plan: please confirm by Monday.", "In-Reply-To: <q2@x>", "References: <q1@x> <q2@x>"))
+	e.sync(t)
+	srv.Script(answer("REPLY BY: "+e.day(5)+"\nQUOTE: please confirm by Monday."),
+		answer("REPLY BY: "+e.day(7)+"\nQUOTE: Just a reminder."))
+	e.summarize(t, "UTC", Target{Kind: "thread", ID: tid})
+	q3 := e.idOf(t, "q3@x")
+	assert.Equal(t, &Deadline{Date: e.day(5), MessageID: q3, Quote: "please confirm by Monday.", Source: DeadlineAI}, e.deadlineOf(t, "q1@x"))
+	e.summarize(t, "UTC", Target{Kind: "message", ID: e.idOf(t, "q2@x")})
+	assert.Len(t, srv.Requests(), 4)
+	assert.Equal(t, q3, e.deadlineOf(t, "q1@x").MessageID, "an older message's summary does not replace a newer one's date")
 }
 
 // The quote has to be in the newest message as the model got it, however its

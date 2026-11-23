@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"cmp"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,9 +24,12 @@ import (
 
 // The reply-date eval: unreplied conversations, each with the reply date its
 // newest email asks for, delivered to a test IMAP server, synced, summarized
-// by the real summarize skill with replyByFormat after its prompt, read and
-// checked as the product will (parseReplyBy, replyBy.check) and scored
-// against those dates. testdata/replyeval/README.md has the format.
+// as the product does (the summarize skill with replyByFormat, in the case's
+// time zone), read and checked as the product does (parseReplyBy,
+// replyBy.check) and scored against those dates. The score is the model's:
+// whether the product then writes the date also turns on reply status, which
+// unit tests cover (TestSummaryCarriesReplyDate) and which the cases' fixed
+// dates would leave behind. testdata/replyeval/README.md has the format.
 
 // The pass threshold, set before the first run (#845): under 5% of the
 // cases get a wrong reply date, over at least 200 cases from 2 mailboxes.
@@ -141,7 +145,7 @@ type replyGot struct {
 }
 
 // runReplyEval summarizes the cases each way; with sample > 0, every
-// sample-th case is summarized again without replyByFormat.
+// sample-th case is summarized again without replyByFormat (summaryBare).
 func runReplyEval(t *testing.T, cases []replyCase, ways []replyWay, sample int) []replyRun {
 	keyring.MockInit()
 	runs := make([]replyRun, len(ways))
@@ -195,29 +199,34 @@ func runReply(t *testing.T, r *replyRun, sample int) {
 			tg = Target{Kind: "thread", ID: store.Int(rows.Values[0][1])}
 		}
 
-		s.summaryAppend = fmt.Sprintf(replyByFormat, c.Zone)
-		text, err := replySummary(s, tg)
+		ctx := WithTimeZone(bg, c.Zone)
+		shown, err := replySummary(ctx, s, tg)
 		if err != nil {
 			r.err = fmt.Errorf("%s: %w", c.ID, err)
 			return
 		}
+		// The reader gets the summary without the lines; the cache keeps them.
+		rows, err = s.db.Query(bg, "SELECT output FROM ai_cache ORDER BY rowid DESC LIMIT 1")
+		require.NoError(t, err)
 		var g replyGot
-		rb, rest, err := parseReplyBy(text)
+		rb, _, err := parseReplyBy(store.Str(rows.Values[0][0]))
 		if err == nil && rb.Date != "" {
 			// The text that went to the model, as runSkill builds it: the newest is last.
 			items, cerr := s.mailContext(bg, &gateway.Scope{}, ids, defaultMailBudget)
 			require.NoError(t, cerr)
 			err = rb.check(items[len(items)-1], c.loc)
 		}
-		g.text = rest
+		g.text = strings.TrimSpace(shown)
 		if err != nil {
 			g.why = err.Error()
 		} else {
 			g.r = rb
 		}
 		if sample > 0 && i%sample == 0 {
-			s.summaryAppend = ""
-			if g.base, err = replySummary(s, tg); err != nil {
+			s.summaryBare = true
+			g.base, err = replySummary(ctx, s, tg)
+			s.summaryBare = false
+			if err != nil {
 				r.err = fmt.Errorf("%s: without the lines: %w", c.ID, err)
 				return
 			}
@@ -228,8 +237,8 @@ func runReply(t *testing.T, r *replyRun, sample int) {
 }
 
 // replySummary is summarize's text for tg, as the reader gets it.
-func replySummary(s *Service, tg Target) (string, error) {
-	ch, err := s.RunSkill(bg, "summarize", tg)
+func replySummary(ctx context.Context, s *Service, tg Target) (string, error) {
+	ch, err := s.RunSkill(ctx, "summarize", tg)
 	if err != nil {
 		return "", err
 	}

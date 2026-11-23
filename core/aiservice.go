@@ -152,12 +152,13 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 	if digest {
 		system += "\n\n" + threadDigestFormat
 	}
-	extra := ""
-	if name == "summarize" {
-		extra = s.summaryAppend
-	}
-	if extra != "" {
-		system += "\n\n" + extra
+	// A summary of a message or thread gives the reply date in replyByFormat's
+	// lines. Apple Intelligence's do not: its rewrite of the built-in prompt
+	// (isBuiltinSummarize) and its 4,096-token context leave them no room.
+	replyAsk, now := "", s.userNow(ctx)
+	if name == "summarize" && (t.Kind == "message" || t.Kind == "thread") && !model.OnDevice && !s.summaryBare {
+		replyAsk = fmt.Sprintf(replyByFormat, zoneName(now))
+		system += "\n\n" + replyAsk
 	}
 
 	key := ""
@@ -166,8 +167,8 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 		if digest { // apart from summaries cached before the format
 			parts = append(parts, threadDigestFormat)
 		}
-		if extra != "" {
-			parts = append(parts, extra)
+		if replyAsk != "" { // apart from summaries cached before the lines, and per time zone
+			parts = append(parts, replyAsk)
 		}
 		key = cacheKey(parts...)
 		o, hit, err := s.cacheGet(ctx, key)
@@ -177,6 +178,9 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 		if hit {
 			out := make(chan ai.Event, 3)
 			out <- ctxEvent
+			if replyAsk != "" {
+				o = stripReplyBy(o)
+			}
 			if o != "" {
 				out <- ai.Event{Kind: "text", Text: o}
 			}
@@ -210,10 +214,18 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 		send(ctxEvent)
 		var text strings.Builder
 		holding := translate
+		var hold *replyByHold
+		if replyAsk != "" {
+			hold = &replyByHold{}
+		}
 		for ev := range events {
 			if ev.Kind == "text" {
 				text.WriteString(ev.Text)
-				if !holding {
+				if hold != nil {
+					if shown := hold.feed(ev.Text); shown != "" {
+						send(ai.Event{Kind: "text", Text: shown})
+					}
+				} else if !holding {
 					send(ev)
 				} else if utf8.RuneCountInString(text.String()) >= sentinelBuffer {
 					holding = false
@@ -229,9 +241,18 @@ func (s *Service) runSkill(ctx context.Context, end func(), name string, t Targe
 					o = "" // cached as "needs no translation"
 				} else if holding && o != "" {
 					send(ai.Event{Kind: "text", Text: o})
+				} else if hold != nil {
+					if shown := hold.flush(); shown != "" {
+						send(ai.Event{Kind: "text", Text: shown})
+					}
 				}
 				if key != "" {
-					s.cachePut(ctx, key, account, o, name)
+					s.cachePut(ctx, key, account, o, name) // with the lines: a hit strips them as above
+				}
+				if replyAsk != "" {
+					// Only the model's run writes: a hit is the same messages' summary,
+					// whose date was written (or refused) when it ran.
+					s.writeReplyBy(ctx, o, items[len(items)-1], now.Location())
 				}
 			}
 			// The terminal event always fits: once ctx is done the reader may be

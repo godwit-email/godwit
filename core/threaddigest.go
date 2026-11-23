@@ -21,9 +21,8 @@ Write one PROGRESS line per step where the thread moved on, oldest first, at mos
 	`The TODO line is the one place to say what the user is to do; leave it out when the newest email asks nothing of them.`
 
 // replyByFormat is the two lines a summary of a message or thread gives the
-// reply date in (parseReplyBy reads them), %s the user's IANA time zone.
-// Only the reply-date eval appends it for now (Service.summaryAppend,
-// replyeval_test.go); production summaries do not ask for it.
+// reply date in (parseReplyBy reads them), %s the user's time zone (zoneName).
+// runSkill appends it to summaries; the reader never sees the lines.
 const replyByFormat = `After the summary, add exactly these two lines, the one place to write a date as ISO YYYY-MM-DD:
 REPLY BY: YYYY-MM-DD [HH:MM] | none
 QUOTE: <the sentence in the newest email that asks for that date, copied word for word>
