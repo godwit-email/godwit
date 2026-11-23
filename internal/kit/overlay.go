@@ -29,6 +29,8 @@ type DialogOpts struct {
 	Size               DialogSize
 	Desc, Close        string
 	Danger, Alert, Top bool
+	// DescStyle restyles the description, as a readout that turns Danger.
+	DescStyle func(ui.Element)
 }
 
 // Dialog is a modal panel anchored near the top: a header with the title, the
@@ -68,7 +70,10 @@ func Dialog(c *ui.Context, open *bool, title string, o DialogOpts, body, footer 
 			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
 				Text(c, title, t.Text.Base).FontWeight(600)
 				if o.Desc != "" {
-					ui.Text(c, o.Desc).TextColor(t.Muted)
+					d := ui.Text(c, o.Desc).TextColor(t.Muted)
+					if o.DescStyle != nil {
+						o.DescStyle(d)
+					}
 				}
 			})
 			if !o.Alert {
