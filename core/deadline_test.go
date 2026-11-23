@@ -229,6 +229,32 @@ func TestDeadlineMergeKeepsTheOneInEffect(t *testing.T) {
 	assert.Equal(t, e.day(4), got.Date)
 }
 
+// A merge keeps the newest archived mail's mark, for 回复状态, with the latest
+// archive among the merged ones: B archived, then A's own date set, then A
+// archived; B's mail is newer, and A's date stays ended.
+func TestDeadlineMergeKeepsTheLatestArchive(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("a@x", "bob@acme.example", "alice@example.com", "a", e.viewAt(5), "Reply by Monday."))
+	e.put(t, "INBOX", eml("b@x", "bob@acme.example", "alice@example.com", "b", e.viewAt(1), "Thanks."))
+	e.sync(t)
+	_, err := e.s.ArchiveThreads(bg, []int64{e.threadOf(t, "b@x")})
+	require.NoError(t, err)
+	e.clock.Advance(time.Minute)
+	require.NoError(t, e.setThreadDeadline(WithUISession(t.Context(), e.s), e.threadOf(t, "a@x"), Deadline{Date: e.day(4)}))
+	e.clock.Advance(time.Minute)
+	_, err = e.s.ArchiveThreads(bg, []int64{e.threadOf(t, "a@x")})
+	require.NoError(t, err)
+	require.Nil(t, e.deadlineOf(t, "a@x"), "archiving A ended its date")
+	latest := e.rows(t, "SELECT max(archived_version), max(archived_at) FROM archive_marks")[0]
+
+	e.put(t, "Archive", eml("m@x", "bob@acme.example", "alice@example.com", "bridge", e.viewAt(3), "z", "References: <a@x> <b@x>"))
+	e.sync(t)
+	require.Equal(t, e.threadOf(t, "a@x"), e.threadOf(t, "b@x"))
+	assert.Nil(t, e.deadlineOf(t, "a@x"), "the merge keeps A's archive, which came after the date")
+	assert.Equal(t, [][]any{{"b@x", latest[0], latest[1]}}, e.rows(t, "SELECT message_id_hdr, archived_version, archived_at FROM archive_marks"),
+		"B's newer mail, A's later archive")
+}
+
 // A date never becomes state that leaves the machine later (ADR 0003): writing
 // or clearing one adds no events_log row (so no rule run or plugin hook) and
 // changes no flag or keyword the server would get.

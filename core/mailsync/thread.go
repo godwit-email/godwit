@@ -85,6 +85,10 @@ func mergeViewState(target int64, others []any) []sqlite.Statement {
 		{SQL: `DELETE FROM saved_view_exceptions WHERE kind = 'added' AND thread_id IN ` + inAll + ` AND view_id IN
 			(SELECT view_id FROM saved_view_exceptions WHERE kind = 'removed' AND thread_id IN ` + inAll + `)`, Args: append(slices.Clone(all), all...)},
 		{SQL: "UPDATE OR IGNORE saved_view_exceptions SET thread_id = ? WHERE thread_id IN " + in, Args: args},
+		// The kept mark's mail is the newest archived, its archive the latest: a manual 期限 set between two stays ended.
+		{SQL: `UPDATE archive_marks SET archived_version = (SELECT max(archived_version) FROM archive_marks WHERE thread_id IN ` + inAll + `),
+			archived_at = (SELECT max(archived_at) FROM archive_marks WHERE thread_id IN ` + inAll + `) WHERE thread_id IN ` + inAll,
+			Args: append(append(slices.Clone(all), all...), all...)},
 		{SQL: `DELETE FROM archive_marks WHERE thread_id IN ` + inAll + ` AND thread_id != (SELECT thread_id FROM archive_marks
 			WHERE thread_id IN ` + inAll + ` ORDER BY date DESC, thread_id LIMIT 1)`, Args: append(slices.Clone(all), all...)},
 		{SQL: "UPDATE archive_marks SET thread_id = ? WHERE thread_id IN " + in, Args: args},
