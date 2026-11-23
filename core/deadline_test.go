@@ -650,7 +650,7 @@ func TestManualDeadlineEndsOnArchive(t *testing.T) {
 	// A mark from before archive times were kept counts as older than any date.
 	_, err = e.s.ArchiveThreads(bg, []int64{tid})
 	require.NoError(t, err)
-	_, err = e.s.db.Execute(bg, "UPDATE archive_marks SET archived_at = 0")
+	_, err = e.s.db.Execute(bg, "UPDATE archive_marks SET archived_at = 0, archived_version = 0")
 	require.NoError(t, err)
 	got, err = e.s.ThreadDeadline(bg, tid)
 	require.NoError(t, err)
@@ -720,6 +720,42 @@ func TestUndoSetThreadDeadline(t *testing.T) {
 	require.NoError(t, e.s.UndoSetThreadDeadline(ui, before))
 	assert.Equal(t, "NULL manual ", row(), "the marker comes back")
 	assert.ErrorIs(t, e.setThreadDeadline(bg, tid, program), ErrDeadlineOutranked)
+}
+
+// Setting a date and archiving in the same second keep their order: the
+// clock stands still here between the two.
+func TestManualDeadlineArchiveOrderWithinASecond(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("q@x", "bob@a.example", "alice@example.com", "quote", e.viewAt(1), "Reply by Friday."))
+	e.sync(t)
+	tid := e.threadOf(t, "q@x")
+	ui := WithUISession(t.Context(), e.s)
+	deadline := func() *Deadline {
+		got, err := e.s.ThreadDeadline(bg, tid)
+		require.NoError(t, err)
+		return got.Deadline
+	}
+	want := &Deadline{Date: e.day(4), Source: DeadlineManual}
+
+	require.NoError(t, e.setThreadDeadline(ui, tid, Deadline{Date: e.day(4)}))
+	undo, err := e.s.ArchiveThreads(bg, []int64{tid})
+	require.NoError(t, err)
+	assert.Nil(t, deadline(), "set, then archived: ended")
+	require.NoError(t, e.s.UndoArchiveThreads(bg, undo))
+	assert.Equal(t, want, deadline(), "undoing the archive brings it back")
+
+	_, err = e.s.ArchiveThreads(bg, []int64{tid})
+	require.NoError(t, err)
+	require.NoError(t, e.setThreadDeadline(ui, tid, Deadline{Date: e.day(4)}))
+	assert.Equal(t, want, deadline(), "archived, then set: in effect")
+
+	_, err = e.s.ArchiveThreads(bg, []int64{tid})
+	require.NoError(t, err)
+	require.Nil(t, deadline())
+	removed, err := e.s.SetThreadDeadline(ui, tid, Deadline{Date: e.day(5)})
+	require.NoError(t, err)
+	require.NoError(t, e.s.UndoSetThreadDeadline(ui, removed))
+	assert.Nil(t, deadline(), "undoing a change brings back the date as it was: archived since")
 }
 
 // A reply draft synced from another device, only in Drafts, is not a reply:

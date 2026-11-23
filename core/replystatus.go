@@ -340,16 +340,17 @@ type archiveMark struct {
 	mid  string
 	date int64
 	at   int64 // when it was archived (Unix seconds), 0 for marks older than that
+	ver  int64 // the 期限's version the archive moved to, 0 for marks older than that
 }
 
 func (s *Service) archiveMarks(ctx context.Context) (map[int64]archiveMark, error) {
-	rows, err := s.db.Query(ctx, "SELECT thread_id, message_id_hdr, date, archived_at FROM archive_marks")
+	rows, err := s.db.Query(ctx, "SELECT thread_id, message_id_hdr, date, archived_at, archived_version FROM archive_marks")
 	if err != nil {
 		return nil, err
 	}
 	out := make(map[int64]archiveMark, len(rows.Values))
 	for _, r := range rows.Values {
-		out[store.Int(r[0])] = archiveMark{has: true, mid: store.Str(r[1]), date: store.Int(r[2]), at: store.Int(r[3])}
+		out[store.Int(r[0])] = archiveMark{has: true, mid: store.Str(r[1]), date: store.Int(r[2]), at: store.Int(r[3]), ver: store.Int(r[4])}
 	}
 	return out, nil
 }

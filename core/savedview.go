@@ -1112,11 +1112,12 @@ type ArchiveUndo struct {
 
 // ArchiveMarkBefore is a conversation's archive mark before an archive (Had false: none).
 type ArchiveMarkBefore struct {
-	ThreadID   int64
-	Had        bool
-	MID        string
-	Date       int64
-	ArchivedAt int64
+	ThreadID        int64
+	Had             bool
+	MID             string
+	Date            int64
+	ArchivedAt      int64
+	ArchivedVersion int64
 }
 
 // newestCounted is each conversation's newest counted message: its mark, and
@@ -1153,14 +1154,15 @@ func (s *Service) markArchived(ctx context.Context, marks map[int64]archiveMark)
 	if err != nil {
 		return nil, err
 	}
-	var stmts []sqlite.Statement
+	stmts := []sqlite.Statement{bumpDeadlineVersion} // orders the archive against 期限 writes within a second
 	var before []ArchiveMarkBefore
 	now := s.clk().Now().Unix()
 	for tid, m := range marks {
 		h := had[tid]
-		before = append(before, ArchiveMarkBefore{ThreadID: tid, Had: h.has, MID: h.mid, Date: h.date, ArchivedAt: h.at})
-		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO archive_marks(thread_id, message_id_hdr, date, archived_at) VALUES (?, ?, ?, ?)
-			ON CONFLICT(thread_id) DO UPDATE SET message_id_hdr = excluded.message_id_hdr, date = excluded.date, archived_at = excluded.archived_at`,
+		before = append(before, ArchiveMarkBefore{ThreadID: tid, Had: h.has, MID: h.mid, Date: h.date, ArchivedAt: h.at, ArchivedVersion: h.ver})
+		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO archive_marks(thread_id, message_id_hdr, date, archived_at, archived_version) VALUES (?, ?, ?, ?, ` + deadlineVersionSQL + `)
+			ON CONFLICT(thread_id) DO UPDATE SET message_id_hdr = excluded.message_id_hdr, date = excluded.date, archived_at = excluded.archived_at,
+			archived_version = excluded.archived_version`,
 			Args: []any{tid, m.mid, m.date, now}})
 	}
 	_, err = s.db.Transaction(ctx, stmts)
@@ -1302,17 +1304,18 @@ func (s *Service) UndoArchiveThreads(ctx context.Context, u ArchiveUndo) error {
 		return err
 	}
 	defer end()
-	var stmts []sqlite.Statement
+	stmts := []sqlite.Statement{bumpDeadlineVersion} // a 期限 in effect changes with the mark
 	var threads []int64
 	for _, m := range u.Marks {
 		threads = append(threads, m.ThreadID)
 		if m.Had {
-			stmts = append(stmts, sqlite.Statement{SQL: "UPDATE archive_marks SET message_id_hdr = ?, date = ?, archived_at = ? WHERE thread_id = ?", Args: []any{m.MID, m.Date, m.ArchivedAt, m.ThreadID}})
+			stmts = append(stmts, sqlite.Statement{SQL: "UPDATE archive_marks SET message_id_hdr = ?, date = ?, archived_at = ?, archived_version = ? WHERE thread_id = ?",
+				Args: []any{m.MID, m.Date, m.ArchivedAt, m.ArchivedVersion, m.ThreadID}})
 		} else {
 			stmts = append(stmts, sqlite.Statement{SQL: "DELETE FROM archive_marks WHERE thread_id = ?", Args: []any{m.ThreadID}})
 		}
 	}
-	if len(stmts) > 0 {
+	if len(u.Marks) > 0 {
 		if _, err := s.db.Transaction(ctx, stmts); err != nil {
 			return err
 		}

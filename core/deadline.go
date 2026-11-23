@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -111,7 +112,7 @@ func (s *Service) UndoSetThreadDeadline(ctx context.Context, before RemovedDeadl
 	if before.Source == "" {
 		return s.commitDeadline(ctx, sqlite.Statement{SQL: "DELETE FROM thread_deadlines WHERE thread_id = ?", Args: []any{before.ThreadID}})
 	}
-	return s.commitDeadline(ctx, deadlineRowWrite(before, true))
+	return s.commitDeadline(ctx, deadlineRowWrite(before, true, false))
 }
 
 // ReaderDeadline is what the reader's 等你处理 line, or its 待跟进 band,
@@ -212,7 +213,7 @@ func (s *Service) deadlineWrites(ctx context.Context, source string, threadID in
 	if source == DeadlineManual {
 		if d.Date == "" && has && cur.Source != DeadlineManual {
 			// Removing another source's date leaves a marker that keeps them out.
-			return []sqlite.Statement{deadlineRowWrite(RemovedDeadline{ThreadID: threadID, Source: DeadlineManual, SetAt: now.Unix()}, true)}, nil
+			return []sqlite.Statement{deadlineRowWrite(RemovedDeadline{ThreadID: threadID, Source: DeadlineManual, SetAt: now.Unix()}, true, true)}, nil
 		}
 		d.MessageID, d.Quote = 0, ""
 	}
@@ -220,7 +221,7 @@ func (s *Service) deadlineWrites(ctx context.Context, source string, threadID in
 		return []sqlite.Statement{{SQL: "DELETE FROM thread_deadlines WHERE thread_id = ?", Args: []any{threadID}}}, nil
 	}
 	return []sqlite.Statement{deadlineRowWrite(RemovedDeadline{ThreadID: threadID, Date: d.Date, Time: d.Time, MessageID: d.MessageID,
-		Quote: d.Quote, Source: source, SetAt: now.Unix()}, true)}, nil
+		Quote: d.Quote, Source: source, SetAt: now.Unix()}, true, true)}, nil
 }
 
 // checkDeadlineMessage is whether d's message can carry a 期限 from a source
@@ -255,37 +256,49 @@ func (s *Service) checkDeadlineMessage(ctx context.Context, threadID int64, st r
 }
 
 // deadlineRowWrite writes r as its thread's row, over the one there if
-// replace, else only where there is none. The thread or message may be gone
-// since r was read: the SELECT skips the one, the subquery NULLs the other.
-func deadlineRowWrite(r RemovedDeadline, replace bool) sqlite.Statement {
+// replace, else only where there is none. A fresh row takes the version the
+// transaction's bumpDeadlineVersion, run before it, moved to; any other keeps
+// r.SetVersion. The thread or message may be gone since r was read: the
+// SELECT skips the one, the subquery NULLs the other.
+func deadlineRowWrite(r RemovedDeadline, replace, fresh bool) sqlite.Statement {
 	conflict := "DO NOTHING"
 	if replace {
 		conflict = `DO UPDATE SET due_date = excluded.due_date, due_time = excluded.due_time, source = excluded.source,
-		message_id = excluded.message_id, quote = excluded.quote, set_at = excluded.set_at`
+		message_id = excluded.message_id, quote = excluded.quote, set_at = excluded.set_at, set_version = excluded.set_version`
 	}
-	return sqlite.Statement{SQL: `INSERT INTO thread_deadlines(thread_id, due_date, due_time, source, message_id, quote, set_at)
-		SELECT id, NULLIF(?, ''), ?, ?, (SELECT id FROM messages WHERE id = ?), ?, ? FROM threads WHERE id = ?
+	version, args := "?", []any{r.Date, r.Time, r.Source, r.MessageID, r.Quote, r.SetAt, r.SetVersion, r.ThreadID}
+	if fresh {
+		version, args = deadlineVersionSQL, slices.Delete(args, 6, 7)
+	}
+	return sqlite.Statement{SQL: `INSERT INTO thread_deadlines(thread_id, due_date, due_time, source, message_id, quote, set_at, set_version)
+		SELECT id, NULLIF(?, ''), ?, ?, (SELECT id FROM messages WHERE id = ?), ?, ?, ` + version + ` FROM threads WHERE id = ?
 		ON CONFLICT(thread_id) ` + conflict,
-		Args: []any{r.Date, r.Time, r.Source, r.MessageID, r.Quote, r.SetAt, r.ThreadID}}
+		Args: args}
 }
 
 // deadlineRowCols are the columns deadlineRow reads.
-const deadlineRowCols = "thread_id, COALESCE(due_date, ''), due_time, COALESCE(message_id, 0), quote, source, set_at"
+const deadlineRowCols = "thread_id, COALESCE(due_date, ''), due_time, COALESCE(message_id, 0), quote, source, set_at, set_version"
 
 func deadlineRow(r []any) RemovedDeadline {
 	return RemovedDeadline{ThreadID: store.Int(r[0]), Date: store.Str(r[1]), Time: store.Str(r[2]), MessageID: store.Int(r[3]),
-		Quote: store.Str(r[4]), Source: store.Str(r[5]), SetAt: store.Int(r[6])}
+		Quote: store.Str(r[4]), Source: store.Str(r[5]), SetAt: store.Int(r[6]), SetVersion: store.Int(r[7])}
 }
 
-// bumpDeadlineVersion moves the 期限's version, which views' paging cursors carry.
+// bumpDeadlineVersion moves the 期限's version, which views' paging cursors
+// carry and deadlineVersionSQL reads.
 var bumpDeadlineVersion = sqlite.Statement{SQL: `INSERT INTO meta(key, value) VALUES ('reply_dates_version', '1')
 	ON CONFLICT(key) DO UPDATE SET value = CAST(value AS INTEGER) + 1`}
 
-// commitDeadline writes stmts and moves the 期限's version with it: a view's
+// deadlineVersionSQL is the 期限's version now: a 期限 write or an archive
+// records the one its bumpDeadlineVersion moved to, which orders the two
+// within a second.
+const deadlineVersionSQL = "(SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'reply_dates_version')"
+
+// commitDeadline moves the 期限's version and writes stmts with it: a view's
 // paging cursor carries the version, so a page never mixes two orders. The
 // views then reread, rows and order changed.
 func (s *Service) commitDeadline(ctx context.Context, stmts ...sqlite.Statement) error {
-	if _, err := s.db.Transaction(ctx, append(stmts, bumpDeadlineVersion)); err != nil {
+	if _, err := s.db.Transaction(ctx, append([]sqlite.Statement{bumpDeadlineVersion}, stmts...)); err != nil {
 		return err
 	}
 	s.publishView()
@@ -306,7 +319,8 @@ func (s *Service) deadlinesIn(ctx context.Context, now time.Time, statuses map[i
 		return out, nil
 	}
 	rows, err := s.db.Query(ctx, `SELECT d.thread_id, COALESCE(d.due_date, ''), d.due_time, d.source, COALESCE(d.message_id, 0), d.quote, d.set_at,
-		COALESCE(m.thread_id, 0), COALESCE(m.date, 0), COALESCE(a.archived_at, 0) FROM thread_deadlines d LEFT JOIN messages m ON m.id = d.message_id
+		COALESCE(m.thread_id, 0), COALESCE(m.date, 0), COALESCE(a.archived_at, 0), d.set_version, COALESCE(a.archived_version, 0)
+		FROM thread_deadlines d LEFT JOIN messages m ON m.id = d.message_id
 		LEFT JOIN archive_marks a ON a.thread_id = d.thread_id WHERE d.thread_id IN (SELECT value FROM json_each(?))`, intList(threadIDs))
 	if err != nil {
 		return nil, err
@@ -315,8 +329,13 @@ func (s *Service) deadlinesIn(ctx context.Context, now time.Time, statuses map[i
 		tid := store.Int(r[0])
 		d := Deadline{Date: store.Str(r[1]), Time: store.Str(r[2]), Source: store.Str(r[3]), MessageID: store.Int(r[4]), Quote: store.Str(r[5])}
 		if d.Source == DeadlineManual {
-			// Archived in Godwit since it was set. shortcut: an archive on another device writes no mark, so it leaves the date; read it from the mail's folders if users miss it.
-			if store.Int(r[9]) > store.Int(r[6]) {
+			// Archived in Godwit since it was set: by version, or by time for rows from before versions were kept.
+			// shortcut: an archive on another device writes no mark, so it leaves the date; read it from the mail's folders if users miss it.
+			ended := store.Int(r[9]) > store.Int(r[6])
+			if setVer, archivedVer := store.Int(r[10]), store.Int(r[11]); setVer != 0 && archivedVer != 0 {
+				ended = archivedVer > setVer
+			}
+			if ended {
 				continue
 			}
 		} else if st := statuses[tid]; store.Int(r[7]) != tid || st.Kind != ReplyStatusUnreplied || store.Int(r[8]) <= st.Settled {
@@ -333,13 +352,14 @@ func (s *Service) deadlinesIn(ctx context.Context, now time.Time, statuses map[i
 // RemovedDeadline is one row RemoveAppAndWitDeadlines took away, or the one
 // SetThreadDeadline replaced, as stored.
 type RemovedDeadline struct {
-	ThreadID  int64
-	Date      string
-	Time      string
-	MessageID int64
-	Quote     string
-	Source    string
-	SetAt     int64
+	ThreadID   int64
+	Date       string
+	Time       string
+	MessageID  int64
+	Quote      string
+	Source     string
+	SetAt      int64
+	SetVersion int64
 }
 
 // CountAppAndWitDeadlines is how many 期限 other apps (program) and Wit have
@@ -421,7 +441,7 @@ func (s *Service) UndoRemoveAppAndWitDeadlines(ctx context.Context, removed []Re
 			continue
 		}
 		threads = append(threads, d.ThreadID)
-		stmts = append(stmts, deadlineRowWrite(d, false))
+		stmts = append(stmts, deadlineRowWrite(d, false, false))
 	}
 	if len(stmts) == 0 {
 		return nil
@@ -510,7 +530,7 @@ func (s *Service) applyWitDeadline(ctx context.Context, a Approval) ([]sqlite.St
 	}
 	guard := sqlite.Statement{SQL: "UPDATE approvals SET state = NULL WHERE id = ? AND (SELECT source || ' ' || set_at FROM thread_deadlines WHERE thread_id = ?) IS NOT ?",
 		Args: []any{a.ID, in.ThreadID, was}}
-	stmts = append(append([]sqlite.Statement{guard}, stmts...), bumpDeadlineVersion)
+	stmts = append([]sqlite.Statement{guard, bumpDeadlineVersion}, stmts...)
 	if in.Date == "" {
 		return stmts, map[string]any{"cleared": true}, nil, nil
 	}

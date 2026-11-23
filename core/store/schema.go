@@ -896,6 +896,12 @@ var Migrations = [][]string{{
 	// Queued also holds mail received while 收到就总结 is chosen; attempts
 	// counts the tries that failed in a way that may pass, up to 3.
 	`ALTER TABLE summary_checks ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`,
+}, {
+	// The meta reply_dates_version a 期限 write or an archive in Godwit moved
+	// to: their order, which Unix seconds lose within a second. 0 on rows from
+	// before, which compare by set_at and archived_at.
+	`ALTER TABLE thread_deadlines ADD COLUMN set_version INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE archive_marks ADD COLUMN archived_version INTEGER NOT NULL DEFAULT 0`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's
