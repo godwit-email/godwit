@@ -522,6 +522,9 @@ func (s *Service) execute(ctx context.Context, a approvalRow, ex *executor, args
 		}
 		return errors.Join(err, finish("failed", msgNotSaved, nil, "failed"))
 	}
+	if a.Tool == "set_reply_deadline" {
+		s.publishView() // views reread, as after commitDeadline
+	}
 	if a.Tool == "delete_draft" {
 		// After the commit: a crash before this leaves files the next start removes.
 		if err := os.RemoveAll(s.draftDir(a.targetID)); err != nil {

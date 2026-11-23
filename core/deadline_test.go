@@ -2,11 +2,13 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/godwit-email/godwit/core/internal/testllm"
+	"github.com/godwit-email/godwit/core/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -401,6 +403,40 @@ func TestDeadlineWit(t *testing.T) {
 	assert.Equal(t, 2, e.count(t, "SELECT count(*) FROM approvals WHERE tool = 'set_reply_deadline'"))
 	reqs := srv.Requests()
 	assert.Contains(t, string(reqs[len(reqs)-1].Messages), ErrDeadlineOutranked.Error(), "the model is told why")
+}
+
+// An approved set_reply_deadline is checked again when it runs and commits with
+// the approval (ADR 0004): replied to since it was proposed, it fails, writes
+// nothing, and is not recorded as having maybe acted outside.
+func TestDeadlineWitRefusedOnApply(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("q@x", "bob@a.example", "alice@example.com", "quote", e.viewAt(1), "Please confirm the quote by Friday."))
+	e.sync(t)
+	srv := e.witOn(t)
+	conv, err := e.s.NewConversation(bg, "ask", 0)
+	require.NoError(t, err)
+	srv.Script(found("quote"), testllm.Turn{Calls: []testllm.Call{{Name: "set_reply_deadline", Args: `{"id":1,"date":"` + e.day(3) + `"}`}}}, testllm.Turn{Text: []string{"ok"}})
+	ch, err := e.s.Ask(bg, conv.ID, "Bob needs a reply by Friday")
+	require.NoError(t, err)
+	evs := drainWit(t, ch)
+	require.Len(t, evs[len(evs)-1].Approvals, 1)
+	a := evs[len(evs)-1].Approvals[0]
+
+	// The user sets their own date between the check and the commit: the commit fails.
+	stmts, _, _, err := e.s.applyWitDeadline(bg, Approval{ID: a.ID, Args: json.RawMessage(store.Str(e.rows(t, "SELECT args FROM approvals WHERE id = ?", a.ID)[0][0]))})
+	require.NoError(t, err)
+	ui := WithUISession(t.Context(), e.s)
+	require.NoError(t, e.setThreadDeadline(ui, e.threadOf(t, "q@x"), Deadline{Date: e.day(5)}))
+	_, err = e.s.db.Transaction(bg, stmts)
+	require.Error(t, err)
+	require.NoError(t, e.setThreadDeadline(ui, e.threadOf(t, "q@x"), Deadline{}))
+
+	d, err := e.s.NewDraft(bg, e.acc.ID, "reply", e.idOf(t, "q@x"))
+	require.NoError(t, err)
+	require.NoError(t, e.s.Send(bg, d.ID))
+	assert.ErrorIs(t, e.s.ResolveApproval(bg, a.ID, true), ErrDeadlineNotWaiting)
+	assert.Zero(t, e.count(t, "SELECT count(*) FROM thread_deadlines"))
+	assert.Equal(t, [][]any{{"failed", ErrDeadlineNotWaiting.Error(), "tx"}}, e.rows(t, "SELECT state, result, exec_mode FROM approvals WHERE id = ?", a.ID))
 }
 
 // 全部去掉 in settings takes away every date other apps and Wit set, and

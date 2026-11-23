@@ -329,7 +329,7 @@ func (s *Service) registerAskTools() {
 			"time":  map[string]any{"type": "string", "description": "HH:MM, the user's local time; leave out for the end of the day"},
 			"quote": map[string]any{"type": "string", "maxLength": MaxDeadlineQuote},
 		}, "id", "date")},
-		Write: true, Exec: &executor{Prepare: s.prepareWitDeadline, Apply: s.applyWitDeadline, Outside: true}})
+		Write: true, Exec: &executor{Prepare: s.prepareWitDeadline, Apply: s.applyWitDeadline}})
 
 	// Mail triage & flag tools
 	for _, b := range batchActions {

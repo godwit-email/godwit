@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -78,8 +79,14 @@ func (s *Service) SetThreadDeadline(ctx context.Context, threadID int64, d Deadl
 	if uiSessionFromContext(ctx) != nil {
 		source = DeadlineManual
 	}
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
 	before := RemovedDeadline{ThreadID: threadID}
-	return before, s.changeDeadline(ctx, source, threadID, d, true, &before)
+	stmts, err := s.deadlineWrites(ctx, source, threadID, d, &before)
+	if err != nil {
+		return before, err
+	}
+	return before, s.commitDeadline(ctx, stmts...)
 }
 
 // UndoSetThreadDeadline writes back the row SetThreadDeadline returned, as it
@@ -135,55 +142,61 @@ func (s *Service) ThreadDeadline(ctx context.Context, threadID int64) (ReaderDea
 	return out, err
 }
 
-// setDeadline is the one write path of a 期限, for every source.
+// setDeadline checks and writes a 期限 from source.
 func (s *Service) setDeadline(ctx context.Context, source string, threadID int64, d Deadline) error {
-	return s.changeDeadline(ctx, source, threadID, d, true, nil)
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
+	stmts, err := s.deadlineWrites(ctx, source, threadID, d, nil)
+	if err != nil {
+		return err
+	}
+	return s.commitDeadline(ctx, stmts...)
 }
 
 // checkDeadline is whether setDeadline would take d now, writing nothing: a
 // Wit call it refuses goes back to the model before the user is asked.
 func (s *Service) checkDeadline(ctx context.Context, source string, threadID int64, d Deadline) error {
-	return s.changeDeadline(ctx, source, threadID, d, false, nil)
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
+	_, err := s.deadlineWrites(ctx, source, threadID, d, nil)
+	return err
 }
 
-// changeDeadline checks d and, if write, writes it; before, if not nil, gets
-// the row it replaces.
-func (s *Service) changeDeadline(ctx context.Context, source string, threadID int64, d Deadline, write bool, before *RemovedDeadline) error {
+// deadlineWrites is the one write path of a 期限, for every source: it checks
+// d and returns the statements that write it, for commitDeadline or an
+// approval; before, if not nil, gets the row they replace. The caller holds
+// editMu.
+func (s *Service) deadlineWrites(ctx context.Context, source string, threadID int64, d Deadline, before *RemovedDeadline) ([]sqlite.Statement, error) {
 	if d.Date != "" {
 		if _, err := time.Parse(time.DateOnly, d.Date); err != nil {
-			return ErrDeadlineInvalid
+			return nil, ErrDeadlineInvalid
 		}
 	}
 	if _, err := time.Parse("15:04", d.Time); d.Time != "" && (err != nil || d.Date == "") || utf8.RuneCountInString(d.Quote) > MaxDeadlineQuote {
-		return ErrDeadlineInvalid
+		return nil, ErrDeadlineInvalid
 	}
-	s.editMu.Lock()
-	defer s.editMu.Unlock()
 	now := s.clk().Now()
 	statuses, err := s.replyStatuses(ctx, now.Unix())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	current, err := s.deadlinesIn(ctx, now, statuses, []int64{threadID})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	cur, has := current[threadID]
 	if source != DeadlineManual {
 		if has && deadlineRank(cur.Source) < deadlineRank(source) {
-			return ErrDeadlineOutranked
+			return nil, ErrDeadlineOutranked
 		}
 		if err := s.checkDeadlineMessage(ctx, threadID, statuses[threadID], d); err != nil {
-			return err
+			return nil, err
 		}
-	}
-	if !write {
-		return nil
 	}
 	if before != nil {
 		rows, err := s.db.Query(ctx, "SELECT COALESCE(due_date, ''), due_time, COALESCE(message_id, 0), quote, source, set_at FROM thread_deadlines WHERE thread_id = ?", threadID)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if len(rows.Values) > 0 {
 			r := rows.Values[0]
@@ -193,15 +206,15 @@ func (s *Service) changeDeadline(ctx context.Context, source string, threadID in
 	if source == DeadlineManual {
 		if d.Date == "" && has && cur.Source != DeadlineManual {
 			// Removing another source's date leaves a marker that keeps them out.
-			return s.writeDeadline(ctx, threadID, Deadline{Source: DeadlineManual}, now)
+			return []sqlite.Statement{deadlineUpsert(threadID, Deadline{Source: DeadlineManual}, now)}, nil
 		}
 		d.MessageID, d.Quote = 0, ""
 	}
 	if d.Date == "" {
-		return s.commitDeadline(ctx, sqlite.Statement{SQL: "DELETE FROM thread_deadlines WHERE thread_id = ?", Args: []any{threadID}})
+		return []sqlite.Statement{{SQL: "DELETE FROM thread_deadlines WHERE thread_id = ?", Args: []any{threadID}}}, nil
 	}
 	d.Source = source
-	return s.writeDeadline(ctx, threadID, d, now)
+	return []sqlite.Statement{deadlineUpsert(threadID, d, now)}, nil
 }
 
 // checkDeadlineMessage is whether d's message can carry a 期限 from a source
@@ -235,7 +248,7 @@ func (s *Service) checkDeadlineMessage(ctx context.Context, threadID int64, st r
 	return nil
 }
 
-func (s *Service) writeDeadline(ctx context.Context, threadID int64, d Deadline, now time.Time) error {
+func deadlineUpsert(threadID int64, d Deadline, now time.Time) sqlite.Statement {
 	var date, msg any
 	if d.Date != "" {
 		date = d.Date
@@ -243,21 +256,21 @@ func (s *Service) writeDeadline(ctx context.Context, threadID int64, d Deadline,
 	if d.MessageID != 0 {
 		msg = d.MessageID
 	}
-	return s.commitDeadline(ctx, sqlite.Statement{SQL: `INSERT INTO thread_deadlines(thread_id, due_date, due_time, source, message_id, quote, set_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+	return sqlite.Statement{SQL: `INSERT INTO thread_deadlines(thread_id, due_date, due_time, source, message_id, quote, set_at) VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(thread_id) DO UPDATE SET due_date = excluded.due_date, due_time = excluded.due_time, source = excluded.source,
 		message_id = excluded.message_id, quote = excluded.quote, set_at = excluded.set_at`,
-		Args: []any{threadID, date, d.Time, d.Source, msg, d.Quote, now.Unix()}})
+		Args: []any{threadID, date, d.Time, d.Source, msg, d.Quote, now.Unix()}}
 }
 
 // bumpDeadlineVersion moves the 期限's version, which views' paging cursors carry.
 var bumpDeadlineVersion = sqlite.Statement{SQL: `INSERT INTO meta(key, value) VALUES ('reply_dates_version', '1')
 	ON CONFLICT(key) DO UPDATE SET value = CAST(value AS INTEGER) + 1`}
 
-// commitDeadline writes st and moves the 期限's version with it: a view's
+// commitDeadline writes stmts and moves the 期限's version with it: a view's
 // paging cursor carries the version, so a page never mixes two orders. The
 // views then reread, rows and order changed.
-func (s *Service) commitDeadline(ctx context.Context, st sqlite.Statement) error {
-	if _, err := s.db.Transaction(ctx, []sqlite.Statement{st, bumpDeadlineVersion}); err != nil {
+func (s *Service) commitDeadline(ctx context.Context, stmts ...sqlite.Statement) error {
+	if _, err := s.db.Transaction(ctx, append(stmts, bumpDeadlineVersion)); err != nil {
 		return err
 	}
 	s.publishView()
@@ -448,18 +461,32 @@ func (s *Service) prepareWitDeadline(ctx context.Context, _ Conversation, args j
 	return prepared{Args: b, Summary: summary, TargetKind: "thread", TargetID: in.ThreadID}, err
 }
 
-// applyWitDeadline writes the approved date through setDeadline, which checks
-// it again: the conversation may have been replied to since.
+// applyWitDeadline checks the approved date again (the conversation may have
+// been replied to since) and returns its writes, committed with the approval
+// (ADR 0004).
 func (s *Service) applyWitDeadline(ctx context.Context, a Approval) ([]sqlite.Statement, any, any, error) {
 	var in witDeadlineArgs
 	if err := json.Unmarshal(a.Args, &in); err != nil {
 		return nil, nil, nil, err
 	}
-	if err := s.setDeadline(ctx, DeadlineWit, in.ThreadID, in.deadline()); err != nil {
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
+	var before RemovedDeadline
+	stmts, err := s.deadlineWrites(ctx, DeadlineWit, in.ThreadID, in.deadline(), &before)
+	if err != nil {
 		return nil, nil, nil, err
 	}
-	if in.Date == "" {
-		return nil, map[string]any{"cleared": true}, nil, nil
+	// The commit comes after editMu is released: a row written meanwhile (the
+	// user's own date) fails it, as a draft's changed revision does.
+	var was any
+	if before.Source != "" {
+		was = before.Source + " " + strconv.FormatInt(before.SetAt, 10)
 	}
-	return nil, map[string]any{"set": strings.TrimSpace(in.Date + " " + in.Time)}, nil, nil
+	guard := sqlite.Statement{SQL: "UPDATE approvals SET state = NULL WHERE id = ? AND (SELECT source || ' ' || set_at FROM thread_deadlines WHERE thread_id = ?) IS NOT ?",
+		Args: []any{a.ID, in.ThreadID, was}}
+	stmts = append(append([]sqlite.Statement{guard}, stmts...), bumpDeadlineVersion)
+	if in.Date == "" {
+		return stmts, map[string]any{"cleared": true}, nil, nil
+	}
+	return stmts, map[string]any{"set": strings.TrimSpace(in.Date + " " + in.Time)}, nil, nil
 }
