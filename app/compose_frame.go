@@ -25,6 +25,7 @@ type ComposeFrame struct {
 	bar, field    ui.Rect // the page's, in its own coordinates
 	origin        ui.Rect // where the view is in the window, as last laid out
 	later         *laterAsk
+	closed        bool // the window closed: send later answers 0
 }
 
 // laterAsk is send later as the page asked for it: the dialog's time, and
@@ -67,20 +68,38 @@ func (f *ComposeFrame) SetToastBar(bar, field ui.Rect) {
 }
 
 // SendLater opens send later at at, unix ms, and waits for the time chosen,
-// 0 when cancelled. An ask still open is cancelled.
-// shortcut: a window closed with the dialog open leaves the page's call waiting; answer it on close if that ever matters.
+// 0 when cancelled or the window closes. An ask still open is cancelled.
 func (f *ComposeFrame) SendLater(at int64) int64 {
 	reply := make(chan int64, 1)
 	f.set(func() {
-		if f.later != nil {
-			select {
-			case f.later.reply <- 0:
-			default:
-			}
+		f.dropLater()
+		if f.closed {
+			reply <- 0
+			return
 		}
 		f.later = &laterAsk{at: time.UnixMilli(at), open: true, reply: reply}
 	})
 	return <-reply
+}
+
+// Close tells f its window closed: a send later still open answers the
+// page 0 and goes, and any asked after gets 0 at once.
+func (f *ComposeFrame) Close() {
+	f.set(func() {
+		f.closed = true
+		f.dropLater()
+	})
+}
+
+// dropLater answers the open send later, if any, with 0 and forgets it; f.mu is held.
+func (f *ComposeFrame) dropLater() {
+	if f.later != nil {
+		select {
+		case f.later.reply <- 0:
+		default:
+		}
+		f.later = nil
+	}
 }
 
 // Origin is where the page's view is in the window: page coordinates (a

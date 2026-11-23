@@ -153,6 +153,25 @@ func TestComposeSendLater(t *testing.T) {
 	shoot(t, tt, "SendLater-dark.png")
 }
 
+// A compose window closed with send later open answers the page's call
+// with 0, and draws no dialog after.
+func TestComposeSendLaterWindowClosed(t *testing.T) {
+	h := newHarness(t)
+	f := NewComposeFrame(stubView{}, func() {})
+	tt := ui.NewTester(h.app.ComposeView(f), 1440, 900)
+	tt.SetLocale("zh-Hans")
+	tt.Frame()
+	got := sendLater(t, tt, f, time.Date(2026, 10, 9, 10, 0, 0, 0, time.Local))
+	f.Close()
+	if at := answer(t, tt, got); at != 0 {
+		t.Errorf("closed, the page got %v, want 0", at)
+	}
+	tt.Advance(2 * theme.MotionBase)
+	if tt.HasText("定时发送") {
+		t.Error("the dialog stays after the window closed")
+	}
+}
+
 // shoot saves tt's image as name in $GODWIT_SHOTS, when it is set.
 func shoot(t *testing.T, tt *ui.Tester, name string) {
 	if dir := os.Getenv("GODWIT_SHOTS"); dir != "" {
