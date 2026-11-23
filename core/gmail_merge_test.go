@@ -2,6 +2,7 @@ package core
 
 import (
 	"testing"
+	"time"
 
 	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/godwit-email/godwit/core/store"
@@ -115,6 +116,34 @@ func TestGmailMergeDoesNotRerunRule(t *testing.T) {
 	e.sync(t)
 	e.rulesIdle(t)
 	assert.Equal(t, [][]any{{id}}, e.rows(t, "SELECT message_id FROM rule_runs"))
+}
+
+// A program's reply date on a row merged away moves to the kept message and
+// stays in effect; so does 收到就总结's check, so it is not summarized again.
+func TestGmailMergeKeepsReplyDateAndSummaryCheck(t *testing.T) {
+	e := newSyncEnv(t, testmail.Gmail())
+	e.im.AddGmail(eml("a@x", "bob@a.example", "alice@example.com", "quote", time.Now().Add(-time.Hour).Format(time.RFC1123Z), "Reply by Friday?"),
+		nil, "INBOX", testmail.GmailAllMail)
+	e.sync(t)
+	tid := e.threadOf(t, "a@x")
+	date := time.Now().AddDate(0, 0, 3).Format("2006-01-02")
+	require.NoError(t, e.s.setDeadline(bg, DeadlineProgram, tid, Deadline{Date: date, MessageID: e.idOf(t, "a@x")}))
+	old := e.oldRows(t, e.idOf(t, "a@x"))[testmail.GmailAllMail]
+	// Set on the All Mail row, which the merge discards.
+	_, err := e.s.db.Execute(bg, "UPDATE thread_deadlines SET message_id = ?", old)
+	require.NoError(t, err)
+	_, err = e.s.db.Execute(bg, "INSERT INTO summary_checks(message_id, at, outcome) VALUES (?, 1, 'done')", old)
+	require.NoError(t, err)
+
+	e.sync(t)
+	id := e.idOf(t, "a@x")
+	require.NotEqual(t, old, id, "the All Mail row merged away")
+	got, err := e.s.ThreadDeadline(bg, tid)
+	require.NoError(t, err)
+	require.NotNil(t, got.Deadline, "still in effect after the merge")
+	assert.Equal(t, id, got.Deadline.MessageID)
+	assert.Equal(t, date, got.Deadline.Date)
+	assert.Equal(t, [][]any{{id, "done"}}, e.rows(t, "SELECT message_id, outcome FROM summary_checks"))
 }
 
 // The ID of a row merged away still names the message it went into.

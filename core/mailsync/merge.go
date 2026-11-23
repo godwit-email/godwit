@@ -17,8 +17,9 @@ import (
 // folder) and its flags with every pending flags change applied on top in
 // order (sync then refetches the server's). Per label the highest source wins
 // (manual > rule > auto), a manual removal over a manual add. Drafts, rule
-// runs (one on any row counts as run on keep), Wit citations, events, approval
-// and audit targets and cached attachments go to keep, and their IDs become
+// runs (one on any row counts as run on keep), Wit citations, events, reply
+// dates, summary checks (keep's own wins), approval and audit targets and
+// cached attachments go to keep, and their IDs become
 // aliases of it.
 func merge(ctx context.Context, db *store.DB, keep int64, drop []int64) ([]sqlite.Statement, []int64, error) {
 	all := append([]int64{keep}, drop...)
@@ -64,6 +65,8 @@ func merge(ctx context.Context, db *store.DB, keep int64, drop []int64) ([]sqlit
 		to("UPDATE OR IGNORE rule_runs SET message_id = ? WHERE message_id IN " + in),
 		to("UPDATE run_citations SET message_id = ? WHERE message_id IN " + in),
 		to("UPDATE events_log SET message_id = ? WHERE message_id IN " + in),
+		to("UPDATE thread_deadlines SET message_id = ? WHERE message_id IN " + in),
+		to("UPDATE OR IGNORE summary_checks SET message_id = ? WHERE message_id IN " + in), // keep's own check wins
 		to(`INSERT INTO message_imports(message_id, arrival, verdict)
    SELECT ?, arrival, verdict FROM message_imports WHERE message_id IN ` + in + `
    ON CONFLICT(message_id) DO UPDATE SET arrival = max(arrival, excluded.arrival), verdict = max(verdict, excluded.verdict)`),
