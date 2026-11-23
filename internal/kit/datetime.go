@@ -16,11 +16,23 @@ import (
 // chosen (zero for any); the accessible names of the calendar (Date), the
 // clock (Time) and the calendar's month buttons; and, for a time that may be
 // left out, Untimed with AnyTime, the label of the switch that leaves it out.
+// Locale is the interface language the month, the weekdays and the readout
+// are written in, "" for the window's (Context.Locale); the first day of the
+// week stays the region's.
 type DateTimeOpts struct {
 	Min                              time.Time
 	Date, Time, PrevMonth, NextMonth string
 	Untimed                          *bool
 	AnyTime                          string
+	Locale                           string
+}
+
+// locale is o's Locale, or the window's.
+func (o DateTimeOpts) locale(c *ui.Context) string {
+	if o.Locale != "" {
+		return o.Locale
+	}
+	return c.Locale()
 }
 
 // pickerKey keys a calendar's month shown and the day it last followed.
@@ -78,7 +90,7 @@ func DateTimeDialog(c *ui.Context, open *bool, at *time.Time, o DateTimeDialogOp
 		*open = false
 		onConfirm()
 	}
-	desc := Readout(c.Locale(), *at, c.Now())
+	desc := Readout(o.locale(c), *at, c.Now())
 	if o.Readout != nil {
 		desc = o.Readout(*at)
 	}
@@ -277,7 +289,13 @@ func onDay(at, d time.Time) time.Time {
 func calendar(c *ui.Context, at *time.Time, o DateTimeOpts) {
 	t, th := theme.Of(c), c.Theme()
 	cell := th.Space(9)
-	locale, first := c.Locale(), c.Region().FirstWeekday
+	// The words in the interface language; the week from the region, or the
+	// language's when the region is unknown, as mygo's own calendar does.
+	locale, region := o.locale(c), c.Region()
+	if region.HourCycle != 12 && region.HourCycle != 24 {
+		region = i18n.RegionFor(locale)
+	}
+	first := region.FirstWeekday
 	min := time.Time{}
 	if !o.Min.IsZero() {
 		min = day0(o.Min.In(at.Location()))

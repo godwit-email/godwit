@@ -80,6 +80,10 @@ func SetLanguage(tag string) {
 
 func Language() string { return lang.Load().(string) }
 
+// Locale is the tag SetLanguage was given, normalized: the interface
+// language with its region ("en-GB"), as the dates in it are written.
+func Locale() string { return locale.Load().(string) }
+
 // T retains the dotted keys used by dynamic menus and settings indexes.
 func T(key string) string { return Tf(key) }
 

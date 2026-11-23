@@ -162,15 +162,15 @@ func (a *App) ComposeView(f *ComposeFrame) func(*ui.Context) {
 // page as it closes: the time chosen, or 0. A time not in the future is
 // refused; days before today cannot be chosen.
 func (a *App) sendLater(c *ui.Context, f *ComposeFrame, l *laterAsk) {
-	now := a.clock.Now()
+	now, loc := a.clock.Now(), i18n.Locale() // the interface language, as the strings
 	kit.DateTimeDialog(c, &l.open, &l.at, kit.DateTimeDialogOpts{
 		DateTimeOpts: kit.DateTimeOpts{
 			Min: now, Date: i18n.T("compose.send_later.date"), Time: i18n.T("compose.send_later.time"),
-			PrevMonth: i18n.T("common.previous_month"), NextMonth: i18n.T("common.next_month"),
+			PrevMonth: i18n.T("common.previous_month"), NextMonth: i18n.T("common.next_month"), Locale: loc,
 		},
 		Title: i18n.T("compose.send_later.title"), Note: i18n.T("compose.send_later.note"),
 		Confirm: i18n.T("compose.send_later.schedule"), Cancel: i18n.T("common.cancel"), Close: i18n.T("common.close"),
-		Readout: func(at time.Time) string { return kit.Readout(c.Locale(), at, now) },
+		Readout: func(at time.Time) string { return kit.Readout(loc, at, now) },
 		Check: func(at time.Time) string {
 			if !at.After(a.clock.Now()) {
 				return i18n.T("compose.send_later.past")

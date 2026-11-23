@@ -153,6 +153,31 @@ func TestComposeSendLater(t *testing.T) {
 	shoot(t, tt, "SendLater-dark.png")
 }
 
+// Send later writes the month and the weekdays in the interface language,
+// as its readout, whatever the regional formats; the week starts on the
+// region's first day, as mygo's own calendar has it.
+func TestComposeSendLaterLanguage(t *testing.T) {
+	h := newHarness(t) // the interface in zh-Hans
+	f := NewComposeFrame(stubView{}, func() {})
+	tt := ui.NewTester(h.app.ComposeView(f), 1440, 900)
+	tt.SetRegion(i18n.Region{Locale: "en-US", FirstWeekday: time.Sunday, HourCycle: 12})
+	tt.Frame()
+	sendLater(t, tt, f, time.Date(2026, 10, 9, 10, 0, 0, 0, time.Local))
+	for _, s := range []string{"今天 · 10月9日周五 10:00", "2026年10月", "周日", "周一"} {
+		if !tt.HasText(s) {
+			t.Errorf("no %q in %q", s, tt.Texts())
+		}
+	}
+	sun, _ := tt.Find("周日")
+	mon, _ := tt.Find("周一")
+	if sun.X >= mon.X {
+		t.Errorf("周日 at %v, 周一 at %v: the week does not start on the region's Sunday", sun.X, mon.X)
+	}
+	if _, ok := tt.Access("2026年10月12日"); !ok {
+		t.Errorf("the days are not named in the interface language: %q", tt.Texts())
+	}
+}
+
 // A compose window closed with send later open answers the page's call
 // with 0, and draws no dialog after.
 func TestComposeSendLaterWindowClosed(t *testing.T) {
