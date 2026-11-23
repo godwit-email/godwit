@@ -759,9 +759,6 @@ func TestAuditResendFailureStopsCall(t *testing.T) {
 	assert.Equal(t, "failed", outboxState(t, e.Svc, acc.ID, id), "not re-queued")
 }
 
-// Widening Settings.MCPSend and granting extensions or MCP tools without
-// approval are persistent egress state (ADR 0003): full's calls are audited,
-// while ordinary settings changes and tightening are not.
 // A program raising 邮件总结 to 收到就总结, which sends mail to the model
 // service unattended from then on, is audited; the other levels are not.
 func TestAuditSummaryOnArrival(t *testing.T) {
@@ -781,6 +778,9 @@ func TestAuditSummaryOnArrival(t *testing.T) {
 	assert.Equal(t, [][]any{{"local_api", "SetSettings", nil, ""}}, auditRows(t, e.DataDir))
 }
 
+// Widening Settings.MCPSend and granting extensions or MCP tools without
+// approval are persistent egress state (ADR 0003): full's calls are audited,
+// while ordinary settings changes and tightening are not.
 func TestAuditSendSettingsAndGrants(t *testing.T) {
 	e := coretest.New(t, coretest.WithoutAutoSync())
 	ctx := t.Context()
