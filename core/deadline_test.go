@@ -335,6 +335,18 @@ func TestThreadDeadline(t *testing.T) {
 	assert.Nil(t, got.Deadline, "removed by the user")
 }
 
+// The reader knows, outside any view, that a conversation waits on someone
+// else's reply, and for how many days.
+func TestThreadDeadlineWaiting(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "Sent", eml("sent@x", "alias@example.com", "bob@a.example", "sent", e.clock.Now().Format(time.RFC1123Z), "hi"))
+	e.sync(t)
+	e.clock.Advance(4*24*time.Hour + time.Hour)
+	got, err := e.s.ThreadDeadline(bg, e.threadOf(t, "sent@x"))
+	require.NoError(t, err)
+	assert.Equal(t, ReaderDeadline{Waiting: true, WaitingDays: 4}, got)
+}
+
 // Pages follow the order; a reply date written mid-paging reorders, so the
 // next page starts over instead of repeating or skipping a row.
 func TestViewPagingAcrossAReplyDate(t *testing.T) {

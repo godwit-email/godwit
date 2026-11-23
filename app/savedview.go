@@ -591,7 +591,7 @@ func (r *reader) loadWhy() {
 			return err
 		}, func(err error) {
 			if err == nil && r.key == k {
-				r.deadline, r.unreplied = d.Deadline, d.Unreplied
+				r.deadline, r.unreplied, r.awaited, r.waitDays = d.Deadline, d.Unreplied, d.Waiting, d.WaitingDays
 			}
 		})
 	}
@@ -625,20 +625,21 @@ func (r *reader) unrepliedText() string {
 }
 
 // viewBand is the status above the conversation, in a view, with 写催促信
-// while it waits on someone, and then under it the 回复日期 with 改日期.
+// while it waits on someone, and then under it the 回复日期 with 改日期;
+// outside a view, it shows only for that date.
 func (r *reader) viewBand(c *ui.Context) {
 	w := r.why
-	if !w.Member {
-		return
-	}
 	var icon, text string
+	waiting := false
 	switch {
-	case w.Status == core.ReplyStatusUnreplied && r.todoShown():
+	case w.Member && w.Status == core.ReplyStatusUnreplied && r.todoShown():
 		return // the 等你处理 line says it, in the summary's place
-	case w.Status == core.ReplyStatusUnreplied:
+	case w.Member && w.Status == core.ReplyStatusUnreplied:
 		icon, text = "reply", r.unrepliedText()
-	case w.Status == core.ReplyStatusWaiting:
-		icon, text = "time", i18n.Tf("view.band.waiting", w.Days)
+	case w.Member && w.Status == core.ReplyStatusWaiting:
+		icon, text, waiting = "time", i18n.Tf("view.band.waiting", w.Days), true
+	case r.dateInBand(): // outside a view, or in one not about 回复状态: for the date's sake
+		icon, text, waiting = "time", i18n.Tf("view.band.waiting", r.waitDays), true
 	default:
 		return
 	}
@@ -655,7 +656,7 @@ func (r *reader) viewBand(c *ui.Context) {
 					})
 				}
 			})
-			if w.Status == core.ReplyStatusWaiting {
+			if waiting {
 				kit.Button(c, i18n.T("view.follow_up"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Shrink(0).OnClick(func() { r.draft("reply") })
 			}
 		})

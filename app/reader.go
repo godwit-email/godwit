@@ -89,6 +89,8 @@ type session struct {
 
 	deadline  *core.Deadline // its 回复日期 in effect, nil for none
 	unreplied bool           // its 回复状态 is 未回复: with no date, the 等你处理 line offers 设回复日期
+	awaited   bool           // its 回复状态 is 等待回复, for waitDays since the user's mail
+	waitDays  int
 
 	// entered is whether the thread's parts were drawn: a part that comes
 	// after enters with its motion; the thread itself comes at once (#667).

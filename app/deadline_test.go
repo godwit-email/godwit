@@ -245,6 +245,37 @@ func TestReaderReplyDateSingleSummary(t *testing.T) {
 	h.seeCardOnTop("Lone ask", "发给 我")
 }
 
+// TestReaderBandReplyDateOutsideView: opened outside any view, a
+// conversation waiting on someone else's reply says the user's reply date
+// in its 待跟进 band, with 改日期 and 写催促信, and has no 等你处理 card;
+// one with no date has no band.
+func TestReaderBandReplyDateOutsideView(t *testing.T) {
+	h, accs := mailHarness(t, nil, "you@example.com")
+	h.useBackendClock()
+	acc := accs[0]
+	h.putSeen(acc, "Sent", coretest.Msg("Me <you@example.com>", "Tom <tom@acme.example>", "Renewal quote", "The quote is attached.", coretest.Date(time.Now().AddDate(0, 0, -4).Add(-time.Hour))))
+	h.syncNow(acc)
+	h.click("已发送")
+	h.waitMail("the sent row", func() bool { return !h.app.mail.list.loading && len(h.items()) == 1 })
+	tid := h.items()[0].ID
+	h.openThreadWith(tid)
+	if h.tt.HasText(i18n.Tf("view.band.waiting", 4)) {
+		t.Fatal("a 待跟进 band with no reply date, outside a view")
+	}
+	day := time.Now().AddDate(0, 0, 3)
+	h.app.setReplyDate(tid, core.Deadline{Date: day.Format(time.DateOnly)})
+	h.seeRefreshed("你设的：" + weekdayDay(day) + "前回复")
+	h.see(i18n.Tf("view.band.waiting", 4))
+	h.see(i18n.T("view.follow_up"))
+	if h.tt.HasText("等你处理") {
+		t.Fatal("a 等你处理 card on a conversation waiting on someone else")
+	}
+	h.click("改日期")
+	if got, want := h.tt.Menu(), dateMenu(time.Now(), true); !slices.Equal(got, want) {
+		t.Fatalf("menu %q, want %q", got, want)
+	}
+}
+
 // seeCardOnTop checks the 等你处理 card is above the message (whose header
 // says to), its label in line with the title: the badge's text 6 in from
 // its side, as kit.Badge has it.

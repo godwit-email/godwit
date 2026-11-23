@@ -150,11 +150,9 @@ func (r *reader) deadlineLine(c *ui.Context, status string) {
 	})
 }
 
-// dateInBand is whether a view's 待跟进 band says the 回复日期: a
-// conversation waiting on someone else's reply has no 等你处理 line.
-func (r *reader) dateInBand() bool {
-	return r.deadline != nil && r.why.Member && r.why.Status == core.ReplyStatusWaiting
-}
+// dateInBand is whether the 待跟进 band says the 回复日期, in a view or not:
+// a conversation waiting on someone else's reply has no 等你处理 line.
+func (r *reader) dateInBand() bool { return r.deadline != nil && r.awaited }
 
 // dated is whether the 等你处理 line says a 回复日期.
 func (r *reader) dated() bool { return r.deadline != nil && !r.dateInBand() }

@@ -114,11 +114,14 @@ func (s *Service) UndoSetThreadDeadline(ctx context.Context, before RemovedDeadl
 	return s.commitDeadline(ctx, deadlineRowWrite(before, true))
 }
 
-// ReaderDeadline is what the reader's 等你处理 line says of a conversation:
-// its dated 期限 in effect (nil for none) and whether it is 未回复.
+// ReaderDeadline is what the reader's 等你处理 line, or its 待跟进 band,
+// says of a conversation: its dated 期限 in effect (nil for none), whether it
+// is 未回复, or 等待回复 and for how many days.
 type ReaderDeadline struct {
-	Deadline  *Deadline
-	Unreplied bool
+	Deadline    *Deadline
+	Unreplied   bool
+	Waiting     bool
+	WaitingDays int
 }
 
 // ThreadDeadline is the conversation's dated 期限 in effect, in a view or
@@ -135,7 +138,11 @@ func (s *Service) ThreadDeadline(ctx context.Context, threadID int64) (ReaderDea
 		return ReaderDeadline{}, err
 	}
 	got, err := s.deadlinesIn(ctx, now, statuses, []int64{threadID})
-	out := ReaderDeadline{Unreplied: statuses[threadID].Kind == ReplyStatusUnreplied}
+	st := statuses[threadID]
+	out := ReaderDeadline{Unreplied: st.Kind == ReplyStatusUnreplied, Waiting: st.Kind == ReplyStatusWaiting}
+	if out.Waiting {
+		out.WaitingDays = int((now.Unix() - st.Since) / 86400) // as a view's row counts them
+	}
 	if d, ok := got[threadID]; ok && d.Date != "" {
 		out.Deadline = &d
 	}
