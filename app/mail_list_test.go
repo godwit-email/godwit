@@ -1455,6 +1455,21 @@ func TestMailListAvatarAlignsWithHeader(t *testing.T) {
 	}
 }
 
+// rightClickBelow right-clicks the list's own space, a row's height under the
+// last of two rows shown, first and last.
+func (h *harness) rightClickBelow(first, last string) {
+	h.t.Helper()
+	a, ok := h.tt.Find(first)
+	if !ok {
+		h.t.Fatalf("%q shows: %q", first, h.tt.Texts())
+	}
+	b, ok := h.tt.Find(last)
+	if !ok {
+		h.t.Fatalf("%q shows: %q", last, h.tt.Texts())
+	}
+	h.tt.RightClickAt(a.X+20, b.Y+(b.Y-a.Y)+10)
+}
+
 // TestContextMenuBlankListMarkAllRead verifies that a right-click on the
 // list's own space, past its rows, and on the day's heading above them, offers
 // 全部已读 for the view shown: enabled while the view counts unread mail,
@@ -1468,18 +1483,7 @@ func TestContextMenuBlankListMarkAllRead(t *testing.T) {
 	h.waitMail("two unread mails", func() bool { return len(h.items()) == 2 && h.app.mail.inboxUnread() == 2 })
 
 	markRead := i18n.T("mail.mark_all_read")
-	blank := func() {
-		t.Helper()
-		first, ok := h.tt.Find("first")
-		if !ok {
-			t.Fatalf("the first row shows: %q", h.tt.Texts())
-		}
-		last, ok := h.tt.Find("second") // the last row: the list's own space starts under it
-		if !ok {
-			t.Fatalf("the second row shows: %q", h.tt.Texts())
-		}
-		h.tt.RightClickAt(first.X+20, last.Y+(last.Y-first.Y)+10) // a row's own height under the last one
-	}
+	blank := func() { t.Helper(); h.rightClickBelow("first", "second") }
 
 	blank()
 	if menu := h.tt.Menu(); !slices.Contains(menu, markRead) {
@@ -1512,4 +1516,70 @@ func TestContextMenuBlankListMarkAllRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.until("all marked read from the heading", func() bool { return h.app.mail.inboxUnread() == 0 })
+}
+
+// The date headings inside the list take the list's menu, and on Windows and
+// Linux the heading above the rows has it too.
+func TestContextMenuHeadingsMarkAllRead(t *testing.T) {
+	for _, system := range []string{"darwin", "linux"} {
+		t.Run(system, func(t *testing.T) {
+			old := goos
+			goos = system
+			t.Cleanup(func() { goos = old })
+			h, accs := mailHarness(t, nil, "alice@example.com")
+			base := h.clock.Now()
+			h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "today's", "body", at(base, 1)))
+			h.put(accs[0], "INBOX", coretest.Msg("carol@example.com", "alice@example.com", "yesterday's", "body", at(base, 24)))
+			h.syncNow(accs[0])
+			h.waitMail("two unread mails", func() bool { return len(h.items()) == 2 && h.app.mail.inboxUnread() == 2 })
+			markRead := i18n.T("mail.mark_all_read")
+
+			for _, heading := range []string{i18n.T("mail.group.today"), i18n.T("mail.group.yesterday")} {
+				if err := h.tt.RightClick(heading); err != nil {
+					t.Fatal(err)
+				}
+				if menu := h.tt.Menu(); !slices.Contains(menu, markRead) {
+					t.Fatalf("%s's menu %v has no %q", heading, menu, markRead)
+				}
+			}
+			if err := h.tt.ChooseMenuItem(markRead); err != nil {
+				t.Fatal(err)
+			}
+			h.until("all marked read from the heading", func() bool { return h.app.mail.inboxUnread() == 0 })
+		})
+	}
+}
+
+// Search results and sent mail are no view to mark read: their list's own
+// space offers no 全部已读.
+func TestContextMenuBlankListNoMarkAllRead(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	base := h.clock.Now()
+	h.put(accs[0], "INBOX", coretest.Msg("bob@example.com", "alice@example.com", "invoice one", "body", at(base, 1)))
+	h.put(accs[0], "INBOX", coretest.Msg("carol@example.com", "alice@example.com", "invoice two", "body", at(base, 2)))
+	h.put(accs[0], "Sent", coretest.Msg("alice@example.com", "bob@example.com", "sent one", "body", at(base, 1)))
+	h.put(accs[0], "Sent", coretest.Msg("alice@example.com", "carol@example.com", "sent two", "body", at(base, 2)))
+	h.syncNow(accs[0])
+	h.waitMail("two unread mails", func() bool { return len(h.items()) == 2 && h.app.mail.inboxUnread() == 2 })
+	markRead := i18n.T("mail.mark_all_read")
+
+	p := h.app.mail
+	h.post(func() {
+		p.searchOpen, p.query = true, "invoice"
+		p.runSearch()
+	})
+	h.until("two results", func() bool { h.tt.Frame(); return p.searched && len(p.results) == 2 })
+	h.rightClickBelow("invoice one", "invoice two")
+	if menu := h.tt.Menu(); slices.Contains(menu, markRead) {
+		t.Fatalf("search results' menu %v has %q", menu, markRead)
+	}
+	h.post(p.closeSearch)
+
+	sent := h.folderOf(accs[0], "sent")
+	h.post(func() { h.app.navigate(Route{Page: PageMail, View: core.View{FolderID: sent.ID}}) })
+	h.waitMail("sent mail", func() bool { return len(h.items()) == 2 && h.tt.HasText("sent two") })
+	h.rightClickBelow("sent one", "sent two")
+	if menu := h.tt.Menu(); slices.Contains(menu, markRead) {
+		t.Fatalf("sent folder's menu %v has %q", menu, markRead)
+	}
 }

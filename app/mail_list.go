@@ -658,32 +658,27 @@ func (p *mailPage) inboxUnread() int {
 
 // viewUnread is the unread mail a view counts: what 全部已读 would mark read.
 // ok is false for a view that does not count mail that way: the outbox, a
-// search's results, and a folder of drafts or sent mail.
+// saved view or label no longer there, and a folder of drafts or sent mail.
 func (p *mailPage) viewUnread(v core.View) (n int, ok bool) {
 	if id, saved := savedViewOf(v); saved {
-		if b, found := p.savedView(id); found {
-			return b.Unread, true
-		}
-		return 0, true
+		b, found := p.savedView(id)
+		return b.Unread, found
 	}
 	if v.LabelID != 0 {
 		if v.AccountID != 0 {
 			return p.accountLabelUnread(v.AccountID, v.LabelID), true
 		}
-		if l, found := p.a.label(v.LabelID); found {
-			return l.Unread, true
-		}
-		return 0, true
+		l, found := p.a.label(v.LabelID)
+		return l.Unread, found
+	}
+	if acc, ok := starredOf(v); ok {
+		return p.starredUnread[acc], true
 	}
 	switch {
 	case v.Unified == "inbox":
 		return p.inboxUnread(), true
 	case v.Unified == "starred":
 		return p.starredUnreadTotal, true
-	case strings.HasPrefix(v.Unified, "starred:"):
-		if accID, err := strconv.ParseInt(strings.TrimPrefix(v.Unified, "starred:"), 10, 64); err == nil {
-			return p.starredUnread[accID], true
-		}
 	case v.Unified == "" && v.FolderID != 0:
 		if f, found := p.folder(v.FolderID); found && f.Role != "drafts" && f.Role != "sent" {
 			return f.Unread, true
@@ -865,7 +860,7 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 		}
 		ui.Row(c).AlignItems(ui.Center).Padding(th.Space(3), th.Space(4), th.Space(2), th.Space(4)).Children(func() {
 			kit.Text(c, head, t.Text.Xs).FontWeight(500).TextColor(t.Muted)
-		})
+		}).ContextMenu(p.viewReadMenu) // the day's heading, as below
 		return
 	}
 	if saved && head == "" && !p.a.sidebarHidden { // its groups' headings are the list's
@@ -881,7 +876,7 @@ func (p *mailPage) listHeader(c *ui.Context, head string) {
 			kit.IconButton(c, "search", i18n.T("mail.search"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSm}).
 				OnClick(p.a.openPalette)
 		}
-	}).ContextMenu(func(m *ui.Menu) { p.viewReadMenu(m) }) // the day's heading: the list's space above its rows
+	}).ContextMenu(p.viewReadMenu) // the day's heading: the list's space above its rows
 }
 
 func (p *mailPage) isDraftsView() bool {
@@ -1146,8 +1141,10 @@ func (p *mailPage) listView(c *ui.Context) {
 			}
 		})
 	}).Grow(1).Padding(0, padR, 0, th.Space(2)).Gap(theme.Stroke) // rows a hairline apart: two chosen ones stay two
-	if !p.searched { // the list's own space, past its rows: the action the sidebar gives the view too
-		l.ContextMenu(func(m *ui.Menu) { p.viewReadMenu(m) })
+	// The list's own space, past its rows, and its date headings, which have no
+	// menu of their own: the action the sidebar gives the view too.
+	if !p.searched {
+		l.ContextMenu(p.viewReadMenu)
 	}
 	if p.devPath != "" { // written off the UI thread; the clipboard needs a frame
 		c.WriteClipboard(p.devPath)
