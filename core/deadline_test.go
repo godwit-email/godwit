@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/emersion/go-imap/v2"
 	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/store"
@@ -719,4 +720,22 @@ func TestUndoSetThreadDeadline(t *testing.T) {
 	require.NoError(t, e.s.UndoSetThreadDeadline(ui, before))
 	assert.Equal(t, "NULL manual ", row(), "the marker comes back")
 	assert.ErrorIs(t, e.setThreadDeadline(bg, tid, program), ErrDeadlineOutranked)
+}
+
+// A reply draft synced from another device, only in Drafts, is not a reply:
+// the conversation stays 未回复 and keeps its date, and programs may still write one.
+func TestDeadlineKeptPastADraftReply(t *testing.T) {
+	e := newSendEnv(t, false)
+	require.NoError(t, e.im.User.Create("Drafts", &imap.CreateOptions{SpecialUse: []imap.MailboxAttr{imap.MailboxAttrDrafts}}))
+	e.put(t, "INBOX", eml("q@x", "bob@a.example", "alice@example.com", "quote", e.viewAt(1), "Reply by Friday."))
+	e.sync(t)
+	tid, q := e.threadOf(t, "q@x"), e.idOf(t, "q@x")
+	require.NoError(t, e.setThreadDeadline(bg, tid, Deadline{Date: e.day(2), MessageID: q}))
+
+	e.put(t, "Drafts", eml("d@x", "alice@example.com", "bob@a.example", "Re: quote", e.viewAt(0.5), "Will do.", "In-Reply-To: <q@x>"))
+	e.sync(t)
+	require.Equal(t, tid, e.threadOf(t, "d@x"))
+	assert.Equal(t, ReplyStatusUnreplied, e.replyOf(t, "q@x").Kind)
+	assert.NotNil(t, e.deadlineOf(t, "q@x"), "a draft is no reply")
+	assert.NoError(t, e.setThreadDeadline(bg, tid, Deadline{Date: e.day(3), MessageID: q}))
 }

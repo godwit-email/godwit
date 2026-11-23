@@ -204,7 +204,7 @@ func (s *Service) replyStatuses(ctx context.Context, now int64) (map[int64]reply
 				st.Settled = max(st.Settled, marks[tid].date)
 			}
 			for _, m := range msgs {
-				if people.mine(m) || m.answered || m.in("archive") && !m.in("inbox") {
+				if m.counted() && (people.mine(m) || m.answered || m.in("archive") && !m.in("inbox")) { // a draft settles nothing
 					st.Settled = max(st.Settled, m.date)
 				}
 			}
