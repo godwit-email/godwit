@@ -690,6 +690,10 @@ func TestEveryArchiveEndsManualDeadline(t *testing.T) {
 			require.Len(t, res.Moved, 1)
 			return func() error { return e.s.UndoArchive(bg, res) }
 		},
+		"role": func(e *sendEnv, q int64) func() error { // Wit's archive_mail, a program's MoveToRole: no undo
+			require.NoError(t, e.s.MoveToRole(bg, []int64{q}, "archive"))
+			return nil
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			e := newSendEnv(t, false)
