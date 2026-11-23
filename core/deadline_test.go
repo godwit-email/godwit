@@ -471,11 +471,12 @@ func TestDeadlineWitRefusedOnApply(t *testing.T) {
 	assert.Equal(t, [][]any{{"failed", ErrDeadlineNotWaiting.Error(), "tx"}}, e.rows(t, "SELECT state, result, exec_mode FROM approvals WHERE id = ?", a.ID))
 }
 
-// 全部去掉 in settings takes away every date other apps and Wit set, and
-// nothing else; undoing it puts them back, but not over a date the user set since.
+// 全部去掉 in settings takes away every date other apps and Wit set, in
+// effect or not, and nothing else; undoing it puts them back, but not over a
+// date the user set since. Its count is of the dates in effect, as shown.
 func TestRemoveAppAndWitDeadlines(t *testing.T) {
 	e := newSendEnv(t, false)
-	for _, id := range []string{"p", "w", "a", "m"} {
+	for _, id := range []string{"p", "w", "a", "m", "x"} {
 		e.put(t, "INBOX", eml(id+"@x", "bob+"+id+"@a.example", "alice@example.com", id, e.viewAt(1), "Reply by Friday."))
 	}
 	e.sync(t)
@@ -486,6 +487,9 @@ func TestRemoveAppAndWitDeadlines(t *testing.T) {
 	set(DeadlineWit, "w@x")
 	set(DeadlineAI, "a@x")
 	set(DeadlineManual, "m@x")
+	set(DeadlineProgram, "x@x")
+	_, err := e.s.ArchiveThreads(bg, []int64{e.threadOf(t, "x@x")})
+	require.NoError(t, err, "x's date is no longer in effect")
 	program := e.deadlineOf(t, "p@x")
 	count := func() int {
 		n, err := e.s.CountAppAndWitDeadlines(bg)
@@ -500,7 +504,7 @@ func TestRemoveAppAndWitDeadlines(t *testing.T) {
 
 	removed, err := e.s.RemoveAppAndWitDeadlines(bg)
 	require.NoError(t, err)
-	assert.Len(t, removed, 2)
+	assert.Len(t, removed, 3)
 	assert.Nil(t, e.deadlineOf(t, "p@x"))
 	assert.Nil(t, e.deadlineOf(t, "w@x"))
 	assert.Equal(t, DeadlineAI, e.deadlineOf(t, "a@x").Source)

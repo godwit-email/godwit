@@ -336,18 +336,29 @@ type RemovedDeadline struct {
 }
 
 // CountAppAndWitDeadlines is how many 期限 other apps (program) and Wit have
-// written, in effect or not: what RemoveAppAndWitDeadlines would take away.
+// written that are in effect, as the user sees them; RemoveAppAndWitDeadlines
+// also takes away those no longer in effect.
 func (s *Service) CountAppAndWitDeadlines(ctx context.Context) (int, error) {
 	ctx, end, err := s.begin(ctx, 0)
 	if err != nil {
 		return 0, err
 	}
 	defer end()
-	rows, err := s.db.Query(ctx, "SELECT count(*) FROM thread_deadlines WHERE source IN (?, ?)", DeadlineProgram, DeadlineWit)
+	rows, err := s.db.Query(ctx, "SELECT thread_id FROM thread_deadlines WHERE source IN (?, ?)", DeadlineProgram, DeadlineWit)
+	if err != nil || len(rows.Values) == 0 {
+		return 0, err
+	}
+	ids := make([]int64, len(rows.Values))
+	for i, r := range rows.Values {
+		ids[i] = store.Int(r[0])
+	}
+	now := s.userNow(ctx)
+	statuses, err := s.replyStatuses(ctx, now.Unix())
 	if err != nil {
 		return 0, err
 	}
-	return int(store.Int(rows.Values[0][0])), nil
+	got, err := s.deadlinesIn(ctx, now, statuses, ids)
+	return len(got), err // only program and wit rows, each with a date
 }
 
 // RemoveAppAndWitDeadlines deletes every 期限 other apps (program) and Wit

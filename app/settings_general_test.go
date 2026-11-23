@@ -103,11 +103,19 @@ func TestSettingsGeneralCopy(t *testing.T) {
 }
 
 // TestSettingsRemoveAppDates: AI 功能 counts the reply dates other apps and
-// Wit set; 全部去掉 removes them, its toast puts them back, and it is off at zero.
+// Wit set that are in effect; 全部去掉 removes them, with those no longer in
+// effect, its toast puts them back, and it is off at zero.
 func TestSettingsRemoveAppDates(t *testing.T) {
 	h, acc := withAccount(t)
-	m := h.deliverOne(acc, coretest.Msg("Bob <bob@a.example>", acc.Email, "Quote", "Please confirm by Friday."))
 	date := time.Now().AddDate(0, 0, 3).Format(time.DateOnly)
+	ended := h.deliverOne(acc, coretest.Msg("Carol <carol@a.example>", acc.Email, "Plan", "Please confirm by Monday."))
+	if _, err := h.env.Svc.SetThreadDeadline(context.Background(), ended.ThreadID, core.Deadline{Date: date, MessageID: ended.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.env.Svc.ArchiveThreads(context.Background(), []int64{ended.ThreadID}); err != nil {
+		t.Fatal(err)
+	}
+	m := h.deliverOne(acc, coretest.Msg("Bob <bob@a.example>", acc.Email, "Quote", "Please confirm by Friday."))
 	if _, err := h.env.Svc.SetThreadDeadline(context.Background(), m.ThreadID, core.Deadline{Date: date, MessageID: m.ID}); err != nil {
 		t.Fatal(err)
 	}

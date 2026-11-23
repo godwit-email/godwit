@@ -605,9 +605,9 @@ func (p *settingsPage) readAppDates() {
 }
 
 // removeAppDates is 全部去掉: every reply date other apps and Wit set goes,
-// with a toast to put them back.
+// in effect or not, with a toast to put them back that counts as the row did.
 func (p *settingsPage) removeAppDates() {
-	a := p.a
+	a, shown := p.a, p.appDates
 	var removed []core.RemovedDeadline
 	a.do(func(ctx context.Context) (err error) { removed, err = a.svc.RemoveAppAndWitDeadlines(ctx); return err }, func(err error) {
 		p.readAppDates()
@@ -619,7 +619,7 @@ func (p *settingsPage) removeAppDates() {
 			return
 		}
 		now := a.clock.Now()
-		a.toasts = append(a.toasts, ui.Toast{ID: fmt.Sprintf("app-dates-%d", now.UnixNano()), Title: i18n.Tf("settings.app_deadlines.removed", len(removed)),
+		a.toasts = append(a.toasts, ui.Toast{ID: fmt.Sprintf("app-dates-%d", now.UnixNano()), Title: i18n.Tf("settings.app_deadlines.removed", shown),
 			Action: i18n.T("compose.undo"), Timeout: viewUndoWindow, Data: kit.ToastData{Deadline: now.Add(viewUndoWindow)}, OnAction: func() {
 				a.do(func(ctx context.Context) error { return a.svc.UndoRemoveAppAndWitDeadlines(ctx, removed) }, func(err error) {
 					if err != nil {
