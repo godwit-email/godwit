@@ -812,6 +812,9 @@ func newComposeWindow(ws *webui.Windows, cas *cascade, frames *composeFrames, vi
 		ws.RequestClose(w.ID())
 	})
 	w.OnClosed(func() {
+		if f := frames.get(w.ID()); f != nil {
+			f.Close() // a send later still open answers the page 0
+		}
 		frames.set(w.ID(), nil)
 		cas.closed(w)
 		ws.Closed(w.ID())

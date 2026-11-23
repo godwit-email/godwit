@@ -76,7 +76,7 @@ func TestViewCreateFromSidebar(t *testing.T) {
 	}
 	h.see("To reply")
 	h.see(i18n.T("view.other"))
-	h.see(i18n.T("view.status.unreplied.today"))
+	h.see(i18n.T("view.status.unreplied"))
 }
 
 // TestViewArchiveAndUndo: archiving takes a conversation out of a group by
@@ -159,7 +159,7 @@ func TestViewToHandleFirstRun(t *testing.T) {
 	h.click(toHandle.Name)
 	h.waitMail("the mail in it", func() bool { return h.groupOf("needs a reply") == "reply" })
 	h.waitMail("its count", func() bool { b, _ := h.app.mail.savedView(toHandle.ID); return b.Unread == 1 })
-	h.see(i18n.T("view.status.unreplied.today"))
+	h.see(i18n.T("view.status.unreplied"))
 
 	it := h.items()[0]
 	th, err := h.env.Svc.GetThread(context.Background(), it.ID)

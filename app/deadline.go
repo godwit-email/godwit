@@ -15,8 +15,21 @@ import (
 	"github.com/godwit-email/godwit/internal/theme"
 )
 
+// rowStatus is a row's third line: its status (viewLine) and its 回复日期
+// (deadlineText), the date alone with no icon where the row has no status.
+func rowStatus(now time.Time, it mailItem) (icon, line, due string, overdue bool) {
+	icon, line = viewLine(it)
+	if it.Deadline != nil {
+		due, overdue = deadlineText(now, *it.Deadline)
+		if it.Status == "" {
+			icon, line = "", ""
+		}
+	}
+	return icon, line, due, overdue
+}
+
 // deadlineText is a row's 回复日期 after its status, and whether it is
-// overdue (only then in Danger): 今天, 明天前, this week's day, next week's,
+// overdue (only then in DangerText): 今天, 明天前, this week's day, next week's,
 // else the date.
 func deadlineText(now time.Time, d core.Deadline) (string, bool) {
 	day, err := time.ParseInLocation(time.DateOnly, d.Date, now.Location())
@@ -52,9 +65,10 @@ func deadlineText(now time.Time, d core.Deadline) (string, bool) {
 	return i18n.Tf("view.deadline.by", when), false
 }
 
-// deadlineSentence is the reader's 回复日期 line: the sentence, the sender's
-// quote after it ("" for none), and who set it ("" for the user). More than 7
-// days overdue, it says how long ago instead of quoting.
+// deadlineSentence is the reader's 回复日期 line: the sentence (with the
+// colon a quote follows), the sender's quote after it ("" for none), and who
+// set it ("" for the user). More than 7 days overdue, it says how long ago
+// instead of quoting.
 func deadlineSentence(now time.Time, d core.Deadline) (lead, quote, source string) {
 	day, err := time.ParseInLocation(time.DateOnly, d.Date, now.Location())
 	if err != nil {
@@ -74,14 +88,26 @@ func deadlineSentence(now time.Time, d core.Deadline) (lead, quote, source strin
 	if ago := viewDaysAgo(now, day); d.Overdue && ago > 7 {
 		return i18n.Tf(key, monthDay(day)) + i18n.Plural("reader.deadline.passed", ago), "", source
 	}
-	when := i18n.Tf("reader.deadline.day", i18n.T("mail.weekday."+strconv.Itoa(int(day.Weekday()))), monthDay(day))
-	if d.Time != "" {
+	// the row's 今天 and 明天: today's a sentence of its own, as 今天前回复 would not read
+	when, today := weekdayDay(day), false
+	switch viewDaysAgo(day, now) {
+	case 0:
+		today = true
+	case 1:
+		when = i18n.Tf("reader.deadline.day", i18n.T("view.deadline.tomorrow"), monthDay(day))
+	}
+	switch {
+	case today && d.Time != "":
+		lead = i18n.Tf(key+"_today_at", d.Time)
+	case today:
+		lead = i18n.T(key + "_today")
+	case d.Time != "":
 		lead = i18n.Tf(key+"_at", when, d.Time)
-	} else {
+	default:
 		lead = i18n.Tf(key, when)
 	}
 	if d.Quote != "" {
-		quote = i18n.Tf("reader.deadline.quoted", d.Quote)
+		lead, quote = i18n.Tf("reader.deadline.quoted", lead), d.Quote
 	}
 	return lead, quote, source
 }
@@ -92,8 +118,14 @@ func monthDay(day time.Time) string {
 	return i18n.Tf("view.deadline.date", strconv.Itoa(int(day.Month())), strconv.Itoa(day.Day()))
 }
 
-// deadlineLine is the 回复日期 sentence, the sender's quote in it (which opens
-// the message that asks), and under it status ("" for none) and who set it.
+// weekdayDay is a 回复日期's day as the reader's line says it: 周五（11月27日）.
+func weekdayDay(day time.Time) string {
+	return i18n.Tf("reader.deadline.day", i18n.T("mail.weekday."+strconv.Itoa(int(day.Weekday()))), monthDay(day))
+}
+
+// deadlineLine is the 回复日期 sentence, the sender's quote in it in a chip
+// (which opens the message that asks), and under it status ("" for none)
+// and who set it, both small.
 func (r *reader) deadlineLine(c *ui.Context, status string) {
 	d := *r.deadline
 	t, th := theme.Of(c), c.Theme()
@@ -104,91 +136,88 @@ func (r *reader) deadlineLine(c *ui.Context, status string) {
 			if quote == "" {
 				return
 			}
-			if !slices.ContainsFunc(r.msgs, func(m core.MessageSummary) bool { return m.ID == d.MessageID }) {
-				ui.RichText(c, ui.Span{Text: quote})
-				return
-			}
-			if ui.RichText(c, ui.Span{Text: quote}).Role(ui.RoleLink).Label(quote).Focusable().Cursor(ui.CursorPointer).Clicked() {
+			chip := ui.RichText(c, ui.Span{Text: quote, Color: t.Subdued, Background: t.HoverTint, Radius: t.Radius.Sm, PaddingX: th.Space(1)})
+			if slices.ContainsFunc(r.msgs, func(m core.MessageSummary) bool { return m.ID == d.MessageID }) &&
+				chip.Role(ui.RoleLink).Label(quote).Focusable().Cursor(ui.CursorPointer).Clicked() {
 				r.reveal(d.MessageID)
 			}
 		})
-		if status != "" {
-			kit.Text(c, status, t.Text.Sm).TextColor(t.Muted)
+		for _, small := range []string{status, source} {
+			if small != "" {
+				kit.Text(c, small, t.Text.Xs).TextColor(t.Muted)
+			}
 		}
-		if source != "" {
-			kit.Text(c, source, t.Text.Xs).TextColor(t.Muted)
-		}
-		r.dateButtons(c)
 	})
 }
 
+// dateInBand is whether the 待跟进 band says the 回复日期, in a view or not:
+// a conversation waiting on someone else's reply has no 等你处理 line.
+func (r *reader) dateInBand() bool { return r.deadline != nil && r.awaited }
+
+// dated is whether the 等你处理 line says a 回复日期.
+func (r *reader) dated() bool { return r.deadline != nil && !r.dateInBand() }
+
+// todoShown is whether the 等你处理 line shows: with a 回复日期, or on a
+// conversation waiting on the user.
+func (r *reader) todoShown() bool { return r.dated() || r.unreplied }
+
 // replyDate is the 等你处理 line's 回复日期 and, on a conversation waiting on
 // the user, its 回复状态 (unless todo, the summary's to-do, says what waits):
-// under the date, or with 设回复日期 where there is none.
+// under the date, or alone where there is none.
 func (r *reader) replyDate(c *ui.Context, todo bool) {
 	status := ""
 	if r.unreplied && !todo {
 		status = r.unrepliedText()
 	}
-	if r.deadline != nil {
+	if r.dated() {
 		r.deadlineLine(c, status)
-		return
-	}
-	if !r.unreplied {
 		return
 	}
 	if status != "" {
 		ui.Text(c, status).LineHeight(theme.LineReading).TextColor(theme.Of(c).Foreground).Shrink(1)
 	}
-	r.dateButtons(c)
 }
 
-// dateButtons are 改日期 and 去掉 under a 回复日期, 设回复日期 with none.
-func (r *reader) dateButtons(c *ui.Context) {
+// dateButton is 改日期 at the 等你处理 line's right end, 设回复日期 with no
+// date on a conversation waiting on the user: replyDateMenu.
+func (r *reader) dateButton(c *ui.Context) {
+	if r.todoShown() {
+		r.dateMenuButton(c)
+	}
+}
+
+// dateMenuButton is 改日期, or 设回复日期 with no date, opening replyDateMenu.
+func (r *reader) dateMenuButton(c *ui.Context) {
 	a, tid, d := r.p.a, r.key[0], r.deadline
-	ui.Row(c).Gap(c.Theme().Space(3)).AlignItems(ui.Center).Children(func() {
-		label := i18n.T("reader.deadline.set")
-		if d != nil {
-			label = i18n.T("reader.deadline.change")
-		}
-		b := kit.Button(c, label, kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).OnClick(func() { r.datePick.start(d) })
-		a.replyDatePopover(c, b, &r.datePick, tid)
-		if d != nil && kit.Button(c, i18n.T("reader.deadline.remove"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).Clicked() {
-			a.setReplyDate(tid, core.Deadline{})
-		}
-	})
+	label := i18n.T("reader.deadline.set")
+	if d != nil {
+		label = i18n.T("reader.deadline.change")
+	}
+	kit.Button(c, label, kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeXs}).Shrink(0).Menu(func(m *ui.Menu) { a.replyDateMenu(m, tid, d) })
 }
 
 // deadlineCard is the 等你处理 line where no summary shows: the summary's
-// card with only that line.
+// card with only that line, its text inset 12 as the title is from the
+// column's edge.
 func (r *reader) deadlineCard(c *ui.Context) {
-	if r.deadline == nil && !r.unreplied {
+	if !r.todoShown() {
 		return
 	}
 	t, th := theme.Of(c), c.Theme()
-	kit.Block(c, ui.Column(c), kit.ToneCard).Radius(t.Radius.Xl).FillWidth().Padding(th.Space(3), th.Space(4)).Children(func() {
+	kit.Block(c, ui.Column(c), kit.ToneCard).Radius(t.Radius.Xl).FillWidth().Padding(th.Space(3)).Children(func() {
 		r.todoRow(c, false, func() { r.replyDate(c, false) })
 	})
 }
 
-// dateSetter is 改日期's popover: whether it is open, and the date and time typed.
-type dateSetter struct {
-	open       bool
-	date, time string
-}
-
-// start opens the popover on d's date and time (none: empty).
-func (ds *dateSetter) start(d *core.Deadline) {
-	*ds = dateSetter{open: true}
-	if d != nil {
-		ds.date, ds.time = d.Date, d.Time
-	}
-}
-
-// replyDatePreset is one of the popover's days.
+// replyDatePreset is one of the date menu's days.
 type replyDatePreset struct {
 	label string
 	day   time.Time
+}
+
+// is whether d, a conversation's 回复日期, is the preset: its day, no time.
+func (p replyDatePreset) is(d *core.Deadline) bool {
+	return d != nil && d.Time == "" && d.Date == p.day.Format(time.DateOnly)
 }
 
 // replyDatePresets are 今天, 明天, this week's 周五 and 下周一 from now, each
@@ -213,74 +242,113 @@ func replyDatePresets(now time.Time) []replyDatePreset {
 	return out
 }
 
-// replyDatePopover is 改日期's popover on anchor while ds is open: the
-// presets with their dates, a date and optional time to type with 设定, and,
-// with a model set, the way to have summaries find reply dates.
-func (a *App) replyDatePopover(c *ui.Context, anchor ui.Element, ds *dateSetter, threadID int64) {
-	if !ds.open {
-		return
+// replyDateMenu is the menu 改日期 and 设回复日期 open: the presets, each
+// setting its day with no time, the one d is checked; 选日期… for any day
+// and time; and 去掉 when d, the conversation's date, is set.
+func (a *App) replyDateMenu(m *ui.Menu, threadID int64, d *core.Deadline) {
+	for _, p := range replyDatePresets(a.clock.Now()) {
+		// the day in the label: the system's menus show no Trailing
+		if m.Item(p.label + " · " + monthDay(p.day)).Checked(p.is(d)).Chosen() {
+			a.setReplyDate(threadID, core.Deadline{Date: p.day.Format(time.DateOnly)})
+		}
 	}
-	set := func(d core.Deadline) {
-		ds.open = false
-		a.setReplyDate(threadID, d)
+	m.Separator()
+	if m.Item(i18n.T("reader.deadline.pick")).Chosen() {
+		a.pickReplyDate(threadID, d)
 	}
-	kit.PopoverAt(c, anchor, &ds.open, ui.AnchorBottomLeft, ui.AnchorTopLeft, theme.PopupOffset, func() {
-		t, th := theme.Of(c), c.Theme()
-		title := i18n.T("reader.deadline.title")
-		ui.Column(c).Width(theme.SyncMenuWidth).Gap(th.Space(2)).Label(title).Children(func() {
-			kit.Text(c, title, t.Text.Xs).FontWeight(500).TextColor(t.Muted)
-			ui.Column(c).FillWidth().Children(func() {
-				for i, p := range replyDatePresets(a.clock.Now()) {
-					kit.MenuItem(c.Key(i), false).FillWidth().Label(p.label + " " + monthDay(p.day)).OnClick(func() { set(core.Deadline{Date: p.day.Format(time.DateOnly)}) }).Children(func() {
-						kit.Text(c, p.label, t.Text.Sm).Grow(1).Shrink(1)
-						kit.Text(c, monthDay(p.day), t.Text.Sm).TextColor(t.Muted).Shrink(0)
-					})
-				}
-			})
-			kit.Separator(c, false)
-			_, dateErr := time.Parse(time.DateOnly, ds.date)
-			_, timeErr := time.Parse("15:04", ds.time)
-			ui.Row(c).FillWidth().Gap(th.Space(2)).AlignItems(ui.Center).Children(func() {
-				kit.Input(c, &ds.date, kit.InputOpts{Placeholder: "YYYY-MM-DD", Size: kit.SizeSm, Invalid: ds.date != "" && dateErr != nil}).
-					Label(i18n.T("reader.deadline.date_field")).Grow(1).Shrink(1).MinWidth(0)
-				kit.Input(c, &ds.time, kit.InputOpts{Placeholder: "HH:MM", Size: kit.SizeSm, Invalid: ds.time != "" && timeErr != nil}).
-					Label(i18n.T("reader.deadline.time_field")).Width(th.Space(16)).Shrink(0)
-				ok := dateErr == nil && (ds.time == "" || timeErr == nil) // no time: the end of the day
-				if kit.Button(c, i18n.T("reader.deadline.apply"), kit.ButtonOpts{Size: kit.SizeSm, Disabled: !ok}).Shrink(0).Clicked() && ok {
-					set(core.Deadline{Date: ds.date, Time: ds.time})
-				}
-			})
-			if note, link := arrivalFooter(a); link != "" { // 收到就总结, on AI 功能
-				kit.Separator(c, false)
-				ui.Row(c).FillWidth().Gap(th.Space(1)).AlignItems(ui.Center).Children(func() {
-					if note != "" {
-						kit.Text(c, note, t.Text.Xs).TextColor(t.Muted).Shrink(1)
-					}
-					if kit.Button(c, link, kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).Shrink(0).Clicked() {
-						ds.open = false
-						a.navigate(Route{Page: PageSettings, Settings: "features"})
-					}
-				})
-			}
-		})
-	})
+	if d != nil {
+		m.Separator()
+		if m.Item(i18n.T("reader.deadline.remove")).Chosen() {
+			a.setReplyDate(threadID, core.Deadline{})
+		}
+	}
 }
 
-// arrivalFooter is the date popover's last line about 收到就总结: under it,
-// that it finds new mail's dates; chosen before, that it no longer does;
-// else, with a model and the level offered, the way to it. link "": none.
-func arrivalFooter(a *App) (note, link string) {
+// replyDateAsk is 选日期…'s dialog: the conversation, the day and time
+// chosen, and whether the time is left out (the end of that day).
+type replyDateAsk struct {
+	open, untimed bool
+	thread        int64
+	at            time.Time
+}
+
+// deadline is the 回复日期 the dialog has chosen.
+func (q *replyDateAsk) deadline() core.Deadline {
+	d := core.Deadline{Date: q.at.Format(time.DateOnly)}
+	if !q.untimed {
+		d.Time = q.at.Format("15:04")
+	}
+	return d
+}
+
+// pickReplyDate opens the dialog on the conversation's date d (nil: today)
+// and its time, if any; a date gone by opens on today.
+func (a *App) pickReplyDate(threadID int64, d *core.Deadline) {
+	now := a.clock.Now()
+	day, hour, minute, untimed := now, 18, 0, true // a time put in starts at a working day's end
+	if d != nil {
+		if set, err := time.ParseInLocation(time.DateOnly, d.Date, now.Location()); err == nil && set.After(now) {
+			day = set
+		}
+		if t, err := time.Parse("15:04", d.Time); err == nil {
+			hour, minute, untimed = t.Hour(), t.Minute(), false
+		}
+	}
+	a.dateAsk = replyDateAsk{open: true, untimed: untimed, thread: threadID,
+		at: time.Date(day.Year(), day.Month(), day.Day(), hour, minute, 0, 0, now.Location())}
+}
+
+// replyDateDialog is 选日期…'s dialog over the window: a day from today, any
+// time of it unless one is put in (then not one gone by), read out as the
+// reader's line says it, with the note about 收到就总结.
+func (a *App) replyDateDialog(c *ui.Context) {
+	q := &a.dateAsk
+	if !q.open {
+		return
+	}
+	kit.DateTimeDialog(c, &q.open, &q.at, kit.DateTimeDialogOpts{
+		DateTimeOpts: kit.DateTimeOpts{
+			Min: a.clock.Now(), Date: i18n.T("reader.deadline.date_field"), Time: i18n.T("reader.deadline.time_field"),
+			PrevMonth: i18n.T("common.previous_month"), NextMonth: i18n.T("common.next_month"),
+			Untimed: &q.untimed, AnyTime: i18n.T("reader.deadline.any_time"),
+			Locale: i18n.Locale(), // the interface language, as the strings and the readout
+		},
+		Title: i18n.T("reader.deadline.title"), Note: arrivalNote(a),
+		Confirm: i18n.T("reader.deadline.apply"), Cancel: i18n.T("common.cancel"), Close: i18n.T("common.close"),
+		Readout: func(time.Time) string { return replyDateReadout(q.deadline(), a.clock.Now().Location()) },
+		Check: func(at time.Time) string {
+			if !q.untimed && !at.After(a.clock.Now()) {
+				return i18n.T("compose.send_later.past")
+			}
+			return ""
+		},
+	}, func() { a.setReplyDate(q.thread, q.deadline()) })
+}
+
+// replyDateReadout is the dialog's reading of d: 周五（11月27日）前回复, with its time if any.
+func replyDateReadout(d core.Deadline, loc *time.Location) string {
+	day, _ := time.ParseInLocation(time.DateOnly, d.Date, loc)
+	if d.Time != "" {
+		return i18n.Tf("reader.deadline.readout_at", weekdayDay(day), d.Time)
+	}
+	return i18n.Tf("reader.deadline.readout", weekdayDay(day))
+}
+
+// arrivalNote is the date dialog's note about 收到就总结: under it, that it
+// finds new mail's dates; chosen before, that it no longer does; else, with
+// a model and the level offered, where to choose it. "": none.
+func arrivalNote(a *App) string {
 	switch {
 	case !core.SummaryOnArrival:
-		return "", ""
+		return ""
 	case a.settings.SummaryMode == core.SummaryArrive:
-		return i18n.T("reader.deadline.by_arrival"), i18n.T("reader.deadline.settings")
+		return i18n.T("reader.deadline.by_arrival")
 	case a.arrival.Service != "":
-		return i18n.T("reader.deadline.arrival_stopped"), i18n.T("reader.deadline.settings")
+		return i18n.T("reader.deadline.arrival_stopped")
 	case a.settings.DefaultModel != "":
-		return "", i18n.T("reader.deadline.on_arrival")
+		return i18n.Tf("reader.deadline.on_arrival", i18n.T("settings.ai"), i18n.T("settings.summary.arrive"))
 	}
-	return "", ""
+	return ""
 }
 
 // setReplyDate sets (d.Date "": removes) the conversation's 回复日期 as the

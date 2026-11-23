@@ -319,6 +319,7 @@ func (a *App) View(c *ui.Context) {
 	a.mail.reader.unsubscribeDialog(c)
 	a.mail.reader.attachmentConflictDialog(c)
 	a.mcpSendDialog(c)
+	a.replyDateDialog(c)
 	a.pages[PageSettings].(*settingsPage).importDialog(c)
 	kit.ToastHost(c, i18n.T("toast.close"))
 	// Last, on the root, which overlays (menus, dialogs, Select lists, toasts)

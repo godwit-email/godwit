@@ -299,6 +299,8 @@ type App struct {
 	link     string // the link waiting for confirmation
 	linkOpen bool   // the link dialog shows
 
+	dateAsk replyDateAsk // 选日期…'s dialog (deadline.go)
+
 	mcpSend mcpSendState // godwit mcp's send request waiting for the user (mcpsend.go)
 
 	customIcons map[int64]accountImage    // by account id: its uploaded icon (accountImage)

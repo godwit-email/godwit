@@ -165,10 +165,48 @@ func TestSummaryLevelsGated(t *testing.T) {
 	}
 }
 
+// TestSettingsSummarySegments: 邮件总结's levels are segments, each level
+// with its own help, two while 收到就总结 is not on offer; under 收到就总结,
+// 更早的邮件 says the earlier mail waits for the user.
+func TestSettingsSummarySegments(t *testing.T) {
+	old := core.SummaryOnArrival
+	core.SummaryOnArrival = false
+	t.Cleanup(func() { core.SummaryOnArrival = old })
+	h, _ := withAccount(t)
+	h.env.LLM(t).Release()
+	h.waitMail("the model in the settings", func() bool { return h.app.settings.DefaultModel != "" })
+	h.openSettings("features")
+	if _, ok := h.tt.AccessByRole(ui.RoleTab, "打开邮件时"); !ok {
+		t.Fatal("no 打开邮件时 segment")
+	}
+	if _, ok := h.tt.AccessByRole(ui.RoleTab, "收到就总结"); ok {
+		t.Fatal("收到就总结 while not on offer")
+	}
+	core.SummaryOnArrival = true
+	h.tt.Frame()
+	for _, c := range []struct{ level, mode, help string }{
+		{"关", core.SummaryOff, "只在你点「总结」时调用模型。"},
+		{"打开邮件时", core.SummaryOpen, "打开会话时自动总结它最新的那封。"},
+		{"收到就总结", core.SummaryArrive, "需要你回复的新邮件（真人直接发给你、你还没回的）一到"},
+	} {
+		if _, ok := h.tt.AccessByRole(ui.RoleTab, c.level); !ok {
+			t.Fatalf("no %s segment", c.level)
+		}
+		h.click(c.level)
+		h.until(c.level+" saved", func() bool {
+			st, err := h.env.Svc.GetSettings(context.Background())
+			return err == nil && st.SummaryMode == c.mode
+		})
+		h.see(c.help)
+	}
+	h.see("更早的邮件")
+	h.see("选上之后到达的邮件会自动总结。更早的只在你点了之后做。")
+}
+
 // TestSettingsSummaryOnArrival: 收到就总结 names the model service new
 // mail goes to, asks before it summarizes the last 30 days' unreplied mail,
 // pauses when the service changes until the user confirms, and says so once
-// another level is chosen.
+// another level is chosen, after that level's own help.
 func TestSettingsSummaryOnArrival(t *testing.T) {
 	old := core.SummaryOnArrival
 	core.SummaryOnArrival = true
@@ -215,7 +253,7 @@ func TestSettingsSummaryOnArrival(t *testing.T) {
 	p.st.SummaryMode = core.SummaryOpen
 	h.drain()
 	h.tt.Frame()
-	h.see("新邮件不再在收到时总结，已找到的回复日期保留。")
+	h.see("打开会话时自动总结它最新的那封。新邮件不再在收到时总结，已找到的回复日期保留。")
 }
 
 // TestThemeThumbFocusTip: Tab focus shows the tooltip too.

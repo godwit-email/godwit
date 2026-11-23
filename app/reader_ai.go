@@ -528,9 +528,6 @@ func (r *reader) aiTools(c *ui.Context) {
 // the translation's notice.
 func (r *reader) aiArea(c *ui.Context, m core.MessageSummary) {
 	st := r.ai[m.ID]
-	if len(r.msgs) == 1 && !r.summaryOn(st) {
-		r.deadlineCard(c) // the 回复日期 in the summary's place
-	}
 	if st == nil {
 		return
 	}
@@ -598,7 +595,7 @@ func (r *reader) summaryPanel(c *ui.Context, m core.MessageSummary) {
 					}
 				}
 				r.aiBodyState(c, sum, hasContent, func() { st.summary = r.summarize(m.ID) })
-				if (r.deadline != nil || r.unreplied) && !digested {
+				if r.todoShown() && !digested {
 					r.todoRow(c, true, func() { r.replyDate(c, false) })
 				}
 			})
@@ -621,28 +618,30 @@ func (r *reader) digest(c *ui.Context, d core.ThreadDigest) {
 			}
 		})
 	}
-	if d.Todo != nil || r.deadline != nil || r.unreplied {
+	if d.Todo != nil || r.todoShown() {
+		todo := d.Todo != nil && !r.dated() // a 回复日期 says what waits in the to-do's place
 		r.todoRow(c, len(d.Progress) > 0, func() {
-			if d.Todo != nil {
+			if todo {
 				r.digestLine(c, d.Todo)
 			}
-			r.replyDate(c, d.Todo != nil)
+			r.replyDate(c, todo)
 		})
 	}
 }
 
 // todoRow is the 等你处理 line: what waits on the user, under a hairline when
-// rule (something is above it).
+// rule (something is above it), and at its right end the dateButton.
 func (r *reader) todoRow(c *ui.Context, rule bool, body func()) {
 	t, th := theme.Of(c), c.Theme()
-	row := ui.Row(c).FillWidth().Gap(th.Space(2.5)).AlignItems(ui.Start)
+	row := ui.Row(c).FillWidth().Gap(th.Space(3)).AlignItems(ui.Start)
 	if rule {
-		row.Margin(th.Space(0.5), 0, 0, 0).Padding(th.Space(2.5), 0, 0, 0).
+		row.Margin(th.Space(0.5), 0, 0, 0).Padding(th.Space(3), 0, 0, 0).
 			BorderWidth(theme.Hairline, 0, 0, 0).BorderColor(t.Border)
 	}
 	row.Children(func() {
 		kit.Badge(c, i18n.T("reader.ai.todo")).Shrink(0).Margin(th.Space(0.5), 0, 0, 0)
 		ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(body)
+		r.dateButton(c)
 	})
 }
 

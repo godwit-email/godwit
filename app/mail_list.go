@@ -87,16 +87,14 @@ func displayName(from string) string {
 type mailPage struct {
 	a *App
 
-	devPath  string     // dev: the HTML file just written, to copy
-	dateFor  string     // the row whose 设回复日期… popover is open, by its key
-	datePick dateSetter // that popover
-	view     core.View  // what the list shows
-	threads  bool       // items are threads (Settings.ThreadView when loaded)
-	items    []mailItem
-	cursor   string // where the next page starts; "" once all is loaded
-	list     latest // a page or a refresh in flight: one at a time; a reload drops the one before
-	stalled  bool   // the last page failed: no more pages until a refresh
-	older    olderLoad
+	devPath string    // dev: the HTML file just written, to copy
+	view    core.View // what the list shows
+	threads bool      // items are threads (Settings.ThreadView when loaded)
+	items   []mailItem
+	cursor  string // where the next page starts; "" once all is loaded
+	list    latest // a page or a refresh in flight: one at a time; a reload drops the one before
+	stalled bool   // the last page failed: no more pages until a refresh
+	older   olderLoad
 	// leaving are the rows advance moved off and the list still shows, until
 	// the next reload: a second action before it must not move back to one.
 	leaving map[string]bool
@@ -1008,9 +1006,6 @@ func (p *mailPage) listView(c *ui.Context) {
 		}
 		it := rows[es[i].row]
 		row := p.item(c, it)
-		if p.dateFor == it.key() {
-			p.a.replyDatePopover(c, row, &p.datePick, it.threadID())
-		}
 		row.ContextMenu(func(m *ui.Menu) {
 			on := []mailItem{it}
 			if ls.sel.Has(it.key()) {
@@ -1038,6 +1033,14 @@ func (p *mailPage) listView(c *ui.Context) {
 					act, target = k, on
 				}
 			}
+			if len(on) == 1 && on[0].threadID() != 0 {
+				if m.Item(i18n.T("mail.menu.set_deadline")).Icon(menuIcon("calendar")).Chosen() {
+					p.a.pickReplyDate(on[0].threadID(), on[0].Deadline)
+				}
+				if on[0].Deadline != nil && m.Item(i18n.T("mail.menu.remove_deadline")).Icon(menuIcon("calendar-close")).Chosen() {
+					p.a.setReplyDate(on[0].threadID(), core.Deadline{})
+				}
+			}
 			m.Separator()
 
 			role := p.currentFolderRole()
@@ -1062,15 +1065,6 @@ func (p *mailPage) listView(c *ui.Context) {
 			securitySubmenu(m, func(reason string) bool { return len(on) == 1 && on[0].Security.Reason == reason }, func(reason string) { p.applySecurity(on, reason) })
 			m.Separator()
 			p.viewMenu(m, on)
-			if len(on) == 1 && on[0].threadID() != 0 {
-				if m.Item(i18n.T("mail.menu.set_deadline")).Icon(menuIcon("time")).Chosen() {
-					p.dateFor = on[0].key()
-					p.datePick.start(on[0].Deadline)
-				}
-				if on[0].Deadline != nil && m.Item(i18n.T("mail.menu.remove_deadline")).Icon(menuIcon("x")).Chosen() {
-					p.a.setReplyDate(on[0].threadID(), core.Deadline{})
-				}
-			}
 			if len(on) == 1 { // for mail like this one: a rule, or blocking its sender
 				if role := p.currentFolderRole(); role != "sent" && role != "drafts" {
 					m.Separator()
@@ -1625,15 +1619,7 @@ func (p *mailPage) row(c *ui.Context, it mailItem, toggleStar func()) ui.Element
 			} else {
 				ui.Text(c, subject).TextColor(ink).SingleLine()
 			}
-			icon, line := p.viewLine(it)
-			var due string
-			var overdue bool
-			if it.Deadline != nil {
-				due, overdue = deadlineText(p.a.clock.Now(), *it.Deadline)
-				if it.Status == "" {
-					icon, line = "", "" // the date alone, with no icon
-				}
-			}
+			icon, line, due, overdue := rowStatus(p.a.clock.Now(), it)
 			if line != "" || due != "" {
 				ui.Row(c).Gap(th.Space(1)).AlignItems(ui.Center).TextColor(t.Muted).Children(func() {
 					if icon != "" {
@@ -1648,7 +1634,7 @@ func (p *mailPage) row(c *ui.Context, it mailItem, toggleStar func()) ui.Element
 						}
 						date := kit.Text(c, due, t.Text.Xs).SingleLine().Shrink(0)
 						if overdue {
-							date.TextColor(t.Danger)
+							date.TextColor(t.DangerText)
 						}
 					}
 				})

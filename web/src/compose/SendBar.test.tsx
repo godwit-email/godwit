@@ -1,20 +1,23 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { MenuEntry } from "@/mygo";
 import { makeT } from "@/shared/i18n";
 import { presets, SendBar } from "./SendBar";
-import { FACE, facePoint } from "./SendLaterDialog";
 
 const t = makeT("zh-Hans");
 
-/** pick is the item chosen from the native menu, by its label. */
-function setup(frozen = false, sending = false, pick = "", scheduledFor = 0) {
+/**
+ * pick is the item chosen from the native menu, by its label; chosen, the time native's send later
+ * dialog gives back (0: cancelled).
+ */
+function setup(frozen = false, sending = false, pick = "", scheduledFor = 0, chosen = 0) {
   const onSend = vi.fn();
   const onSendLater = vi.fn();
   const menu = vi.fn(
     async (entries: MenuEntry[], _x: number, _y: number) =>
       entries.find((e) => pick && e.label.startsWith(pick))?.id ?? "",
   );
+  const later = vi.fn(async (_at: number) => chosen);
   render(
     <SendBar
       sending={sending}
@@ -23,10 +26,11 @@ function setup(frozen = false, sending = false, pick = "", scheduledFor = 0) {
       onSend={onSend}
       onSendLater={onSendLater}
       menu={menu}
+      later={later}
       t={t}
     />,
   );
-  return { onSend, onSendLater, menu };
+  return { onSend, onSendLater, menu, later };
 }
 
 const options = () => userEvent.click(screen.getByRole("button", { name: "发送选项" }));
@@ -84,174 +88,72 @@ test("the native menu: closed with nothing chosen does nothing", async () => {
   expect(screen.queryByRole("alertdialog")).toBeNull();
 });
 
-test("send later…: a dialog for any time, that says only a running Godwit sends", async () => {
-  const { onSend, onSendLater } = setup(false, false, "稍后发送");
+test("send later…: native's dialog, at the next whole hour, schedules the time chosen", async () => {
+  const { onSend, onSendLater, later } = setup(false, false, "稍后发送", 0, 1_900_000_000_000);
   await options();
-  expect(await screen.findByRole("alertdialog", { name: "稍后发送" })).toBeInTheDocument();
-  expect(screen.getByText(/只在 Godwit 运行时发出/)).toBeInTheDocument();
   const next = new Date();
   next.setHours(next.getHours() + 1, 0, 0, 0);
-  expect(screen.getByRole("slider", { name: "时间" })).toHaveAttribute(
-    "aria-valuenow",
-    String(next.getHours() * 60),
-  );
-  await userEvent.click(screen.getByRole("button", { name: "定时发送" }));
-  expect(onSendLater).toHaveBeenCalledWith(next.getTime());
+  expect(later).toHaveBeenCalledExactlyOnceWith(next.getTime());
+  expect(onSendLater).toHaveBeenCalledExactlyOnceWith(1_900_000_000_000);
   expect(onSend).not.toHaveBeenCalled();
 });
 
-test("send later…: the close button in the corner closes it, scheduling nothing", async () => {
-  const { onSendLater } = setup(false, false, "稍后发送");
+test("send later…: cancelled, it schedules nothing", async () => {
+  const { onSend, onSendLater, later } = setup(false, false, "稍后发送");
   await options();
-  await userEvent.click(await screen.findByRole("button", { name: "关闭" }));
-  expect(screen.queryByRole("alertdialog")).toBeNull();
+  expect(later).toHaveBeenCalledTimes(1);
   expect(onSendLater).not.toHaveBeenCalled();
+  expect(onSend).not.toHaveBeenCalled();
 });
 
 describe("at 15:30 on Sunday 15 November 2026", () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(2026, 10, 15, 15, 30));
-    vi.spyOn(navigator, "language", "get").mockReturnValue("zh-Hans"); // the header's and calendar's locale
+    vi.spyOn(navigator, "language", "get").mockReturnValue("zh-Hans"); // the menu's locale
   });
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
-  const open = async (scheduledFor = 0) => {
-    const r = setup(false, false, "稍后发送", scheduledFor);
-    await options();
-    return { ...r, clock: await screen.findByRole("slider", { name: "时间" }) };
-  };
-
   const original = new Date(2026, 10, 17, 8, 17, 42, 321).getTime();
+  const nextHour = new Date(2026, 10, 15, 16, 0).getTime();
 
   test("原定时间列在其他预设前，选中后按原毫秒值排定", async () => {
-    const { menu, onSendLater } = setup(false, false, "按原定时间发送", original);
+    const { menu, onSendLater, later } = setup(false, false, "按原定时间发送", original);
     expect(onSendLater).not.toHaveBeenCalled();
     await options();
     expect(menu.mock.calls[0][0][2].label).toBe("按原定时间发送（11月17日周二 8:17）");
     expect(onSendLater).toHaveBeenCalledExactlyOnceWith(original);
+    expect(later).not.toHaveBeenCalled();
   });
 
-  test("对话框预填原定日期和时间，取消改动再打开仍是原值", async () => {
-    const { clock, onSendLater } = await open(original);
-    expect(screen.getByText("11月17日周二 8:17")).toBeInTheDocument();
-    fireEvent.keyDown(clock, { key: "ArrowUp" });
-    await userEvent.click(screen.getByRole("button", { name: "取消" }));
+  test("稍后发送…预填原定时间，按选回的时间排定", async () => {
+    const chosen = new Date(2026, 10, 18, 9, 17).getTime();
+    const { onSendLater, later } = setup(false, false, "稍后发送", original, chosen);
     await options();
-    expect(screen.getByText("11月17日周二 8:17")).toBeInTheDocument();
-    expect(onSendLater).not.toHaveBeenCalled();
-    await userEvent.click(screen.getByRole("button", { name: "定时发送" }));
-    expect(onSendLater).toHaveBeenCalledExactlyOnceWith(original);
-  });
-
-  test("修改预填时间后，按新选的日期和时间排定", async () => {
-    const { clock, onSendLater } = await open(original);
-    await userEvent.click(screen.getByRole("button", { name: /11月18日/ }));
-    fireEvent.keyDown(clock, { key: "ArrowUp" });
-    await userEvent.click(screen.getByRole("button", { name: "定时发送" }));
-    expect(onSendLater).toHaveBeenCalledExactlyOnceWith(new Date(2026, 10, 18, 9, 17).getTime());
+    expect(later).toHaveBeenCalledExactlyOnceWith(original);
+    expect(onSendLater).toHaveBeenCalledExactlyOnceWith(chosen);
   });
 
   test.each([-1, 0])("原定时间距离现在 %i 毫秒时不推荐，对话框回到下一整点", async (offset) => {
-    const { menu, onSendLater } = await open(Date.now() + offset);
+    const { menu, onSendLater, later } = setup(false, false, "稍后发送", Date.now() + offset);
+    await options();
     expect(menu.mock.calls[0][0].some((e) => e.label.startsWith("按原定时间发送"))).toBe(false);
-    expect(screen.getByText("今天 · 11月15日周日 16:00")).toBeInTheDocument();
+    expect(later).toHaveBeenCalledExactlyOnceWith(nextHour);
     expect(onSendLater).not.toHaveBeenCalled();
   });
 
   test("菜单打开期间原定时间已过，选择后要重新挑选时间", async () => {
-    const { menu, onSendLater } = setup(false, false, "", original);
+    const { menu, onSendLater, later } = setup(false, false, "", original);
     menu.mockImplementationOnce(async (entries) => {
       vi.setSystemTime(original);
       return entries.find((e) => e.label.startsWith("按原定时间发送"))?.id ?? "";
     });
     await options();
-    expect(screen.getByText("今天 · 11月17日周二 9:00")).toBeInTheDocument();
+    expect(later).toHaveBeenCalledExactlyOnceWith(new Date(2026, 10, 17, 9, 0).getTime());
     expect(onSendLater).not.toHaveBeenCalled();
-  });
-
-  test("the keys step the clock, the calendar picks the day, the header reads it out", async () => {
-    const { onSendLater, clock } = await open();
-    expect(screen.getByText("今天 · 11月15日周日 16:00")).toBeInTheDocument();
-    fireEvent.keyDown(clock, { key: "ArrowRight" });
-    fireEvent.keyDown(clock, { key: "ArrowUp" });
-    expect(screen.getByText("今天 · 11月15日周日 17:05")).toBeInTheDocument();
-    // The time field types it, the face follows.
-    const field = screen.getByLabelText("时间", { selector: "input" });
-    expect(field).toHaveValue("17:05");
-    fireEvent.change(field, { target: { value: "05:20" } });
-    expect(screen.getByText("今天 · 11月15日周日 5:20")).toBeInTheDocument();
-    expect(clock).toHaveAttribute("aria-valuetext", "5:20");
-    fireEvent.change(field, { target: { value: "17:05" } });
-    await userEvent.click(screen.getByRole("button", { name: /11月16日/ }));
-    expect(screen.getByText("明天 · 11月16日周一 17:05")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /11月14日/ })).toBeDisabled();
-    await userEvent.click(screen.getByRole("button", { name: "定时发送" }));
-    expect(onSendLater).toHaveBeenCalledWith(new Date(2026, 10, 16, 17, 5).getTime());
-  });
-
-  test("the arrow keys move through the calendar's days, Enter picks one", async () => {
-    await open();
-    screen.getByRole("button", { name: /11月15日/ }).focus();
-    await userEvent.keyboard("{ArrowRight}");
-    expect(screen.getByRole("button", { name: /11月16日/ })).toHaveFocus();
-    await userEvent.keyboard("{ArrowDown}{Enter}");
-    expect(screen.getByText("11月23日周一 16:00")).toBeInTheDocument();
-  });
-
-  /** A pointer at turn (0 at 12, clockwise) and r from the centre, the face laid out 100 px wide, as its viewBox. */
-  const point = (clock: HTMLElement) => {
-    vi.spyOn(clock, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 100, 100));
-    return (turn: number, r: number) => {
-      const [clientX, clientY] = facePoint(turn, r);
-      return { clientX, clientY, pointerId: 1 };
-    };
-  };
-
-  test("the minute hand drags round, and past 12 it carries the hour", async () => {
-    const { clock } = await open();
-    const at = point(clock);
-    const tip = FACE.minute.length;
-    fireEvent.pointerDown(clock, at(0, tip));
-    fireEvent.pointerMove(clock, at(1 / 4, tip));
-    expect(clock).toHaveAttribute("aria-valuetext", "16:15");
-    for (const turn of [1 / 2, 3 / 4, 1]) fireEvent.pointerMove(clock, at(turn, tip));
-    fireEvent.pointerUp(clock, at(1, tip));
-    expect(clock).toHaveAttribute("aria-valuetext", "17:00");
-  });
-
-  test("the hour hand drags back through 12 into the morning", async () => {
-    const { clock } = await open();
-    const at = point(clock);
-    const tip = FACE.hour.length; // at 16:00 it points to 4
-    fireEvent.pointerDown(clock, at(4 / 12, tip));
-    fireEvent.pointerMove(clock, at(0, tip));
-    fireEvent.pointerMove(clock, at(10 / 12, tip));
-    fireEvent.pointerUp(clock, at(10 / 12, tip));
-    expect(clock).toHaveAttribute("aria-valuetext", "10:00");
-  });
-
-  test("a cleared time field schedules nothing", async () => {
-    const { onSendLater } = await open();
-    fireEvent.change(screen.getByLabelText("时间", { selector: "input" }), {
-      target: { value: "" },
-    });
-    await userEvent.click(screen.getByRole("button", { name: "定时发送" }));
-    expect(onSendLater).not.toHaveBeenCalled();
-  });
-
-  test("a past time is refused, in the header", async () => {
-    const { onSendLater, clock } = await open();
-    fireEvent.keyDown(clock, { key: "ArrowDown" });
-    fireEvent.keyDown(clock, { key: "ArrowDown" });
-    await userEvent.click(screen.getByRole("button", { name: "定时发送" }));
-    expect(onSendLater).not.toHaveBeenCalled();
-    expect(screen.getByText("请选择一个将来的时间。")).toBeInTheDocument();
-    fireEvent.keyDown(clock, { key: "ArrowUp" });
-    expect(screen.queryByText("请选择一个将来的时间。")).toBeNull();
   });
 });
 
