@@ -9,7 +9,6 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/godwit-email/godwit/core/internal/testllm"
-	"github.com/godwit-email/godwit/core/mailsync"
 	"github.com/godwit-email/godwit/core/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -103,16 +102,6 @@ func TestDeadlineProgramRejections(t *testing.T) {
 	require.NoError(t, e.setThreadDeadline(ui, tid, Deadline{}))
 	assert.Zero(t, e.count(t, "SELECT count(*) FROM thread_deadlines"))
 	require.NoError(t, set(Deadline{Date: e.day(3), MessageID: q}))
-}
-
-// A thread merge keeps the 期限 deadlineRank puts first.
-func TestDeadlineRankSQL(t *testing.T) {
-	e := newSendEnv(t, false)
-	for _, source := range []string{DeadlineManual, DeadlineProgram, DeadlineWit, DeadlineAI} {
-		rows, err := e.s.db.Query(bg, "SELECT "+mailsync.DeadlineRankSQL+" FROM (SELECT ? AS source)", source)
-		require.NoError(t, err)
-		assert.EqualValues(t, deadlineRank(source), rows.Values[0][0], source)
-	}
 }
 
 // Sources by precedence: the same level replaces, a lower one is refused.
@@ -272,6 +261,52 @@ func TestDeadlineMergeKeepsSourceOrderAmongEffective(t *testing.T) {
 	require.NotNil(t, got)
 	assert.Equal(t, DeadlineProgram, got.Source, "an app's date outranks the summary's")
 	assert.Equal(t, e.day(2), got.Date)
+}
+
+// Two of the user's own dates: A's ended when A was archived, B's was set
+// after that. The merge keeps B's, though A's is earlier.
+func TestDeadlineMergeKeepsTheManualOneInEffect(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("a@x", "bob@acme.example", "alice@example.com", "a", e.viewAt(5), "Reply by Monday."))
+	e.put(t, "INBOX", eml("b@x", "bob@acme.example", "alice@example.com", "b", e.viewAt(1), "Reply by Thursday."))
+	e.sync(t)
+	ui := WithUISession(t.Context(), e.s)
+	require.NoError(t, e.setThreadDeadline(ui, e.threadOf(t, "a@x"), Deadline{Date: e.day(2)}))
+	e.clock.Advance(time.Minute)
+	_, err := e.s.ArchiveThreads(bg, []int64{e.threadOf(t, "a@x")})
+	require.NoError(t, err)
+	require.Nil(t, e.deadlineOf(t, "a@x"), "archiving A ended its date")
+	e.clock.Advance(time.Minute)
+	require.NoError(t, e.setThreadDeadline(ui, e.threadOf(t, "b@x"), Deadline{Date: e.day(4)}))
+
+	e.put(t, "INBOX", eml("m@x", "bob@acme.example", "alice@example.com", "bridge", e.viewAt(0.5), "z", "References: <a@x> <b@x>"))
+	e.sync(t)
+	require.Equal(t, e.threadOf(t, "a@x"), e.threadOf(t, "b@x"))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM thread_deadlines"))
+	assert.Equal(t, &Deadline{Date: e.day(4), Source: DeadlineManual}, e.deadlineOf(t, "b@x"), "B's date is still in effect after the merge")
+}
+
+// The user's reply from a +tag address, synced into the inbox rather than
+// Sent, ends A's app date; B's summary date is on newer mail and survives.
+func TestDeadlineMergeCountsTheUsersTaggedAddress(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("a@x", "bob@acme.example", "alice@example.com", "a", e.viewAt(5), "Reply by Monday."))
+	e.put(t, "INBOX", eml("b@x", "bob@acme.example", "alice@example.com", "b", e.viewAt(1), "Reply by Thursday."))
+	e.sync(t)
+	require.NoError(t, e.s.setDeadline(bg, DeadlineProgram, e.threadOf(t, "a@x"), Deadline{Date: e.day(2), MessageID: e.idOf(t, "a@x")}))
+	require.NoError(t, e.s.setDeadline(bg, DeadlineAI, e.threadOf(t, "b@x"), Deadline{Date: e.day(4), MessageID: e.idOf(t, "b@x")}))
+	e.put(t, "INBOX", eml("r@x", "alice+work@example.com", "bob@acme.example", "Re: a", e.viewAt(3), "Will do.", "In-Reply-To: <a@x>", "References: <a@x>"))
+	e.sync(t)
+	require.Nil(t, e.deadlineOf(t, "a@x"), "A's date ended with the reply")
+
+	e.put(t, "INBOX", eml("m@x", "bob@acme.example", "alice@example.com", "bridge", e.viewAt(2), "z", "References: <a@x> <b@x>"))
+	e.sync(t)
+	require.Equal(t, e.threadOf(t, "a@x"), e.threadOf(t, "b@x"))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM thread_deadlines"))
+	got := e.deadlineOf(t, "b@x")
+	require.NotNil(t, got, "B's date is still in effect after the merge")
+	assert.Equal(t, DeadlineAI, got.Source)
+	assert.Equal(t, e.day(4), got.Date)
 }
 
 // A date never becomes state that leaves the machine later (ADR 0003): writing

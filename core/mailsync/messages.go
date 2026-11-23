@@ -29,7 +29,7 @@ func importMessage(ctx context.Context, db *store.DB, a *account, f *folder, m b
 		}
 		return err
 	}
-	plan, err := planThread(ctx, db, a, p)
+	plan, err := planThread(ctx, db, a, p, r.core)
 	if err != nil {
 		return err
 	}

@@ -1,9 +1,11 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -26,8 +28,7 @@ const (
 )
 
 // deadlineRank is source's place in that order, lower first; -1 for no
-// source. mailsync.DeadlineRankSQL is the same order in SQL, for thread merges
-// (TestDeadlineRankSQL checks they agree).
+// source.
 func deadlineRank(source string) int {
 	switch source {
 	case DeadlineManual:
@@ -342,13 +343,7 @@ func (s *Service) deadlinesIn(ctx context.Context, now time.Time, statuses map[i
 		tid := store.Int(r[0])
 		d := Deadline{Date: store.Str(r[1]), Time: store.Str(r[2]), Source: store.Str(r[3]), MessageID: store.Int(r[4]), Quote: store.Str(r[5])}
 		if d.Source == DeadlineManual {
-			// Archived in Godwit since it was set: by version, or by time for rows from before versions were kept.
-			// shortcut: an archive on another device writes no mark, so it leaves the date; read it from the mail's folders if users miss it.
-			ended := store.Int(r[9]) > store.Int(r[6])
-			if setVer, archivedVer := store.Int(r[10]), store.Int(r[11]); setVer != 0 && archivedVer != 0 {
-				ended = archivedVer > setVer
-			}
-			if ended {
+			if manualEnded(store.Int(r[6]), store.Int(r[10]), archiveMark{at: store.Int(r[9]), ver: store.Int(r[11])}) {
 				continue
 			}
 		} else if st := statuses[tid]; store.Int(r[7]) != tid || st.Kind != ReplyStatusUnreplied || store.Int(r[8]) <= st.Settled {
@@ -360,6 +355,88 @@ func (s *Service) deadlinesIn(ctx context.Context, now time.Time, statuses map[i
 		out[tid] = d
 	}
 	return out, nil
+}
+
+// manualEnded is whether a manual 期限 set at setAt with version setVer has
+// ended: the conversation was archived in Godwit since (mark), by version, or
+// by time for rows from before versions were kept.
+// shortcut: an archive on another device writes no mark, so it leaves the date; read it from the mail's folders if users miss it.
+func manualEnded(setAt, setVer int64, mark archiveMark) bool {
+	if setVer != 0 && mark.ver != 0 {
+		return mark.ver > setVer
+	}
+	return mark.at > setAt
+}
+
+// mergedReplyDate is, of threads about to merge into one conversation, the
+// one whose 期限 row the merged conversation keeps (0: none has one): one
+// in effect once their mail, replies and archives count as one
+// conversation's, as deadlinesIn has it, then by source (deadlineRank), then
+// on the newest mail (the newer request holds), then the earliest date.
+func (s *Service) mergedReplyDate(ctx context.Context, threads []int64) (int64, error) {
+	roles, err := s.folderRoles(ctx)
+	if err != nil {
+		return 0, err
+	}
+	people, err := s.mailPeople(ctx, roles)
+	if err != nil {
+		return 0, err
+	}
+	mails, err := s.logicalMails(ctx, roles, "m.thread_id IN (SELECT value FROM json_each(?))", intList(threads))
+	if err != nil {
+		return 0, err
+	}
+	marks, err := s.archiveMarks(ctx)
+	if err != nil {
+		return 0, err
+	}
+	replied, err := s.repliedAt(ctx)
+	if err != nil {
+		return 0, err
+	}
+	// The merge keeps the newest mail's mark with the latest archive of all.
+	msgs, mark, repliedAt := map[string]*logicalMail{}, archiveMark{}, int64(0)
+	for _, t := range threads {
+		maps.Copy(msgs, mails[t])
+		if m := marks[t]; m.has {
+			mark = archiveMark{has: true, date: max(mark.date, m.date), at: max(mark.at, m.at), ver: max(mark.ver, m.ver)}
+		}
+		repliedAt = max(repliedAt, replied[t])
+	}
+	settledAt := settled(msgs, people, mark, repliedAt)
+	rows, err := s.db.Query(ctx, `SELECT d.thread_id, COALESCE(d.due_date, ''), d.due_time, d.source, d.set_at, d.set_version,
+		COALESCE(m.thread_id, 0), COALESCE(m.date, 0) FROM thread_deadlines d LEFT JOIN messages m ON m.id = d.message_id
+		WHERE d.thread_id IN (SELECT value FROM json_each(?))`, intList(threads))
+	if err != nil || len(rows.Values) == 0 {
+		return 0, err
+	}
+	type row struct {
+		thread, mailDate int64
+		effective        bool
+		rank             int
+		date, time       string
+	}
+	var keep []row
+	for _, r := range rows.Values {
+		d := row{thread: store.Int(r[0]), date: store.Str(r[1]), time: store.Str(r[2]), rank: deadlineRank(store.Str(r[3])), mailDate: store.Int(r[7])}
+		if d.rank == 0 {
+			d.effective = !manualEnded(store.Int(r[4]), store.Int(r[5]), mark)
+		} else {
+			d.effective = slices.Contains(threads, store.Int(r[6])) && d.mailDate > settledAt
+		}
+		keep = append(keep, d)
+	}
+	last := func(b bool) int { // true sorts last: not in effect, no date, no time
+		if b {
+			return 1
+		}
+		return 0
+	}
+	return slices.MinFunc(keep, func(a, b row) int {
+		return cmp.Or(cmp.Compare(last(!a.effective), last(!b.effective)), cmp.Compare(a.rank, b.rank), cmp.Compare(b.mailDate, a.mailDate),
+			cmp.Compare(last(a.date == ""), last(b.date == "")), cmp.Compare(a.date, b.date),
+			cmp.Compare(last(a.time == ""), last(b.time == "")), cmp.Compare(a.time, b.time), cmp.Compare(a.thread, b.thread))
+	}).thread, nil
 }
 
 // RemovedDeadline is one row RemoveAppAndWitDeadlines took away, or the one

@@ -72,6 +72,7 @@ type result struct {
 	inboxOnly bool
 	originals Originals
 	dropped   []string // content hashes of messages deleted for good, for originals.Drop
+	core      Core     // nil when the caller gave none
 }
 
 // gone records messages about to be deleted (or moved between threads) as changed.
@@ -95,10 +96,10 @@ func (r *result) merged(target int64, others []int64) {
 // Fetch syncs the folders of the account in only (nil: every folder) through
 // recv, then, after a round of every folder, refreshes the
 // Authentication-Results of cached messages. more reports that a backfill
-// has work left: the caller should sync again soon. originals, at most one,
-// keeps the originals of an inbox-only account's mail.
-func Fetch(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64, bus *events.Bus, only []backend.FolderRef, originals ...Originals) (more bool, err error) {
-	if more, err = run(ctx, db, recv, accountID, bus, only, 0, originals...); err != nil || only != nil {
+// has work left: the caller should sync again soon. core, at most one, is
+// core's part in it.
+func Fetch(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64, bus *events.Bus, only []backend.FolderRef, core ...Core) (more bool, err error) {
+	if more, err = run(ctx, db, recv, accountID, bus, only, 0, core...); err != nil || only != nil {
 		return more, err
 	}
 	again, err := refreshAuthenticationResults(ctx, db, recv, accountID, bus)
@@ -114,7 +115,7 @@ func Sync(ctx context.Context, db *store.DB, recv backend.Receiver, accountID in
 // run is Sync of the folders in only (nil: all), or with older > 0 one page
 // of older mail in only. A round of some folders leaves what needs every
 // folder synced (orphans, hidden locations, claims) to the next full round.
-func run(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64, bus *events.Bus, only []backend.FolderRef, older int, originals ...Originals) (more bool, err error) {
+func run(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int64, bus *events.Bus, only []backend.FolderRef, older int, core ...Core) (more bool, err error) {
 	var r result
 	complete := false
 	defer func() {
@@ -130,8 +131,11 @@ func run(ctx context.Context, db *store.DB, recv backend.Receiver, accountID int
 	if err != nil {
 		return false, err
 	}
-	if r.inboxOnly = a.inboxOnly; r.inboxOnly && len(originals) > 0 {
-		r.originals = originals[0]
+	if len(core) > 0 {
+		r.core = core[0]
+	}
+	if r.inboxOnly = a.inboxOnly; r.inboxOnly && r.core != nil {
+		r.originals = r.core
 	}
 	s := &syncRun{ctx: ctx, db: db, a: a, r: &r, stash: map[int64][]stashed{}, deferred: map[int64]backend.FolderState{}}
 	if err := s.loadFolders(ctx); err != nil {

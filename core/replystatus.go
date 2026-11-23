@@ -146,9 +146,50 @@ func (s *Service) replyStatuses(ctx context.Context, now int64) (map[int64]reply
 	if err != nil {
 		return nil, err
 	}
+	threads, err := s.logicalMails(ctx, roles, "t.last_date >= ?", cutoff)
+	if err != nil {
+		return nil, err
+	}
+	marks, err := s.archiveMarks(ctx)
+	if err != nil {
+		return nil, err
+	}
+	repliedAt, err := s.repliedAt(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := map[int64]replyStatus{}
+	strangers := map[int64]int64{} // unreplied mail from who the user never wrote to: its row, to its conversation
+	for tid, msgs := range threads {
+		var newest *logicalMail
+		engaged := false // the user took part in it, or has written to its sender
+		for _, m := range msgs {
+			if m.counted() && (newest == nil || m.date > newest.date || m.date == newest.date && m.id > newest.id) {
+				newest = m
+			}
+			engaged = engaged || people.mine(m)
+		}
+		if newest == nil || newest.date < cutoff {
+			continue
+		}
+		engaged = engaged || people.known[gomail.AddrKey(newest.from)] || people.known[gomail.AddrKey(newest.replyTo)]
+		if st, ok := threadReplyStatus(newest, people, engaged, marks[tid], repliedAt[tid]); ok {
+			st.Settled, st.Newest = settled(msgs, people, marks[tid], repliedAt[tid]), newest.id
+			out[tid] = st
+			if st.Kind == ReplyStatusUnreplied && !engaged {
+				strangers[newest.id] = tid
+			}
+		}
+	}
+	return out, s.dropMassMail(ctx, out, strangers)
+}
+
+// logicalMails is the mail of the conversations whose messages m (joined to
+// their thread t) meet cond, by conversation.
+func (s *Service) logicalMails(ctx context.Context, roles map[int64]string, cond string, args ...any) (map[int64]map[string]*logicalMail, error) {
 	rows, err := s.db.Query(ctx, `SELECT m.thread_id, m.id, COALESCE(m.message_id, ''), COALESCE(m.date, 0), m.from_addr, m.to_addrs, m.cc_addrs, m.reply_to,
 		m.list_id, m.list_unsubscribe, m.auto_submitted, m.precedence, m.flags, `+shownFolders+` FROM messages m JOIN threads t ON t.id = m.thread_id
-		WHERE t.last_date >= ? AND `+notPurgedCond+` ORDER BY m.id`, cutoff)
+		WHERE `+cond+` AND `+notPurgedCond+` ORDER BY m.id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -170,51 +211,42 @@ func (s *Service) replyStatuses(ctx context.Context, now int64) (map[int64]reply
 		}
 		m.answered = m.answered || strings.Contains(store.Str(r[12]), `\Answered`)
 	}
-	marks, err := s.archiveMarks(ctx)
-	if err != nil {
-		return nil, err
-	}
+	return threads, nil
+}
+
+// repliedAt is, by conversation, when a reply was last queued here (not failed).
+func (s *Service) repliedAt(ctx context.Context) (map[int64]int64, error) {
 	replied, err := s.db.Query(ctx, `SELECT r.thread_id, max(r.at) FROM reply_records r LEFT JOIN outbox o ON o.id = r.outbox_id
 		WHERE COALESCE(o.state, '') != 'failed' GROUP BY r.thread_id`)
 	if err != nil {
 		return nil, err
 	}
-	repliedAt := make(map[int64]int64, len(replied.Values))
+	out := make(map[int64]int64, len(replied.Values))
 	for _, r := range replied.Values {
-		repliedAt[store.Int(r[0])] = store.Int(r[1])
+		out[store.Int(r[0])] = store.Int(r[1])
 	}
-	out := map[int64]replyStatus{}
-	strangers := map[int64]int64{} // unreplied mail from who the user never wrote to: its row, to its conversation
-	for tid, msgs := range threads {
-		var newest *logicalMail
-		engaged := false // the user took part in it, or has written to its sender
-		for _, m := range msgs {
-			if m.counted() && (newest == nil || m.date > newest.date || m.date == newest.date && m.id > newest.id) {
-				newest = m
-			}
-			engaged = engaged || people.mine(m)
-		}
-		if newest == nil || newest.date < cutoff {
-			continue
-		}
-		engaged = engaged || people.known[gomail.AddrKey(newest.from)] || people.known[gomail.AddrKey(newest.replyTo)]
-		if st, ok := threadReplyStatus(newest, people, engaged, marks[tid], repliedAt[tid]); ok {
-			st.Settled, st.Newest = repliedAt[tid], newest.id
-			if marks[tid].has {
-				st.Settled = max(st.Settled, marks[tid].date)
-			}
-			for _, m := range msgs {
-				if m.counted() && (people.mine(m) || m.answered || m.in("archive") && !m.in("inbox")) { // a draft settles nothing
-					st.Settled = max(st.Settled, m.date)
-				}
-			}
-			out[tid] = st
-			if st.Kind == ReplyStatusUnreplied && !engaged {
-				strangers[newest.id] = tid
-			}
+	return out, nil
+}
+
+// settles is whether m ends the 期限 of the mail up to its date: counted mail
+// that is the user's, answered, or archived elsewhere. A draft settles nothing.
+func (p mailPeople) settles(m *logicalMail) bool {
+	return m.counted() && (p.mine(m) || m.answered || m.in("archive") && !m.in("inbox"))
+}
+
+// settled is replyStatus.Settled of a conversation with msgs, its archive
+// mark and repliedAt the latest reply queued (0: none).
+func settled(msgs map[string]*logicalMail, p mailPeople, mark archiveMark, repliedAt int64) int64 {
+	out := repliedAt
+	if mark.has {
+		out = max(out, mark.date)
+	}
+	for _, m := range msgs {
+		if p.settles(m) {
+			out = max(out, m.date)
 		}
 	}
-	return out, s.dropMassMail(ctx, out, strangers)
+	return out
 }
 
 // massMailWords in the text of a stranger's mail say it went to many: the law

@@ -1,6 +1,10 @@
 package mailsync
 
-import "github.com/godwit-email/godwit/backend"
+import (
+	"context"
+
+	"github.com/godwit-email/godwit/backend"
+)
 
 // InboxOnly is the condition that the account bound to ? has only an inbox on
 // its server (backend.IdentityInboxOnly, POP3), as its check recorded. Such an
@@ -16,4 +20,15 @@ type Originals interface {
 	Keep(hash string, raw []byte) error
 	// Drop removes the originals of messages deleted for good, best effort.
 	Drop(hashes []string)
+}
+
+// Core is core's part in a sync of one account: it keeps an inbox-only
+// account's originals, and picks the 期限 a thread merge keeps.
+type Core interface {
+	Originals
+	// MergedReplyDate is, of threads about to merge into one conversation,
+	// the one whose thread_deadlines row the merged conversation keeps (0:
+	// none has one). Which are in effect is 回复状态's to say, and only core
+	// computes that.
+	MergedReplyDate(ctx context.Context, threads []int64) (int64, error)
 }

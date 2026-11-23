@@ -22,14 +22,15 @@ type Local struct {
 // location (ADR 0036): its thread,
 // attachment list, full-text index and security verdict, as importMessage
 // does. It is old mail: read, with no receive event, and already labeled and
-// scanned, so neither the AI labeler nor the security scanner takes it.
-func InsertLocal(ctx context.Context, db *store.DB, accountID, folderID int64, p *mail.Parsed, size int64, hash string) (Local, error) {
+// scanned, so neither the AI labeler nor the security scanner takes it. core
+// is Fetch's.
+func InsertLocal(ctx context.Context, db *store.DB, accountID, folderID int64, p *mail.Parsed, size int64, hash string, core Core) (Local, error) {
 	a, err := loadAccount(ctx, db, accountID)
 	if err != nil {
 		return Local{}, err
 	}
 	a.noSelf = !a.inboxOnly // an inbox-only account's own sent mail knows its address
-	plan, err := planThread(ctx, db, a, p)
+	plan, err := planThread(ctx, db, a, p, core)
 	if err != nil {
 		return Local{}, err
 	}

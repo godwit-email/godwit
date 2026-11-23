@@ -188,7 +188,7 @@ func (s *Service) insertOriginal(ctx context.Context, accountID, folderID int64,
 	if err := store.WriteFileAtomic(dst, raw); err != nil {
 		return mailsync.Local{}, false, err
 	}
-	l, err := mailsync.InsertLocal(ctx, s.db, accountID, folderID, p, int64(len(raw)), hash)
+	l, err := mailsync.InsertLocal(ctx, s.db, accountID, folderID, p, int64(len(raw)), hash, originals{s, accountID})
 	if err != nil {
 		os.Remove(dst)
 		return mailsync.Local{}, false, err
@@ -237,12 +237,17 @@ func (s *Service) deleteLocal(ctx context.Context, accountID int64, ts []target)
 	return nil
 }
 
-// originals keeps the account's originals in the archive directory: a local
-// archive's, and an inbox-only account's, whose server may delete them
-// (mailsync.Originals, spec #627).
+// originals is core's part in a sync of the account (mailsync.Core): it keeps
+// the account's originals in the archive directory, a local archive's and an
+// inbox-only account's, whose server may delete them (spec #627), and picks
+// the 期限 a thread merge keeps.
 type originals struct {
 	s         *Service
 	accountID int64
+}
+
+func (o originals) MergedReplyDate(ctx context.Context, threads []int64) (int64, error) {
+	return o.s.mergedReplyDate(ctx, threads)
 }
 
 func (o originals) Keep(hash string, raw []byte) error {
