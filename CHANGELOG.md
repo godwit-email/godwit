@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.40.0](https://github.com/godwit-email/godwit/compare/v1.39.4...v1.40.0) (2026-11-23)
+
+
+### Features
+
+* **app:** mark the view's mail read from the list's own space ([#824](https://github.com/godwit-email/godwit/issues/824)) ([e8ac977](https://github.com/godwit-email/godwit/commit/e8ac9770668c8bc82cb696cc4fa522507d4fc70b))
+* **compose:** native date and time picker for send later ([#881](https://github.com/godwit-email/godwit/issues/881)) ([517604b](https://github.com/godwit-email/godwit/commit/517604b9bb91a675d848ff6da9c6c42f2127242b))
+* **compose:** remember the send time when editing scheduled mail ([#832](https://github.com/godwit-email/godwit/issues/832)) ([22914ba](https://github.com/godwit-email/godwit/commit/22914baab96fb73f0db3ae42957d2a5c5bfe2c4b))
+* **reader:** attachment downloads, with drag-out of cached attachments (ADR 0044) ([#844](https://github.com/godwit-email/godwit/issues/844)) ([0893625](https://github.com/godwit-email/godwit/commit/08936255cbd4d68154fae352666d7b4ebac40e56))
+* **views:** reply dates and urgency sorting ([#866](https://github.com/godwit-email/godwit/issues/866)) ([c6339e5](https://github.com/godwit-email/godwit/commit/c6339e58bcc506c483c75e66004372d4dac87c52))
+
+
+### Bug Fixes
+
+* **compose:** keep a scheduled draft taken back unchanged ([#868](https://github.com/godwit-email/godwit/issues/868)) ([eb3d781](https://github.com/godwit-email/godwit/commit/eb3d781de2480c9809bad56ecc090c5ef417edd2)), closes [#863](https://github.com/godwit-email/godwit/issues/863)
+* **compose:** put the signature above the quote in replies and forwards ([#831](https://github.com/godwit-email/godwit/issues/831)) ([d31c22d](https://github.com/godwit-email/godwit/commit/d31c22d02968083b2418c135163f31e030f51d1b)), closes [#813](https://github.com/godwit-email/godwit/issues/813)
+* **compose:** show what a send would go to after the draft changes behind the window ([#869](https://github.com/godwit-email/godwit/issues/869)) ([c22c7ac](https://github.com/godwit-email/godwit/commit/c22c7ac44393d8d1665905f640176ed1cd1fee19))
+* **conn:** keep a trace's numbers only where IMAP puts a protocol field ([#880](https://github.com/godwit-email/godwit/issues/880)) ([e1f28dc](https://github.com/godwit-email/godwit/commit/e1f28dca8b8317b3c17876548edae1517244f616))
+* **jmap:** keep mail outside the window when the state cursor expires ([#872](https://github.com/godwit-email/godwit/issues/872)) ([c5101c5](https://github.com/godwit-email/godwit/commit/c5101c5401ac64d4501b44a9d39b7f9a9bf27342))
+* **mail:** decode split and quoted encoded words in names and subjects ([#886](https://github.com/godwit-email/godwit/issues/886)) ([ddf0075](https://github.com/godwit-email/godwit/commit/ddf0075e9533fa45a25e3a87d53ead22f76bf8f7)), closes [#882](https://github.com/godwit-email/godwit/issues/882)
+* **mail:** keep remote images off for mail that is also in Junk ([#871](https://github.com/godwit-email/godwit/issues/871)) ([5f0ad8c](https://github.com/godwit-email/godwit/commit/5f0ad8c2005b54fef62b0bd0386046fccd68e6fd))
+* **outbox:** give retry now its own queued-only guard ([#857](https://github.com/godwit-email/godwit/issues/857)) ([#870](https://github.com/godwit-email/godwit/issues/870)) ([03163e4](https://github.com/godwit-email/godwit/commit/03163e461734d22a1d3c6ad98b964bfbd04e0136))
+* **reader:** fold the quoted reply of an Outlook mail ([#885](https://github.com/godwit-email/godwit/issues/885)) ([d3aef07](https://github.com/godwit-email/godwit/commit/d3aef07dae9bab7e855fb28582dc199290fd8813)), closes [#807](https://github.com/godwit-email/godwit/issues/807)
+* **settings:** say a login item waiting for approval in words ([#876](https://github.com/godwit-email/godwit/issues/876)) ([4cc70d6](https://github.com/godwit-email/godwit/commit/4cc70d6811f4da19c4d4cdb5c580d4aef554a33d)), closes [#875](https://github.com/godwit-email/godwit/issues/875)
+* **signature:** don't retry a failed save over a newer edit ([#867](https://github.com/godwit-email/godwit/issues/867)) ([09ec469](https://github.com/godwit-email/godwit/commit/09ec469e857dcfdeb29911ba1ea5610e61d84d32)), closes [#862](https://github.com/godwit-email/godwit/issues/862)
+* **sync:** delete gone folders before storing new ones ([#874](https://github.com/godwit-email/godwit/issues/874)) ([d6ee6b9](https://github.com/godwit-email/godwit/commit/d6ee6b92e3006d0c5ed4cf05f1c2f196421a95df)), closes [#860](https://github.com/godwit-email/godwit/issues/860)
+* **translate:** find and mask values across HTML text nodes ([#873](https://github.com/godwit-email/godwit/issues/873)) ([2a53aff](https://github.com/godwit-email/godwit/commit/2a53aff6754477505f4b9112108bc62c25aa2c43))
+
 ## [1.39.4](https://github.com/godwit-email/godwit/compare/v1.39.3...v1.39.4) (2026-11-22)
 
 
