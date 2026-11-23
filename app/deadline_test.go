@@ -124,17 +124,19 @@ func (h *harness) datedThread(acc core.Account) []core.MessageSummary {
 }
 
 // TestReaderReplyDate: opened outside any view, a conversation says its reply
-// date with no summary, in one 等你处理 line; its quote opens the message.
+// date with no summary, in one 等你处理 line, its 回复状态 under it; its
+// quote opens the message.
 func TestReaderReplyDate(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	msgs := h.datedThread(accs[0])
 	h.openThreadWith(msgs[0].ThreadID)
 	h.see("对方希望 周五（1月15日）前回复")
 	h.see("其他应用设置")
+	r := h.app.mail.reader
+	h.see(r.unrepliedText())
 	if n := h.countExact("等你处理"); n != 1 {
 		t.Fatalf("%d 等你处理 lines", n)
 	}
-	r := h.app.mail.reader
 	if r.open[msgs[0].ID] {
 		t.Fatal("the older message is open before its quote is clicked")
 	}

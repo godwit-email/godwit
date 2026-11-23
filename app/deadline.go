@@ -93,8 +93,8 @@ func monthDay(day time.Time) string {
 }
 
 // deadlineLine is the 回复日期 sentence, the sender's quote in it (which opens
-// the message that asks), and under it who set it.
-func (r *reader) deadlineLine(c *ui.Context) {
+// the message that asks), and under it status ("" for none) and who set it.
+func (r *reader) deadlineLine(c *ui.Context, status string) {
 	d := *r.deadline
 	t, th := theme.Of(c), c.Theme()
 	lead, quote, source := deadlineSentence(r.p.a.clock.Now(), d)
@@ -112,6 +112,9 @@ func (r *reader) deadlineLine(c *ui.Context) {
 				r.reveal(d.MessageID)
 			}
 		})
+		if status != "" {
+			kit.Text(c, status, t.Text.Sm).TextColor(t.Muted)
+		}
 		if source != "" {
 			kit.Text(c, source, t.Text.Xs).TextColor(t.Muted)
 		}
@@ -119,19 +122,23 @@ func (r *reader) deadlineLine(c *ui.Context) {
 	})
 }
 
-// replyDate is the 等你处理 line's 回复日期: the date, or, on a conversation
-// waiting on the user with none, its 回复状态 (unless todo, the summary's
-// to-do, says what waits) and 设回复日期.
+// replyDate is the 等你处理 line's 回复日期 and, on a conversation waiting on
+// the user, its 回复状态 (unless todo, the summary's to-do, says what waits):
+// under the date, or with 设回复日期 where there is none.
 func (r *reader) replyDate(c *ui.Context, todo bool) {
+	status := ""
+	if r.unreplied && !todo {
+		status = r.unrepliedText()
+	}
 	if r.deadline != nil {
-		r.deadlineLine(c)
+		r.deadlineLine(c, status)
 		return
 	}
 	if !r.unreplied {
 		return
 	}
-	if !todo {
-		ui.Text(c, r.unrepliedText()).LineHeight(theme.LineReading).TextColor(theme.Of(c).Foreground).Shrink(1)
+	if status != "" {
+		ui.Text(c, status).LineHeight(theme.LineReading).TextColor(theme.Of(c).Foreground).Shrink(1)
 	}
 	r.dateButtons(c)
 }
