@@ -43,6 +43,28 @@ run = "go tool mygo build -skip-dmg -skip-notarize"
 depends = ["web:install"]
 run = "go tool mygo generate"
 
+# The Go checks CI runs before its tests.
+[tasks."go:check"]
+depends = ["generate"]
+run = [
+  "test -z \"$(gofmt -l $(git ls-files '*.go'))\"",
+  "out=\"$(go tool mygo i18n check 2>&1)\"; printf '%s\\n' \"$out\"; ! printf '%s\\n' \"$out\" | grep -q 'warning:'",
+  "go vet ./...",
+  "go build ./...",
+]
+
+# Like CI, run richtext's wall-clock checks alone so other packages don't slow them past their limits.
+[tasks."go:test"]
+depends = ["generate"]
+run = [
+  "go test $(go list ./... | grep -v '/internal/richtext$')",
+  "go test -p 1 ./internal/richtext",
+]
+
+# What CI checks, one step after another; run before pushing.
+[tasks.check]
+run = [{ task = "go:check" }, { task = "web:check" }, { task = "go:test" }]
+
 [tasks."web:test"]
 dir = "web"
 depends = ["generate"]
