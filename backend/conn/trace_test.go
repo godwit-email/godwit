@@ -23,8 +23,32 @@ func TestMaskTrace(t *testing.T) {
 		"xx)\n" +
 		"* (\"xx????x\") <LF>\n" +
 		"T7 OK xxxx\n" +
-		"* 4 xxx <no EOL>"
+		"* 0 xxx <no EOL>" // a cut-off FET does not show 4 is a sequence number
 	assert.Equal(t, want, maskTrace([]byte(raw)))
+}
+
+// A number is kept where the IMAP grammar puts a protocol field, and masked
+// anywhere else, however short: a literal's last line, a body line with
+// parentheses and a quoted string are mail (#859).
+func TestMaskTraceKeepsOnlyProtocolNumbers(t *testing.T) {
+	for raw, want := range map[string]string{
+		"T12 UID STORE 5,9:12 +FLAGS.SILENT (\\Seen)":           "T12 UID STORE 5,9:12 +FLAGS.SILENT (\\Seen)",
+		"T13 UID FETCH 1:* (FLAGS) (CHANGEDSINCE 715194045007)": "T13 UID FETCH 1:* (FLAGS) (CHANGEDSINCE 715194045007)",
+		"* 5 EXISTS": "* 5 EXISTS",
+		"* OK [UIDVALIDITY 1700000000] [UIDNEXT 88]": "* OK [UIDVALIDITY 1700000000] [UIDNEXT 88]",
+		"* SEARCH 2 3 81":                               "* SEARCH 2 3 81",
+		"* VANISHED (EARLIER) 1:5,9":                    "* VANISHED (EARLIER) 1:5,9",
+		"T4 OK [COPYUID 38505 304,319:320 3956:3958] x": "T4 OK [COPYUID 38505 304,319:320 3956:3958] x",
+		"* STATUS \"Box 7\" (MESSAGES 3 UNSEEN 1)":      "* STATUS \"xxx 0\" (MESSAGES 3 UNSEEN 1)",
+		"* 2 FETCH (X-GM-MSGID 1278455344230334865 MODSEQ (12) BINARY.SIZE[1.2] 640 BODY[2.1]<0.300> {12+}": "* 2 FETCH (X-GM-MSGID 1278455344230334865 MODSEQ (12) BINARY.SIZE[1.2] 640 BODY[2.1]<0.300> {12+}",
+		"* 1 FETCH (UID 4 ENVELOPE (\"x\" \"Order SEARCH 123 \\\"UID 7\\\"\" NIL))":                         "* 1 FETCH (UID 4 ENVELOPE (\"x\" \"xxxxx SEARCH 000 .\"UID 0.\"\" NIL))",
+		"* 3 cups of flour (sifted, 250 g)":                                                                 "* 0 xxxx xx xxxxx (xxxxxx. 000 x)",
+		"your code (482913) expires in {5} minutes":                                                         "xxxx xxxx (000000) xxxxxxx xx {0} xxxxxxx",
+		"T1000 (model 5)":               "x0000 (xxxxx 0)",
+		"call T9 at 13800138000 today)": "xxxx x0 xx 00000000000 xxxxx)",
+	} {
+		assert.Equal(t, want, maskTrace([]byte(raw+"\r\n")), raw)
+	}
 }
 
 func TestMaskTraceCutsLongLines(t *testing.T) {
