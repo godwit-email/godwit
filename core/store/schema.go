@@ -892,6 +892,10 @@ var Migrations = [][]string{{
 		message_id INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
 		at INTEGER NOT NULL,
 		outcome TEXT NOT NULL)`,
+}, {
+	// Queued also holds mail received while 收到就总结 is chosen; attempts
+	// counts the tries that failed in a way that may pass, up to 3.
+	`ALTER TABLE summary_checks ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

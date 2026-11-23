@@ -52,13 +52,21 @@ func summaryRank(level string) int {
 
 // summary_checks outcomes.
 const (
-	summaryQueued  = "queued"  // asked for by SummarizeUnreplied, not done yet
+	summaryQueued  = "queued"  // received while 收到就总结 is chosen, or asked for by SummarizeUnreplied; not done yet
 	summaryDone    = "done"    // summarized
 	summaryBlocked = "blocked" // 脱敏 blocked it (拦截)
 	summaryFailed  = "failed"  // the service refused it or gave no usable answer
 )
 
 const summaryBatch = 10
+
+// summaryAttempts is how many times a message is tried when it fails in a
+// way that may pass; then it is failed.
+const summaryAttempts = 3
+
+// summaryCursor is the summarizer's event_cursors row: queueArrivals has
+// read events_log up to it, so cleanEvents keeps what comes after.
+const summaryCursor = "summary"
 
 // summaryPoll is how long the idle summarizer waits for a wake-up: every
 // sync round, and every change that can give it work, wakes it, and a look
@@ -70,8 +78,8 @@ const summaryPoll = time.Hour
 const summaryArriveKey = "summary.arrive"
 
 // arrivalChoice is what 收到就总结 was chosen with: mail events_log records
-// as received after seq After is new, and Service (by modelService; Name for
-// the user) is the model service it may go to.
+// as received after seq After is new (queueArrivals queues it), and Service
+// (by modelService; Name for the user) is the model service it may go to.
 type arrivalChoice struct {
 	After    int64
 	Service  string
@@ -361,17 +369,45 @@ type summaryTarget struct {
 	target Target
 }
 
+// queueArrivals queues the mail received since 收到就总结 was chosen, while
+// it is (paused or not), and moves summaryCursor past what it read: the
+// queue outlives events_log, which cleanEvents empties after a week.
+func (s *Service) queueArrivals(ctx context.Context) error {
+	st, err := s.loadSettings(ctx)
+	if err != nil {
+		return err
+	}
+	c, chosen, err := s.storedChoice(ctx)
+	if err != nil {
+		return err
+	}
+	var stmts []sqlite.Statement
+	if chosen && st.SummaryMode == SummaryArrive && SummaryOnArrival {
+		stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO summary_checks(message_id, at, outcome)
+			SELECT e.message_id, ?, ? FROM events_log e JOIN messages m ON m.id = e.message_id WHERE e.type = 'message.received'
+			AND e.seq > max(?, COALESCE((SELECT seq FROM event_cursors WHERE consumer = ?), 0)) ON CONFLICT(message_id) DO NOTHING`,
+			Args: []any{s.clk().Now().Unix(), summaryQueued, c.After, summaryCursor}})
+	}
+	stmts = append(stmts, sqlite.Statement{SQL: `INSERT INTO event_cursors(consumer, seq) SELECT ?, COALESCE(MAX(seq), 0) FROM events_log
+		WHERE true ON CONFLICT(consumer) DO UPDATE SET seq = excluded.seq`, Args: []any{summaryCursor}})
+	_, err = s.db.Transaction(ctx, stmts)
+	return err
+}
+
 // summaryTargets are up to summaryBatch conversations to summarize: 未回复,
-// with a newest message received after seq after or queued, and never done.
-func (s *Service) summaryTargets(ctx context.Context, after int64) ([]summaryTarget, error) {
+// with a newest message queued, the least tried first.
+func (s *Service) summaryTargets(ctx context.Context) ([]summaryTarget, error) {
+	st, err := s.loadSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
 	ids, err := s.unreplied(ctx)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Query(ctx, `SELECT m.id, m.thread_id FROM messages m LEFT JOIN summary_checks c ON c.message_id = m.id
-		WHERE m.id IN (SELECT value FROM json_each(?)) AND (c.outcome = ? OR c.message_id IS NULL AND EXISTS (SELECT 1 FROM events_log e
-			WHERE e.type = 'message.received' AND e.message_id = m.id AND e.seq > ?))
-		ORDER BY m.date DESC, m.id DESC LIMIT ?`, intList(ids), summaryQueued, after, summaryBatch)
+	rows, err := s.db.Query(ctx, `SELECT m.id, m.thread_id FROM messages m JOIN summary_checks c ON c.message_id = m.id
+		WHERE m.id IN (SELECT value FROM json_each(?)) AND c.outcome = ?
+		ORDER BY c.attempts, m.date DESC, m.id DESC LIMIT ?`, intList(ids), summaryQueued, summaryBatch)
 	if err != nil {
 		return nil, err
 	}
@@ -382,8 +418,10 @@ func (s *Service) summaryTargets(ctx context.Context, after int64) ([]summaryTar
 		if err != nil {
 			return nil, err
 		}
+		// As the reader's summaryTarget: the thread when it lists the thread's
+		// messages (GetThread's) and they are more than one, else the message.
 		t := Target{Kind: "message", ID: id}
-		if store.Int(n.Values[0][0]) > 1 { // as the reader's summaryTarget: GetThread's messages
+		if st.ThreadView && store.Int(n.Values[0][0]) > 1 {
 			t = Target{Kind: "thread", ID: tid}
 		}
 		out = append(out, summaryTarget{newest: id, target: t})
@@ -394,11 +432,14 @@ func (s *Service) summaryTargets(ctx context.Context, after int64) ([]summaryTar
 // summarizeBatch summarizes up to summaryBatch conversations and returns
 // how many it finished.
 func (s *Service) summarizeBatch(ctx context.Context) (int, error) {
-	c, ok, err := s.arrivalOn(ctx)
+	if err := s.queueArrivals(ctx); err != nil {
+		return 0, err
+	}
+	_, ok, err := s.arrivalOn(ctx)
 	if err != nil || !ok {
 		return 0, err
 	}
-	targets, err := s.summaryTargets(ctx, c.After)
+	targets, err := s.summaryTargets(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -410,6 +451,12 @@ func (s *Service) summarizeBatch(ctx context.Context) (int, error) {
 			}
 		}
 		outcome, err := s.summarizeOne(ctx, tg.target)
+		if err != nil && ctx.Err() == nil {
+			// It may pass: the rest go first next time, and the last try fails it.
+			_, rerr := s.db.Execute(ctx, `UPDATE summary_checks SET at = ?, attempts = attempts + 1,
+				outcome = CASE WHEN attempts + 1 >= ? THEN ? ELSE outcome END WHERE message_id = ?`, s.clk().Now().Unix(), summaryAttempts, summaryFailed, tg.newest)
+			return done, errors.Join(err, rerr)
+		}
 		if err != nil {
 			return done, err
 		}
@@ -423,8 +470,8 @@ func (s *Service) summarizeBatch(ctx context.Context) (int, error) {
 }
 
 // summarizeOne summarizes t as the reader does, which writes the summary's
-// reply date, and says how it went; an error that may pass (the service
-// unreachable, a rate limit) leaves it to be asked again.
+// reply date, and says how it went; an error is one that may pass (the
+// service unreachable, a rate limit), which summarizeBatch tries again.
 func (s *Service) summarizeOne(ctx context.Context, t Target) (string, error) {
 	ch, err := s.RunSkill(ctx, "summarize", t)
 	if err != nil {
