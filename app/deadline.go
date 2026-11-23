@@ -88,10 +88,22 @@ func deadlineSentence(now time.Time, d core.Deadline) (lead, quote, source strin
 	if ago := viewDaysAgo(now, day); d.Overdue && ago > 7 {
 		return i18n.Tf(key, monthDay(day)) + i18n.Plural("reader.deadline.passed", ago), "", source
 	}
-	when := weekdayDay(day)
-	if d.Time != "" {
+	// the row's 今天 and 明天: today's a sentence of its own, as 今天前回复 would not read
+	when, today := weekdayDay(day), false
+	switch viewDaysAgo(day, now) {
+	case 0:
+		today = true
+	case 1:
+		when = i18n.Tf("reader.deadline.day", i18n.T("view.deadline.tomorrow"), monthDay(day))
+	}
+	switch {
+	case today && d.Time != "":
+		lead = i18n.Tf(key+"_today_at", d.Time)
+	case today:
+		lead = i18n.T(key + "_today")
+	case d.Time != "":
 		lead = i18n.Tf(key+"_at", when, d.Time)
-	} else {
+	default:
 		lead = i18n.Tf(key, when)
 	}
 	if d.Quote != "" {

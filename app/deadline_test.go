@@ -84,6 +84,12 @@ func TestDeadlineReaderText(t *testing.T) {
 		{core.Deadline{Date: "2026-11-27", Time: "15:00", Source: core.DeadlineProgram}, "对方希望 周五（11月27日）15:00 前回复", "", "其他应用设置"},
 		{core.Deadline{Date: "2026-11-24", Quote: "明天给我", Source: core.DeadlineWit, Overdue: true}, "对方希望 周二（11月24日）前回复：", "明天给我", "Wit 设置"},
 		{core.Deadline{Date: "2026-11-27", Source: core.DeadlineManual}, "你设的：周五（11月27日）前回复", "", ""},
+		// today and tomorrow in the row's words
+		{core.Deadline{Date: "2026-11-25", Source: core.DeadlineManual}, "你设的：今天回复", "", ""},
+		{core.Deadline{Date: "2026-11-25", Time: "15:00", Quote: "今天给我", Source: core.DeadlineAI}, "对方希望今天 15:00 前回复：", "今天给我", "邮件总结找到"},
+		{core.Deadline{Date: "2026-11-25", Time: "09:00", Source: core.DeadlineProgram, Overdue: true}, "对方希望今天 09:00 前回复", "", "其他应用设置"},
+		{core.Deadline{Date: "2026-11-26", Source: core.DeadlineProgram}, "对方希望 明天（11月26日）前回复", "", "其他应用设置"},
+		{core.Deadline{Date: "2026-11-26", Time: "15:00", Source: core.DeadlineManual}, "你设的：明天（11月26日）15:00 前回复", "", ""},
 		{core.Deadline{Date: "2026-11-15", Quote: "尽快", Source: core.DeadlineAI, Overdue: true}, "对方希望 11月15日前回复，已过去 10 天", "", "邮件总结找到"},
 	} {
 		lead, quote, source := deadlineSentence(now, c.d)
@@ -256,7 +262,7 @@ func TestViewBandReplyDate(t *testing.T) {
 	h, accs := mailHarness(t, nil, "you@example.com")
 	h.useBackendClock()
 	acc := accs[0]
-	h.putSeen(acc, "Sent", coretest.Msg("Me <you@example.com>", "Tom <tom@acme.example>", "Renewal quote", "The quote is attached.", coretest.Date(time.Now().AddDate(0, 0, -4))))
+	h.putSeen(acc, "Sent", coretest.Msg("Me <you@example.com>", "Tom <tom@acme.example>", "Renewal quote", "The quote is attached.", coretest.Date(time.Now().AddDate(0, 0, -4).Add(-time.Hour))))
 	h.syncNow(acc)
 	if _, err := h.env.Svc.SaveView(context.Background(), core.SavedView{Name: "Acme", Icon: "team", Doc: core.SavedViewDoc{Match: core.MatchAll,
 		Conditions: []core.RuleCondition{{Field: core.FieldTo, Op: core.OpContains, Value: "acme.example"}},

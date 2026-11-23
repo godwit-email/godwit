@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -213,13 +214,13 @@ func viewHeading(c *ui.Context, e listEntry) {
 	})
 }
 
-// viewDaysAgo is how many calendar days t is before now.
+// viewDaysAgo is how many calendar days t is before now, negative after.
 func viewDaysAgo(now, t time.Time) int {
 	day := func(x time.Time) time.Time {
 		y, m, d := x.In(now.Location()).Date()
 		return time.Date(y, m, d, 12, 0, 0, 0, now.Location()) // noon: a DST change stays under half a day
 	}
-	return int(day(now).Sub(day(t)).Hours()/24 + 0.5)
+	return int(math.Round(day(now).Sub(day(t)).Hours() / 24))
 }
 
 // viewLine is a row's status for its third line, "" for none: the row shows
