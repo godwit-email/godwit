@@ -281,7 +281,17 @@ func TestDateTimeUntimed(t *testing.T) {
 	if !untimed {
 		t.Fatal("the switch left no time out")
 	}
-	if face, _ := tt.AccessByRole(ui.RoleSlider, "Time"); !face.Disabled {
-		t.Error("the clock is not disabled without a time")
+	if face, _ := tt.AccessByRole(ui.RoleSlider, "Time"); !face.Disabled || face.Value != "" {
+		t.Errorf("the clock without a time: %+v", face)
+	}
+	// the field shows no time, only where one goes
+	if _, hours := tt.AccessByRole(ui.RoleStepper, ""); !tt.HasText("--:--") || hours {
+		t.Errorf("the field without a time: %q", tt.Texts())
+	}
+	if err := tt.Click("Any time"); err != nil {
+		t.Fatal(err)
+	}
+	if face, _ := tt.AccessByRole(ui.RoleSlider, "Time"); untimed || face.Disabled || face.Value != "16:00" || tt.HasText("--:--") {
+		t.Errorf("the time not back: %+v, %q", face, tt.Texts())
 	}
 }

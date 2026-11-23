@@ -172,11 +172,24 @@ func clockFace(c *ui.Context, at *time.Time, o DateTimeOpts) {
 	ui.Column(c).AlignItems(ui.Center).Gap(th.Space(4)).Shrink(0).Children(func() {
 		ui.Row(c).Height(cell).AlignItems(ui.Center).Children(func() {
 			hh := th.Space(8)
-			ui.TimeInput(c, at).Label(o.Time).Height(hh).Radius(controlRadius(c, hh)).Background(t.Background).Border(theme.Stroke, t.Input).Disabled(off)
+			if off { // no time: where one goes, *at's kept for when one is put in
+				ui.Row(c).Height(hh).Radius(controlRadius(c, hh)).Background(t.Background).Border(theme.Stroke, t.Input).
+					AlignItems(ui.Center).PaddingX(th.Space(2.5)).Label(o.Time).Role(ui.RoleGroup).Disabled(true).Children(func() {
+					Text(c, "--:--", t.Text.Sm).TextColor(t.Muted).FontFeatures("tnum").Role(ui.RoleNone)
+				})
+				return
+			}
+			ui.TimeInput(c, at).Label(o.Time).Height(hh).Radius(controlRadius(c, hh)).Background(t.Background).Border(theme.Stroke, t.Input)
 		})
 		size := cell * 6
 		face := ui.Box(c).Size(size, size).Shrink(0).Focusable().Disabled(off).Role(ui.RoleSlider).Label(o.Time).
-			Range(0, 1439, float64(mins)).Value(fmt.Sprintf("%d:%02d", h, m))
+			Range(0, 1439, float64(mins))
+		if off {
+			h, m = 0, 0 // both hands up at 12, reading no time
+			face.Opacity(0.5)
+		} else {
+			face.Value(fmt.Sprintf("%d:%02d", h, m))
+		}
 		grab := ui.Local(face, clockKey{}, func() byte { return 0 })
 		switch {
 		case face.Shortcut(0, ui.KeyRight):
