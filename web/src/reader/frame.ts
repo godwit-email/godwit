@@ -203,7 +203,64 @@ function isInlineAttrPart(n: ChildNode): boolean {
   );
 }
 
-const QUOTE = "blockquote, div.gmail_quote, div.yahoo_quoted, div.protonmail_quote";
+const QUOTE =
+  "blockquote, div.gmail_quote, div.yahoo_quoted, div.protonmail_quote, div[data-godwit-outlook-quote]";
+
+// Outlook marks no quote. Its reply header is a div with a thin top border and three or more
+// "Label: value" lines (the labels follow the sender's language), or the div#divRplyFwdMsg of
+// Outlook on the web; the older mails follow as siblings of it, or of what wraps it. The border
+// is Word's: its width is in points ("1.0pt"), where the bordered box of a receipt or a
+// newsletter is in pixels, so such a box with a few "Label: value" lines does not count.
+const WORD_RULE = /border(?:-top)?\s*:[^;]*\d\s*pt\b/i;
+function isOutlookHeader(el: Element): boolean {
+  if (el.tagName !== "DIV" || !WORD_RULE.test(el.getAttribute("style") ?? "")) return false;
+  if (el.querySelector("div, table")) return false;
+  const cs = style(el);
+  if (
+    px(cs.borderTopWidth) <= 0 ||
+    cs.borderTopStyle !== "solid" ||
+    [cs.borderRightWidth, cs.borderBottomWidth, cs.borderLeftWidth].some((w) => px(w) > 0)
+  )
+    return false;
+  const lines = renderedText(el)
+    .split("\n")
+    .filter((l) => l.trim() !== "");
+  return lines.length <= 8 && lines.filter((l) => /^[^:：\n]{1,30}[:：]\s*\S/.test(l)).length >= 3;
+}
+
+// Wraps an Outlook reply header and everything after it in one marked div, where the body has no
+// quote the reader knows; the fold then treats it as any other. Gives it back as a plain div.
+function markOutlookQuote(wrap: HTMLElement): HTMLElement | null {
+  if (wrap.querySelector(QUOTE)) return null;
+  const web = wrap.querySelector("#divRplyFwdMsg");
+  const head =
+    [...wrap.querySelectorAll("div")].find((d) => d !== web && isOutlookHeader(d)) ?? web;
+  if (!head || isInsideHidden(head)) return null;
+  let start: Element = head;
+  if (web && head === web && start.previousElementSibling?.tagName === "HR")
+    start = start.previousElementSibling;
+  // What holds only the header, or nothing but spacers before it, belongs to the quote too.
+  while (start.parentElement && start.parentElement !== wrap) {
+    let p = start.previousSibling;
+    while (p && isBlankSpacer(p)) p = p.previousSibling;
+    if (p) break;
+    start = start.parentElement;
+  }
+  // The older mails follow the header: a ruled box of "Label: value" lines at the very end (a
+  // signature) has nothing after it, and is no reply header.
+  let rest = "";
+  for (let n = start.nextSibling; n; n = n.nextSibling) rest += n.textContent ?? "";
+  if (rest.trim() === "" && head !== web) return null;
+  const box = wrap.ownerDocument.createElement("div");
+  box.setAttribute("data-godwit-outlook-quote", "");
+  start.before(box);
+  for (let n: ChildNode | null = start; n; ) {
+    const next: ChildNode | null = n.nextSibling;
+    box.append(n);
+    n = next;
+  }
+  return box;
+}
 
 function hasVisualPaint(el: Element): boolean {
   const cs = style(el);
@@ -272,6 +329,13 @@ function isEffectivelyInvisible(el: Element): boolean {
  * and as a line follows the mail's stylesheet as the reader shows it.
  */
 export function foldQuotes(wrap: HTMLElement): void {
+  const box = markOutlookQuote(wrap);
+  foldKnownQuotes(wrap);
+  if (box?.isConnected && !wrap.querySelector("details.godwit-quote-fold"))
+    box.replaceWith(...box.childNodes); // not folded: the mail as it came
+}
+
+function foldKnownQuotes(wrap: HTMLElement): void {
   const doc = wrap.ownerDocument;
   // A visible quote's ancestors are visible too, so the outermost ones are those in no other quote.
   const last = [...wrap.querySelectorAll(QUOTE)]

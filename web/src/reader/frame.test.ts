@@ -620,3 +620,102 @@ test("plain text: nothing but quoted lines (or attribution + quotes) stays open"
   expect(ruReply?.querySelector("details")?.textContent).toContain("Боб пишет:");
   expect(ruReply?.firstChild?.textContent).toBe("Спасибо!");
 });
+
+// Outlook marks no quote: a header block with a thin top border and "Label: value" lines, then the older mails.
+const outlookHeader = (labels: string[]) =>
+  '<div><div style="border:none;border-top:solid #E1E1E1 1.0pt;padding:3.0pt 0cm 0cm 0cm"><p class="MsoNormal">' +
+  labels.map((l) => `<b>${l}:</b> x`).join("<br>") +
+  "</p></div></div>";
+
+test.each([
+  ["English", ["From", "Sent", "To", "Subject"]],
+  ["Italian", ["Da", "Inviato", "A", "Oggetto"]],
+  ["German", ["Von", "Gesendet", "An", "Betreff"]],
+  ["French", ["De ", "Envoy\u00e9 ", "\u00c0 ", "Objet "]],
+])("an Outlook reply folds its older mails behind the button (%s)", (_name, labels) => {
+  const w = folded({
+    html:
+      '<div class="WordSection1"><p>Thanks, 8 works.</p>' +
+      outlookHeader(labels) +
+      "<p>Dinner?</p><p>Older words</p></div>",
+  });
+  const fold = w.querySelector("details.godwit-quote-fold");
+  expect(fold).not.toBeNull();
+  expect(fold?.textContent).toContain("Dinner?");
+  expect(fold?.textContent).toContain("Older words");
+  expect(w.textContent?.startsWith("Thanks, 8 works.")).toBe(true);
+  expect(w.querySelector(".WordSection1 > p")?.textContent).toBe("Thanks, 8 works.");
+});
+
+test("Outlook on the web: the rule and the reply header fold with what follows", () => {
+  const w = folded({
+    html:
+      '<div><p>Done.</p></div><div id="appendonsend"></div>' +
+      '<hr style="display:inline-block;width:98%"><div id="divRplyFwdMsg"><b>From:</b> x<br><b>Sent:</b> x<br><b>To:</b> x</div>' +
+      "<div><p>Earlier text</p></div>",
+  });
+  const fold = w.querySelector("details.godwit-quote-fold");
+  expect(fold?.textContent).toContain("Earlier text");
+  expect(fold?.querySelector("hr")).not.toBeNull();
+  expect(w.textContent?.startsWith("Done.")).toBe(true);
+});
+
+test("a mail that is only an Outlook quote, and a plain bordered block, stay as they came", () => {
+  const html = (inner: string) => `<div class="WordSection1">${inner}</div>`;
+  const onlyQuote = folded({ html: html(outlookHeader(["From", "Sent", "To"]) + "<p>Quoted</p>") });
+  expect(onlyQuote.querySelector("details")).toBeNull();
+  expect(onlyQuote.querySelector("[data-godwit-outlook-quote]")).toBeNull(); // the wrapper is taken off again
+  expect(onlyQuote.textContent).toContain("Quoted");
+
+  const bordered = folded({
+    html: html(
+      '<p>Mine</p><div style="border-top:solid #E1E1E1 1pt"><p>Not a header</p></div><p>More</p>',
+    ),
+  });
+  expect(bordered.querySelector("details")).toBeNull();
+  expect(bordered.querySelector("[data-godwit-outlook-quote]")).toBeNull();
+});
+
+// Limit: where the person wrote something above the header and then answered inline below it, the
+// answers follow the header like the older mails and fold with them.
+test("an inline reply with nothing above the header stays fully open", () => {
+  const w = folded({
+    html:
+      '<div class="WordSection1">' +
+      outlookHeader(["From", "Sent", "To", "Subject"]) +
+      "<p>Can you come on Friday?</p><p><span>Yes, Friday works.</span></p>" +
+      "<p>And bring the plan?</p><p><span>Yes, I will.</span></p></div>",
+  });
+  expect(w.querySelector("details")).toBeNull();
+  expect(w.textContent).toContain("Yes, Friday works.");
+  expect(w.textContent).toContain("Yes, I will.");
+});
+
+test("a forwarded mail with no words of its own before the block stays fully open", () => {
+  const w = folded({
+    html: `<div class="WordSection1">${outlookHeader(["Von", "Gesendet", "An", "Betreff"])}<p>Forwarded text</p></div>`,
+  });
+  expect(w.querySelector("details")).toBeNull();
+  expect(w.textContent).toContain("Forwarded text");
+});
+
+test("a receipt's bordered box of Label: value lines does not fold the rest of the mail", () => {
+  const w = folded({
+    html:
+      "<div><p>Thanks for your order.</p>" +
+      '<div style="border-top:solid #ccc 1px"><b>Order:</b> 1001<br><b>Date:</b> today<br><b>Total:</b> 10</div>' +
+      "<p>We will ship it soon.</p><p>The shop</p></div>",
+  });
+  expect(w.querySelector("details")).toBeNull();
+  expect(w.textContent).toContain("We will ship it soon.");
+});
+
+test("a Word signature box of Label: value lines at the end of the mail is no reply header", () => {
+  const w = folded({
+    html:
+      "<div><p>Hi Anna, confirmed.</p>" +
+      '<div style="border:none;border-top:solid windowtext 1.0pt;padding:3.0pt 0cm 0cm 0cm"><b>Tel:</b> 1<br><b>Mob:</b> 2<br><b>Email:</b> a@example.com</div></div>',
+  });
+  expect(w.querySelector("details")).toBeNull();
+  expect(w.textContent).toContain("Email:");
+});
