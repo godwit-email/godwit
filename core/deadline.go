@@ -175,6 +175,10 @@ func (s *Service) checkDeadline(ctx context.Context, source string, threadID int
 // approval; before, if not nil, gets the row they replace. The caller holds
 // editMu.
 func (s *Service) deadlineWrites(ctx context.Context, source string, threadID int64, d Deadline, before *RemovedDeadline) ([]sqlite.Statement, error) {
+	var err error
+	if d.MessageID, err = s.resolveID(ctx, d.MessageID); err != nil { // a row merged away: checked and written as the one it went into
+		return nil, err
+	}
 	if d.Date != "" {
 		if _, err := time.Parse(time.DateOnly, d.Date); err != nil {
 			return nil, ErrDeadlineInvalid

@@ -146,6 +146,29 @@ func TestGmailMergeKeepsReplyDateAndSummaryCheck(t *testing.T) {
 	assert.Equal(t, [][]any{{id, "done"}}, e.rows(t, "SELECT message_id, outcome FROM summary_checks"))
 }
 
+// A program that sets a reply date with the ID of a row merged away gets it
+// on the message it went into, in effect, not a date on no message.
+func TestGmailMergedIDSetsReplyDate(t *testing.T) {
+	e := newSyncEnv(t, testmail.Gmail())
+	e.im.AddGmail(eml("a@x", "bob@a.example", "alice@example.com", "quote", time.Now().Add(-time.Hour).Format(time.RFC1123Z), "Reply by Friday?"),
+		nil, "INBOX", testmail.GmailAllMail)
+	e.sync(t)
+	tid := e.threadOf(t, "a@x")
+	old := e.oldRows(t, e.idOf(t, "a@x"))[testmail.GmailAllMail]
+	e.sync(t)
+	id := e.idOf(t, "a@x")
+	require.NotEqual(t, old, id)
+
+	date := time.Now().AddDate(0, 0, 3).Format("2006-01-02")
+	_, err := e.s.SetThreadDeadline(bg, tid, Deadline{Date: date, MessageID: old}) // a program, over the Local API
+	require.NoError(t, err)
+	got, err := e.s.ThreadDeadline(bg, tid)
+	require.NoError(t, err)
+	require.NotNil(t, got.Deadline, "in effect")
+	assert.Equal(t, id, got.Deadline.MessageID)
+	assert.Equal(t, DeadlineProgram, got.Deadline.Source)
+}
+
 // The ID of a row merged away still names the message it went into.
 func TestGmailMergedIDResolves(t *testing.T) {
 	e := newSyncEnv(t, testmail.Gmail())
