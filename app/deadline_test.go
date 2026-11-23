@@ -556,6 +556,32 @@ func TestArrivalFooter(t *testing.T) {
 	}
 }
 
+// TestReplyDatePresetChecked: the date menu checks the preset that is the
+// reply date: its day, with no time.
+func TestReplyDatePresetChecked(t *testing.T) {
+	now := time.Date(2026, 11, 25, 15, 0, 0, 0, time.Local) // a Wednesday: 今天, 明天, 周五, 下周一
+	for _, c := range []struct {
+		d    *core.Deadline
+		want string
+	}{
+		{nil, ""},
+		{&core.Deadline{Date: "2026-11-27"}, "周五"},
+		{&core.Deadline{Date: "2026-11-25"}, "今天"},
+		{&core.Deadline{Date: "2026-11-27", Time: "15:00"}, ""},
+		{&core.Deadline{Date: "2026-11-28"}, ""},
+	} {
+		got := ""
+		for _, p := range replyDatePresets(now) {
+			if p.is(c.d) {
+				got += p.label
+			}
+		}
+		if got != c.want {
+			t.Errorf("%+v: checked %q, want %q", c.d, got, c.want)
+		}
+	}
+}
+
 // TestReplyDatePresets: 周五 drops when it is today or tomorrow, 下周一 when
 // it is tomorrow.
 func TestReplyDatePresets(t *testing.T) {

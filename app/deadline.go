@@ -205,6 +205,11 @@ type replyDatePreset struct {
 	day   time.Time
 }
 
+// is whether d, a conversation's 回复日期, is the preset: its day, no time.
+func (p replyDatePreset) is(d *core.Deadline) bool {
+	return d != nil && d.Time == "" && d.Date == p.day.Format(time.DateOnly)
+}
+
 // replyDatePresets are 今天, 明天, this week's 周五 and 下周一 from now, each
 // day once: 周五 drops when it is today or tomorrow, 下周一 when it is tomorrow.
 func replyDatePresets(now time.Time) []replyDatePreset {
@@ -228,12 +233,12 @@ func replyDatePresets(now time.Time) []replyDatePreset {
 }
 
 // replyDateMenu is the menu 改日期 and 设回复日期 open: the presets, each
-// setting its day with no time; 选日期… for any day and time; and 去掉 when
-// d, the conversation's date, is set.
+// setting its day with no time, the one d is checked; 选日期… for any day
+// and time; and 去掉 when d, the conversation's date, is set.
 func (a *App) replyDateMenu(m *ui.Menu, threadID int64, d *core.Deadline) {
 	for _, p := range replyDatePresets(a.clock.Now()) {
 		// the day in the label: the system's menus show no Trailing
-		if m.Item(p.label + " · " + monthDay(p.day)).Chosen() {
+		if m.Item(p.label + " · " + monthDay(p.day)).Checked(p.is(d)).Chosen() {
 			a.setReplyDate(threadID, core.Deadline{Date: p.day.Format(time.DateOnly)})
 		}
 	}
