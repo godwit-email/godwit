@@ -624,7 +624,7 @@ func (r *reader) unrepliedText() string {
 }
 
 // viewBand is the status above the conversation, in a view, with 写催促信
-// while it waits on someone.
+// while it waits on someone, and then under it the 回复日期 with 改日期.
 func (r *reader) viewBand(c *ui.Context) {
 	w := r.why
 	if !w.Member {
@@ -632,7 +632,7 @@ func (r *reader) viewBand(c *ui.Context) {
 	}
 	var icon, text string
 	switch {
-	case w.Status == core.ReplyStatusUnreplied && (r.deadline != nil || r.unreplied):
+	case w.Status == core.ReplyStatusUnreplied && r.todoShown():
 		return // the 等你处理 line says it, in the summary's place
 	case w.Status == core.ReplyStatusUnreplied:
 		icon, text = "reply", r.unrepliedText()
@@ -645,7 +645,15 @@ func (r *reader) viewBand(c *ui.Context) {
 	r.column(c).Children(func() {
 		kit.Block(c, ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(th.Space(2)).Padding(th.Space(4), th.Space(6)), kit.ToneTint).Children(func() {
 			ui.Icon(c, icons.Get(icon)).Size(theme.Icon, theme.Icon).Shrink(0).TextColor(t.Muted)
-			kit.Text(c, text, t.Text.Sm).Grow(1).Shrink(1)
+			ui.Column(c).Grow(1).Shrink(1).Gap(th.Space(1)).Children(func() {
+				kit.Text(c, text, t.Text.Sm)
+				if r.dateInBand() {
+					ui.Row(c).FillWidth().Gap(th.Space(3)).AlignItems(ui.Start).Children(func() {
+						ui.Column(c).Grow(1).Shrink(1).Children(func() { r.deadlineLine(c, "") })
+						r.dateMenuButton(c)
+					})
+				}
+			})
 			if w.Status == core.ReplyStatusWaiting {
 				kit.Button(c, i18n.T("view.follow_up"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).Shrink(0).OnClick(func() { r.draft("reply") })
 			}

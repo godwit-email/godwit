@@ -65,9 +65,10 @@ func deadlineText(now time.Time, d core.Deadline) (string, bool) {
 	return i18n.Tf("view.deadline.by", when), false
 }
 
-// deadlineSentence is the reader's 回复日期 line: the sentence, the sender's
-// quote after it ("" for none), and who set it ("" for the user). More than 7
-// days overdue, it says how long ago instead of quoting.
+// deadlineSentence is the reader's 回复日期 line: the sentence (with the
+// colon a quote follows), the sender's quote after it ("" for none), and who
+// set it ("" for the user). More than 7 days overdue, it says how long ago
+// instead of quoting.
 func deadlineSentence(now time.Time, d core.Deadline) (lead, quote, source string) {
 	day, err := time.ParseInLocation(time.DateOnly, d.Date, now.Location())
 	if err != nil {
@@ -94,7 +95,7 @@ func deadlineSentence(now time.Time, d core.Deadline) (lead, quote, source strin
 		lead = i18n.Tf(key, when)
 	}
 	if d.Quote != "" {
-		quote = i18n.Tf("reader.deadline.quoted", d.Quote)
+		lead, quote = i18n.Tf("reader.deadline.quoted", lead), d.Quote
 	}
 	return lead, quote, source
 }
@@ -110,8 +111,9 @@ func weekdayDay(day time.Time) string {
 	return i18n.Tf("reader.deadline.day", i18n.T("mail.weekday."+strconv.Itoa(int(day.Weekday()))), monthDay(day))
 }
 
-// deadlineLine is the 回复日期 sentence, the sender's quote in it (which opens
-// the message that asks), and under it status ("" for none) and who set it.
+// deadlineLine is the 回复日期 sentence, the sender's quote in it in a chip
+// (which opens the message that asks), and under it status ("" for none)
+// and who set it, both small.
 func (r *reader) deadlineLine(c *ui.Context, status string) {
 	d := *r.deadline
 	t, th := theme.Of(c), c.Theme()
@@ -122,22 +124,32 @@ func (r *reader) deadlineLine(c *ui.Context, status string) {
 			if quote == "" {
 				return
 			}
-			if !slices.ContainsFunc(r.msgs, func(m core.MessageSummary) bool { return m.ID == d.MessageID }) {
-				ui.RichText(c, ui.Span{Text: quote})
-				return
-			}
-			if ui.RichText(c, ui.Span{Text: quote}).Role(ui.RoleLink).Label(quote).Focusable().Cursor(ui.CursorPointer).Clicked() {
+			chip := ui.RichText(c, ui.Span{Text: quote, Color: t.Subdued, Background: t.HoverTint, Radius: t.Radius.Sm, PaddingX: th.Space(1)})
+			if slices.ContainsFunc(r.msgs, func(m core.MessageSummary) bool { return m.ID == d.MessageID }) &&
+				chip.Role(ui.RoleLink).Label(quote).Focusable().Cursor(ui.CursorPointer).Clicked() {
 				r.reveal(d.MessageID)
 			}
 		})
-		if status != "" {
-			kit.Text(c, status, t.Text.Sm).TextColor(t.Muted)
-		}
-		if source != "" {
-			kit.Text(c, source, t.Text.Xs).TextColor(t.Muted)
+		for _, small := range []string{status, source} {
+			if small != "" {
+				kit.Text(c, small, t.Text.Xs).TextColor(t.Muted)
+			}
 		}
 	})
 }
+
+// dateInBand is whether a view's 待跟进 band says the 回复日期: a
+// conversation waiting on someone else's reply has no 等你处理 line.
+func (r *reader) dateInBand() bool {
+	return r.deadline != nil && r.why.Member && r.why.Status == core.ReplyStatusWaiting
+}
+
+// dated is whether the 等你处理 line says a 回复日期.
+func (r *reader) dated() bool { return r.deadline != nil && !r.dateInBand() }
+
+// todoShown is whether the 等你处理 line shows: with a 回复日期, or on a
+// conversation waiting on the user.
+func (r *reader) todoShown() bool { return r.dated() || r.unreplied }
 
 // replyDate is the 等你处理 line's 回复日期 and, on a conversation waiting on
 // the user, its 回复状态 (unless todo, the summary's to-do, says what waits):
@@ -147,11 +159,8 @@ func (r *reader) replyDate(c *ui.Context, todo bool) {
 	if r.unreplied && !todo {
 		status = r.unrepliedText()
 	}
-	if r.deadline != nil {
+	if r.dated() {
 		r.deadlineLine(c, status)
-		return
-	}
-	if !r.unreplied {
 		return
 	}
 	if status != "" {
@@ -162,9 +171,13 @@ func (r *reader) replyDate(c *ui.Context, todo bool) {
 // dateButton is 改日期 at the 等你处理 line's right end, 设回复日期 with no
 // date on a conversation waiting on the user: replyDateMenu.
 func (r *reader) dateButton(c *ui.Context) {
-	if r.deadline == nil && !r.unreplied {
-		return
+	if r.todoShown() {
+		r.dateMenuButton(c)
 	}
+}
+
+// dateMenuButton is 改日期, or 设回复日期 with no date, opening replyDateMenu.
+func (r *reader) dateMenuButton(c *ui.Context) {
 	a, tid, d := r.p.a, r.key[0], r.deadline
 	label := i18n.T("reader.deadline.set")
 	if d != nil {
@@ -174,13 +187,14 @@ func (r *reader) dateButton(c *ui.Context) {
 }
 
 // deadlineCard is the 等你处理 line where no summary shows: the summary's
-// card with only that line.
+// card with only that line, its text inset 12 as the title is from the
+// column's edge.
 func (r *reader) deadlineCard(c *ui.Context) {
-	if r.deadline == nil && !r.unreplied {
+	if !r.todoShown() {
 		return
 	}
 	t, th := theme.Of(c), c.Theme()
-	kit.Block(c, ui.Column(c), kit.ToneCard).Radius(t.Radius.Xl).FillWidth().Padding(th.Space(3), th.Space(4)).Children(func() {
+	kit.Block(c, ui.Column(c), kit.ToneCard).Radius(t.Radius.Xl).FillWidth().Padding(th.Space(3)).Children(func() {
 		r.todoRow(c, false, func() { r.replyDate(c, false) })
 	})
 }

@@ -1033,6 +1033,14 @@ func (p *mailPage) listView(c *ui.Context) {
 					act, target = k, on
 				}
 			}
+			if len(on) == 1 && on[0].threadID() != 0 {
+				if m.Item(i18n.T("mail.menu.set_deadline")).Icon(menuIcon("calendar")).Chosen() {
+					p.a.pickReplyDate(on[0].threadID(), on[0].Deadline)
+				}
+				if on[0].Deadline != nil && m.Item(i18n.T("mail.menu.remove_deadline")).Icon(menuIcon("calendar-close")).Chosen() {
+					p.a.setReplyDate(on[0].threadID(), core.Deadline{})
+				}
+			}
 			m.Separator()
 
 			role := p.currentFolderRole()
@@ -1057,14 +1065,6 @@ func (p *mailPage) listView(c *ui.Context) {
 			securitySubmenu(m, func(reason string) bool { return len(on) == 1 && on[0].Security.Reason == reason }, func(reason string) { p.applySecurity(on, reason) })
 			m.Separator()
 			p.viewMenu(m, on)
-			if len(on) == 1 && on[0].threadID() != 0 {
-				if m.Item(i18n.T("mail.menu.set_deadline")).Icon(menuIcon("time")).Chosen() {
-					p.a.pickReplyDate(on[0].threadID(), on[0].Deadline)
-				}
-				if on[0].Deadline != nil && m.Item(i18n.T("mail.menu.remove_deadline")).Icon(menuIcon("x")).Chosen() {
-					p.a.setReplyDate(on[0].threadID(), core.Deadline{})
-				}
-			}
 			if len(on) == 1 { // for mail like this one: a rule, or blocking its sender
 				if role := p.currentFolderRole(); role != "sent" && role != "drafts" {
 					m.Separator()

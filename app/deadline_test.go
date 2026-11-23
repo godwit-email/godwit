@@ -70,16 +70,17 @@ func TestRowStatusLine(t *testing.T) {
 	}
 }
 
-// TestDeadlineReaderText: the reader's reply date line, its quote and source.
+// TestDeadlineReaderText: the reader's reply date line (with the colon its
+// quote follows), the quote and the source.
 func TestDeadlineReaderText(t *testing.T) {
 	now := time.Date(2026, 11, 25, 10, 0, 0, 0, time.Local)
 	for _, c := range []struct {
 		d                   core.Deadline
 		lead, quote, source string
 	}{
-		{core.Deadline{Date: "2026-11-27", Quote: "请周五前确认报价", Source: core.DeadlineAI}, "对方希望 周五（11月27日）前回复", "：「请周五前确认报价」", "邮件总结找到"},
+		{core.Deadline{Date: "2026-11-27", Quote: "请周五前确认报价", Source: core.DeadlineAI}, "对方希望 周五（11月27日）前回复：", "请周五前确认报价", "邮件总结找到"},
 		{core.Deadline{Date: "2026-11-27", Time: "15:00", Source: core.DeadlineProgram}, "对方希望 周五（11月27日）15:00 前回复", "", "其他应用设置"},
-		{core.Deadline{Date: "2026-11-24", Quote: "明天给我", Source: core.DeadlineWit, Overdue: true}, "对方希望 周二（11月24日）前回复", "：「明天给我」", "Wit 设置"},
+		{core.Deadline{Date: "2026-11-24", Quote: "明天给我", Source: core.DeadlineWit, Overdue: true}, "对方希望 周二（11月24日）前回复：", "明天给我", "Wit 设置"},
 		{core.Deadline{Date: "2026-11-27", Source: core.DeadlineManual}, "你设的：周五（11月27日）前回复", "", ""},
 		{core.Deadline{Date: "2026-11-15", Quote: "尽快", Source: core.DeadlineAI, Overdue: true}, "对方希望 11月15日前回复，已过去 10 天", "", "邮件总结找到"},
 	} {
@@ -162,23 +163,71 @@ func (h *harness) datedThread(acc core.Account) []core.MessageSummary {
 func TestReaderReplyDate(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	msgs := h.datedThread(accs[0])
+	h.resize(1440, 900)
 	h.openThreadWith(msgs[0].ThreadID)
-	h.see("对方希望 周五（1月15日）前回复")
+	h.see("对方希望 周五（1月15日）前回复：")
 	h.see("其他应用设置")
 	r := h.app.mail.reader
 	h.see(r.unrepliedText())
 	if n := h.countExact("等你处理"); n != 1 {
 		t.Fatalf("%d 等你处理 lines", n)
 	}
+	h.seeCardOnTop("Plan", "发给 我")
 	if r.open[msgs[0].ID] {
 		t.Fatal("the older message is open before its quote is clicked")
 	}
-	h.click("：「first words」")
+	h.click("first words")
 	h.until("the quoted message open", func() bool { return r.open[msgs[0].ID] })
 }
 
+// TestReaderReplyDateSingle: a message alone has its 等你处理 card where a
+// thread has it, under the subject above the message, and its 回复状态
+// under the date as small and muted as the source, with no full stop.
+func TestReaderReplyDateSingle(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	h.resize(1440, 900)
+	h.useBackendClock()
+	h.put(accs[0], "INBOX", coretest.Msg("Bob <bob@example.com>", "alice@example.com", "Lone ask", "Please reply by Friday.", at(h.clock.Now(), 24*3)))
+	h.syncNow(accs[0])
+	page, err := h.env.Svc.ListThreads(context.Background(), core.View{Unified: "inbox"}, "", 10)
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("threads %+v, %v", page.Items, err)
+	}
+	msgs := h.messages(page.Items[0].ID)
+	if _, err := h.env.Svc.SetThreadDeadline(context.Background(), msgs[0].ThreadID, core.Deadline{Date: "2027-01-15", MessageID: msgs[0].ID, Quote: "Please reply"}); err != nil {
+		t.Fatal(err)
+	}
+	h.openThreadWith(msgs[0].ThreadID)
+	h.see("对方希望 周五（1月15日）前回复：")
+	h.seeCardOnTop("Lone ask", "发给 我")
+	status := "直接发给你，尚未回复，已等 3 天"
+	if h.countExact(status) != 1 {
+		t.Fatalf("no %q in %q", status, h.tt.Texts())
+	}
+	got, _ := h.tt.Find(status)
+	src, _ := h.tt.Find("其他应用设置")
+	if got.H != src.H || got.X != src.X {
+		t.Fatalf("status %v, source %v: not alike", got, src)
+	}
+}
+
+// seeCardOnTop checks the 等你处理 card is above the message (whose header
+// says to), its label in line with the title: the badge's text 6 in from
+// its side, as kit.Badge has it.
+func (h *harness) seeCardOnTop(title, to string) {
+	h.t.Helper()
+	label, _ := h.tt.Find("等你处理")
+	head, _ := h.tt.Find(to)
+	if label.Y >= head.Y {
+		h.t.Fatalf("等你处理 at %v, the message's header at %v: not above it", label, head)
+	}
+	if ti, _ := h.tt.Find(title); label.X != ti.X+6 {
+		h.t.Fatalf("等你处理 at %v, the title at %v: not in line", label, ti)
+	}
+}
+
 // TestReaderReplyDateInDigest: a thread's summary carries the reply date in
-// its 等你处理 line, not in a second one.
+// its 等你处理 line, not in a second one, and in place of its to-do.
 func TestReaderReplyDateInDigest(t *testing.T) {
 	h, acc, _ := aiHarness(t, true, noQuick)
 	msgs := h.datedThread(acc)
@@ -188,10 +237,46 @@ func TestReaderReplyDateInDigest(t *testing.T) {
 		return fmt.Sprintf("PROGRESS\n- Bob proposed a plan <mail id=\"%d\"/>\nTODO: Confirm the plan\n", msgs[0].ID)
 	})
 	h.openThread(msgs[0].ThreadID)
-	h.see("Confirm the plan")
-	h.see("对方希望 周五（1月15日）前回复")
+	h.see("Bob proposed a plan")
+	h.see("对方希望 周五（1月15日）前回复：")
 	if n := h.countExact("等你处理"); n != 1 {
 		t.Fatalf("%d 等你处理 lines", n)
+	}
+	if h.tt.HasText("Confirm the plan") {
+		t.Fatal("the summary's to-do beside the reply date")
+	}
+}
+
+// TestViewBandReplyDate: a conversation waiting on someone else, in a view,
+// says the user's reply date in its 待跟进 band, with 改日期, and has no
+// 等你处理 card.
+func TestViewBandReplyDate(t *testing.T) {
+	h, accs := mailHarness(t, nil, "you@example.com")
+	h.useBackendClock()
+	acc := accs[0]
+	h.putSeen(acc, "Sent", coretest.Msg("Me <you@example.com>", "Tom <tom@acme.example>", "Renewal quote", "The quote is attached.", coretest.Date(time.Now().AddDate(0, 0, -4))))
+	h.syncNow(acc)
+	if _, err := h.env.Svc.SaveView(context.Background(), core.SavedView{Name: "Acme", Icon: "team", Doc: core.SavedViewDoc{Match: core.MatchAll,
+		Conditions: []core.RuleCondition{{Field: core.FieldTo, Op: core.OpContains, Value: "acme.example"}},
+		Groups:     []core.ViewGroup{{ID: "w", Name: "待跟进", Match: core.MatchAll, Conditions: []core.RuleCondition{{Field: core.FieldReply, Op: core.OpOlderThan, Value: "3"}}}}}}); err != nil {
+		t.Fatal(err)
+	}
+	h.click(h.savedViewNamed("Acme").Name)
+	h.waitMail("the row", func() bool { return len(h.items()) == 1 })
+	tid := h.items()[0].ID
+	day := time.Now().AddDate(0, 0, 3)
+	h.app.setReplyDate(tid, core.Deadline{Date: day.Format(time.DateOnly)})
+	h.until("the user's date", func() bool { d := h.replyDateIn(tid); return d != nil && d.Source == core.DeadlineManual })
+	h.app.mail.open(h.items(), 0)
+	h.see(i18n.Tf("view.band.waiting", 4))
+	h.seeRefreshed("你设的：" + weekdayDay(day) + "前回复")
+	h.see(i18n.T("view.follow_up"))
+	if h.tt.HasText("等你处理") {
+		t.Fatal("a 等你处理 card on a conversation waiting on someone else")
+	}
+	h.click("改日期")
+	if got, want := h.tt.Menu(), dateMenu(time.Now(), true); !slices.Equal(got, want) {
+		t.Fatalf("menu %q, want %q", got, want)
 	}
 }
 
@@ -390,10 +475,9 @@ func TestMailMenuReplyDate(t *testing.T) {
 		t.Fatal(err)
 	}
 	menu := h.tt.Menu()
-	for _, want := range []string{"设回复日期…", "去掉回复日期"} {
-		if !slices.Contains(menu, want) {
-			t.Fatalf("menu %v missing %q", menu, want)
-		}
+	// in 标为未读 and 加星's group, before 归档's
+	if i := slices.Index(menu, "加星"); i < 0 || !slices.Equal(menu[i+1:i+4], []string{"设回复日期…", "去掉回复日期", "-"}) {
+		t.Fatalf("menu %q: the reply date's items not after 加星", menu)
 	}
 	var soon int64
 	for _, it := range h.items() {

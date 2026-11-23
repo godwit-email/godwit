@@ -8,7 +8,7 @@ var names = []string{"mail", "router", "user", "sparkles", "sliders-horizontal",
 	"triangle-alert", "loader", "copy", "external-link", "eye", "eye-off", "image-off", "bold", "italic", "link", "list",
 	"list-ordered", "quote", "undo-2", "refresh-cw", "circle-check", "circle-x", "circle-alert", "shield", "shield-check", "puzzle", "lock", "monitor",
 	"globe", "languages", "file-text", "wand-sparkles", "download", "ellipsis", "component", "spam", "outbox", "settings", "cpu", "brain-4", "info", "tag", "filter", "grip", "quill-pen", "code", "save", "printer",
-	"vip-diamond", "question", "skull", "mail-unread", "time", "at", "contacts", "flask"}
+	"vip-diamond", "question", "skull", "mail-unread", "time", "at", "contacts", "flask", "calendar", "calendar-close"}
 
 // labelIcons are the label picker's icons, embedded as "label-<name>".
 var labelIcons = []string{"shield-keyhole", "bill", "truck", "plane", "calendar-event", "notification-3", "newspaper", "shopping-bag-3",
