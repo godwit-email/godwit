@@ -486,22 +486,21 @@ func (p *settingsPage) aiFeaturesView(c *ui.Context) {
 	settingsSection(c, "", "",
 		func() { p.summaryLevel(c, st) },
 		sw(&st.QuickReplies, i18n.T("settings.quick_replies"), i18n.T("settings.quick_replies.help")),
-		sw(&st.RuleAI, i18n.T("settings.rule_ai"), i18n.T("settings.rule_ai.help")))
-	settingsSection(c, "", "", func() {
-		settingRow(c, i18n.T("settings.app_deadlines"), i18n.T("settings.app_deadlines.help"), func() ui.Element {
-			n := "…"
-			if p.appDates >= 0 {
-				n = strconv.Itoa(p.appDates)
-			}
-			ui.Row(c).Gap(c.Theme().Space(3)).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, n).TextColor(theme.Of(c).Muted)
-				if rowButton(c, i18n.T("settings.app_deadlines.remove"), kit.Outline, p.appDates <= 0).Clicked() {
-					p.removeAppDates()
+		sw(&st.RuleAI, i18n.T("settings.rule_ai"), i18n.T("settings.rule_ai.help")), func() {
+			settingRow(c, i18n.T("settings.app_deadlines"), i18n.T("settings.app_deadlines.help"), func() ui.Element {
+				n := "…"
+				if p.appDates >= 0 {
+					n = strconv.Itoa(p.appDates)
 				}
+				ui.Row(c).Gap(c.Theme().Space(3)).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, n).TextColor(theme.Of(c).Muted)
+					if rowButton(c, i18n.T("settings.app_deadlines.remove"), kit.Outline, p.appDates <= 0).Clicked() {
+						p.removeAppDates()
+					}
+				})
+				return ui.Element{}
 			})
-			return ui.Element{}
 		})
-	})
 	settingsSection(c, i18n.T("settings.language"), "",
 		sel(i18n.T("settings.reading_language"), i18n.T("settings.reading_language.help"), func() ui.Element {
 			opts := []kit.Option[string]{{Value: "", Label: i18n.T("settings.reading_language.ui")}}
@@ -533,19 +532,33 @@ func summaryLevels() []kit.Option[string] {
 	return opts
 }
 
-// summaryLevel is 邮件总结's row and, under 收到就总结, its pause for a new
-// model service and its run over the last 30 days' mail.
+// summaryLevel is 邮件总结's row, its levels in segments, and, under 收到就
+// 总结, its pause for a new model service and its run over the last 30
+// days' mail.
 func (p *settingsPage) summaryLevel(c *ui.Context, st *core.Settings) {
 	a := p.a
-	desc := i18n.T("settings.summary.help")
-	switch {
-	case st.SummaryMode == core.SummaryArrive:
+	var desc string
+	switch st.SummaryMode {
+	case core.SummaryArrive:
 		desc = i18n.Tf("settings.summary.arrive.help", a.arrival.Current)
-	case a.arrival.Service != "": // chosen before: what it found stays
-		desc = i18n.T("settings.summary.arrive.stopped")
+	case core.SummaryOff:
+		desc = i18n.T("settings.summary.off.help")
+	default:
+		desc = i18n.T("settings.summary.open.help")
+	}
+	if st.SummaryMode != core.SummaryArrive && a.arrival.Service != "" { // chosen before: what it found stays
+		desc = i18n.Tf("settings.summary.help_stopped", desc, i18n.T("settings.summary.arrive.stopped"))
 	}
 	settingRow(c, i18n.T("settings.summary"), desc, func() ui.Element {
-		return settingSelect(c, i18n.T("settings.summary"), &st.SummaryMode, summaryLevels())
+		levels := summaryLevels()
+		var labels []string
+		for _, o := range levels {
+			labels = append(labels, o.Label)
+		}
+		sel := max(0, slices.IndexFunc(levels, func(o kit.Option[string]) bool { return o.Value == st.SummaryMode }))
+		tabs := kit.Tabs(c, &sel, kit.TabsOpts{}, kit.TabLabels(labels...)).Label(i18n.T("settings.summary"))
+		st.SummaryMode = levels[sel].Value
+		return tabs
 	})
 	if st.SummaryMode != core.SummaryArrive {
 		return
