@@ -212,6 +212,43 @@ func TestSummarizeOnArrivalPausesOnServiceChange(t *testing.T) {
 	assert.Empty(t, srv.Requests())
 }
 
+// The consent to 收到就总结 is for where mail goes: pointing the chosen
+// service at another endpoint pauses it until confirmed; renaming it does not.
+func TestSummarizeOnArrivalPausesOnEndpointChange(t *testing.T) {
+	e, srv := arriveEnv(t)
+	e.setSummaryMode(t, SummaryArrive)
+	list, err := e.s.ListModelServices(bg)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	x := list[0]
+	edit := func(name, url string) {
+		t.Helper()
+		_, err := e.s.UpdateModelService(bg, x.ID, ModelServiceInput{Name: name, Kind: "openai", BaseURL: url, APIKey: "k", Models: []string{"m1"}})
+		require.NoError(t, err)
+	}
+	edit("renamed", srv.URL)
+	got, err := e.s.SummaryArrivalState(bg)
+	require.NoError(t, err)
+	assert.False(t, got.Paused, "a rename keeps the consent")
+
+	other := testllm.Start(t, "openai")
+	edit("renamed", other.URL)
+	e.put(t, "INBOX", eml("q@x", "bob@a.example", "alice@example.com", "quote", e.viewAt(0.5), "Please confirm the quote by Friday."))
+	e.sync(t)
+	assert.Zero(t, e.summarizeArrivals(t))
+	assert.Empty(t, srv.Requests())
+	assert.Empty(t, other.Requests())
+	got, err = e.s.SummaryArrivalState(bg)
+	require.NoError(t, err)
+	assert.True(t, got.Paused, "another endpoint needs the user's say")
+	assert.Contains(t, got.Current, "127.0.0.1", "names where mail would go")
+
+	require.NoError(t, e.s.ConfirmSummaryService(bg))
+	other.Script(replyByTurn(e, "- Bob wants the quote confirmed."))
+	assert.Equal(t, 1, e.summarizeArrivals(t))
+	assert.Len(t, other.Requests(), 1)
+}
+
 // Older mail is summarized only when asked: the unreplied conversations of
 // the last 30 days not summarized yet, counted first.
 func TestSummarizeUnreplied(t *testing.T) {

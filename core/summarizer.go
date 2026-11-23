@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -79,11 +80,14 @@ const summaryArriveKey = "summary.arrive"
 
 // arrivalChoice is what 收到就总结 was chosen with: mail events_log records
 // as received after seq After is new (queueArrivals queues it), and Service
-// (by modelService; Name for the user) is the model service it may go to.
+// (by modelService; Name for the user) is the model service it may go to, at
+// Host, the endpoint's host: the user agreed to mail going there (ADR 0003),
+// so another host needs their say again, a new name does not.
 type arrivalChoice struct {
 	After    int64
 	Service  string
 	Name     string
+	Host     string
 	OnDevice bool
 }
 
@@ -120,6 +124,9 @@ func (s *Service) currentChoice(ctx context.Context, st Settings, after int64) (
 		service = ref[:i] // plugin/<name>
 	}
 	c := arrivalChoice{After: after, Service: service, Name: strings.TrimPrefix(service, "plugin/"), OnDevice: m.OnDevice}
+	if u, err := url.Parse(m.BaseURL); err == nil {
+		c.Host = strings.ToLower(u.Host)
+	}
 	if m.ServiceID != 0 {
 		c.Service = strconv.FormatInt(m.ServiceID, 10) // a renamed slug is the same service
 		rows, err := s.db.Query(ctx, "SELECT name FROM model_services WHERE id = ?", m.ServiceID)
@@ -134,7 +141,7 @@ func (s *Service) currentChoice(ctx context.Context, st Settings, after int64) (
 }
 
 func (c arrivalChoice) same(o arrivalChoice) bool {
-	return c.Service == o.Service && c.OnDevice == o.OnDevice
+	return c.Service == o.Service && c.Host == o.Host && c.OnDevice == o.OnDevice
 }
 
 // arrivalChoiceNow is a choice of 收到就总结 made now with settings st, to
@@ -208,6 +215,9 @@ func (s *Service) SummaryArrivalState(ctx context.Context) (SummaryArrival, erro
 		return out, nil
 	}
 	out.Current, out.Paused = now.Name, chosen && !now.same(c)
+	if out.Paused && now.Service == c.Service && now.Host != c.Host && now.Host != "" { // the same service at another endpoint: say where
+		out.Current += " (" + now.Host + ")"
+	}
 	return out, err
 }
 
