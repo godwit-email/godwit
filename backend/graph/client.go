@@ -121,8 +121,8 @@ func (c *client) doRetrying(ctx context.Context, method, pathOrURL, contentType 
 		if err != nil {
 			return nil, err
 		}
-		if u.Host != c.host() {
-			return nil, fmt.Errorf("graph: %w", conn.ErrOtherHost)
+		if base, err := url.Parse(c.base); err != nil || !conn.SameOrigin(u, base) {
+			return nil, fmt.Errorf("graph: %w: %s", conn.ErrOtherHost, u.Host)
 		}
 		if strings.HasPrefix(c.base, "https://") && u.Scheme != "https" {
 			return nil, errors.New("graph: refused a link from HTTPS to HTTP")

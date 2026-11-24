@@ -116,10 +116,30 @@ func SameHost(req *http.Request, via []*http.Request) error {
 		return errors.New("too many redirects")
 	case via[0].URL.Scheme == "https" && req.URL.Scheme != "https":
 		return errors.New("refused a redirect from HTTPS to HTTP")
-	case req.URL.Host != via[0].URL.Host:
+	case !SameOrigin(req.URL, via[0].URL):
 		return ErrOtherHost
 	}
 	return nil
+}
+
+// SameOrigin reports whether a and b are on the same host: the same host
+// field, or the same host name in any case on the same port, a missing port
+// read as the scheme's default, so https://h and https://H:443 match.
+func SameOrigin(a, b *url.URL) bool {
+	return a.Host == b.Host || strings.EqualFold(a.Hostname(), b.Hostname()) && portOf(a) == portOf(b)
+}
+
+func portOf(u *url.URL) string {
+	if p := u.Port(); p != "" {
+		return p
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+		return "443"
+	case "http":
+		return "80"
+	}
+	return ""
 }
 
 // HTTPStatusErr is the error for the statuses every HTTP backend reads

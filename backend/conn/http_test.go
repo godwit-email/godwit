@@ -109,6 +109,9 @@ func TestSameHost(t *testing.T) {
 		"http://mail.example:443/EWS/Exchange.asmx": errors.New("refused a redirect from HTTPS to HTTP"),
 		"http://mail.example/EWS/Exchange.asmx":     errors.New("refused a redirect from HTTPS to HTTP"),
 		"https://other.example/EWS/Exchange.asmx":   ErrOtherHost,
+		"https://mail.example:443/EWS/Other.asmx":   nil,
+		"https://MAIL.example/EWS/Other.asmx":       nil,
+		"https://mail.example:8443/EWS/Other.asmx":  ErrOtherHost,
 	} {
 		to, _ := http.NewRequest(http.MethodPost, target, nil)
 		if err := SameHost(to, []*http.Request{from}); (err == nil) != (want == nil) || err != nil && err.Error() != want.Error() {
