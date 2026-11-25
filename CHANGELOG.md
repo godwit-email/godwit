@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.40.1](https://github.com/godwit-email/godwit/compare/v1.40.0...v1.40.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **graph:** treat a page link with the default port as the same host ([#889](https://github.com/godwit-email/godwit/issues/889)) ([07eceec](https://github.com/godwit-email/godwit/commit/07eceecd84bfd54edbd97cbe2754f7cfe2485efd)), closes [#888](https://github.com/godwit-email/godwit/issues/888)
+* **imap:** reconnect closed session and back off Sent archiving ([#897](https://github.com/godwit-email/godwit/issues/897)) ([d76baf3](https://github.com/godwit-email/godwit/commit/d76baf34116dd753e5fe6367e7cdb0afd8ebc656))
+
 ## [1.40.0](https://github.com/godwit-email/godwit/compare/v1.39.4...v1.40.0) (2026-11-23)
 
 
