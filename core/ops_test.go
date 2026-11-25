@@ -20,6 +20,7 @@ import (
 func (e *syncEnv) onServer(t *testing.T, folder string) []string {
 	t.Helper()
 	c := e.dial(t)
+	defer c.Close()
 	sel, err := c.Select(folder, &imap.SelectOptions{ReadOnly: true}).Wait()
 	require.NoError(t, err)
 	out := []string{}
@@ -32,6 +33,9 @@ func (e *syncEnv) onServer(t *testing.T, folder string) []string {
 	require.NoError(t, err)
 	slices.SortFunc(msgs, func(a, b *imapclient.FetchMessageBuffer) int { return int(a.UID) - int(b.UID) })
 	for _, m := range msgs {
+		if m.Envelope == nil {
+			continue // unilateral flag update on a concurrently changed or expunged message
+		}
 		var fl []string
 		for _, f := range m.Flags {
 			fl = append(fl, string(f))
