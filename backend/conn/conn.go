@@ -256,10 +256,12 @@ func dialIMAP(ctx context.Context, e Endpoint, h *imapclient.UnilateralDataHandl
 			err = loginErr(cctx, "imap", e, err)
 		} else if c.Caps().Has(imap.CapID) {
 			// Some servers (NetEase) refuse SELECT until the client identifies
-			// itself. A failed ID is not a failed login.
-			c.ID(&imap.IDData{Name: "Godwit", Version: ClientVersion}).Wait()
-			if cctx.Err() != nil {
-				err = fmt.Errorf("imap id %s: %w", e.addr(), cctx.Err())
+			// itself. A refused ID is not a failed login, unless the connection died.
+			if _, idErr := c.ID(&imap.IDData{Name: "Godwit", Version: ClientVersion}).Wait(); idErr != nil {
+				var refused *imap.Error
+				if !errors.As(idErr, &refused) || c.State() == imap.ConnStateLogout {
+					err = fmt.Errorf("imap id %s: %w", e.addr(), connectErr(cctx, idErr))
+				}
 			}
 		}
 	} else {

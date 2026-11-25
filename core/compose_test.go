@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/godwit-email/godwit/backend"
 	"github.com/godwit-email/godwit/core/internal/testclock"
 	"github.com/godwit-email/godwit/core/internal/testmail"
 	"github.com/godwit-email/godwit/core/mail"
@@ -272,7 +273,7 @@ func TestArchiveUncertainNotDuplicated(t *testing.T) {
 	e := newSendEnv(t, false)
 	e.sendNew(t)
 	e.im.DropAfterNextAppend()
-	_ = e.s.SyncNow(bg, e.acc.ID) // the connection dies mid-sync
+	require.NoError(t, e.s.SyncNow(bg, e.acc.ID)) // the connection dies mid-append; Fetch reconnects
 	assert.Equal(t, "archive_uncertain", e.state(t))
 	e.sync(t)
 	assert.Len(t, e.onServer(t, "Sent"), 1)
@@ -830,6 +831,77 @@ func TestSendRefusesAPlaceholder(t *testing.T) {
 			assert.Zero(t, e.count(t, "SELECT count(*) FROM outbox"))
 		})
 	}
+}
+
+// When archiving to Sent drops the IMAP connection (and the server's SMTP copy
+// lands in Sent asynchronously while APPEND keeps failing), the same sync round
+// reconnects to fetch mail and the synced Sent copy resolves archive_uncertain
+// without another APPEND (#894).
+func TestArchiveDropStillSyncsAndResolvesFromLocalSent(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.sync(t)
+	e.im.DropBeforeAppend(true)
+	mid := e.sendNew(t)
+	e.put(t, "INBOX", eml("in1@x", "bob@example.com", "alice@example.com", "incoming", day, "hello"))
+
+	// Round 1: APPEND drops the IMAP connection; SyncNow reconnects and still imports INBOX.
+	require.NoError(t, e.s.SyncNow(bg, e.acc.ID))
+	assert.Equal(t, "archive_uncertain", e.state(t))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'in1@x'"))
+
+	// Provider asynchronously saves the sent copy to Sent while APPEND still fails;
+	// a narrowed background round fetches Sent too because an item is uncertain.
+	e.put(t, "Sent", eml(mid, "alice@example.com", "bob@example.com", "hello", day, "provider copy"))
+	require.NoError(t, e.s.syncNow(bg, e.acc.ID, false, []backend.FolderRef{"INBOX"}))
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = ?", mid))
+
+	// Next background round resolves archive_uncertain from local Sent immediately,
+	// even during the backoff window and with APPEND still broken.
+	require.NoError(t, e.s.syncNow(bg, e.acc.ID, false, []backend.FolderRef{"INBOX"}))
+	assert.Equal(t, "done", e.state(t))
+	assert.Len(t, e.smtp.Messages(), 1)
+}
+
+// A persistently failing archive backs off on background rounds without blocking
+// mail sync, and confirm_sent finishes archive_uncertain while keeping reply_records.
+func TestArchiveUncertainBackoffAndConfirmSent(t *testing.T) {
+	e := newSendEnv(t, false)
+	e.put(t, "INBOX", eml("orig@x", "bob@example.com", "alice@example.com", "question", day, "ping"))
+	e.sync(t)
+
+	d, err := e.s.NewDraft(bg, e.acc.ID, "reply", e.idOf(t, "orig@x"))
+	require.NoError(t, err)
+	d.HTML = "<p>pong</p>"
+	d, err = e.s.SaveDraft(bg, d)
+	require.NoError(t, err)
+	require.NoError(t, e.s.Send(bg, d.ID))
+	e.clock.Advance(UndoSendWindow)
+
+	e.im.DropBeforeAppend(true)
+	require.NoError(t, e.s.syncNow(bg, e.acc.ID, false, nil))
+	it := e.onlyItem(t)
+	assert.Equal(t, "archive_uncertain", it.State)
+	assert.Equal(t, 1, it.Attempts)
+	assert.False(t, it.NextAttempt.IsZero())
+	raw := store.Str(e.rows(t, "SELECT raw_path FROM outbox WHERE id = ?", it.ID)[0][0])
+	require.FileExists(t, raw)
+
+	// Background round before NextAttempt skips archiveItem and still syncs new mail.
+	e.put(t, "INBOX", eml("in2@x", "bob@example.com", "alice@example.com", "followup", day, "still working"))
+	require.NoError(t, e.s.syncNow(bg, e.acc.ID, false, nil))
+	assert.Equal(t, 1, e.onlyItem(t).Attempts, "skipped during backoff")
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM messages WHERE message_id = 'in2@x'"))
+
+	// Once backoff elapses, a background round retries once and doubles the wait.
+	e.clock.Advance(retryMin)
+	require.NoError(t, e.s.syncNow(bg, e.acc.ID, false, nil))
+	assert.Equal(t, 2, e.onlyItem(t).Attempts)
+
+	// Confirming sent on archive_uncertain finishes it instead of looping back to sent.
+	require.NoError(t, e.s.ResolveOutbox(bg, it.ID, "confirm_sent"))
+	assert.Equal(t, "done", e.state(t))
+	assert.NoFileExists(t, raw)
+	assert.Equal(t, 1, e.count(t, "SELECT count(*) FROM reply_records WHERE outbox_id = ?", it.ID))
 }
 
 // A placeholder the masker made is mailed as its value.

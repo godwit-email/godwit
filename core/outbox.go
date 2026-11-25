@@ -198,7 +198,8 @@ func (s *Service) takeBack(ctx context.Context, id int64, state string) error {
 
 // ResolveOutbox decides an item in send_uncertain, archive_uncertain or failed,
 // or retries a queued one now:
-// confirm_sent treats it as sent (it is archived next), resend queues it again
+// confirm_sent treats a send_uncertain or failed item as sent (it is archived
+// next) and finishes an archive_uncertain one as done, resend queues it again
 // for now (OutboxExpiry counts from then; never archive_uncertain, which the
 // server already accepted) and discard drops it; all three clear
 // its Failure, and confirm_sent and discard delete its draft. edit
@@ -235,7 +236,19 @@ func (s *Service) ResolveOutbox(ctx context.Context, id int64, action string) er
 	var ok bool
 	switch action {
 	case "confirm_sent":
-		ok, err = s.moveOutbox(ctx, o, "sent", []string{"send_uncertain", "archive_uncertain", "failed"}, "last_error = NULL, failure = NULL")
+		archived, aerr := s.moveOutbox(ctx, o, "done", []string{"archive_uncertain"}, "last_error = NULL, failure = NULL, next_attempt_at = NULL")
+		if aerr != nil {
+			err = aerr
+			break
+		}
+		if archived {
+			if p := store.Str(rows.Values[0][1]); p != "" {
+				os.Remove(p)
+			}
+			ok = true
+			break
+		}
+		ok, err = s.moveOutbox(ctx, o, "sent", []string{"send_uncertain", "failed"}, "attempts = 0, last_error = NULL, failure = NULL, next_attempt_at = NULL")
 	case "resend":
 		// Queued, it leaves unattended (ADR 0003): audited in the transaction
 		// that queues it, which moveOutbox's would not take.
@@ -314,6 +327,7 @@ type outboxRow struct {
 	draftID            any   // NULL without a draft
 	attempts           int   // tries so far
 	queuedAt           int64 // unix ms the expiry counts from
+	nextAttempt        int64 // unix ms of the next retry (0: none)
 }
 
 // processOutbox sends the account's queued messages through its sending
@@ -324,12 +338,12 @@ type outboxRow struct {
 // being sent. Network failures are recorded on the items; database errors are
 // returned, and so is a refused login, which stops the round and pauses the
 // account's outbox (smtp_reauth).
-func (s *Service) processOutbox(ctx context.Context, recv backend.Receiver, accountID int64) error {
+func (s *Service) processOutbox(ctx context.Context, recv backend.Receiver, accountID int64, explicit bool) error {
 	start := s.clk().Now().UnixMilli()
 	defer s.wakeForOutbox(ctx, accountID, start)
 	// A queued item waits for its undo window and its retry time.
 	rows, err := s.db.Query(ctx, `SELECT id, message_id_hdr, raw_path, rcpts, state, draft_id, attempts,
-		COALESCE(send_after, created_at * 1000) FROM outbox
+		COALESCE(send_after, created_at * 1000), IFNULL(next_attempt_at, 0) FROM outbox
 		WHERE account_id = ? AND (state IN ('sent', 'send_uncertain', 'archive_uncertain')
 		OR state = 'queued' AND IFNULL(send_after, 0) <= ? AND IFNULL(next_attempt_at, 0) <= ?) ORDER BY id`, accountID, start, start)
 	if err != nil || len(rows.Values) == 0 {
@@ -363,7 +377,7 @@ func (s *Service) processOutbox(ctx context.Context, recv backend.Receiver, acco
 		}
 		o := outboxRow{id: store.Int(r[0]), messageID: store.Str(r[1]), rawPath: store.Str(r[2]),
 			rcpts: jsonList(store.Str(r[3])), state: store.Str(r[4]), draftID: r[5], attempts: int(store.Int(r[6])),
-			queuedAt: store.Int(r[7])}
+			queuedAt: store.Int(r[7]), nextAttempt: store.Int(r[8])}
 		if beforeOutboxItem != nil {
 			beforeOutboxItem(o.id)
 		}
@@ -401,9 +415,24 @@ func (s *Service) processOutbox(ctx context.Context, recv backend.Receiver, acco
 			if !ok {
 				continue
 			}
-			o.state = "sent"
+			o.state, o.attempts, o.nextAttempt = "sent", 0, 0
 			fallthrough
 		case "sent", "archive_uncertain":
+			if o.state == "archive_uncertain" {
+				found, err := s.inLocalSent(ctx, accountID, sent, o.messageID)
+				if err != nil {
+					return err
+				}
+				if found {
+					if err := s.finishOutbox(wctx, o); err != nil {
+						return err
+					}
+					continue
+				}
+				if !explicit && o.nextAttempt > start {
+					continue
+				}
+			}
 			saves := false
 			if snd != nil {
 				saves = snd.SavesSent()
@@ -413,17 +442,25 @@ func (s *Service) processOutbox(ctx context.Context, recv backend.Receiver, acco
 			if !known && !saves {
 				continue
 			}
-			if err := s.archiveItem(ctx, wctx, recv, saves, sent, keep, o); err != nil {
+			if err := s.archiveItem(ctx, wctx, recv, accountID, saves, sent, keep, o); err != nil {
 				return err
 			}
 		case "send_uncertain":
 			if sent == "" {
 				continue // cannot check; the user decides
 			}
-			found, err := recv.Find(ctx, sent, o.messageID, 0)
+			found, err := s.inLocalSent(ctx, accountID, sent, o.messageID)
+			if err != nil {
+				return err
+			}
+			if !found {
+				var refs []backend.MessageRef
+				refs, err = recv.Find(ctx, sent, o.messageID, 0)
+				found = len(refs) > 0
+			}
 			if err != nil {
 				_, err = s.setOutbox(wctx, o, "send_uncertain", err.Error())
-			} else if len(found) > 0 {
+			} else if found {
 				err = s.finishOutbox(wctx, o)
 			}
 			if err != nil {
@@ -434,12 +471,15 @@ func (s *Service) processOutbox(ctx context.Context, recv backend.Receiver, acco
 	return nil
 }
 
-// wakeForOutbox has the account's worker sync again when the next queued item
+// wakeForOutbox has the account's worker sync again when the next outbox item
 // not due at start (unix milliseconds) comes due, in place of the time set
 // before. Items due at start were handled this round.
 func (s *Service) wakeForOutbox(ctx context.Context, accountID, start int64) {
-	rows, err := s.db.Query(ctx, `SELECT MIN(due) FROM (SELECT MAX(IFNULL(send_after, 0), IFNULL(next_attempt_at, 0)) AS due
-		FROM outbox WHERE account_id = ? AND state = 'queued') WHERE due > ?`, accountID, start)
+	rows, err := s.db.Query(ctx, `SELECT MIN(due) FROM (
+		SELECT MAX(IFNULL(send_after, 0), IFNULL(next_attempt_at, 0)) AS due FROM outbox WHERE account_id = ? AND state = 'queued'
+		UNION ALL
+		SELECT next_attempt_at AS due FROM outbox WHERE account_id = ? AND state = 'archive_uncertain' AND next_attempt_at IS NOT NULL
+	) WHERE due > ?`, accountID, accountID, start)
 	var next time.Time
 	if err == nil && len(rows.Values) > 0 && rows.Values[0][0] != nil {
 		next = time.UnixMilli(store.Int(rows.Values[0][0]))
@@ -537,7 +577,7 @@ func (s *Service) sendItem(ctx, wctx context.Context, snd backend.Sender, from s
 	var rej *backend.RejectedError
 	switch {
 	case err == nil:
-		return s.setOutbox(wctx, o, "sent", "")
+		return s.moveOutbox(wctx, o, "sent", []string{"sending"}, "attempts = 0, last_error = NULL, next_attempt_at = NULL")
 	case errors.Is(err, backend.ErrUncertain):
 		_, err = s.setOutbox(wctx, o, "send_uncertain", err.Error())
 		return false, err
@@ -574,7 +614,7 @@ func (s *Service) failOutbox(ctx context.Context, o outboxRow, lastError string,
 // copies itself, and when there is no Sent folder (sent is "") or recv cannot
 // append: there is nowhere to file it. keep, when set (localSent), files it
 // on this computer instead.
-func (s *Service) archiveItem(ctx, wctx context.Context, recv backend.Receiver, saves bool, sent backend.FolderRef, keep func(context.Context, []byte) error, o outboxRow) error {
+func (s *Service) archiveItem(ctx, wctx context.Context, recv backend.Receiver, accountID int64, saves bool, sent backend.FolderRef, keep func(context.Context, []byte) error, o outboxRow) error {
 	if ok, err := s.setOutbox(ctx, o, "archiving", ""); !ok || err != nil {
 		return err
 	}
@@ -590,8 +630,12 @@ func (s *Service) archiveItem(ctx, wctx context.Context, recv backend.Receiver, 
 		if saves || sent == "" {
 			return nil
 		}
-		found, err := recv.Find(ctx, sent, o.messageID, 0)
-		if err != nil || len(found) > 0 {
+		found, err := s.inLocalSent(ctx, accountID, sent, o.messageID)
+		if err != nil || found {
+			return err
+		}
+		refs, err := recv.Find(ctx, sent, o.messageID, 0)
+		if err != nil || len(refs) > 0 {
 			return err
 		}
 		raw, err := os.ReadFile(o.rawPath)
@@ -605,11 +649,40 @@ func (s *Service) archiveItem(ctx, wctx context.Context, recv backend.Receiver, 
 		return err
 	}()
 	if err != nil {
-		// Possibly appended: the next round looks before appending again.
-		_, err = s.setOutbox(wctx, o, "archive_uncertain", err.Error())
-		return err
+		if ctx.Err() != nil { // the sync stopped: not a try
+			_, derr := s.setOutbox(wctx, o, "archive_uncertain", err.Error())
+			return derr
+		}
+		slog.Warn("sent copy not archived yet", "account", accountID, "outbox", o.id, "err", err)
+		// Possibly appended: a later round looks before appending again.
+		wait := min(retryMin<<min(o.attempts, 6), retryMax)
+		_, derr := s.moveOutbox(wctx, o, "archive_uncertain", []string{"archiving"},
+			"attempts = attempts + 1, last_error = ?, next_attempt_at = ?",
+			err.Error(), s.clk().Now().Add(wait).UnixMilli())
+		return derr
 	}
 	return s.finishOutbox(wctx, o)
+}
+
+// inLocalSent reports whether local storage already holds a server copy of
+// messageID in the account's Sent folder sent.
+func (s *Service) inLocalSent(ctx context.Context, accountID int64, sent backend.FolderRef, messageID string) (bool, error) {
+	if sent == "" || messageID == "" {
+		return false, nil
+	}
+	rows, err := s.db.Query(ctx, `SELECT 1 FROM messages m
+		JOIN message_locations ml ON ml.message_id = m.id
+		JOIN folders f ON f.id = ml.folder_id
+		WHERE m.account_id = ? AND m.message_id = ? AND f.account_id = ? AND f.server_ref = ? AND ml.server_ref IS NOT NULL LIMIT 1`,
+		accountID, messageID, accountID, string(sent))
+	return err == nil && len(rows.Values) > 0, err
+}
+
+// hasUncertainOutbox reports whether the account has an outbox item waiting
+// to check or file its copy in Sent.
+func (s *Service) hasUncertainOutbox(ctx context.Context, accountID int64) (bool, error) {
+	rows, err := s.db.Query(ctx, "SELECT 1 FROM outbox WHERE account_id = ? AND state IN ('send_uncertain', 'archive_uncertain') LIMIT 1", accountID)
+	return err == nil && len(rows.Values) > 0, err
 }
 
 // localSent keeps a sent copy in the account's local Sent folder when its
@@ -639,27 +712,28 @@ func (s *Service) localSent(ctx context.Context, accountID int64) (func(context.
 //	queued → sending (claimed, racing CancelOutbox) | failed (expired)
 //	sending → sent | send_uncertain (may have gone out) | queued (retried, login refused, sync stopped) | failed (refused, raw copy unreadable)
 //	sent | archive_uncertain → archiving → done | archive_uncertain
+//	archive_uncertain → done (found in local Sent, or confirm_sent)
 //	send_uncertain → send_uncertain (could not check) | done (found in Sent)
-//	send_uncertain | archive_uncertain | failed → sent (confirm_sent); send_uncertain | failed → queued (resend); queued → queued (retry_now)
+//	send_uncertain | failed → sent (confirm_sent); send_uncertain | failed → queued (resend); queued → queued (retry_now)
 //
 // Items also leave by deletion: queued (CancelOutbox) and failed (edit), with
 // their draft given back; send_uncertain, archive_uncertain and failed
 // (discard), with their draft.
 var outboxFrom = map[string][]string{
 	"sending":           {"queued"},
-	"sent":              {"sending", "send_uncertain", "archive_uncertain", "failed"},
+	"sent":              {"sending", "send_uncertain", "failed"},
 	"send_uncertain":    {"sending", "send_uncertain"},
 	"queued":            {"sending", "send_uncertain", "failed", "queued"},
 	"failed":            {"queued", "sending"},
 	"archiving":         {"sent", "archive_uncertain"},
 	"archive_uncertain": {"archiving"},
-	"done":              {"archiving", "send_uncertain"},
+	"done":              {"archiving", "send_uncertain", "archive_uncertain"},
 }
 
 // moveOutbox moves the item to state to from one of from, also setting set
 // ("column = ?, ...", with args), and reports whether it did: an item changed
 // since it was read (resolved, discarded, cancelled) is left alone. Entering
-// sent or send_uncertain the message may have gone out: its draft is deleted
+// sent, send_uncertain or done the message may have gone out: its draft is deleted
 // in the same transaction, never to be sent again (draft_id becomes NULL).
 // DurableTransaction syncs the WAL so a power loss after sending cannot roll a
 // claimed item back to queued (ADR 0006).
@@ -676,7 +750,7 @@ func (s *Service) moveOutbox(ctx context.Context, o outboxRow, to string, from [
 		set = ", " + set
 	}
 	var stmts []sqlite.Statement
-	gone := to == "sent" || to == "send_uncertain"
+	gone := to == "sent" || to == "send_uncertain" || to == "done"
 	if gone { // only from from: the update below moves it in the same transaction
 		stmts = append(stmts, sqlite.Statement{SQL: "DELETE FROM drafts WHERE id = (SELECT draft_id FROM outbox" + where + ")", Args: whereArgs})
 	}
@@ -699,7 +773,7 @@ func (s *Service) setOutbox(ctx context.Context, o outboxRow, state, lastError s
 
 // finishOutbox marks the item done and drops its raw copy, which the Sent folder now holds.
 func (s *Service) finishOutbox(ctx context.Context, o outboxRow) error {
-	if ok, err := s.setOutbox(ctx, o, "done", ""); !ok || err != nil {
+	if ok, err := s.moveOutbox(ctx, o, "done", []string{o.state}, "last_error = NULL, next_attempt_at = NULL"); !ok || err != nil {
 		return err
 	}
 	os.Remove(o.rawPath) // ponytail: a failed removal leaves an orphan .eml; sweep outbox/ if it matters

@@ -64,3 +64,62 @@ func TestIDListLeavesNoStaleParseError(t *testing.T) {
 	assert.NotContains(t, err.Error(), "expected atom", "a stale decoder error from the ID response")
 	assert.False(t, protocolErr(err), "a dropped connection is not a parse error: %v", err)
 }
+
+// A server that refuses ID with NO still signs in, while one that drops the
+// connection on ID fails DialIMAPAbortable instead of returning a closed client.
+func TestIDRefusalVsConnectionDrop(t *testing.T) {
+	start := func(t *testing.T, drop bool) int {
+		t.Helper()
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+		t.Cleanup(func() { ln.Close() })
+		go func() {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			defer c.Close()
+			c.Write([]byte("* OK [CAPABILITY IMAP4rev1 ID IDLE] ready\r\n"))
+			r := bufio.NewReader(c)
+			for {
+				line, err := r.ReadString('\n')
+				if err != nil {
+					return
+				}
+				f := strings.Fields(line)
+				if len(f) < 2 {
+					return
+				}
+				switch strings.ToUpper(f[1]) {
+				case "LOGIN":
+					c.Write([]byte(f[0] + " OK [CAPABILITY IMAP4rev1 ID IDLE] logged in\r\n"))
+				case "ID":
+					if drop {
+						return
+					}
+					c.Write([]byte(f[0] + " NO ID disabled\r\n"))
+				default:
+					c.Write([]byte(f[0] + " OK done\r\n"))
+				}
+			}
+		}()
+		return ln.Addr().(*net.TCPAddr).Port
+	}
+
+	t.Run("refused", func(t *testing.T) {
+		c, _, err := DialIMAPAbortable(context.Background(), Endpoint{
+			Host: "127.0.0.1", Port: start(t, false), Security: None, Username: "alice", Password: "secret",
+		}, nil)
+		require.NoError(t, err)
+		defer c.Close()
+		require.NoError(t, c.Noop().Wait())
+	})
+
+	t.Run("dropped", func(t *testing.T) {
+		c, _, err := DialIMAPAbortable(context.Background(), Endpoint{
+			Host: "127.0.0.1", Port: start(t, true), Security: None, Username: "alice", Password: "secret",
+		}, nil)
+		require.Error(t, err)
+		assert.Nil(t, c)
+	})
+}

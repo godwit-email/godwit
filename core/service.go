@@ -895,12 +895,12 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 	useSMTP, smtpErr := s.checkSMTP(ctx, accountID, explicit)
 	// Before a sync stored the folders, where the Sent folder is is not known:
 	// the outbox runs once more after the fetch to file what it sent.
-	_, folders, err := mailsync.SentFolder(ctx, s.db, accountID)
+	sent, folders, err := mailsync.SentFolder(ctx, s.db, accountID)
 	if err != nil {
 		return err
 	}
 	if useSMTP {
-		smtpErr = s.processOutbox(ctx, recv, accountID)
+		smtpErr = s.processOutbox(ctx, recv, accountID, explicit)
 		if smtpErr != nil && !errors.Is(smtpErr, backend.ErrAuthFailed) {
 			return smtpErr
 		}
@@ -916,6 +916,14 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 		}
 		if full {
 			only = nil
+		} else if sent != "" && !slices.Contains(only, sent) {
+			uncertain, err := s.hasUncertainOutbox(ctx, accountID)
+			if err != nil {
+				return err
+			}
+			if uncertain {
+				only = append(slices.Clone(only), sent)
+			}
 		}
 	}
 	more, err := mailsync.Fetch(ctx, s.db, recv, accountID, s.bus, only, originals{s, accountID})
@@ -950,7 +958,7 @@ func (s *Service) syncAccount(ctx context.Context, accountID int64, explicit boo
 		return err
 	}
 	if useSMTP && smtpErr == nil && !folders {
-		smtpErr = s.processOutbox(ctx, recv, accountID)
+		smtpErr = s.processOutbox(ctx, recv, accountID, explicit)
 	}
 	return smtpErr
 }

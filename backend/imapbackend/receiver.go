@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -33,13 +35,15 @@ type Config struct {
 
 // Receiver is an IMAP account's backend.Receiver: one session, over one
 // connection it dials on first use, signing in with Config.Credentials, and
-// keeps until Close. It is not safe for concurrent use, and Watch holds the
-// connection while it runs.
+// keeps until Close, reconnecting if a verb loses the connection. It is not
+// safe for concurrent use, and Watch holds the connection while it runs.
 type Receiver struct {
-	cfg   Config
-	c     *imapclient.Client
-	abort func() // cuts the connection without waiting for a literal
-	caps  imap.CapSet
+	cfg    Config
+	mu     sync.Mutex // guards c, abort, caps and closed against a concurrent Close
+	c      *imapclient.Client
+	abort  func() // cuts the connection without waiting for a literal
+	caps   imap.CapSet
+	closed bool
 	// updates is Watch's while it runs: the server reported a change.
 	updates atomic.Pointer[chan struct{}]
 }
@@ -50,12 +54,36 @@ var _ backend.Receiver = (*Receiver)(nil)
 func New(cfg Config) *Receiver { return &Receiver{cfg: cfg} }
 
 func (r *Receiver) client(ctx context.Context) (*imapclient.Client, error) {
-	if r.c != nil {
-		return r.c, nil
+	c, _, _, err := r.session(ctx)
+	return c, err
+}
+
+func (r *Receiver) session(ctx context.Context) (*imapclient.Client, func(), imap.CapSet, error) {
+	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		if err := ctx.Err(); err != nil {
+			return nil, nil, nil, err
+		}
+		return nil, nil, nil, net.ErrClosed
+	}
+	if r.c != nil && r.c.State() != imap.ConnStateLogout {
+		c, abort, caps := r.c, r.abort, r.caps
+		r.mu.Unlock()
+		return c, abort, caps, nil
+	}
+	old := r.c
+	r.c, r.abort = nil, nil
+	r.mu.Unlock()
+	if old != nil {
+		_ = old.Close()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, nil, nil, err
 	}
 	cr, err := r.cfg.Credentials(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	c, abort, err := conn.DialIMAPAbortable(ctx, conn.Endpoint{Host: r.cfg.Host, Port: r.cfg.Port, Security: r.cfg.Security,
 		Username: cr.Username, Password: cr.Password, AccessToken: cr.Token}, &imapclient.UnilateralDataHandler{
@@ -68,10 +96,21 @@ func (r *Receiver) client(ctx context.Context) (*imapclient.Client, error) {
 		Fetch: func(*imapclient.FetchMessageData) { r.changed() },
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
-	r.c, r.abort, r.caps = c, abort, c.Caps()
-	return c, nil
+	caps := c.Caps()
+	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		_ = c.Close()
+		if err := ctx.Err(); err != nil {
+			return nil, nil, nil, err
+		}
+		return nil, nil, nil, net.ErrClosed
+	}
+	r.c, r.abort, r.caps = c, abort, caps
+	r.mu.Unlock()
+	return c, abort, caps, nil
 }
 
 // changed signals a running Watch.
@@ -87,22 +126,31 @@ func (r *Receiver) changed() {
 // trace logs the end of the session's traffic, masked, when *err is a server
 // response go-imap could not parse (conn.LogTrace): the error report then
 // shows what the server sent. Each verb defers it.
-func (r *Receiver) trace(err *error) { conn.LogTrace(r.c, *err) }
+func (r *Receiver) trace(err *error) {
+	r.mu.Lock()
+	c := r.c
+	r.mu.Unlock()
+	conn.LogTrace(c, *err)
+}
 
 // Close closes the connection; a second Close is harmless.
 func (r *Receiver) Close() error {
-	if r.c == nil {
+	r.mu.Lock()
+	r.closed = true
+	c := r.c
+	r.mu.Unlock()
+	if c == nil {
 		return nil
 	}
-	return r.c.Close()
+	return c.Close()
 }
 
 // Fetch streams the content req names. Closing the stream before its end cuts
-// the connection, since IMAP has no way to stop a literal; the session is then
-// done.
+// the connection, since IMAP has no way to stop a literal; the next call dials
+// a fresh one.
 func (r *Receiver) Fetch(ctx context.Context, req backend.ContentRequest) (_ io.ReadCloser, err error) {
 	defer r.trace(&err)
-	c, err := r.client(ctx)
+	c, abort, _, err := r.session(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +177,7 @@ func (r *Receiver) Fetch(ctx context.Context, req backend.ContentRequest) (_ io.
 					cmd.Close()
 					return nil, errors.New("imap: the part is not available on the server")
 				}
-				return &literal{Reader: bs.Literal, cmd: cmd, abort: r.abort}, nil
+				return &literal{Reader: bs.Literal, cmd: cmd, abort: abort}, nil
 			}
 		}
 	}
@@ -212,11 +260,11 @@ func (l *literal) Close() error {
 // it returns with IDLE still running; Close ends it.
 func (r *Receiver) Watch(ctx context.Context, wake func(folders []backend.FolderRef)) (err error) {
 	defer r.trace(&err)
-	c, err := r.client(ctx)
+	c, _, caps, err := r.session(ctx)
 	if err != nil {
 		return err
 	}
-	if !r.caps.Has(imap.CapIdle) {
+	if !caps.Has(imap.CapIdle) {
 		return backend.ErrUnsupported
 	}
 	updates := make(chan struct{}, 1)
@@ -261,13 +309,13 @@ func (r *Receiver) Watch(ctx context.Context, wake func(folders []backend.Folder
 // mirror. A failing LIST does not fail it; it reports no folders.
 func (r *Receiver) Check(ctx context.Context) (_ backend.CheckResult, err error) {
 	defer r.trace(&err)
-	c, err := r.client(ctx)
+	c, abort, caps, err := r.session(ctx)
 	if err != nil {
 		return backend.CheckResult{}, err
 	}
-	stop := context.AfterFunc(ctx, r.abort) // a stalled LIST ends with ctx
+	stop := context.AfterFunc(ctx, abort) // a stalled LIST ends with ctx
 	defer stop()
-	res := backend.CheckResult{Host: r.cfg.Host, Description: describe(r.caps)}
+	res := backend.CheckResult{Host: r.cfg.Host, Description: describe(caps)}
 	list, _ := c.List("", "*", nil).Collect()
 	for _, d := range list {
 		if Selectable(d) {
@@ -280,10 +328,16 @@ func (r *Receiver) Check(ctx context.Context) (_ backend.CheckResult, err error)
 // Describe declares what the server's capabilities allow, as they were at
 // sign-in.
 func (r *Receiver) Describe(ctx context.Context) (backend.Description, error) {
-	if _, err := r.client(ctx); err != nil {
-		return backend.Description{}, err
+	r.mu.Lock()
+	caps := r.caps
+	r.mu.Unlock()
+	if caps == nil {
+		var err error
+		if _, _, caps, err = r.session(ctx); err != nil {
+			return backend.Description{}, err
+		}
 	}
-	return describe(r.caps), nil
+	return describe(caps), nil
 }
 
 func describe(caps imap.CapSet) backend.Description {
