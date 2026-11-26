@@ -254,11 +254,12 @@ func TestReaderReplyDateSingleSummary(t *testing.T) {
 // in its 待跟进 band, with 改日期 and 写催促信, and has no 等你处理 card;
 // one with no date has no band.
 func TestReaderBandReplyDateOutsideView(t *testing.T) {
-	h, accs := mailHarness(t, nil, "you@example.com")
+	h, accs := mailHarness(t, []coretest.Option{coretest.WithoutAutoSync()}, "you@example.com")
 	h.useBackendClock()
 	acc := accs[0]
 	h.putSeen(acc, "Sent", coretest.Msg("Me <you@example.com>", "Tom <tom@acme.example>", "Renewal quote", "The quote is attached.", coretest.Date(time.Now().AddDate(0, 0, -4).Add(-time.Hour))))
 	h.syncNow(acc)
+	h.waitMail("the synced Sent folder in the sidebar", func() bool { _, ok := h.tt.Find("已发送"); return ok })
 	h.click("已发送")
 	h.waitMail("the sent row", func() bool { return !h.app.mail.list.loading && len(h.items()) == 1 })
 	tid := h.items()[0].ID
