@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.40.2](https://github.com/godwit-email/godwit/compare/v1.40.1...v1.40.2) (2026-11-26)
+
+
+### Bug Fixes
+
+* **reader:** reuse body views and wait for paint when switching mail ([#899](https://github.com/godwit-email/godwit/issues/899)) ([b5aa2d8](https://github.com/godwit-email/godwit/commit/b5aa2d83d5a621313dd8f2381728546fa22cd12f))
+
 ## [1.40.1](https://github.com/godwit-email/godwit/compare/v1.40.0...v1.40.1) (2026-11-25)
 
 
