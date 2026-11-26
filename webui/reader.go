@@ -51,9 +51,8 @@ type ReaderBody struct {
 	// and its structure within the limits; "" when the mail has no HTML, which Plain then holds.
 	HTML  string `json:"html"`
 	Plain string `json:"plain"`
-	// Remote is that the message's remote images may load (the setting, or
-	// the user's 加载图片): HTML holds them as godwit-img: URLs, which the
-	// image proxy (ImageHandler) serves.
+	// Remote is whether the body was built with remote images. ImageHandler
+	// checks permission again when the page requests their godwit-img: URLs.
 	Remote bool `json:"remote"`
 	// Blocked is the remote images left out while not Remote.
 	Blocked int `json:"blocked"`
@@ -121,18 +120,18 @@ type ReaderDeps struct {
 	// with the Reader's lock held, as Emit does (so a page is told the
 	// bodies in their versions' order): it must not block or call back.
 	OnBuilt func(id int, b ReaderBody)
-	// OnFailed is told, for each page bound to message, that the body
-	// Allow read failed: native offers 加载图片 again. Under the lock too.
+	// OnFailed is told, for each page bound to message, that reloading the
+	// body failed: native offers a retry. Under the lock too.
 	OnFailed func(id int, message int64, err error)
 	// OnImagesFailed is told, for each page bound to message, how many of
 	// its images the proxy could not get: native offers a retry
-	// (Allow). Under the lock too.
+	// (ReloadImages). Under the lock too.
 	OnImagesFailed func(id int, message int64, n int)
 }
 
 // Reader keeps the reader pages (role "reader"), each bound to a message:
 // its body, version and images. It is not bound: the pages reach it only
-// through ReaderPage; native calls Bind, Unbind, Allow and SettingsChanged.
+// through ReaderPage; native calls Bind, Unbind, ReloadImages and SettingsChanged.
 type Reader struct {
 	pages *Pages
 	d     ReaderDeps
@@ -154,9 +153,9 @@ type Reader struct {
 
 // bodyOf is a bound message's state.
 type bodyOf struct {
-	owner      int // first registration of this message lifetime; namespaces its image tokens
-	pages      int // bound to it
-	allowed    bool
+	owner      int  // first registration of this message lifetime; namespaces its image tokens
+	pages      int  // bound to it
+	manual     bool // 加载图片 was clicked during this message lifetime
 	generation int64
 	initial    *core.Message     // first open’s canonical GetMessageLazyImages(message, false)
 	body       *ReaderBody       // the current displayed body, once built
@@ -166,7 +165,7 @@ type bodyOf struct {
 	// the page decodes every image at once. charged is the tokens counted.
 	pixels       *imagefetch.Budget
 	charged      map[string]bool
-	failed       map[string]bool   // the tokens the proxy could not get since the last Allow
+	failed       map[string]bool   // the tokens the proxy could not get since the last reload
 	translations map[string]string // display only, applied to the original body's text
 	// The inline images, one download for all of them (a login per image is what
 	// makes a first open slow), begun by the page's first request for one.
@@ -265,31 +264,6 @@ func (r *Reader) Unbind(id int, idle bool) {
 	}
 }
 
-// Allow lets message's remote images load (加载图片), or loads its body
-// again (a retry): its pages get the new body, with Remote, by Emit. A
-// message no page shows is left alone. It returns at once: the body is
-// read on a goroutine.
-func (r *Reader) Allow(message int64) {
-	var urls []string
-	r.reload(message, func(st *bodyOf) {
-		for token := range st.failed { // a retry: try them again now
-			if u := st.tokens[token]; u != "" {
-				urls = append(urls, u)
-			}
-		}
-		st.allowed, st.failed = true, nil
-		// Inline images missed are tried again; those had come from the attachment cache.
-		if st.stopInline != nil {
-			st.stopInline()
-		}
-		st.inline, st.stopInline = nil, nil
-	}, func(svc Service) { // a call to the backend: off the UI thread and r.mu, before the new body's images load
-		if len(urls) > 0 {
-			svc.ForgetImageFailure(urls)
-		}
-	})
-}
-
 // Translate displays translated text in the original body; nil restores the original.
 func (r *Reader) Translate(message int64, texts map[string]string) {
 	r.mu.Lock()
@@ -374,7 +348,9 @@ func translateBody(b ReaderBody, texts map[string]string) ReaderBody {
 	return b
 }
 
-func (r *Reader) reload(message int64, change func(*bodyOf), prep func(Service)) {
+// ReloadImages rebuilds the bound message's body and retries its failed images.
+// Only a manual 加载图片 click grants remote images for this message lifetime.
+func (r *Reader) ReloadImages(message int64, manual bool) {
 	r.mu.Lock()
 	st := r.msgs[message]
 	svc := r.svc
@@ -382,19 +358,30 @@ func (r *Reader) reload(message int64, change func(*bodyOf), prep func(Service))
 		r.mu.Unlock()
 		return
 	}
-	change(st)
-	allowed := st.allowed
+	manual = manual || st.manual
+	st.manual = manual
+	var urls []string
+	for token := range st.failed {
+		if u := st.tokens[token]; u != "" {
+			urls = append(urls, u)
+		}
+	}
+	st.failed = nil
+	if st.stopInline != nil {
+		st.stopInline()
+	}
+	st.inline, st.stopInline = nil, nil
 	r.version++
 	v := r.version
 	st.generation, st.body, st.initial = v, nil, nil
 	r.mu.Unlock()
 	go func() {
-		if prep != nil {
-			prep(svc)
+		if len(urls) > 0 {
+			svc.ForgetImageFailure(urls)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
-		_, err := r.build(ctx, svc, message, st, v, allowed, 0)
+		_, err := r.build(ctx, svc, message, st, v, manual, 0)
 		if err != nil {
 			r.mu.Lock()
 			defer r.mu.Unlock()
@@ -428,9 +415,20 @@ func (r *Reader) checkBuild(message int64, state *bodyOf, v int64, id int) error
 	return nil
 }
 
+func imagesAllowed(ctx context.Context, svc Service, message int64, manual bool) (bool, error) {
+	if manual {
+		return true, nil
+	}
+	return svc.ImagesAllowed(ctx, message)
+}
+
 // build publishes only while the requesting registration (0 for a reload)
 // and message generation are still live. A revoked Load returns no content.
-func (r *Reader) build(ctx context.Context, svc Service, message int64, state *bodyOf, v int64, allowed bool, id int) (ReaderBody, error) {
+func (r *Reader) build(ctx context.Context, svc Service, message int64, state *bodyOf, v int64, manual bool, id int) (ReaderBody, error) {
+	allowed, err := imagesAllowed(ctx, svc, message, manual)
+	if err != nil {
+		return ReaderBody{}, err
+	}
 	r.mu.Lock()
 	if err := r.checkBuild(message, state, v, id); err != nil {
 		r.mu.Unlock()
@@ -441,14 +439,11 @@ func (r *Reader) build(ctx context.Context, svc Service, message int64, state *b
 	r.mu.Unlock()
 	var m core.Message
 	// SanitizeLazy counts remote resources even when blocked; with none its
-	// two policies produce the same body. Allow/retries always read afresh.
+	// two policies produce the same body. Reloads always read afresh.
 	if initial != nil && (!allowed || initial.RemoteImagesBlocked == 0) {
 		m = *initial
-	} else {
-		var err error
-		if m, err = r.getMessage(ctx, svc, message, allowed); err != nil {
-			return ReaderBody{}, err
-		}
+	} else if m, err = r.getMessage(ctx, svc, message, allowed); err != nil {
+		return ReaderBody{}, err
 	}
 	st, err := svc.GetSettings(ctx)
 	if err != nil {
@@ -559,23 +554,10 @@ func (p *ReaderPage) Load(ctx context.Context, id int) (ReaderBody, error) {
 			r.mu.Unlock()
 			return b, nil
 		}
-		v, allowed := st.generation, st.allowed
+		v, manual := st.generation, st.manual
 		r.mu.Unlock()
-		if !allowed { // the setting may let them load at once (core decides)
-			allowed, err = svc.ImagesAllowed(ctx, message)
-			if err != nil {
-				return ReaderBody{}, err
-			}
-			if allowed {
-				r.mu.Lock()
-				if r.bound[id] == message && r.msgs[message] == st && st.generation == v {
-					st.allowed = true
-				}
-				r.mu.Unlock()
-			}
-		}
-		b, err := r.build(ctx, svc, message, st, v, allowed, id)
-		if err != errBodyChanged { // a concurrent Allow superseded the build; read its version
+		b, err := r.build(ctx, svc, message, st, v, manual, id)
+		if err != errBodyChanged { // a concurrent reload superseded the build; read its version
 			return b, err
 		}
 	}
@@ -710,26 +692,41 @@ func (r *Reader) ImageHandler() http.Handler {
 			return
 		}
 		r.mu.Lock()
-		var src string
-		var inline *inlineImage
-		st := r.msgs[message]
-		svc := r.svc
-		if st != nil {
-			src = st.tokens[token]
-			if strings.HasPrefix(src, cidPrefix) {
-				if svc != nil {
-					inline = r.inlineImage(st, message, svc, src)
-				}
-			} else if !st.allowed {
-				src = ""
-			}
+		st, svc := r.msgs[message], r.svc
+		if st == nil || svc == nil || st.tokens[token] == "" {
+			r.mu.Unlock()
+			http.NotFound(w, req)
+			return
 		}
-		r.mu.Unlock()
-		if inline != nil {
+		src, manual, generation := st.tokens[token], st.manual, st.generation
+		if strings.HasPrefix(src, cidPrefix) {
+			inline := r.inlineImage(st, message, svc, src)
+			r.mu.Unlock()
+			if inline == nil {
+				http.NotFound(w, req)
+				return
+			}
 			r.serveInline(w, req, message, token, inline)
 			return
 		}
-		if src == "" || svc == nil {
+		r.mu.Unlock()
+		mayServe := func() bool {
+			allowed, err := imagesAllowed(req.Context(), svc, message, manual)
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			// A reload changes generation before it replaces the old URLs.
+			if r.msgs[message] != st || st.generation != generation || st.tokens[token] != src {
+				return false
+			}
+			if err != nil {
+				if req.Context().Err() == nil {
+					r.imageFailedLocked(message, token) // fail closed, but let this page retry
+				}
+				return false
+			}
+			return allowed
+		}
+		if !mayServe() {
 			http.NotFound(w, req)
 			return
 		}
@@ -737,6 +734,10 @@ func (r *Reader) ImageHandler() http.Handler {
 		var data []byte
 		if err == nil {
 			data, err = os.ReadFile(img.Path)
+		}
+		if !mayServe() { // the policy or binding may have changed during the download
+			http.NotFound(w, req)
+			return
 		}
 		if err != nil {
 			if req.Context().Err() == nil { // not the page going away

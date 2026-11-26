@@ -550,8 +550,7 @@ func loadAfterSetup(setup func(), load func() error, undo func()) error {
 	return nil
 }
 
-// AllowImages lets message's reader pages load its remote images.
-func (p *platform) AllowImages(message int64) { p.reader.Allow(message) }
+func (p *platform) ReloadImages(message int64, manual bool) { p.reader.ReloadImages(message, manual) }
 
 func (p *platform) BodyGlass(view ui.NativeWebView, top, bottom app.BodyGlassRect) {
 	if v, ok := view.(*bodyView); ok && p.bodies[v.id] == v {

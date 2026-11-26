@@ -106,14 +106,19 @@ func newReaderFixture(t *testing.T) *readerFixture {
 		OnFailed:       func(k int, _ int64, _ error) { f.record(func() { f.failed = append(f.failed, k) }) },
 		OnImagesFailed: func(_ int, _ int64, n int) { f.record(func() { f.imgFails = append(f.imgFails, n) }) },
 	})
-	st, err := f.e.Svc.GetSettings(t.Context())
-	require.NoError(t, err)
-	st.RemoteImages = "ask" // the tests of the policy say otherwise
-	_, err = f.e.Svc.SetSettings(t.Context(), st)
-	require.NoError(t, err)
+	f.setRemoteImages(t, "ask")
 	f.r.SetService(uiService(t, f.e))
 	f.p = NewReaderPage(f.r)
 	return f
+}
+
+func (f *readerFixture) setRemoteImages(t *testing.T, mode string) {
+	t.Helper()
+	st, err := f.e.Svc.GetSettings(t.Context())
+	require.NoError(t, err)
+	st.RemoteImages = mode
+	_, err = f.e.Svc.SetSettings(t.Context(), st)
+	require.NoError(t, err)
 }
 
 func (f *readerFixture) record(fn func()) {
@@ -295,11 +300,7 @@ func TestReaderFirstLoadReusesOnlyMatchingBlockedSnapshot(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newReaderFixture(t)
-			st, err := f.e.Svc.GetSettings(t.Context())
-			require.NoError(t, err)
-			st.RemoteImages = tc.policy
-			_, err = f.e.Svc.SetSettings(t.Context(), st)
-			require.NoError(t, err)
+			f.setRemoteImages(t, tc.policy)
 			raw := coretest.Msg("bob@example.com", f.acc.Email, "News", "body")
 			if tc.remote {
 				raw = coretest.Msg("bob@example.com", f.acc.Email, "News", "body", coretest.HTML(`<p>body</p><img width="2" height="2" src="https://images.example/photo.png">`))
@@ -330,10 +331,10 @@ func TestReaderFirstLoadReusesOnlyMatchingBlockedSnapshot(t *testing.T) {
 			assert.Equal(t, tc.policy == "auto", b.Remote)
 			assert.Equal(t, tc.remote && b.Remote, strings.Contains(b.HTML, ImageScheme))
 			before := reads.Load()
-			f.r.Allow(m.ID)
+			f.r.ReloadImages(m.ID, true)
 			b = f.waitEmitted(t, id)
 			assert.True(t, b.Remote)
-			assert.Equal(t, before+1, reads.Load(), "Allow never reuses the blocked snapshot")
+			assert.Equal(t, before+1, reads.Load(), "an image reload never reuses the blocked snapshot")
 		})
 	}
 }
@@ -352,7 +353,7 @@ func TestReaderTranslationKeepsBodyAndImagePolicy(t *testing.T) {
 	assert.Equal(t, strings.Count(original.HTML, "<img"), strings.Count(translated.HTML, "<img"))
 	assert.False(t, translated.Remote)
 	assert.Equal(t, original.Blocked, translated.Blocked)
-	f.r.Allow(m.ID)
+	f.r.ReloadImages(m.ID, true)
 	withImages, err := f.load(k)
 	require.NoError(t, err)
 	assert.True(t, withImages.Remote)
@@ -414,7 +415,7 @@ func TestReaderTranslationMatchesSanitizedHTML(t *testing.T) {
 	assert.Contains(t, translated.HTML, `<span>阅读更多</span>`)
 	assert.Contains(t, translated.HTML, `data-href="https://example.com?q=a&amp;b=c"`)
 	assert.Equal(t, original.Blocked, translated.Blocked)
-	f.r.Allow(m.ID)
+	f.r.ReloadImages(m.ID, true)
 	withImages, err := f.load(k)
 	require.NoError(t, err)
 	assert.Contains(t, withImages.HTML, "你好\u00a0")
@@ -449,7 +450,7 @@ func TestReaderTranslationDuringImageReload(t *testing.T) {
 				}
 				return real(ctx, svc, id, remote)
 			}
-			f.r.Allow(m.ID)
+			f.r.ReloadImages(m.ID, true)
 			<-started
 			f.r.Translate(m.ID, map[string]string{"Hello reader": "你好"})
 			if tc.restore {
@@ -513,8 +514,8 @@ func TestReaderPageScoped(t *testing.T) {
 	assert.NotContains(t, b.HTML, "for N")
 	_, err = f.load(kn)
 	require.NoError(t, err)
-	f.r.Allow(m.ID)
-	f.r.Allow(n.ID)
+	f.r.ReloadImages(m.ID, true)
+	f.r.ReloadImages(n.ID, true)
 	f.waitEmitted(t, km)
 	f.waitEmitted(t, kn)
 	assert.Equal(t, http.StatusNotFound, f.image(t, m.ID, srv.URL+"/n.png").Code, "N's image under M")
@@ -634,7 +635,7 @@ func TestReaderReloadCannotPublishAfterRebind(t *testing.T) {
 				key := new(int)
 				old := pages.Register(key, "reader")
 				r.Bind(old, 7, nil)
-				r.Allow(7)
+				r.ReloadImages(7, true)
 				synctest.Wait() // the worker is waiting for the old read
 				r.Unbind(old, true)
 				pages.Unregister(key)
@@ -673,7 +674,7 @@ func TestReaderPageCallbacks(t *testing.T) {
 }
 
 // Each body built as current is told to the pages bound to its message
-// (OnBuilt), Remote once allowed; a failed Allow is told too (OnFailed).
+// (OnBuilt), Remote once allowed; a failed reload is told too (OnFailed).
 func TestReaderBuiltAndFailed(t *testing.T) {
 	f := newReaderFixture(t)
 	m := f.remoteMail(t, "hi", "https://img.example/a.png")
@@ -681,7 +682,7 @@ func TestReaderBuiltAndFailed(t *testing.T) {
 	k, ko := f.page(m.ID), f.page(other.ID)
 	_, err := f.load(k)
 	require.NoError(t, err)
-	f.r.Allow(m.ID)
+	f.r.ReloadImages(m.ID, true)
 	require.Eventually(t, func() bool {
 		f.mu.Lock()
 		defer f.mu.Unlock()
@@ -701,7 +702,7 @@ func TestReaderBuiltAndFailed(t *testing.T) {
 		}
 		return real(ctx, svc, id, remote)
 	}
-	f.r.Allow(m.ID)
+	f.r.ReloadImages(m.ID, true)
 	require.Eventually(t, func() bool {
 		f.mu.Lock()
 		defer f.mu.Unlock()
@@ -736,7 +737,7 @@ func TestReaderImageAfterAllow(t *testing.T) {
 	src := srv.URL + "/pixel.png"
 	m := f.remoteMail(t, "hi", src)
 	k := f.page(m.ID)
-	f.r.Allow(m.ID)
+	f.r.ReloadImages(m.ID, true)
 	b := f.waitEmitted(t, k)
 	require.True(t, b.Remote)
 	assert.Contains(t, b.HTML, `src="`+proxied(m.ID, k, src)+`"`)
@@ -778,7 +779,7 @@ func TestReaderImageInFlightAfterRebind(t *testing.T) {
 			src := srv.URL + "/picture.png"
 			m := f.remoteMail(t, "picture", src)
 			old := f.page(m.ID)
-			f.r.Allow(m.ID)
+			f.r.ReloadImages(m.ID, true)
 			oldBody := f.waitEmitted(t, old)
 			require.Contains(t, oldBody.HTML, proxied(m.ID, old, src))
 			oldURL := served(m.ID, old, src)
@@ -794,7 +795,7 @@ func TestReaderImageInFlightAfterRebind(t *testing.T) {
 			f.pages.Unregister(key)
 			id := f.pages.Register(key, "reader")
 			f.r.Bind(id, m.ID, nil)
-			f.r.Allow(m.ID)
+			f.r.ReloadImages(m.ID, true)
 			b := f.waitEmitted(t, id)
 			assert.Contains(t, b.HTML, proxied(m.ID, id, src))
 			assert.NotContains(t, b.HTML, proxied(m.ID, old, src))
@@ -812,7 +813,7 @@ func TestReaderImageRefusedNotInBody(t *testing.T) {
 	f := newReaderFixture(t)
 	m := f.remoteMail(t, "hi", srv.URL+"/pixel.png")
 	k := f.page(m.ID)
-	f.r.Allow(m.ID)
+	f.r.ReloadImages(m.ID, true)
 	f.waitEmitted(t, k)
 	for _, u := range []string{srv.URL + "/other.png", "http://127.0.0.1:1/x.png", "file:///etc/passwd"} {
 		assert.Equal(t, http.StatusNotFound, f.image(t, m.ID, u).Code, u)
@@ -837,12 +838,12 @@ func TestReaderRetryRefetchesFailedImage(t *testing.T) {
 	src := srv.URL + "/pixel.png"
 	m := f.remoteMail(t, "hi", src)
 	k := f.page(m.ID)
-	f.r.Allow(m.ID)
+	f.r.ReloadImages(m.ID, true)
 	first := f.waitEmitted(t, k).Version
 	require.Equal(t, http.StatusBadGateway, f.image(t, m.ID, src).Code)
 	up.Store(true)
 	require.Equal(t, http.StatusBadGateway, f.image(t, m.ID, src).Code, "the failure is remembered")
-	f.r.Allow(m.ID) // the retry
+	f.r.ReloadImages(m.ID, false) // the retry
 	require.Eventually(t, func() bool { return f.waitEmitted(t, k).Version > first }, 10*time.Second, 5*time.Millisecond)
 	rec := f.image(t, m.ID, src)
 	require.Equal(t, http.StatusOK, rec.Code, "a retry tries again at once")
@@ -855,12 +856,12 @@ func TestReaderImageFailureIs502(t *testing.T) {
 	src := srv.URL + "/page.png"
 	m := f.remoteMail(t, "hi", src)
 	k := f.page(m.ID)
-	f.r.Allow(m.ID)
+	f.r.ReloadImages(m.ID, true)
 	first := f.waitEmitted(t, k).Version
 	assert.Equal(t, http.StatusBadGateway, f.image(t, m.ID, src).Code, "not an image")
 	f.image(t, m.ID, src)
 	f.record(func() { assert.Equal(t, []int{1}, f.imgFails, "the page is told once per image") })
-	f.r.Allow(m.ID) // the retry
+	f.r.ReloadImages(m.ID, false) // the retry
 	require.Eventually(t, func() bool { return f.waitEmitted(t, k).Version > first }, 10*time.Second, 5*time.Millisecond)
 	f.image(t, m.ID, src)
 	f.record(func() { assert.Equal(t, []int{1, 1}, f.imgFails, "counted again after a retry") })
@@ -892,33 +893,154 @@ func TestReaderPolicyLoadsImagesAtOnce(t *testing.T) {
 	pic := pngOf(t, 2, 2)
 	srv := newImageServer(t, func(w http.ResponseWriter, r *http.Request) { w.Write(pic) })
 	f := newReaderFixture(t)
-	setMode := func(mode string) {
-		st, err := f.e.Svc.GetSettings(t.Context())
-		require.NoError(t, err)
-		st.RemoteImages = mode
-		_, err = f.e.Svc.SetSettings(t.Context(), st)
-		require.NoError(t, err)
-	}
 	load := func(text, src string) ReaderBody {
 		m := f.remoteMail(t, text, src)
 		b, err := f.load(f.page(m.ID))
 		require.NoError(t, err)
 		return b
 	}
-	setMode("auto")
+	f.setRemoteImages(t, "auto")
 	src := srv.URL + "/a.png"
 	b := load("auto", src)
 	assert.True(t, b.Remote, "automatic: no asking")
 	assert.Contains(t, b.HTML, proxied(b.Message, b.Binding, src))
 	assert.Equal(t, http.StatusOK, f.image(t, b.Message, src).Code)
 
-	setMode("trusted")
+	f.setRemoteImages(t, "trusted")
 	assert.False(t, load("trusted", srv.URL+"/b.png").Remote, "trusted only: not this sender yet")
 	require.NoError(t, f.e.Svc.TrustImageSender(t.Context(), "Bob@Example.com"))
-	assert.True(t, load("trusted 2", srv.URL+"/c.png").Remote)
+	src = srv.URL + "/c.png"
+	trusted := load("trusted 2", src)
+	require.True(t, trusted.Remote)
+	require.Equal(t, http.StatusOK, f.image(t, trusted.Message, src).Code)
 	require.NoError(t, f.e.Svc.UntrustImageSender(t.Context(), "bob@example.com"))
-	setMode("ask")
+	assert.Equal(t, http.StatusNotFound, f.image(t, trusted.Message, src).Code, "the retained page cannot serve even a cached image after untrust")
+	f.setRemoteImages(t, "ask")
 	assert.False(t, load("ask", srv.URL+"/d.png").Remote)
+}
+
+func TestReaderImageGrantAfterMoveToJunk(t *testing.T) {
+	f := newReaderFixture(t)
+	f.setRemoteImages(t, "trusted")
+	require.NoError(t, f.e.IMAP(f.acc.ID).User.Create("Junk", nil))
+	pic := pngOf(t, 2, 2)
+	srv := newImageServer(t, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(pic) })
+	src := srv.URL + "/picture.png"
+	m := f.remoteMail(t, "picture", src)
+	svc := &readerImagePolicy{Service: f.r.svc, check: f.r.svc.ImagesAllowed}
+	f.r.SetService(svc)
+	id := f.page(m.ID)
+	body, err := f.load(id)
+	require.NoError(t, err)
+	require.False(t, body.Remote)
+	reload := func(manual bool) ReaderBody {
+		f.record(func() { f.emitted = nil })
+		f.r.ReloadImages(m.ID, manual)
+		return f.waitEmitted(t, id)
+	}
+	require.NoError(t, f.e.Svc.TrustImageSender(t.Context(), m.From))
+	body = reload(false)
+	require.True(t, body.Remote)
+	require.Contains(t, body.HTML, proxied(m.ID, id, src))
+
+	require.NoError(t, f.e.Svc.MoveToRole(t.Context(), []int64{m.ID}, "junk"))
+	oldURL := served(m.ID, id, src)
+	require.Equal(t, http.StatusNotFound, f.imageAt(t, oldURL).Code, "before the reader gets the move")
+	assert.Zero(t, svc.cacheCalls.Load(), "the reader must not start a lookup, even for an already cached image")
+	body = reload(false)
+	assert.False(t, body.Remote)
+	assert.Equal(t, 1, body.Blocked)
+	assert.NotContains(t, body.HTML, proxied(m.ID, id, src))
+
+	require.True(t, reload(true).Remote, "a manual click can load this message in Junk")
+	require.True(t, reload(false).Remote, "a retry keeps the explicit grant")
+	require.Equal(t, pic, f.imageAt(t, oldURL).Body.Bytes())
+	key, _ := f.pages.Key(id)
+	f.r.Unbind(id, true)
+	f.pages.Unregister(key)
+	current := f.pages.Register(key, "reader")
+	f.r.Bind(current, m.ID, nil)
+	body, err = f.load(current)
+	require.NoError(t, err)
+	assert.False(t, body.Remote, "reopening the same message starts with core policy")
+	assert.Equal(t, http.StatusNotFound, f.imageAt(t, oldURL).Code)
+}
+
+type readerImagePolicy struct {
+	Service
+	check      func(context.Context, int64) (bool, error)
+	cacheCalls atomic.Int32
+}
+
+func (s *readerImagePolicy) ImagesAllowed(ctx context.Context, message int64) (bool, error) {
+	return s.check(ctx, message)
+}
+
+func (s *readerImagePolicy) CachedImage(ctx context.Context, src string) (core.CachedImageFile, error) {
+	s.cacheCalls.Add(1)
+	return s.Service.CachedImage(ctx, src)
+}
+
+func TestReaderImagePolicyDuringRequest(t *testing.T) {
+	f := newReaderFixture(t)
+	f.setRemoteImages(t, "auto")
+	pic := pngOf(t, 2, 2)
+	srv := newImageServer(t, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(pic) })
+	src := srv.URL + "/picture.png"
+	m := f.remoteMail(t, "picture", src)
+	id := f.page(m.ID)
+	body, err := f.load(id)
+	require.NoError(t, err)
+	require.True(t, body.Remote)
+	svc := &readerImagePolicy{Service: f.r.svc}
+	f.r.SetService(svc)
+	svc.check = func(context.Context, int64) (bool, error) { return true, errors.New("policy unavailable") }
+	require.Equal(t, http.StatusNotFound, f.image(t, m.ID, src).Code)
+	require.Zero(t, svc.cacheCalls.Load())
+	f.record(func() {
+		assert.Equal(t, []int{1}, f.imgFails, "a temporary policy failure offers a retry without fetching")
+	})
+
+	svc.check = func(context.Context, int64) (bool, error) { return svc.cacheCalls.Load() == 0, nil }
+	require.Equal(t, http.StatusNotFound, f.image(t, m.ID, src).Code, "permission revoked during the fetch")
+	require.EqualValues(t, 1, svc.cacheCalls.Load())
+
+	checked, resume := make(chan struct{}), make(chan struct{})
+	finish := sync.OnceFunc(func() { close(resume) })
+	defer finish()
+	var first atomic.Bool
+	svc.check = func(ctx context.Context, message int64) (bool, error) {
+		allowed, err := svc.Service.ImagesAllowed(ctx, message)
+		if !first.Swap(true) {
+			close(checked)
+			<-resume
+		}
+		return allowed, err
+	}
+	done := make(chan int, 1)
+	go func() { done <- f.image(t, m.ID, src).Code }()
+	select {
+	case <-checked:
+	case code := <-done:
+		t.Fatalf("image request finished before its policy check: %d", code)
+	}
+	// Hold the new body before publication: the old token is still present,
+	// but the in-flight policy result already belongs to the previous generation.
+	publish := make(chan struct{})
+	resumeBuild := sync.OnceFunc(func() { close(publish) })
+	defer resumeBuild()
+	get := f.r.getMessage
+	f.r.getMessage = func(ctx context.Context, svc Service, id int64, remote bool) (core.Message, error) {
+		<-publish
+		return get(ctx, svc, id, remote)
+	}
+	f.setRemoteImages(t, "ask")
+	f.r.ReloadImages(m.ID, false)
+	finish()
+	assert.Equal(t, http.StatusNotFound, <-done)
+	assert.EqualValues(t, 1, svc.cacheCalls.Load(), "the old policy result cannot start a fetch during the new build")
+	resumeBuild()
+	require.False(t, f.waitEmitted(t, id).Remote)
 }
 
 func TestReaderAllowReloads(t *testing.T) {
@@ -928,7 +1050,7 @@ func TestReaderAllowReloads(t *testing.T) {
 	km, kn := f.page(m.ID), f.page(n.ID)
 	before, err := f.load(km)
 	require.NoError(t, err)
-	f.r.Allow(m.ID)
+	f.r.ReloadImages(m.ID, true)
 	b := f.waitEmitted(t, km)
 	assert.True(t, b.Remote)
 	assert.Greater(t, b.Version, before.Version)
@@ -995,7 +1117,7 @@ func TestReaderInlineImageBudgets(t *testing.T) {
 	}
 	assert.NotEmpty(t, srcOf["n49"])
 
-	f.r.Allow(7)
+	f.r.ReloadImages(7, true)
 	b = f.waitEmitted(t, k)
 	assert.NotContains(t, b.HTML, "godwit-img", "remote images share the message's image count: the inline ones used it up")
 	assert.Zero(t, srv.hits())
@@ -1084,7 +1206,7 @@ func TestReaderInlineImageBytes(t *testing.T) {
 	b, err := f.load(k)
 	require.NoError(t, err)
 	assert.Equal(t, 4, strings.Count(b.HTML, `src="data:`), "the fifth inline image is over the bytes")
-	f.r.Allow(1)
+	f.r.ReloadImages(1, true)
 	b = f.waitEmitted(t, k)
 	assert.Equal(t, 4, strings.Count(b.HTML, `src="data:`))
 	assert.Equal(t, http.StatusOK, f.image(t, 1, srv.URL+"/r.png").Code, "a 3 MiB remote image is no longer cut by the inline budget")
@@ -1116,11 +1238,11 @@ func TestReaderEmitFollowsBinding(t *testing.T) {
 		}
 	}()
 	for time.Now().Before(end) {
-		f.r.Allow(1)
+		f.r.ReloadImages(1, true)
 		time.Sleep(time.Millisecond)
 	}
 	<-done
-	time.Sleep(200 * time.Millisecond) // the Allows' goroutines finish
+	time.Sleep(200 * time.Millisecond) // the reloads' goroutines finish
 	assert.Zero(t, wrong.Load(), "a page got another message's body")
 }
 
@@ -1233,7 +1355,7 @@ func TestReaderInlineImageDownloadStoppedIsNotTold(t *testing.T) {
 		first <- rec.Code
 	}()
 	<-running
-	f.r.Allow(7)
+	f.r.ReloadImages(7, false)
 	assert.Equal(t, http.StatusNotFound, <-first)
 	f.waitEmitted(t, k)
 	assert.Equal(t, http.StatusOK, f.image(t, 7, "cid:a").Code)
@@ -1242,7 +1364,7 @@ func TestReaderInlineImageDownloadStoppedIsNotTold(t *testing.T) {
 	assert.Empty(t, f.imgFails)
 }
 
-// A retry (Allow) tries the inline images missed again.
+// A retry tries the inline images missed again.
 func TestReaderRetryRefetchesInlineImages(t *testing.T) {
 	pic := pngOf(t, 2, 2)
 	f := newReaderFixture(t)
@@ -1258,8 +1380,8 @@ func TestReaderRetryRefetchesInlineImages(t *testing.T) {
 	_, err := f.load(k)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNotFound, f.image(t, 7, "cid:a").Code)
-	f.r.Allow(7)
-	f.waitEmitted(t, k)
+	f.r.ReloadImages(7, false)
+	assert.False(t, f.waitEmitted(t, k).Remote, "retrying inline images does not grant remote images")
 	assert.Equal(t, http.StatusOK, f.image(t, 7, "cid:a").Code)
 	assert.EqualValues(t, 2, calls.Load())
 }
@@ -1407,7 +1529,7 @@ func TestReaderImagePixelsAreChargedPerMessage(t *testing.T) {
 		return core.Message{HTML: `<img src="` + srv.URL + `/1.png"><img src="` + srv.URL + `/2.png"><img src="` + srv.URL + `/3.png">`}
 	})
 	k := f.page(5)
-	f.r.Allow(5)
+	f.r.ReloadImages(5, true)
 	f.waitEmitted(t, k)
 	codes := []int{}
 	for _, n := range []string{"1", "2", "3", "1"} {
@@ -1425,7 +1547,7 @@ func TestReaderInlinePixelsCarryIntoTheProxyBudget(t *testing.T) {
 		return core.Message{HTML: `<img src="` + inline + `"><img src="` + inline + `"><img src="` + srv.URL + `/r.png">`}
 	})
 	k := f.page(6)
-	f.r.Allow(6)
+	f.r.ReloadImages(6, true)
 	f.waitEmitted(t, k)
 	assert.Equal(t, http.StatusForbidden, f.image(t, 6, srv.URL+"/r.png").Code, "72 MP inline + 36 MP remote is over 100 MP")
 }
@@ -1480,7 +1602,7 @@ func TestReaderBodyCarriesCollapseQuotes(t *testing.T) {
 	f.mu.Lock()
 	f.emitted = nil
 	f.mu.Unlock()
-	f.r.Allow(m.ID)
+	f.r.ReloadImages(m.ID, true)
 	<-started
 	st.CollapseQuotes = false
 	f.r.SettingsChanged(st)

@@ -546,7 +546,9 @@ func (p *fakePlatform) NewBodyView(message int64, _ *core.Message) (ui.NativeWeb
 	}, nil
 }
 
-func (p *fakePlatform) AllowImages(message int64) { p.record("AllowImages", message) }
+func (p *fakePlatform) ReloadImages(message int64, manual bool) {
+	p.record("ReloadImages", message, manual)
+}
 
 func (p *fakePlatform) BodyGlass(view ui.NativeWebView, top, bottom BodyGlassRect) {
 	p.mu.Lock()

@@ -158,7 +158,7 @@ func TestReaderAvatarPolicy(t *testing.T) {
 			if hits.Load() != 1 {
 				t.Fatalf("requests %d", hits.Load())
 			}
-			if tc.blocked && !b.allow {
+			if tc.blocked && !b.manualImages {
 				t.Fatal("manual permission not kept for current message")
 			}
 		})
@@ -254,7 +254,7 @@ func TestReaderAvatarSettingsInvalidation(t *testing.T) {
 	h.until("setting saved", func() bool { st, _ := h.env.Svc.GetSettings(t.Context()); return st.RemoteImages == "ask" })
 	h.advance(refreshEvery)
 	h.see("1 张图片未加载")
-	if b.avatar != nil || b.allow {
+	if b.avatar != nil || b.manualImages {
 		t.Fatal("automatic trust became manual permission")
 	}
 	h.click("加载")
@@ -409,8 +409,8 @@ func TestReaderAvatarManualPermissionSurvivesUnrelatedSettings(t *testing.T) {
 			})
 			h.app.load()
 			h.until("new settings loaded", func() bool { return h.app.settings.Theme == "dark" && h.app.accountsGen == h.app.loads.Gen() })
-			if b.avatar == nil || !b.avatarAllow || !b.allow || hits.Load() != 1 {
-				t.Fatalf("unrelated setting revoked permission: avatar=%v manual=%v body=%v requests=%d", b.avatar != nil, b.avatarAllow, b.allow, hits.Load())
+			if b.avatar == nil || !b.avatarAllow || !b.manualImages || hits.Load() != 1 {
+				t.Fatalf("unrelated setting revoked permission: avatar=%v manual=%v body=%v requests=%d", b.avatar != nil, b.avatarAllow, b.manualImages, hits.Load())
 			}
 			st.RemoteImages = "trusted"
 			if _, err := h.env.Svc.SetSettings(t.Context(), st); err != nil {
@@ -1549,7 +1549,7 @@ func TestReaderAvatarMoveToJunk(t *testing.T) {
 		t.Fatal("junk notice has stale body policy")
 	}
 	h.click("加载")
-	h.until("manual junk avatar", func() bool { return b.avatar != nil && b.avatarAllow && b.allow })
+	h.until("manual junk avatar", func() bool { return b.avatar != nil && b.avatarAllow && b.manualImages })
 	h.app.refresh(nil)
 	h.until("same-message refresh", func() bool { return !h.app.mail.list.loading })
 	if !b.avatarAllow || b.avatar == nil {
@@ -1560,7 +1560,7 @@ func TestReaderAvatarMoveToJunk(t *testing.T) {
 	}
 	h.app.refresh(nil)
 	h.until("back in inbox", func() bool { return b.msg.FolderID == m.FolderID && !b.msg.InJunk && b.trusted && b.avatar != nil })
-	if !b.avatarAllow || !b.allow {
+	if !b.avatarAllow || !b.manualImages {
 		t.Fatal("folder move lost current-message permission")
 	}
 	// A fresh reader generation drops the manual grant; moving back then loads automatically.

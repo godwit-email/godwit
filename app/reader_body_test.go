@@ -336,7 +336,7 @@ func TestReaderScrollResetsPerThread(t *testing.T) {
 	}
 }
 
-// 加载图片 lets the body's page load the remote images (Reader.Allow);
+// 加载图片 grants the bound message's remote images (Reader.ReloadImages);
 // the notice waits until the page's body has them (BodyBuilt), and offers
 // a retry when reading it failed (BodyFailed). Re-expanding asks again for
 // the new page. Native makes no request itself.
@@ -362,11 +362,11 @@ func TestReaderRemoteImages(t *testing.T) {
 	h.openThread(m.ThreadID)
 	v := h.seeBody(m.ID)
 	h.see("1 张图片未加载")
-	if h.hasCall("AllowImages") {
+	if h.countPrefix("ReloadImages") != 0 {
 		t.Fatal("allowed before 加载图片")
 	}
 	h.click("加载")
-	allow := fmt.Sprint("AllowImages ", m.ID)
+	allow := fmt.Sprintf("ReloadImages %d true", m.ID)
 	if h.countCalls(allow) != 1 {
 		t.Fatalf("calls %q", h.plat.Calls())
 	}
@@ -377,8 +377,8 @@ func TestReaderRemoteImages(t *testing.T) {
 	h.app.BodyFailed(v, m.ID, errors.New("images went away"))
 	h.see("images went away")
 	h.click("重试")
-	if h.countCalls(allow) != 2 {
-		t.Fatalf("the retry did not allow again: %q", h.plat.Calls())
+	if h.countCalls(allow) != 1 || h.countCalls(fmt.Sprintf("ReloadImages %d false", m.ID)) != 1 {
+		t.Fatalf("the retry did not reuse the existing grant: %q", h.plat.Calls())
 	}
 	h.app.BodyBuilt(v, m.ID, false, false) // an older body, without them
 	h.tt.Frame()
@@ -398,7 +398,7 @@ func TestReaderRemoteImages(t *testing.T) {
 			lastView = i
 		}
 	}
-	if h.countCalls(allow) != 3 || !slices.Contains(calls[lastView:], allow) {
+	if h.countCalls(allow) != 2 || !slices.Contains(calls[lastView:], allow) {
 		t.Fatalf("re-expanding did not allow the new page: %q", calls)
 	}
 	mu.Lock()
@@ -502,11 +502,7 @@ func TestReaderCloseClosesViews(t *testing.T) {
 	}
 }
 
-// 始终信任此发件人 trusts the From address in core and loads the images;
-// the sender's next message loads them at once, without the notice.
-// The images-failed retry is Allow, which lets remote images load: it is offered
-// only with none of them blocked, so an inline image that failed never lets them
-// load unasked. 加载 is how to try again then.
+// An inline image that fails must not turn a retry into 加载图片 for this mail.
 func TestReaderImagesFailedRetryKeepsRemoteBlocked(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	remoteImages(t, h, "ask")
@@ -531,7 +527,7 @@ func TestReaderImagesFailedRetryKeepsRemoteBlocked(t *testing.T) {
 			continue
 		}
 		h.click("重试")
-		if h.countCalls(fmt.Sprint("AllowImages ", m.ID)) != 1 {
+		if h.countCalls(fmt.Sprintf("ReloadImages %d false", m.ID)) != 1 {
 			t.Fatalf("calls %q", h.plat.Calls())
 		}
 	}
@@ -544,10 +540,18 @@ func TestReaderTrustSender(t *testing.T) {
 	img := coretest.HTML(`<p>Hi</p><img src="https://img.example/p.png" width="2" height="2">`)
 	m := h.deliverOne(acc, coretest.Msg("Bob <Bob@Example.com>", acc.Email, "News", "text", img))
 	h.openThread(m.ThreadID)
-	h.seeBody(m.ID)
+	v := h.seeBody(m.ID)
 	h.see("1 张图片未加载")
 	h.click("信任发件人")
-	h.until("allowed", func() bool { return h.countCalls(fmt.Sprint("AllowImages ", m.ID)) == 1 })
+	auto := fmt.Sprintf("ReloadImages %d false", m.ID)
+	h.until("reload by sender policy", func() bool { return h.countCalls(auto) == 1 })
+	h.app.BodyFailed(v, m.ID, errors.New("image reload failed"))
+	h.see("image reload failed")
+	h.click("重试")
+	if h.countCalls(auto) != 2 || h.app.mail.reader.bodies[m.ID].manualImages {
+		t.Fatal("retrying a sender-policy reload must not grant a per-message exception")
+	}
+	h.app.BodyBuilt(v, m.ID, false, true)
 	trusted, err := h.env.Svc.TrustedImageSenders(context.Background())
 	if err != nil || !slices.Equal(trusted, []string{"bob@example.com"}) {
 		t.Fatalf("trusted %q, %v", trusted, err)
@@ -578,7 +582,7 @@ func TestReaderTrustReloadsAvatar(t *testing.T) {
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
 	h.click("信任发件人")
-	h.until("allowed", func() bool { return h.countCalls(fmt.Sprint("AllowImages ", m.ID)) == 1 })
+	h.until("allowed", func() bool { return h.countCalls(fmt.Sprintf("ReloadImages %d false", m.ID)) == 1 })
 	n := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "More news", "text", img))
 	h.openThread(n.ThreadID)
 	h.seeBody(n.ID)
@@ -620,7 +624,7 @@ func TestReaderTrackersBlocked(t *testing.T) {
 	m := h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "Both", "text", both))
 	line(m, true, true)
 	h.click("信任发件人")
-	h.until("allowed", func() bool { return h.countCalls(fmt.Sprint("AllowImages ", m.ID)) == 1 })
+	h.until("allowed", func() bool { return h.countCalls(fmt.Sprintf("ReloadImages %d false", m.ID)) == 1 })
 	// trusted: the next one shows its trackers alone
 	line(h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "More", "text", both)), true, false)
 }
@@ -635,7 +639,7 @@ func TestReaderTrustQuotedSender(t *testing.T) {
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
 	h.click("信任发件人")
-	h.until("allowed", func() bool { return h.countCalls(fmt.Sprint("AllowImages ", m.ID)) == 1 })
+	h.until("allowed", func() bool { return h.countCalls(fmt.Sprintf("ReloadImages %d false", m.ID)) == 1 })
 }
 
 // Trusting a sender loads its images in the thread, but not in a copy in Junk.
@@ -661,11 +665,80 @@ func TestReaderTrustSkipsJunk(t *testing.T) {
 		h.seeBody(x.ID)
 	}
 	h.click("信任发件人")
-	h.until("allowed", func() bool { return h.countCalls(fmt.Sprint("AllowImages ", m.ID)) == 1 })
+	h.until("allowed", func() bool { return h.countCalls(fmt.Sprintf("ReloadImages %d false", m.ID)) == 1 })
 	for _, x := range msgs {
-		if x.ID != m.ID && h.countCalls(fmt.Sprint("AllowImages ", x.ID)) != 0 {
+		if x.ID != m.ID && h.countPrefix(fmt.Sprintf("ReloadImages %d", x.ID)) != 0 {
 			t.Fatal("the Junk copy's images loaded")
 		}
+	}
+}
+
+// A folder move rebinds the same mail. Only a per-message click may override
+// Junk's deny; trusting the sender only changes the automatic policy.
+func TestReaderImageGrantOnMoveToJunk(t *testing.T) {
+	for _, manual := range []bool{false, true} {
+		t.Run(fmt.Sprintf("manual=%t", manual), func(t *testing.T) {
+			h, accs := mailHarness(t, nil, "alice@example.com")
+			remoteImages(t, h, "trusted")
+			acc := accs[0]
+			if err := h.env.IMAP(acc.ID).User.Create("Junk", nil); err != nil {
+				t.Fatal(err)
+			}
+			h.syncNow(acc)
+			m := h.deliverOne(acc, coretest.Msg("Bob <bob@example.com>", acc.Email, "News", "text",
+				coretest.HTML(`<p>News</p><img src="https://images.example.invalid/photo.png" width="80" height="80">`)))
+			h.openThread(m.ThreadID)
+			v := h.seeBody(m.ID)
+			button := "信任发件人"
+			if manual {
+				button = "加载"
+			}
+			h.click(button)
+			call := fmt.Sprintf("ReloadImages %d %t", m.ID, manual)
+			h.until("inbox images requested", func() bool { return h.countCalls(call) == 1 })
+			if err := h.env.Svc.MoveToRole(t.Context(), []int64{m.ID}, "junk"); err != nil {
+				t.Fatal(err)
+			}
+			h.app.refresh(nil)
+			r := h.app.mail.reader
+			h.until("bound in junk", func() bool {
+				b := r.bodies[m.ID]
+				return b != nil && b.msg.InJunk && b.view != nil && b.view != v && !b.read.loading
+			})
+			want := 1
+			if manual {
+				want++
+			}
+			b := r.bodies[m.ID]
+			if n := h.countPrefix(fmt.Sprintf("ReloadImages %d", m.ID)); n != want || h.countCalls(call) != want || b.manualImages != manual || b.trusted {
+				t.Fatalf("Junk rebind: %d reloads, explicit=%v, trusted=%v; want %d, %v, false", n, b.manualImages, b.trusted, want, manual)
+			}
+		})
+	}
+}
+
+func TestReaderSameMessageTransferAfterUntrust(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	remoteImages(t, h, "trusted")
+	const from = "bob@example.com"
+	if err := h.env.Svc.TrustImageSender(t.Context(), from); err != nil {
+		t.Fatal(err)
+	}
+	m := h.deliverOne(accs[0], coretest.Msg(from, accs[0].Email, "News", "text",
+		coretest.HTML(`<p>News</p><img src="https://images.example.invalid/photo.png" width="80" height="80">`)))
+	h.openThread(m.ThreadID)
+	v := h.seeBody(m.ID)
+	h.app.BodyBuilt(v, m.ID, false, true)
+	if err := h.env.Svc.UntrustImageSender(t.Context(), from); err != nil {
+		t.Fatal(err)
+	}
+	h.app.mail.open([]mailItem{messageItem(m)}, 0)
+	r := h.app.mail.reader
+	h.until("single message shown", func() bool {
+		return r.key[1] == m.ID && r.prev == nil && r.bodies[m.ID] != nil && r.bodies[m.ID].view != nil
+	})
+	if b := r.bodies[m.ID]; b.remote || b.trusted || b.manualImages {
+		t.Fatal("switching to the single message carried the revoked sender grant")
 	}
 }
 

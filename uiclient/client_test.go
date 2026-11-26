@@ -816,15 +816,15 @@ func TestReaderImagesOverSocket(t *testing.T) {
 	require.Equal(t, http.StatusOK, w1.Code)
 	assert.Equal(t, inlinePic, w1.Body.Bytes())
 
-	// Allow remote images: first attempt fails (502), then Allow() calls cl.ForgetImageFailure and retries cleanly.
-	r.Allow(msgID)
+	// A retry clears the cached failure but needs no new manual grant.
+	r.ReloadImages(msgID, true)
 	<-built
 	w2 := httptest.NewRecorder()
 	handler.ServeHTTP(w2, httptest.NewRequest(http.MethodGet, fmt.Sprintf("http://m%d/%s", msgID, remoteTok), nil))
 	require.Equal(t, http.StatusBadGateway, w2.Code)
 
 	failRemote.Store(false)
-	r.Allow(msgID)
+	r.ReloadImages(msgID, false)
 	<-built
 	w3 := httptest.NewRecorder()
 	handler.ServeHTTP(w3, httptest.NewRequest(http.MethodGet, fmt.Sprintf("http://m%d/%s", msgID, remoteTok), nil))

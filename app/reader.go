@@ -179,18 +179,12 @@ type msgBody struct {
 	glassSet     bool      // whether glass has been sent since the page last reported its height
 	translation  *aiRun    // the translated text currently displayed by the page
 
-	// The remote images: allow is the user's 加载图片, which every page
-	// made for the message is told (Platform.AllowImages); remote that the
-	// page's body has them (BodyBuilt), which hides the notice; allowErr
-	// that reading it so failed (BodyFailed), which offers a retry;
-	// trusted that core loads them at once (ImagesAllowed): no notice.
-	allow    bool
-	remote   bool
-	allowErr error
-	trusted  bool
-	// imgFailed is the images the proxy could not get (BodyImagesFailed); a
-	// retry reloads the body. Offered only while no remote image is blocked,
-	// as the retry is Allow, which lets them load.
+	manualImages  bool  // only the user's 加载 choice for this message, kept across rebinds
+	trusted       bool  // core permits automatic loading (ImagesAllowed), never a manual grant
+	remote        bool  // the page's last built body includes remote images
+	imagesLoading bool  // a reload has been requested for the bound page
+	imageErr      error // the requested reload failed; offer a retry with the same policy
+	// imgFailed counts failed image loads; offer a retry when no remote image is blocked.
 	imgFailed int
 
 	timing bodyTiming // how long the body took to show (GODWIT_READER_TIMING)
@@ -307,6 +301,10 @@ func (r *reader) waiting() bool {
 func (r *reader) load(k [2]int64) {
 	a, s, get := r.p.a, r.session, r.getThread
 	route := k
+	// Only two routes into the same thread can transfer a live page.
+	checkTransfer := r.next == k && (r.key[0] == k[0] || r.prev != nil && r.prev.key[0] == k[0])
+	var transferID int64
+	var transferTrusted bool
 	var th core.Thread
 	var labels map[int64][]core.AppliedLabel
 	r.read.Run(a, func(ctx context.Context) (err error) {
@@ -319,6 +317,12 @@ func (r *reader) load(k [2]int64) {
 				return err
 			}
 			k[1] = m.ID // merged into another message since the route was set (ADR 0034)
+		}
+		if checkTransfer && len(th.Messages) > 0 {
+			id := cmp.Or(k[1], th.Messages[len(th.Messages)-1].ID)
+			if allowed, err := a.svc.ImagesAllowed(ctx, id); err == nil {
+				transferID, transferTrusted = id, allowed
+			}
 		}
 		labels, err = a.svc.ThreadLabels(ctx, []int64{k[0]})
 		return err
@@ -389,9 +393,9 @@ func (r *reader) load(k [2]int64) {
 				unread = append(unread, m)
 			}
 			if i == len(msgs)-1 { // the newest alone opens; unread older ones fold, read as the thread opens
-				// A thread and a route to one of its messages can show the very same body.
-				if prev := r.prev; prev != nil {
-					if b := prev.bodies[m.ID]; b != nil && b.view != nil && b.drawable() && b.msg.FolderID == m.FolderID && b.msg.Security.Status == m.Security.Status {
+				if prev := r.prev; prev != nil && m.ID == transferID {
+					if b := prev.bodies[m.ID]; b != nil && b.view != nil && b.drawable() && b.trusted == transferTrusted &&
+						b.msg.FolderID == m.FolderID && b.msg.Security.Status == m.Security.Status {
 						b.msg.MessageSummary = m
 						delete(prev.bodies, m.ID)
 						r.bodies[m.ID] = b
@@ -551,8 +555,9 @@ func (r *reader) openView(id int64, initial *core.Message) {
 	}
 	b.view, b.close, b.height = v, closeView, -1
 	b.timing.viewMade(made)
-	if b.allow {
-		r.p.a.plat.AllowImages(id)
+	if b.manualImages {
+		b.imagesLoading = true
+		r.p.a.plat.ReloadImages(id, true)
 	}
 }
 
@@ -569,7 +574,8 @@ func (b *msgBody) closeView(reuse bool) {
 	if b.close != nil {
 		b.close(reuse)
 	}
-	b.view, b.close, b.remote, b.allowErr = nil, nil, false, nil
+	b.view, b.close, b.remote, b.imageErr = nil, nil, false, nil
+	b.imagesLoading = false
 	b.printPending = false
 	b.painted, b.staged, b.glassSet = false, false, false
 	b.cut, b.imgFailed, b.height = false, 0, -1
@@ -2237,16 +2243,16 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 			}
 			bodyReady = true
 			bodyBlocked := b.msg.RemoteImagesBlocked > 0 && !b.remote && !b.trusted
-			if b.allowErr != nil && (bodyBlocked || addr != "" && b.avatarBlocked && !b.avatarAllow) {
-				kit.Alert(c, kit.ToneDanger, humanize(b.allowErr), func() {
-					kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneDanger}).Shrink(0).OnClick(func() { r.allowImages(m.ID) })
+			if b.imageErr != nil {
+				kit.Alert(c, kit.ToneDanger, humanize(b.imageErr), func() {
+					kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneDanger}).Shrink(0).OnClick(func() { r.loadImages(m.ID, false) })
 				})
 			}
 			if b.imgFailed > 0 && !bodyBlocked {
 				kit.Alert(c, kit.ToneWarning, i18n.Tf("reader.images_failed", b.imgFailed), func() {
 					kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm, Tone: kit.ToneWarning}).Shrink(0).OnClick(func() {
 						b.imgFailed = 0
-						r.p.a.plat.AllowImages(m.ID)
+						r.p.a.plat.ReloadImages(m.ID, false)
 					})
 				})
 			}
@@ -2331,7 +2337,7 @@ func (r *reader) trackersNote(c *ui.Context, b *msgBody) {
 }
 
 func (r *reader) imagesNote(c *ui.Context, m core.MessageSummary, b *msgBody, addr string) {
-	if b == nil || !b.ready || b.allowErr != nil {
+	if b == nil || !b.ready || b.imageErr != nil {
 		return
 	}
 	t := theme.Of(c)
@@ -2346,11 +2352,11 @@ func (r *reader) imagesNote(c *ui.Context, m core.MessageSummary, b *msgBody, ad
 	}
 	kit.Text(c, "·", t.Text.Xs).TextColor(t.Muted)
 	kit.Tooltip(c, kit.Text(c, i18n.Tf("reader.images_not_loaded", n), t.Text.Xs).TextColor(t.Muted), tip)
-	if bodyBlocked && b.allow {
+	if bodyBlocked && b.imagesLoading {
 		kit.Spinner(c)
 		return
 	}
-	kit.Button(c, i18n.T("reader.load"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).OnClick(func() { r.allowImages(m.ID) })
+	kit.Button(c, i18n.T("reader.load"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).OnClick(func() { r.loadImages(m.ID, true) })
 	if addr != "" && !b.read.loading && !b.msg.InJunk && r.p.a.settings.RemoteImages != "ask" { // core never trusts junk, and "ask" ignores trust
 		kit.Button(c, i18n.T("reader.trust"), kit.ButtonOpts{Variant: kit.Link, Size: kit.SizeXs}).OnClick(func() { r.trustSender(b.msg.From, addr) })
 	}
@@ -2546,22 +2552,19 @@ func byteSize(n int) string {
 	return fmt.Sprintf("%.1f MB", float64(n)/(1024*1024))
 }
 
-// allowImages lets message id's page load its remote images (加载图片),
-// and every page made for it again while the thread shows; the notice
-// waits for the page's body to have them.
-func (r *reader) allowImages(id int64) {
-	r.loadImages(id, true)
-}
-
+// Only the per-message 加载 button sets manual. Trust changes and retries
+// refresh the page under its existing permission, never creating an exception.
 func (r *reader) loadImages(id int64, manual bool) {
 	b := r.bodies[id]
 	if b == nil {
 		return
 	}
-	b.allow, b.allowErr = true, nil
-	r.loadAvatar(id, manual)
+	b.manualImages = b.manualImages || manual
+	b.imageErr = nil
+	r.loadAvatar(id, b.avatarAllow || manual)
 	if b.view != nil {
-		r.p.a.plat.AllowImages(id)
+		b.imagesLoading = true
+		r.p.a.plat.ReloadImages(id, manual)
 	}
 }
 
@@ -2680,8 +2683,11 @@ func (a *App) BodyBuilt(view ui.NativeWebView, message int64, cut, remote bool) 
 	if b := a.readerOf(view).shown(view, message); b != nil {
 		b.cut, b.remote = cut, remote
 		b.timing.builtDone()
-		if remote {
-			b.allowErr = nil
+		if !b.manualImages {
+			b.trusted = remote // this build followed core's automatic policy
+		}
+		if remote || !b.manualImages {
+			b.imagesLoading, b.imageErr = false, nil
 		}
 	}
 }
@@ -2697,8 +2703,8 @@ func (a *App) BodyImagesFailed(view ui.NativeWebView, message int64, n int) {
 // BodyFailed is told reading message's body with its remote images
 // failed: the notice offers a retry.
 func (a *App) BodyFailed(view ui.NativeWebView, message int64, err error) {
-	if b := a.readerOf(view).shown(view, message); b != nil && b.allow {
-		b.allowErr = err
+	if b := a.readerOf(view).shown(view, message); b != nil {
+		b.imagesLoading, b.imageErr = false, err
 	}
 }
 

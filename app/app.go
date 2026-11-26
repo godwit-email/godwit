@@ -66,10 +66,9 @@ type Platform interface {
 	// fresh sanitized read with remote images blocked. Release revokes the
 	// binding; reuse lets the platform keep the empty shell. UI thread only.
 	NewBodyView(message int64, initial *core.Message) (view ui.NativeWebView, release func(reuse bool), err error)
-	// AllowImages lets the pages showing message load its remote images
-	// (加载图片). Call it after NewBodyView: it forgets once the last page
-	// of the message closes.
-	AllowImages(message int64)
+	// ReloadImages retries the bound body's images under the current policy.
+	// Only manual (加载图片 for this message) may override that policy.
+	ReloadImages(message int64, manual bool)
 	// BodyGlass tells a body's page what the reader's frosted surfaces cover of
 	// it, in CSS pixels: top for the collapsing sticky header and bottom for the
 	// floating reply card. Used when system native glass is unavailable. UI thread only.
