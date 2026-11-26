@@ -251,49 +251,7 @@ func gui(ctx context.Context, dataDir, open string) int {
 		ToastBar: func(bar, field ui.Rect) { onApp(func(a *app.App) { a.WitToastBar(bar, field) }) },
 	})
 	mygo.Bind(webui.NewWitPage(wit))
-	// The reader pages, one per expanded message in the main window, each
-	// bound to its message (platform.NewBodyView). Their callbacks run on
-	// the App's UI thread (onBody), and only if the page is still open
-	// there as one bound to the message (when one is named): a callback
-	// queued before its page closed or rebound is dropped.
-	onBody := func(k any, message int64, f func(*app.App, ui.NativeWebView)) {
-		page, _ := k.(*mygo.Page)
-		onApp(func(a *app.App) {
-			if plat == nil {
-				return
-			}
-			v, m, ok := plat.bodyView(page)
-			if ok && (message == 0 || m == message) {
-				f(a, v)
-			}
-		})
-	}
-	reader := webui.NewReader(roles, webui.ReaderDeps{
-		Emit: func(k any, b webui.ReaderBody) {
-			if err := webui.ReaderReload.EmitPage(k.(*mygo.Page), b); err != nil {
-				log.Printf("a body to its reader page: %v", err)
-			}
-		},
-		OnHeight: func(k any, m int64, px int) {
-			onBody(k, m, func(a *app.App, v ui.NativeWebView) { a.BodyHeight(v, m, px) })
-		},
-		OnLink: func(k any, u string) { onBody(k, 0, func(a *app.App, v ui.NativeWebView) { a.BodyLink(v, u) }) },
-		OnNavigate: func(k any, dir int) {
-			onBody(k, 0, func(a *app.App, v ui.NativeWebView) { a.BodyNavigate(v, dir) })
-		},
-		OnSearch: func(k any) { onBody(k, 0, func(a *app.App, v ui.NativeWebView) { a.BodySearch(v) }) },
-		OnSave:   func(k any) { onBody(k, 0, func(a *app.App, v ui.NativeWebView) { a.BodySave(v) }) },
-		OnPrint:  func(k any) { onBody(k, 0, func(a *app.App, v ui.NativeWebView) { a.BodyPrint(v) }) },
-		OnBuilt: func(k any, b webui.ReaderBody) {
-			onBody(k, b.Message, func(a *app.App, v ui.NativeWebView) { a.BodyBuilt(v, b.Message, b.Cut, b.Remote) })
-		},
-		OnFailed: func(k any, m int64, err error) {
-			onBody(k, m, func(a *app.App, v ui.NativeWebView) { a.BodyFailed(v, m, err) })
-		},
-		OnImagesFailed: func(k any, m int64, n int) {
-			onBody(k, m, func(a *app.App, v ui.NativeWebView) { a.BodyImagesFailed(v, m, n) })
-		},
-	})
+	reader := webui.NewReader(roles, readerDeps(roles, onApp, func(id int) *bodyView { return plat.bodies[id] }))
 	mygo.Bind(webui.NewReaderPage(reader))
 	// The image proxy: remote images of a body load from godwit-img: URLs.
 	if err := mygo.Protocol.Handle(webui.ImageScheme, reader.ImageHandler()); err != nil {
@@ -423,7 +381,7 @@ func gui(ctx context.Context, dataDir, open string) int {
 			}
 			opts.Content = bench.view(a)
 			win = mygo.NewWindow(opts)
-			plat.win = win
+			plat.win, plat.makeBody = win, plat.newReaderShell
 			// The Wit page is registered before it loads (loadAfterSetup):
 			// its first call finds its role.
 			if v, err := win.NewWebView(mygo.WebViewOptions{Transparent: true}); err != nil {
@@ -562,6 +520,7 @@ func gui(ctx context.Context, dataDir, open string) int {
 				rctx, cancel := context.WithTimeout(ctx, time.Second)
 				defer cancel()
 				_ = client.SetUIReady(rctx, false)
+				plat.closeBodyViews()
 				a.Close()
 			}
 			nq := &nativeQuit{beforeClose: a.BeforeClose, close: closeApp, quit: func() { go quitAgain() }} // mygo's calls are goroutine-safe
@@ -573,7 +532,13 @@ func gui(ctx context.Context, dataDir, open string) int {
 				mc.close()
 			})
 			hook := quitHook(windows, nq.onQuit, nq.reset, func() { a.OnUI(func() { quitAsked = false; a.QuitCancelled() }) })
-			mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) { quitAsked = true; hook(e) })
+			mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) {
+				quitAsked = true
+				if e.SessionEnding { // no second, flushed quit when the OS ends the session
+					plat.closeBodyViews()
+				}
+				hook(e)
+			})
 			a.Start(ctx)
 			a.SetForeground(win.IsFocused())
 			bench.bindWindow(win, a)
@@ -627,6 +592,50 @@ func gui(ctx context.Context, dataDir, open string) int {
 		log.Fatal(err)
 	}
 	return code
+}
+
+// readerDeps dispatches reader calls through the assignment that made them.
+func readerDeps(roles *webui.Pages, onApp func(func(*app.App)), current func(int) *bodyView) webui.ReaderDeps {
+	// Resolve the registration on the UI thread, not when the callback is posted:
+	// its shell may since have been assigned even to the same message again.
+	onBody := func(id int, f func(*app.App, ui.NativeWebView)) {
+		onApp(func(a *app.App) {
+			if v := current(id); v != nil {
+				f(a, v)
+			}
+		})
+	}
+	return webui.ReaderDeps{
+		Emit: func(id int, b webui.ReaderBody) {
+			if k, ok := roles.Key(id); ok {
+				if err := webui.ReaderReload.EmitPage(k.(*mygo.Page), b); err != nil {
+					log.Printf("a body to its reader page: %v", err)
+				}
+			}
+		},
+		OnHeight: func(id int, m int64, px int) {
+			onBody(id, func(a *app.App, v ui.NativeWebView) { a.BodyHeight(v, m, px) })
+		},
+		OnPainted: func(id int, m int64) {
+			onBody(id, func(a *app.App, v ui.NativeWebView) { a.BodyPainted(v, m) })
+		},
+		OnLink: func(id int, u string) { onBody(id, func(a *app.App, v ui.NativeWebView) { a.BodyLink(v, u) }) },
+		OnNavigate: func(id, dir int) {
+			onBody(id, func(a *app.App, v ui.NativeWebView) { a.BodyNavigate(v, dir) })
+		},
+		OnSearch: func(id int) { onBody(id, func(a *app.App, v ui.NativeWebView) { a.BodySearch(v) }) },
+		OnSave:   func(id int) { onBody(id, func(a *app.App, v ui.NativeWebView) { a.BodySave(v) }) },
+		OnPrint:  func(id int) { onBody(id, func(a *app.App, v ui.NativeWebView) { a.BodyPrint(v) }) },
+		OnBuilt: func(id int, b webui.ReaderBody) {
+			onBody(id, func(a *app.App, v ui.NativeWebView) { a.BodyBuilt(v, b.Message, b.Cut, b.Remote) })
+		},
+		OnFailed: func(id int, m int64, err error) {
+			onBody(id, func(a *app.App, v ui.NativeWebView) { a.BodyFailed(v, m, err) })
+		},
+		OnImagesFailed: func(id int, m int64, n int) {
+			onBody(id, func(a *app.App, v ui.NativeWebView) { a.BodyImagesFailed(v, m, n) })
+		},
+	}
 }
 
 // backendOnlyAtLogin reports whether an interface the system started at

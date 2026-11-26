@@ -71,6 +71,12 @@ func newHarnessDev(t *testing.T, dev bool, opts []coretest.Option, setup ...func
 	t.Helper()
 	h := &harness{t: t, env: coretest.New(t, opts...), plat: &fakePlatform{}, clock: newFakeClock(), dev: dev}
 	h.plat.svc = h.env.Svc
+	h.plat.paintBody = func(v *fakeBodyView) {
+		h.post(func() {
+			h.app.BodyHeight(v, v.message, 24)
+			h.app.BodyPainted(v, v.message)
+		})
+	}
 	for _, s := range setup {
 		s(h.env)
 	}
@@ -386,6 +392,7 @@ type fakePlatform struct {
 
 	views     map[int64]*fakeBodyView // the body pages open, by message
 	onNewView func(message int64)     // runs inside NewBodyView, as the event loop may run there
+	paintBody func(*fakeBodyView)     // switch tests can hold the page's first frame
 	viewErr   error                   // NewBodyView's error
 
 	composing map[int64]bool // the drafts whose compose window is open (ComposeOpen)
@@ -497,6 +504,7 @@ type fakeBodyView struct {
 	ui.NativeWebView
 	message      int64
 	closed       bool
+	discarded    bool // the physical renderer was not fit for reuse
 	translations map[string]string
 	glass        bodyGlass // the last BodyGlass
 }
@@ -504,7 +512,7 @@ type fakeBodyView struct {
 // NewBodyView records "NewBodyView <message>" and makes a fake page;
 // closing it records "CloseBodyView <message>". A second close fails the
 // test, as would a second page for one message.
-func (p *fakePlatform) NewBodyView(message int64) (ui.NativeWebView, func(), error) {
+func (p *fakePlatform) NewBodyView(message int64, _ *core.Message) (ui.NativeWebView, func(bool), error) {
 	p.record("NewBodyView", message)
 	if f := p.onNewView; f != nil {
 		f(message)
@@ -522,7 +530,11 @@ func (p *fakePlatform) NewBodyView(message int64) (ui.NativeWebView, func(), err
 	}
 	v := &fakeBodyView{message: message}
 	p.views[message] = v
-	return v, func() {
+	if p.paintBody != nil {
+		p.paintBody(v)
+	}
+	return v, func(reuse bool) {
+		v.discarded = !reuse
 		p.record("CloseBodyView", message)
 		p.mu.Lock()
 		defer p.mu.Unlock()

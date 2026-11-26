@@ -28,7 +28,7 @@ const cidPrefix = "cid:"
 // tokens maps each token to its URL or its cid:<id>. An <img> with no size gets the one dims knows (the image is cached),
 // so its space is kept before it loads. A body needing no change comes back
 // as it was.
-func prepareBody(safe string, budget *imagefetch.Budget, message int64,
+func prepareBody(safe string, budget *imagefetch.Budget, message int64, owner int,
 	dims func(src string) (w, h int, ok bool)) (out string, tokens map[string]string) {
 	root := &html.Node{Type: html.ElementNode, Data: "body", DataAtom: atom.Body}
 	nodes, err := html.ParseFragment(strings.NewReader(safe), root)
@@ -38,7 +38,7 @@ func prepareBody(safe string, budget *imagefetch.Budget, message int64,
 	for _, n := range nodes {
 		root.AppendChild(n)
 	}
-	p := &preparer{budget: budget, message: message, dims: dims, tokens: map[string]string{}}
+	p := &preparer{budget: budget, message: message, owner: owner, dims: dims, tokens: map[string]string{}}
 	for n := range root.Descendants() {
 		if n.Type != html.ElementNode {
 			continue
@@ -63,17 +63,21 @@ func prepareBody(safe string, budget *imagefetch.Budget, message int64,
 type preparer struct {
 	budget  *imagefetch.Budget
 	message int64
+	owner   int
 	dims    func(src string) (w, h int, ok bool)
 	tokens  map[string]string
 	changed bool
 }
+
+// A URL from a released message must not come back to life when it reopens.
+func imageToken(owner int, src string) string { return strconv.Itoa(owner) + "-" + imagecache.Key(src) }
 
 // proxy is the godwit-img: URL (imageURL) of the remote image src, or "" when the
 // message has used up its image count: the page loads every image at once, so
 // a message cannot hold unbounded ones. Their pixels are charged to the same
 // budget by the proxy, once their size is known (Reader.chargePixels).
 func (p *preparer) proxy(src string) string {
-	token := imagecache.Key(src)
+	token := imageToken(p.owner, src)
 	if _, seen := p.tokens[token]; !seen {
 		if p.budget.Take() != nil {
 			return ""

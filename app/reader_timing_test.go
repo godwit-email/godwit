@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func TestBodyTimingLogsOnceAtFirstHeight(t *testing.T) {
+func TestBodyTimingLogsOnceAtFirstPaint(t *testing.T) {
 	defer func(on bool) { readerTiming = on }(readerTiming)
 	readerTiming = true
 	var bt bodyTiming
@@ -34,9 +34,9 @@ func TestBodyTimingLogsOnceAtFirstHeight(t *testing.T) {
 	}
 }
 
-// A page folded after its body was built but before its first height, then
+// A page folded after its body was built but before its first paint, then
 // made again, is timed afresh: the old page's build does not carry over.
-func TestBodyTimingRemadeBeforeHeight(t *testing.T) {
+func TestBodyTimingRemadeBeforePaint(t *testing.T) {
 	defer func(on bool) { readerTiming = on }(readerTiming)
 	readerTiming = true
 	var bt bodyTiming

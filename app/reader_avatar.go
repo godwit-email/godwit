@@ -93,7 +93,7 @@ func (r *reader) loadAvatar(id int64, manual bool) {
 		return
 	}
 	b.stopAvatar()
-	a, s, get := r.p.a, r.session, r.getAvatar
+	a, get := r.p.a, r.getAvatar
 	b.avatarAllow, b.avatarDone = manual, false
 	if !manual && a.avatarPolicyVer != a.avatarPolicySavedVer {
 		b.avatar, b.avatarSource, b.avatarBlocked = nil, "", true
@@ -138,9 +138,7 @@ func (r *reader) loadAvatar(id int64, manual bool) {
 		}
 		return err
 	}, func(err error) {
-		if !r.has(s) {
-			return
-		}
+		// avatarRun drops this callback on close; a still-displayed body can change sessions.
 		b.avatarDone = true
 		b.avatarBlocked = !trusted && !manual && (err != nil || !carddav || image == nil)
 		if err == nil && image != nil {

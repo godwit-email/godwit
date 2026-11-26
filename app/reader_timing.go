@@ -14,7 +14,7 @@ var readerTiming = os.Getenv("GODWIT_READER_TIMING") == "1"
 
 // bodyTiming is how long a message's body took to show (#667), from its
 // native read's start: the read back (read), its page made (view), the body
-// built for the page (built) and the page's first height (shown). It is
+// built for the page (built) and the page's first paint opportunity (shown). It is
 // logged once, at shown; a page made again later (refolding) starts anew
 // from its making.
 type bodyTiming struct {
@@ -49,7 +49,7 @@ func (t *bodyTiming) builtDone() {
 	}
 }
 
-// shown marks the page's first height and returns the line to log, once;
+// shown marks the page's first paint opportunity and returns the line to log, once;
 // "" before the page was made, after the line was given, or while off.
 func (t *bodyTiming) shown(message int64) string {
 	if !readerTiming || t.logged || t.view.IsZero() {
@@ -64,7 +64,7 @@ func (t *bodyTiming) shown(message int64) string {
 		return to.Sub(from).Round(time.Millisecond).String()
 	}
 	built := t.built
-	if built.IsZero() { // the height came first: the build is in the paint
+	if built.IsZero() { // the page painted before OnBuilt reached native
 		built = now
 	}
 	return fmt.Sprintf("reader timing: message %d shown in %s (read %s, wait %s, view %s, build %s, paint %s)",

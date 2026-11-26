@@ -448,8 +448,7 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
     }
   };
   run();
-  let live = true;
-  let queued = false;
+  let queued = 0;
   // Colours depend on geometry only through media queries; the frame's own height changes on
   // every measure, so recompute on width or on any media rule changing its result.
   const layout = () => {
@@ -470,10 +469,9 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
     if (next === current) return;
     current = next;
     if (queued) return;
-    queued = true;
-    requestAnimationFrame(() => {
-      queued = false;
-      if (live) run();
+    queued = requestAnimationFrame(() => {
+      queued = 0;
+      run();
     });
   };
   const observer = new ResizeObserver(resized);
@@ -481,7 +479,7 @@ export function adaptDarkMode(frame: HTMLIFrameElement, theme: Theme): () => voi
   window.addEventListener("resize", resized);
   win.addEventListener("resize", resized);
   return () => {
-    live = false;
+    cancelAnimationFrame(queued);
     observer.disconnect();
     window.removeEventListener("resize", resized);
     win.removeEventListener("resize", resized);

@@ -1,7 +1,8 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
-import type { ReaderBody, ReaderGlass, Theme } from "@/mygo";
+import type { ReaderBinding, ReaderBody, ReaderGlass, Theme } from "@/mygo";
 
 const h = vi.hoisted(() => {
+  const load = vi.fn();
   const on =
     <T,>(set: Set<(x: T) => void>) =>
     (f: (x: T) => void) => {
@@ -10,6 +11,8 @@ const h = vi.hoisted(() => {
     };
   return {
     on,
+    load: Object.assign(load, { with: vi.fn(() => load) }),
+    binding: new Set<(b: ReaderBinding) => void>(),
     body: new Set<(b: ReaderBody) => void>(),
     theme: new Set<(t: Theme) => void>(),
     glass: new Set<(g: ReaderGlass) => void>(),
@@ -17,8 +20,10 @@ const h = vi.hoisted(() => {
 });
 vi.mock("@/mygo", () => ({
   ReaderPage: {
-    load: vi.fn(),
+    binding: vi.fn(),
+    load: h.load,
     height: vi.fn(async () => {}),
+    painted: vi.fn(async () => {}),
     openLink: vi.fn(async () => {}),
     navigate: vi.fn(async () => {}),
     search: vi.fn(async () => {}),
@@ -26,6 +31,7 @@ vi.mock("@/mygo", () => ({
     print: vi.fn(async () => {}),
   },
   events: {
+    readerBinding: { on: h.on(h.binding) },
     readerBody: { on: h.on(h.body) },
     theme: { on: h.on(h.theme) },
     readerGlass: { on: h.on(h.glass) },
@@ -49,6 +55,7 @@ const theme: Theme = {
   bodyFontSize: 14,
 };
 const body = (version: number, html: string, over: Partial<ReaderBody> = {}): ReaderBody => ({
+  binding: 1,
   message: 9,
   version,
   html,
@@ -62,20 +69,24 @@ const body = (version: number, html: string, over: Partial<ReaderBody> = {}): Re
   ...over,
 });
 
-let frames: FrameRequestCallback[] = [];
+const frames = new Map<number, FrameRequestCallback>();
+let frameID = 0;
 let observers: { cb: ResizeObserverCallback; targets: Element[] }[] = [];
 const flush = () =>
   act(() => {
-    const fs = frames;
-    frames = [];
-    for (const f of fs) f(0);
+    for (const [id, f] of [...frames]) if (frames.delete(id)) f(0);
   });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  frames = [];
+  vi.mocked(api.binding).mockResolvedValue({ id: 1, active: true });
+  frames.clear();
   observers = [];
-  vi.stubGlobal("requestAnimationFrame", (f: FrameRequestCallback) => frames.push(f));
+  vi.stubGlobal("requestAnimationFrame", (f: FrameRequestCallback) => {
+    frames.set(++frameID, f);
+    return frameID;
+  });
+  vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -140,9 +151,13 @@ test("what the bars cover blurs via translate3d refs and fades briefly on fast f
   expect(band("top")?.style.display).toBe("none");
   expect(band("bottom")?.style.display).toBe("none");
 
-  const emit = (g: ReaderGlass) => {
-    for (const f of h.glass) f(g);
+  const emit = (g: Omit<ReaderGlass, "binding">, binding = 1) => {
+    for (const f of h.glass) f({ ...g, binding });
   };
+
+  // A queued strip from an old binding cannot cover this mail.
+  emit({ top: empty, bottom: { x: -12, y: 520, w: 720, h: 74, r: 16 } }, 0);
+  expect(band("bottom")?.style.display).toBe("none");
 
   // Initial appearance stays fully visible (no flash on thread open).
   emit({ top: empty, bottom: { x: -12, y: 520, w: 720, h: 74, r: 16 } });
@@ -202,7 +217,8 @@ test("height doesn't run away with viewport-sized mail (vh): it converges, bound
   const ro = observers.find((o) => o.targets.includes(wrap));
   const settle = () => {
     for (let i = 0; i < 30; i++) {
-      win.dispatchEvent(new win.Event("resize")); // frame.style.height updates fire resize on win
+      win.dispatchEvent(new win.Event("resize")); // setting frame.style.height
+      window.dispatchEvent(new Event("resize")); // native placing the measured WebView
       ro?.cb([], {} as ResizeObserver); // any layout change re-fires the observer
       flush();
     }
@@ -217,7 +233,7 @@ test("height doesn't run away with viewport-sized mail (vh): it converges, bound
   wrap.querySelector("img")?.dispatchEvent(new Event("load"));
   settle();
   expect(api.height).toHaveBeenCalledTimes(2);
-  expect(api.height).toHaveBeenLastCalledWith(290);
+  expect(api.height).toHaveBeenLastCalledWith(1, 290);
   expect(frame.style.height).toBe("290px");
 });
 
@@ -226,7 +242,7 @@ test("height is clamped to Go's maximum and stops growing there", async () => {
   const wrap = doc.getElementById("godwit-body") as HTMLElement;
   wrap.getBoundingClientRect = () => ({ height: 5_000_000 }) as DOMRect;
   flush();
-  expect(api.height).toHaveBeenCalledExactlyOnceWith(1 << 20);
+  expect(api.height).toHaveBeenCalledExactlyOnceWith(1, 1 << 20);
   // jsdom serializes lengths to six significant digits (1048576px reads back as 1048580px).
   expect(Number.parseFloat(frame.style.height)).toBeCloseTo(1 << 20, -1);
   wrap.getBoundingClientRect = () => ({ height: 6_000_000 }) as DOMRect;
@@ -235,15 +251,32 @@ test("height is clamped to Go's maximum and stops growing there", async () => {
   expect(api.height).toHaveBeenCalledTimes(1);
 });
 
-test("a failed first load uses the runtime locale before any body arrives", async () => {
+test("a failed first load paints the localized retry, then reloads its binding", async () => {
   vi.stubGlobal("mygo", { locale: "zh-Hans", on: () => () => {} });
-  vi.mocked(api.load).mockRejectedValueOnce(new Error("boom"));
-  render(<ReaderApp />);
-  const retry = await screen.findByRole("button", { name: "重试" });
-  expect(screen.getByText("出错了：boom")).toBeInTheDocument();
-  vi.mocked(api.load).mockResolvedValueOnce(body(1, "<p>x</p>"));
-  act(() => retry.click());
-  await waitFor(() => expect(document.querySelector("iframe")).not.toBeNull());
+  const rect = vi
+    .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+    .mockReturnValue({ height: 42 } as DOMRect);
+  try {
+    vi.mocked(api.load).mockRejectedValueOnce(new Error("boom"));
+    render(<ReaderApp />);
+    const retry = await screen.findByRole("button", { name: "重试" });
+    expect(screen.getByText("出错了：boom")).toBeInTheDocument();
+    expect(api.height).toHaveBeenCalledExactlyOnceWith(1, 42);
+    flush();
+    expect(api.painted).not.toHaveBeenCalled();
+    flush();
+    expect(api.painted).toHaveBeenCalledExactlyOnceWith(1);
+    const failed = vi.mocked(api.load.with).mock.lastCall?.[0].signal;
+    vi.mocked(api.load).mockResolvedValueOnce(body(1, "<p>x</p>"));
+    act(() => retry.click());
+    await waitFor(() => expect(document.querySelector("iframe")).toBeInTheDocument());
+    expect(failed?.aborted).toBe(true);
+    expect(vi.mocked(api.load.with).mock.lastCall?.[0].signal?.aborted).toBe(false);
+    expect(retry.isConnected).toBe(false);
+    expect(vi.mocked(api.load).mock.calls).toEqual([[1], [1]]);
+  } finally {
+    rect.mockRestore();
+  }
 });
 
 test("stale load ignored: readerBody v2, then load's v1 resolves → v2 stays", async () => {
@@ -251,12 +284,132 @@ test("stale load ignored: readerBody v2, then load's v1 resolves → v2 stays", 
   vi.mocked(api.load).mockReturnValue(new Promise((r) => (resolve = r)));
   render(<ReaderApp />);
   expect(h.body.size).toBe(1); // listeners first
+  await waitFor(() => expect(api.load).toHaveBeenCalledWith(1));
   act(() => {
     for (const f of h.body) f(body(2, "<p>two</p>"));
   });
   await act(async () => resolve(body(1, "<p>one</p>")));
   const { doc } = await loaded();
   expect(doc.getElementById("godwit-body")?.textContent).toBe("two");
+});
+
+function bind(id: number, active: boolean) {
+  for (const receive of h.binding) receive({ id, active });
+}
+
+test("a newer binding wins over bootstrap and the previous load's failure", async () => {
+  let bootstrap!: (b: ReaderBinding) => void;
+  let fail!: (e: Error) => void;
+  vi.mocked(api.binding).mockReturnValueOnce(new Promise((resolve) => (bootstrap = resolve)));
+  vi.mocked(api.load).mockReturnValueOnce(new Promise((_, reject) => (fail = reject)));
+  render(<ReaderApp />);
+  act(() => bind(2, true));
+  expect(api.load).toHaveBeenCalledExactlyOnceWith(2);
+  vi.mocked(api.load).mockResolvedValueOnce(body(1, "<p>Current</p>", { binding: 3 }));
+  act(() => bind(3, true));
+  const { frame, doc } = await loaded();
+  await act(async () => {
+    fail(new Error("stale failure"));
+    bootstrap({ id: 1, active: true });
+  });
+  expect(frame).toBeInTheDocument();
+  expect(doc.getElementById("godwit-body")?.textContent).toBe("Current");
+  expect(screen.queryByRole("button")).toBeNull();
+  expect(vi.mocked(api.load).mock.calls).toEqual([[2], [3]]);
+});
+
+test("outstanding loads are aborted on reassignment, release and unmount", async () => {
+  let reject!: (reason: unknown) => void;
+  vi.mocked(api.load).mockReturnValueOnce(new Promise((_, r) => (reject = r)));
+  vi.mocked(api.load).mockImplementation(() => new Promise(() => {}));
+  const { unmount } = render(<ReaderApp />);
+  await waitFor(() => expect(api.load).toHaveBeenCalledWith(1));
+  const signal = () => vi.mocked(api.load.with).mock.lastCall?.[0].signal;
+  const first = signal();
+  expect(first?.aborted).toBe(false);
+  act(() => {
+    bind(2, true);
+    for (const receive of h.body) receive(body(1, "Current mail", { binding: 2 }));
+  });
+  expect(first?.aborted).toBe(true);
+  const second = signal();
+  expect(second?.aborted).toBe(false);
+  await act(async () => reject(first?.reason));
+  const { doc } = await loaded();
+  expect(doc.getElementById("godwit-body")?.textContent).toBe("Current mail");
+  act(() => bind(2, false));
+  expect(second?.aborted).toBe(true);
+  act(() => bind(3, true));
+  const third = signal();
+  expect(third?.aborted).toBe(false);
+  unmount();
+  expect(third?.aborted).toBe(true);
+});
+
+test("a new assignment or release clears the old error and cancels its paint", async () => {
+  let sized!: () => void;
+  vi.mocked(api.height).mockReturnValueOnce(new Promise((resolve) => (sized = resolve)));
+  vi.mocked(api.load).mockRejectedValueOnce(new Error("first"));
+  render(<ReaderApp />);
+  const retry = await screen.findByRole("button");
+  const failure = retry.closest("main") as HTMLElement;
+  failure.getBoundingClientRect = () => ({ height: 48 }) as DOMRect;
+  observers.find((o) => o.targets.includes(failure))?.cb([], {} as ResizeObserver);
+  expect(api.height).toHaveBeenCalledExactlyOnceWith(1, 48);
+
+  vi.mocked(api.load).mockRejectedValueOnce(new Error("second"));
+  act(() => bind(2, true));
+  expect(retry.isConnected).toBe(false);
+  await screen.findByRole("button");
+  await act(async () => sized());
+  flush();
+  flush();
+  expect(api.painted).not.toHaveBeenCalled();
+  act(() => bind(2, false));
+  expect(screen.queryByRole("button")).toBeNull();
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "f", metaKey: true }));
+  expect(api.search).not.toHaveBeenCalled();
+});
+
+test("reassigning the same message unmounts its old frame and restarts body versions", async () => {
+  const old = await start(body(5, '<p data-href="https://example.com/old">First</p>'));
+  const oldLink = old.doc.querySelector("[data-href]") as HTMLElement;
+  let finish!: (b: ReaderBody) => void;
+  vi.mocked(api.load).mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+  act(() => bind(2, true));
+  expect(old.frame.isConnected).toBe(false);
+  expect(document.querySelector("[data-glass]")).toBeNull();
+  oldLink.click();
+  expect(api.openLink).not.toHaveBeenCalled();
+
+  act(() => {
+    bind(1, false);
+    bind(1, true);
+    bind(2, true);
+    for (const receive of h.body) {
+      receive(body(2, "<p>Second</p>", { binding: 2 }));
+      receive(body(8, "<p>Stale push</p>"));
+    }
+  });
+  await act(async () => finish(body(1, "<p>Stale load</p>", { binding: 2 })));
+  const current = await loaded();
+  expect(current.doc.getElementById("godwit-body")?.textContent).toBe("Second");
+  expect(vi.mocked(api.load).mock.calls).toEqual([[1], [2]]);
+  current.win.dispatchEvent(new current.win.KeyboardEvent("keydown", { key: "p", metaKey: true }));
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "s", metaKey: true }));
+  expect(api.print).toHaveBeenCalledExactlyOnceWith(2);
+  expect(api.save).toHaveBeenCalledExactlyOnceWith(2);
+
+  act(() => {
+    bind(2, false);
+    bind(2, true);
+    for (const receive of h.body) receive(body(9, "<p>Late</p>", { binding: 2 }));
+  });
+  expect(current.frame.isConnected).toBe(false);
+  expect(document.querySelector("[data-glass]")).toBeNull();
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "s", metaKey: true }));
+  expect(api.save).toHaveBeenCalledTimes(1);
+  expect(api.load).toHaveBeenCalledTimes(2);
 });
 
 test("height follows content: one call per frame, large to small and back", async () => {
@@ -268,7 +421,7 @@ test("height follows content: one call per frame, large to small and back", asyn
   expect(ro).toBeDefined();
   const resize = () => ro?.cb([], {} as ResizeObserver);
   flush();
-  expect(api.height).toHaveBeenLastCalledWith(800);
+  expect(api.height).toHaveBeenLastCalledWith(1, 800);
   expect(frame.style.height).toBe("800px");
   vi.mocked(api.height).mockClear();
 
@@ -276,15 +429,15 @@ test("height follows content: one call per frame, large to small and back", asyn
   resize();
   resize();
   resize();
-  expect(frames).toHaveLength(1);
+  expect(frames.size).toBe(1);
   flush();
-  expect(api.height).toHaveBeenCalledExactlyOnceWith(120);
+  expect(api.height).toHaveBeenCalledExactlyOnceWith(1, 120);
   expect(frame.style.height).toBe("120px");
 
   hgt = 2000.4;
   resize();
   flush();
-  expect(api.height).toHaveBeenLastCalledWith(2001);
+  expect(api.height).toHaveBeenLastCalledWith(1, 2001);
 
   resize();
   flush(); // unchanged → no call
@@ -299,7 +452,7 @@ test("an image's load re-measures", async () => {
   wrap.getBoundingClientRect = () => ({ height: 90 }) as DOMRect;
   doc.querySelector("img")?.dispatchEvent(new Event("load"));
   flush();
-  expect(api.height).toHaveBeenLastCalledWith(90);
+  expect(api.height).toHaveBeenLastCalledWith(1, 90);
 });
 
 test("link click opens via Go; other navigation is prevented", async () => {
@@ -315,7 +468,7 @@ test("link click opens via Go; other navigation is prevented", async () => {
   const click = new win.MouseEvent("click", { bubbles: true, cancelable: true });
   doc.querySelector("b")?.dispatchEvent(click);
   expect(click.defaultPrevented).toBe(true);
-  expect(api.openLink).toHaveBeenCalledExactlyOnceWith("https://a.example/x");
+  expect(api.openLink).toHaveBeenCalledExactlyOnceWith(1, "https://a.example/x");
 
   const other = new win.MouseEvent("click", { bubbles: true, cancelable: true });
   doc.querySelector("a")?.dispatchEvent(other);
@@ -330,7 +483,7 @@ test("keyboard link: Enter on a focused [data-href] → openLink", async () => {
   const enter = new win.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
   link.dispatchEvent(enter);
   expect(enter.defaultPrevented).toBe(true);
-  expect(api.openLink).toHaveBeenCalledExactlyOnceWith("mailto:a@b.c");
+  expect(api.openLink).toHaveBeenCalledExactlyOnceWith(1, "mailto:a@b.c");
 });
 
 test("shortcuts from iframe: ⌘[ inside the iframe → navigate(-1)", async () => {
@@ -338,9 +491,9 @@ test("shortcuts from iframe: ⌘[ inside the iframe → navigate(-1)", async () 
   doc.body.dispatchEvent(
     new win.KeyboardEvent("keydown", { key: "[", metaKey: true, bubbles: true, cancelable: true }),
   );
-  expect(api.navigate).toHaveBeenCalledExactlyOnceWith(-1);
+  expect(api.navigate).toHaveBeenCalledExactlyOnceWith(1, -1);
   window.dispatchEvent(new KeyboardEvent("keydown", { key: "]", metaKey: true, cancelable: true }));
-  expect(api.navigate).toHaveBeenLastCalledWith(1);
+  expect(api.navigate).toHaveBeenLastCalledWith(1, 1);
 });
 
 test("area[data-href] in the iframe → openLink", async () => {
@@ -348,7 +501,7 @@ test("area[data-href] in the iframe → openLink", async () => {
     body(1, '<map name="m"><area data-href="https://a.example/m" alt="m"></map>'),
   );
   (doc.querySelector("area") as HTMLElement).click();
-  expect(api.openLink).toHaveBeenCalledExactlyOnceWith("https://a.example/m");
+  expect(api.openLink).toHaveBeenCalledExactlyOnceWith(1, "https://a.example/m");
 });
 
 test("⌘F or ⌘K in the iframe or the page → search()", async () => {
@@ -361,7 +514,7 @@ test("⌘F or ⌘K in the iframe or the page → search()", async () => {
   });
   doc.body.dispatchEvent(e);
   expect(e.defaultPrevented).toBe(true);
-  expect(api.search).toHaveBeenCalledOnce();
+  expect(api.search).toHaveBeenCalledExactlyOnceWith(1);
   window.dispatchEvent(new KeyboardEvent("keydown", { key: "f", metaKey: true, cancelable: true }));
   expect(api.search).toHaveBeenCalledTimes(2);
   window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, cancelable: true }));
@@ -752,7 +905,7 @@ test("system appearance, font and competing mixed bodies settle on the latest in
   link.dispatchEvent(
     new current.win.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
   );
-  expect(api.openLink).toHaveBeenCalledExactlyOnceWith("https://example.com/delivery");
+  expect(api.openLink).toHaveBeenCalledExactlyOnceWith(1, "https://example.com/delivery");
   act(() => {
     system.matches = false;
     system.dispatchEvent(new Event("change"));
@@ -932,7 +1085,7 @@ test("the gradient preview restores light artwork and recomputes from each curre
   link.dispatchEvent(
     new current.win.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
   );
-  expect(api.openLink).toHaveBeenCalledExactlyOnceWith("https://example.com/delivery");
+  expect(api.openLink).toHaveBeenCalledExactlyOnceWith(1, "https://example.com/delivery");
   expect(input.html).toBe(readerGradients);
 });
 
@@ -966,7 +1119,7 @@ test("coloured surfaces, brand text and CTA keep their meaning and readable fina
   element("cta").dispatchEvent(
     new win.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
   );
-  expect(api.openLink).toHaveBeenCalledExactlyOnceWith("https://example.com/order");
+  expect(api.openLink).toHaveBeenCalledExactlyOnceWith(1, "https://example.com/order");
   expect(input.html).toBe(html);
 });
 
@@ -1028,7 +1181,7 @@ test("borders and focus stay visible while shadow geometry and link behaviour ar
     [])
     expect(Math.max(...channels(color).slice(0, 3))).toBeLessThan(50);
   link.click();
-  expect(api.openLink).toHaveBeenCalledExactlyOnceWith("https://example.com");
+  expect(api.openLink).toHaveBeenCalledExactlyOnceWith(1, "https://example.com");
 });
 
 test("the coloured preview restores light styling and recomputes stable colours on resize and replacement", async () => {
@@ -1170,30 +1323,75 @@ test("opaque coloured cards escape media protection but retain opacity protectio
   expect(win.getComputedStyle(faded).color).toBe("rgb(22, 101, 52)");
 });
 
-test("parsed dark mail is readable before delayed images finish loading", async () => {
+test("changing height every frame does not postpone the first drawable body", async () => {
+  const { doc } = await start(body(1, '<img src="godwit-img://m9/slow" alt="">'));
+  const wrap = doc.getElementById("godwit-body") as HTMLElement;
+  let height = 0;
+  wrap.getBoundingClientRect = () => ({ height }) as DOMRect;
+  for (const px of [80, 90, 100, 110]) {
+    height = px;
+    doc.querySelector("img")?.dispatchEvent(new Event("load"));
+    flush();
+    await act(async () => {}); // each native height is acknowledged before the next frame
+  }
+  expect(api.height).toHaveBeenCalledTimes(4);
+  expect(api.height).toHaveBeenLastCalledWith(1, 110);
+  expect(api.painted).toHaveBeenCalledExactlyOnceWith(1);
+});
+
+test("a marked dark body paints at its measured size without waiting for a remote image", async () => {
+  let sized!: () => void;
+  vi.mocked(api.height).mockReturnValueOnce(new Promise((resolve) => (sized = resolve)));
   vi.mocked(api.load).mockResolvedValue(
     body(
       1,
       `<div style="background:#fff;color:#111">
-    <p id="waiting-text">Read while the image is pending</p><img id="waiting-image" src="godwit-img://m9/slow" width="320" height="180">
-  </div>`,
-      { theme: darkTheme, remote: true },
+        <p id="waiting-text">Read while the image is pending</p>
+        <img id="waiting-image" src="godwit-img://m9/slow" width="320" height="180">
+        <blockquote>Earlier reply</blockquote>
+      </div>`,
+      { theme: darkTheme, remote: true, collapseQuotes: true },
     ),
   );
   render(<ReaderApp />);
+  const frame = await screen.findByTitle("Message body");
+  act(() => frame.dispatchEvent(new Event("load"))); // initial about:blank, not the mail
+  flush();
+  expect(api.height).not.toHaveBeenCalled();
   const { doc, win } = await loaded(false);
   Object.defineProperty(doc, "readyState", { configurable: true, value: "interactive" });
-  flush();
   const wrap = doc.getElementById("godwit-body") as HTMLElement;
+  wrap.getBoundingClientRect = () => ({ height: 360 }) as DOMRect;
+  flush(); // find the marker while the image is still loading
   expect(win.getComputedStyle(wrap).visibility).toBe("visible");
+  expect(doc.querySelector("details > summary")).toHaveAttribute("aria-label", "Show quoted text");
   expect(win.getComputedStyle(doc.getElementById("waiting-text") as HTMLElement).color).not.toBe(
     "rgb(17, 17, 17)",
   );
   expect(
     win.getComputedStyle(doc.getElementById("waiting-image") as HTMLElement).backgroundColor,
   ).toBe("rgb(255, 255, 255)");
+  flush(); // measure
+  expect(frame.style.height).toBe("360px");
+  expect(api.height).toHaveBeenCalledExactlyOnceWith(1, 360);
   flush();
-  expect(api.height).toHaveBeenCalled();
+  flush();
+  expect(api.painted).not.toHaveBeenCalled(); // native still has the staged cell
+  await act(async () => sized());
+  flush(); // before the browser paints at the acknowledged height
+  expect(api.painted).not.toHaveBeenCalled();
+  flush();
+  expect(api.painted).toHaveBeenCalledExactlyOnceWith(1);
+
+  act(() => frame.dispatchEvent(new Event("load")));
+  wrap.getBoundingClientRect = () => ({ height: 480 }) as DOMRect;
+  doc.querySelector("img")?.dispatchEvent(new Event("load"));
+  flush();
+  await act(async () => {});
+  flush();
+  flush();
+  expect(api.height).toHaveBeenLastCalledWith(1, 480);
+  expect(api.painted).toHaveBeenCalledTimes(1);
 });
 
 test("image permission, failure and retry keep the backdrop and detach the old document", async () => {
@@ -1215,10 +1413,10 @@ test("image permission, failure and retry keep the backdrop and detach the old d
   image.dispatchEvent(new Event("error"));
   flush();
   expect(current.win.getComputedStyle(image).backgroundColor).toBe("rgb(255, 255, 255)");
-  expect(api.height).toHaveBeenLastCalledWith(120);
+  expect(api.height).toHaveBeenLastCalledWith(1, 120);
   act(() => current.frame.dispatchEvent(new Event("load")));
   (current.doc.querySelector("[data-href]") as HTMLElement).click();
-  expect(api.openLink).toHaveBeenCalledExactlyOnceWith("https://example.com");
+  expect(api.openLink).toHaveBeenCalledExactlyOnceWith(1, "https://example.com");
 
   const before = current.frame.getAttribute("srcdoc");
   act(() => {
@@ -1246,22 +1444,59 @@ test("image permission, failure and retry keep the backdrop and detach the old d
   expect(current.doc.querySelector("img")?.getAttribute("src")).toBe("godwit-img://m9/logo");
 });
 
-test("marker polling stops once the frame has loaded", async () => {
-  vi.mocked(api.load).mockResolvedValue(body(1, "<p>Hello</p>"));
-  render(<ReaderApp />);
-  const frame = await waitFor(() => {
-    const f = document.querySelector("iframe");
-    if (!f?.getAttribute("srcdoc")) throw new Error("no frame yet");
-    if (frames.length === 0) throw new Error("not polling yet"); // scheduled after the frame renders
-    return f;
-  });
-  // A load whose document never carries the marker (e.g. the frame navigated away).
-  act(() => {
-    frame.dispatchEvent(new Event("load"));
-  });
+test("a previous document's load or pending paint cannot hand off its empty replacement", async () => {
+  const { frame, doc } = await start(body(1, "<p>First</p>"));
+  const wrap = doc.getElementById("godwit-body") as HTMLElement;
+  wrap.getBoundingClientRect = () => ({ height: 80 }) as DOMRect;
   flush();
-  expect(frames).toEqual([]);
+  expect(api.height).toHaveBeenCalledExactlyOnceWith(1, 80);
+  await act(async () => {});
+  flush(); // first document's paint notification is queued
+  act(() => {
+    for (const receive of h.body) receive(body(2, ""));
+    flush(); // a queued rAF can run before React commits the replacement
+  });
+  act(() => frame.dispatchEvent(new Event("load"))); // previous document, not the replacement
+  flush();
+  expect(api.painted).not.toHaveBeenCalled();
+  expect(api.height).toHaveBeenCalledTimes(1);
+
+  await loaded(false);
+  flush();
+  flush();
+  expect(frame.style.height).toBe("0px");
+  expect(api.height).toHaveBeenLastCalledWith(1, 0);
+  await act(async () => {});
+  flush();
+  flush();
+  expect(api.painted).toHaveBeenCalledExactlyOnceWith(1);
+  expect(frames.size).toBe(0); // no marker polling once wired
 });
+
+test.each(["measure", "height", "paint"])(
+  "releasing the shell cancels its pending %s",
+  async (phase) => {
+    let sized!: () => void;
+    if (phase !== "measure")
+      vi.mocked(api.height).mockReturnValueOnce(new Promise((resolve) => (sized = resolve)));
+    const { frame } = await start(body(1, "<p>First</p>", { theme: darkTheme }));
+    if (phase === "measure") {
+      frame.getBoundingClientRect = () => ({ width: 400 }) as DOMRect;
+      window.dispatchEvent(new Event("resize")); // a dark pass is queued at this width too
+    } else {
+      flush();
+      expect(api.height).toHaveBeenCalledOnce();
+    }
+    if (phase === "paint") {
+      await act(async () => sized());
+      flush(); // between the two frames
+    }
+    act(() => bind(1, false));
+    if (phase === "height") await act(async () => sized());
+    expect(frames.size).toBe(0); // an idle WebView may never run another frame
+    expect(api.painted).not.toHaveBeenCalled();
+  },
+);
 
 test("a height media query that changes its result recomputes at the same width", async () => {
   const { frame, doc, win } = await start(
@@ -1457,5 +1692,5 @@ test("fold summary inside a linked blockquote toggles without triggering openLin
 
   // Clicking the quoted mail content itself still opens the surrounding link.
   (doc.getElementById("q") as HTMLElement).click();
-  expect(api.openLink).toHaveBeenCalledExactlyOnceWith("https://example.com");
+  expect(api.openLink).toHaveBeenCalledExactlyOnceWith(1, "https://example.com");
 });

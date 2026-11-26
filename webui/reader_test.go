@@ -16,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/godwit-email/godwit/core"
@@ -47,7 +48,8 @@ func TestReaderBuildLooksUpEachImageSizeOnce(t *testing.T) {
 	f.r.getMessage = func(context.Context, Service, int64, bool) (core.Message, error) {
 		return core.Message{HTML: strings.Repeat(`<img src="https://example.com/cached.png"><img src="https://example.com/missing.png">`, 100)}, nil
 	}
-	body, err := f.r.build(t.Context(), svc, 1, 1, false)
+	f.r.SetService(svc)
+	body, err := f.load(f.page(1))
 	require.NoError(t, err)
 	assert.Equal(t, map[string]int{"https://example.com/cached.png": 1, "https://example.com/missing.png": 1}, svc.calls)
 	assert.Equal(t, 100, strings.Count(body.HTML, `width="20"`))
@@ -56,11 +58,12 @@ func TestReaderBuildLooksUpEachImageSizeOnce(t *testing.T) {
 // readerFixture is a Reader on an Env with one account; every native
 // callback and emitted body is recorded.
 type readerFixture struct {
-	e     *coretest.Env
-	acc   core.Account
-	pages *Pages
-	r     *Reader
-	p     *ReaderPage
+	e      *coretest.Env
+	acc    core.Account
+	pages  *Pages
+	r      *Reader
+	p      *ReaderPage
+	owners map[int64]int // first registration in each fixture message’s lifetime
 
 	mu       sync.Mutex
 	emitted  []emittedBody
@@ -68,40 +71,40 @@ type readerFixture struct {
 	links    []string
 	navs     []int
 	searches int
-	callers  []any // the page each of the above named
+	callers  []int // the page each of the above named
 	cuts     map[int64]bool
 	built    []emittedBody // OnBuilt's
-	failed   []any         // the pages OnFailed named
+	failed   []int         // the pages OnFailed named
 	imgFails []int         // OnImagesFailed's counts
 }
 
 type emittedBody struct {
-	page any
+	page int
 	body ReaderBody
 }
 
 func newReaderFixture(t *testing.T) *readerFixture {
 	t.Helper()
-	f := &readerFixture{e: coretest.New(t, coretest.WithoutAutoSync()), cuts: map[int64]bool{}}
+	f := &readerFixture{e: coretest.New(t, coretest.WithoutAutoSync()), cuts: map[int64]bool{}, owners: map[int64]int{}}
 	f.acc = f.e.AddAccount(t, "alice@example.com")
 	f.pages = NewPages(func(ctx context.Context) any { return ctx.Value(pageKey{}) })
 	f.r = NewReader(f.pages, ReaderDeps{
-		Emit: func(page any, b ReaderBody) { f.record(func() { f.emitted = append(f.emitted, emittedBody{page, b}) }) },
-		OnHeight: func(k any, m int64, px int) {
+		Emit: func(page int, b ReaderBody) { f.record(func() { f.emitted = append(f.emitted, emittedBody{page, b}) }) },
+		OnHeight: func(k int, m int64, px int) {
 			f.record(func() { f.callers, f.heights = append(f.callers, k), append(f.heights, [2]int64{m, int64(px)}) })
 		},
-		OnLink: func(k any, u string) {
+		OnLink: func(k int, u string) {
 			f.record(func() { f.callers, f.links = append(f.callers, k), append(f.links, u) })
 		},
-		OnNavigate: func(k any, dir int) {
+		OnNavigate: func(k int, dir int) {
 			f.record(func() { f.callers, f.navs = append(f.callers, k), append(f.navs, dir) })
 		},
-		OnSearch: func(k any) { f.record(func() { f.callers, f.searches = append(f.callers, k), f.searches+1 }) },
-		OnBuilt: func(k any, b ReaderBody) {
+		OnSearch: func(k int) { f.record(func() { f.callers, f.searches = append(f.callers, k), f.searches+1 }) },
+		OnBuilt: func(k int, b ReaderBody) {
 			f.record(func() { f.cuts[b.Message], f.built = b.Cut, append(f.built, emittedBody{k, b}) })
 		},
-		OnFailed:       func(k any, _ int64, _ error) { f.record(func() { f.failed = append(f.failed, k) }) },
-		OnImagesFailed: func(_ any, _ int64, n int) { f.record(func() { f.imgFails = append(f.imgFails, n) }) },
+		OnFailed:       func(k int, _ int64, _ error) { f.record(func() { f.failed = append(f.failed, k) }) },
+		OnImagesFailed: func(_ int, _ int64, n int) { f.record(func() { f.imgFails = append(f.imgFails, n) }) },
 	})
 	st, err := f.e.Svc.GetSettings(t.Context())
 	require.NoError(t, err)
@@ -119,16 +122,25 @@ func (f *readerFixture) record(fn func()) {
 	fn()
 }
 
-// page registers a reader page bound to message and returns its key.
-func (f *readerFixture) page(message int64) any {
-	k := new(int)
-	f.pages.Register(k, "reader")
-	f.r.Bind(k, message)
-	return k
+// page registers a distinct physical page bound to message and returns its assignment ID.
+func (f *readerFixture) page(message int64) int {
+	id := f.pages.Register(new(int), "reader")
+	f.r.Bind(id, message, nil)
+	if f.owners[message] == 0 {
+		f.owners[message] = id
+	}
+	return id
 }
 
+func (f *readerFixture) ctx(id int) context.Context {
+	key, _ := f.pages.Key(id)
+	return pageCtx(key)
+}
+
+func (f *readerFixture) load(id int) (ReaderBody, error) { return f.p.Load(f.ctx(id), id) }
+
 // waitEmitted waits for a body emitted to page and returns the newest.
-func (f *readerFixture) waitEmitted(t *testing.T, page any) ReaderBody {
+func (f *readerFixture) waitEmitted(t *testing.T, page int) ReaderBody {
 	t.Helper()
 	var got ReaderBody
 	require.Eventually(t, func() bool {
@@ -201,7 +213,7 @@ func dataPNG(b []byte) string { return "data:image/png;base64," + base64.StdEnco
 // image is the proxy's answer for src, an image of message.
 func (f *readerFixture) image(t *testing.T, message int64, src string) *httptest.ResponseRecorder {
 	t.Helper()
-	return f.imageAt(t, fmt.Sprintf("godwit-img://m%d/%s", message, imagecache.Key(src)))
+	return f.imageAt(t, fmt.Sprintf("godwit-img://m%d/%d-%s", message, f.owners[message], imagecache.Key(src)))
 }
 
 func (f *readerFixture) imageAt(t *testing.T, u string) *httptest.ResponseRecorder {
@@ -215,14 +227,14 @@ func (f *readerFixture) imageAt(t *testing.T, u string) *httptest.ResponseRecord
 
 // proxied is src as the body holds it: the URL the page loads, which is
 // http://m<message>.godwit-img.localhost/… on Windows (imageURL).
-func proxied(message int64, src string) string {
-	return imageURL(fmt.Sprintf("m%d", message), "/"+imagecache.Key(src))
+func proxied(message int64, owner int, src string) string {
+	return imageURL(fmt.Sprintf("m%d", message), fmt.Sprintf("/%d-%s", owner, imagecache.Key(src)))
 }
 
 // served is the URL ImageHandler gets for src: the godwit-img: one, which
 // MyGo maps the page's URL back to.
-func served(message int64, src string) string {
-	return fmt.Sprintf("godwit-img://m%d/%s", message, imagecache.Key(src))
+func served(message int64, owner int, src string) string {
+	return fmt.Sprintf("godwit-img://m%d/%d-%s", message, owner, imagecache.Key(src))
 }
 
 // TestImageURLWebView2 pins the image URLs a page loads: WebView2 requests no
@@ -246,9 +258,10 @@ func TestReaderPageLoad(t *testing.T) {
 	f := newReaderFixture(t)
 	m := f.remoteMail(t, "Hello reader", "https://tracker.example/pixel.png")
 	k := f.page(m.ID)
-	b, err := f.p.Load(pageCtx(k))
+	b, err := f.load(k)
 	require.NoError(t, err)
 	assert.Equal(t, m.ID, b.Message)
+	assert.Equal(t, k, b.Binding)
 	assert.NotZero(t, b.Version)
 	assert.Contains(t, b.HTML, "Hello reader")
 	assert.NotContains(t, b.HTML, "tracker.example")
@@ -259,25 +272,80 @@ func TestReaderPageLoad(t *testing.T) {
 	assert.EqualValues(t, 14, b.Theme.BodyFontSize)
 	assert.Equal(t, "zh-Hans", b.Locale)
 
-	again, err := f.p.Load(pageCtx(k))
+	again, err := f.load(k)
 	require.NoError(t, err)
 	assert.Equal(t, b.Version, again.Version, "a reload is the same body")
 
 	plain := f.deliverOne(t, coretest.Msg("bob@example.com", f.acc.Email, "Plain", "just words"))
-	pb, err := f.p.Load(pageCtx(f.page(plain.ID)))
+	pb, err := f.load(f.page(plain.ID))
 	require.NoError(t, err)
 	assert.Equal(t, "", pb.HTML)
 	assert.Contains(t, pb.Plain, "just words")
+}
+
+func TestReaderFirstLoadReusesOnlyMatchingBlockedSnapshot(t *testing.T) {
+	for _, tc := range []struct {
+		name, policy            string
+		remote, wrongID, reread bool
+	}{
+		{name: "blocked", policy: "ask", remote: true},
+		{name: "automatic with remote images", policy: "auto", remote: true, reread: true},
+		{name: "automatic without remote images", policy: "auto"},
+		{name: "different message", policy: "ask", wrongID: true, reread: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newReaderFixture(t)
+			st, err := f.e.Svc.GetSettings(t.Context())
+			require.NoError(t, err)
+			st.RemoteImages = tc.policy
+			_, err = f.e.Svc.SetSettings(t.Context(), st)
+			require.NoError(t, err)
+			raw := coretest.Msg("bob@example.com", f.acc.Email, "News", "body")
+			if tc.remote {
+				raw = coretest.Msg("bob@example.com", f.acc.Email, "News", "body", coretest.HTML(`<p>body</p><img width="2" height="2" src="https://images.example/photo.png">`))
+			}
+			m := f.deliverOne(t, raw)
+			initial, err := f.r.svc.GetMessageLazyImages(t.Context(), m.ID, false)
+			require.NoError(t, err)
+			if tc.wrongID {
+				initial.ID++
+				initial.Text = "other assignment"
+			}
+			id := f.pages.Register(new(int), "reader")
+			f.r.Bind(id, m.ID, &initial)
+			real := f.r.getMessage
+			var reads atomic.Int32
+			f.r.getMessage = func(ctx context.Context, svc Service, msg int64, remote bool) (core.Message, error) {
+				reads.Add(1)
+				return real(ctx, svc, msg, remote)
+			}
+			b, err := f.load(id)
+			require.NoError(t, err)
+			wantReads := int32(0)
+			if tc.reread {
+				wantReads = 1
+			}
+			assert.Equal(t, wantReads, reads.Load())
+			assert.Contains(t, b.HTML+b.Plain, "body")
+			assert.Equal(t, tc.policy == "auto", b.Remote)
+			assert.Equal(t, tc.remote && b.Remote, strings.Contains(b.HTML, ImageScheme))
+			before := reads.Load()
+			f.r.Allow(m.ID)
+			b = f.waitEmitted(t, id)
+			assert.True(t, b.Remote)
+			assert.Equal(t, before+1, reads.Load(), "Allow never reuses the blocked snapshot")
+		})
+	}
 }
 
 func TestReaderTranslationKeepsBodyAndImagePolicy(t *testing.T) {
 	f := newReaderFixture(t)
 	m := f.remoteMail(t, "Hello reader", "https://tracker.example/pixel.png")
 	k := f.page(m.ID)
-	original, err := f.p.Load(pageCtx(k))
+	original, err := f.load(k)
 	require.NoError(t, err)
 	f.r.Translate(m.ID, map[string]string{"Hello reader": `你好 <img src="https://evil.test/x">`})
-	translated, err := f.p.Load(pageCtx(k))
+	translated, err := f.load(k)
 	require.NoError(t, err)
 	assert.Greater(t, translated.Version, original.Version)
 	assert.Contains(t, translated.HTML, `你好 &lt;img`)
@@ -285,13 +353,13 @@ func TestReaderTranslationKeepsBodyAndImagePolicy(t *testing.T) {
 	assert.False(t, translated.Remote)
 	assert.Equal(t, original.Blocked, translated.Blocked)
 	f.r.Allow(m.ID)
-	withImages, err := f.p.Load(pageCtx(k))
+	withImages, err := f.load(k)
 	require.NoError(t, err)
 	assert.True(t, withImages.Remote)
 	assert.Contains(t, withImages.HTML, `你好 &lt;img`)
 	assert.Contains(t, withImages.HTML, ImageScheme)
 	f.r.Translate(m.ID, nil)
-	restored, err := f.p.Load(pageCtx(k))
+	restored, err := f.load(k)
 	require.NoError(t, err)
 	assert.Contains(t, restored.HTML, "Hello reader")
 	assert.NotContains(t, restored.HTML, "你好")
@@ -303,17 +371,17 @@ func TestReaderTranslationNeedsNoReread(t *testing.T) {
 	f := newReaderFixture(t)
 	m := f.remoteMail(t, "Hello reader", "https://tracker.example/pixel.png")
 	k := f.page(m.ID)
-	original, err := f.p.Load(pageCtx(k))
+	original, err := f.load(k)
 	require.NoError(t, err)
 	f.r.getMessage = func(context.Context, Service, int64, bool) (core.Message, error) {
 		return core.Message{}, errors.New("mail unavailable")
 	}
 	f.r.Translate(m.ID, map[string]string{"Hello reader": "你好"})
-	translated, err := f.p.Load(pageCtx(k))
+	translated, err := f.load(k)
 	require.NoError(t, err)
 	assert.Contains(t, translated.HTML, "你好")
 	f.r.Translate(m.ID, nil)
-	restored, err := f.p.Load(pageCtx(k))
+	restored, err := f.load(k)
 	require.NoError(t, err)
 	assert.Equal(t, original.HTML, restored.HTML)
 	assert.Greater(t, restored.Version, translated.Version)
@@ -327,7 +395,7 @@ func TestReaderTranslationMatchesSanitizedHTML(t *testing.T) {
 	m := f.deliverOne(t, coretest.Msg("bob@example.com", f.acc.Email, "News", "fallback",
 		coretest.HTML(`<p>Hello &amp; welcome&nbsp;<img src="https://images.example/logo.png" width="2" height="2"></p><a href="https://example.com?q=a&amp;b=c"><span>Read more</span></a>`)))
 	k := f.page(m.ID)
-	original, err := f.p.Load(pageCtx(k))
+	original, err := f.load(k)
 	require.NoError(t, err)
 	events, err := f.e.Svc.RunSkill(t.Context(), "translate", core.Target{Kind: "message", ID: m.ID, PreserveHTML: true})
 	require.NoError(t, err)
@@ -340,18 +408,18 @@ func TestReaderTranslationMatchesSanitizedHTML(t *testing.T) {
 	}
 	require.Equal(t, map[string]string{"Hello & welcome\u00a0": "你好\u00a0", "Read more": "阅读更多"}, texts)
 	f.r.Translate(m.ID, texts)
-	translated, err := f.p.Load(pageCtx(k))
+	translated, err := f.load(k)
 	require.NoError(t, err)
 	assert.Contains(t, translated.HTML, "你好\u00a0")
 	assert.Contains(t, translated.HTML, `<span>阅读更多</span>`)
 	assert.Contains(t, translated.HTML, `data-href="https://example.com?q=a&amp;b=c"`)
 	assert.Equal(t, original.Blocked, translated.Blocked)
 	f.r.Allow(m.ID)
-	withImages, err := f.p.Load(pageCtx(k))
+	withImages, err := f.load(k)
 	require.NoError(t, err)
 	assert.Contains(t, withImages.HTML, "你好\u00a0")
 	assert.Contains(t, withImages.HTML, `<span>阅读更多</span>`)
-	assert.Contains(t, withImages.HTML, `src="`+proxied(m.ID, "https://images.example/logo.png")+`"`)
+	assert.Contains(t, withImages.HTML, `src="`+proxied(m.ID, k, "https://images.example/logo.png")+`"`)
 	assert.True(t, withImages.Remote)
 }
 
@@ -369,7 +437,7 @@ func TestReaderTranslationDuringImageReload(t *testing.T) {
 			f := newReaderFixture(t)
 			m := f.remoteMail(t, "Hello reader", "https://tracker.example/pixel.png")
 			k := f.page(m.ID)
-			original, err := f.p.Load(pageCtx(k))
+			original, err := f.load(k)
 			require.NoError(t, err)
 			started, release := make(chan struct{}), make(chan struct{})
 			real := f.r.getMessage
@@ -412,11 +480,22 @@ func TestReaderTranslationDuringImageReload(t *testing.T) {
 					return core.Message{}, errors.New("mail unavailable")
 				}
 				f.r.Translate(m.ID, nil)
-				restored, err := f.p.Load(pageCtx(k))
+				restored, err := f.load(k)
 				require.NoError(t, err)
 				assert.Equal(t, original.HTML, restored.HTML)
 			}
 		})
+	}
+}
+
+func assertReaderRefused(t *testing.T, p *ReaderPage, ctx context.Context, id int) {
+	t.Helper()
+	b, err := p.Load(ctx, id)
+	assert.ErrorIs(t, err, ErrWrongPage)
+	assert.Zero(t, b)
+	for _, err := range []error{p.Height(ctx, id, 10), p.Painted(ctx, id), p.OpenLink(ctx, id, "https://example.com/"),
+		p.Navigate(ctx, id, 1), p.Search(ctx, id), p.Save(ctx, id), p.Print(ctx, id)} {
+		assert.ErrorIs(t, err, ErrWrongPage)
 	}
 }
 
@@ -428,11 +507,11 @@ func TestReaderPageScoped(t *testing.T) {
 	n := f.remoteMail(t, "for N", srv.URL+"/n.png")
 	km, kn := f.page(m.ID), f.page(n.ID)
 
-	b, err := f.p.Load(pageCtx(km))
+	b, err := f.load(km)
 	require.NoError(t, err)
 	assert.Contains(t, b.HTML, "for M")
 	assert.NotContains(t, b.HTML, "for N")
-	_, err = f.p.Load(pageCtx(kn))
+	_, err = f.load(kn)
 	require.NoError(t, err)
 	f.r.Allow(m.ID)
 	f.r.Allow(n.ID)
@@ -450,45 +529,147 @@ func TestReaderPageScoped(t *testing.T) {
 	for name, ctx := range map[string]context.Context{
 		"unregistered": pageCtx(new(int)), "window": context.Background(), "wit": pageCtx(wit), "unbound": pageCtx(unbound),
 	} {
-		_, err := f.p.Load(ctx)
-		assert.ErrorIs(t, err, ErrWrongPage, name)
-		assert.ErrorIs(t, f.p.Height(ctx, 10), ErrWrongPage, name)
-		assert.ErrorIs(t, f.p.OpenLink(ctx, "https://x.example/"), ErrWrongPage, name)
-		assert.ErrorIs(t, f.p.Navigate(ctx, 1), ErrWrongPage, name)
-		assert.ErrorIs(t, f.p.Search(ctx), ErrWrongPage, name)
+		t.Run(name, func(t *testing.T) {
+			_, err := f.p.Binding(ctx)
+			assert.ErrorIs(t, err, ErrWrongPage)
+			assertReaderRefused(t, f.p, ctx, km)
+		})
 	}
 	assert.Equal(t, 2, srv.hits())
 
 	got, ok := f.r.Bound(km)
 	assert.True(t, ok)
 	assert.Equal(t, m.ID, got)
-	f.r.Unbind(km)
-	_, err = f.p.Load(pageCtx(km))
+	f.r.Unbind(km, false)
+	_, err = f.load(km)
 	assert.ErrorIs(t, err, ErrWrongPage, "unbound after Unbind")
 	_, ok = f.r.Bound(km)
 	assert.False(t, ok)
+}
+
+func TestReaderActionsCannotFollowOrBorrowAnAssignment(t *testing.T) {
+	f := newReaderFixture(t)
+	old := f.page(1)
+	ctx := f.ctx(old)
+	key, _ := f.pages.Key(old)
+	other := f.page(1) // a different physical shell, even showing the same message
+	assertReaderRefused(t, f.p, ctx, other)
+	f.r.Unbind(old, true)
+	f.pages.Unregister(key)
+	assertReaderRefused(t, f.p, ctx, old)
+	current := f.pages.Register(key, "reader")
+	f.r.Bind(current, 1, nil)
+	assertReaderRefused(t, f.p, ctx, old)
+	assertReaderRefused(t, f.p, f.ctx(other), current)
+	assert.Empty(t, f.callers)
+	assert.Empty(t, f.built)
+	var painted, saved, printed int
+	f.r.d.OnPainted = func(id int, msg int64) {
+		painted = id
+		assert.EqualValues(t, 1, msg)
+	}
+	f.r.d.OnSave = func(id int) { saved = id }
+	f.r.d.OnPrint = func(id int) { printed = id }
+	require.NoError(t, f.p.Painted(ctx, current))
+	require.NoError(t, f.p.Save(ctx, current))
+	require.NoError(t, f.p.Print(ctx, current))
+	assert.Equal(t, []int{current, current, current}, []int{painted, saved, printed})
+}
+
+func TestReaderLoadAfterRebind(t *testing.T) {
+	f := newReaderFixture(t)
+	k := f.page(1)
+	started, resume := make(chan struct{}), make(chan struct{})
+	f.fakeMessage(func(int64, bool) core.Message {
+		close(started)
+		<-resume
+		return core.Message{HTML: `<p>first assignment</p><img src="cid:first">`}
+	})
+	done := make(chan error, 1)
+	go func() {
+		b, err := f.load(k)
+		assert.Empty(t, b.HTML, "the released assignment must not return a body")
+		done <- err
+	}()
+	<-started
+	key, _ := f.pages.Key(k)
+	f.r.Unbind(k, true)
+	f.pages.Unregister(key)
+	id := f.pages.Register(key, "reader")
+	f.r.Bind(id, 1, nil)
+	close(resume)
+	assert.ErrorIs(t, <-done, ErrWrongPage)
+	assert.Equal(t, http.StatusNotFound, f.image(t, 1, "cid:first").Code)
+}
+
+type reloadSettings struct{ Service }
+
+func (reloadSettings) GetSettings(context.Context) (core.Settings, error) {
+	return core.Settings{}, nil
+}
+
+func TestReaderReloadCannotPublishAfterRebind(t *testing.T) {
+	for _, failed := range []bool{false, true} {
+		t.Run(fmt.Sprint("failed=", failed), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				pages := NewPages(func(ctx context.Context) any { return ctx.Value(pageKey{}) })
+				var built, emitted, failures []int
+				r := NewReader(pages, ReaderDeps{
+					OnBuilt: func(id int, _ ReaderBody) { built = append(built, id) },
+					Emit: func(id int, b ReaderBody) {
+						assert.Equal(t, id, b.Binding)
+						emitted = append(emitted, id)
+					},
+					OnFailed: func(id int, _ int64, _ error) { failures = append(failures, id) },
+				})
+				r.SetService(reloadSettings{})
+				resume := make(chan struct{})
+				r.getMessage = func(context.Context, Service, int64, bool) (core.Message, error) {
+					<-resume
+					if failed {
+						return core.Message{}, errors.New("old read failed")
+					}
+					return core.Message{Text: "old read"}, nil
+				}
+				key := new(int)
+				old := pages.Register(key, "reader")
+				r.Bind(old, 7, nil)
+				r.Allow(7)
+				synctest.Wait() // the worker is waiting for the old read
+				r.Unbind(old, true)
+				pages.Unregister(key)
+				current := pages.Register(key, "reader")
+				r.Bind(current, 7, nil)
+				close(resume)
+				synctest.Wait()
+				assert.Empty(t, built)
+				assert.Empty(t, emitted)
+				assert.Empty(t, failures)
+			})
+		})
+	}
 }
 
 func TestReaderPageCallbacks(t *testing.T) {
 	f := newReaderFixture(t)
 	m := f.remoteMail(t, "hi", "https://x.example/a.png")
 	k := f.page(m.ID)
-	ctx := pageCtx(k)
-	require.NoError(t, f.p.Height(ctx, 640))
-	require.NoError(t, f.p.OpenLink(ctx, "https://x.example/"))
-	require.NoError(t, f.p.OpenLink(ctx, "mailto:bob@example.com"))
-	assert.ErrorIs(t, f.p.OpenLink(ctx, "javascript:alert(1)"), ErrBadLink)
-	require.NoError(t, f.p.Navigate(ctx, -1))
-	assert.ErrorIs(t, f.p.Navigate(ctx, 2), ErrBadDirection)
-	require.NoError(t, f.p.Search(ctx))
-	assert.Error(t, f.p.Height(ctx, -1))
+	ctx := f.ctx(k)
+	require.NoError(t, f.p.Height(ctx, k, 640))
+	require.NoError(t, f.p.OpenLink(ctx, k, "https://x.example/"))
+	require.NoError(t, f.p.OpenLink(ctx, k, "mailto:bob@example.com"))
+	assert.ErrorIs(t, f.p.OpenLink(ctx, k, "javascript:alert(1)"), ErrBadLink)
+	require.NoError(t, f.p.Navigate(ctx, k, -1))
+	assert.ErrorIs(t, f.p.Navigate(ctx, k, 2), ErrBadDirection)
+	require.NoError(t, f.p.Search(ctx, k))
+	assert.Error(t, f.p.Height(ctx, k, -1))
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	assert.Equal(t, [][2]int64{{m.ID, 640}}, f.heights)
 	assert.Equal(t, []string{"https://x.example/", "mailto:bob@example.com"}, f.links)
 	assert.Equal(t, []int{-1}, f.navs)
 	assert.Equal(t, 1, f.searches)
-	assert.Equal(t, []any{k, k, k, k, k}, f.callers, "each callback names the calling page")
+	assert.Equal(t, []int{k, k, k, k, k}, f.callers, "each callback names the calling page")
 }
 
 // Each body built as current is told to the pages bound to its message
@@ -498,7 +679,7 @@ func TestReaderBuiltAndFailed(t *testing.T) {
 	m := f.remoteMail(t, "hi", "https://img.example/a.png")
 	other := f.remoteMail(t, "other", "https://img.example/b.png")
 	k, ko := f.page(m.ID), f.page(other.ID)
-	_, err := f.p.Load(pageCtx(k))
+	_, err := f.load(k)
 	require.NoError(t, err)
 	f.r.Allow(m.ID)
 	require.Eventually(t, func() bool {
@@ -528,7 +709,7 @@ func TestReaderBuiltAndFailed(t *testing.T) {
 	}, 10*time.Second, 5*time.Millisecond)
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	assert.Equal(t, []any{k}, f.failed)
+	assert.Equal(t, []int{k}, f.failed)
 	for _, b := range f.built {
 		assert.True(t, b.page != ko, "the other page told of M's body")
 	}
@@ -541,7 +722,7 @@ func TestReaderImageRefusedUntilAllowed(t *testing.T) {
 	src := srv.URL + "/pixel.png"
 	m := f.remoteMail(t, "hi", src)
 	k := f.page(m.ID)
-	b, err := f.p.Load(pageCtx(k))
+	b, err := f.load(k)
 	require.NoError(t, err)
 	assert.NotContains(t, b.HTML, "godwit-img")
 	assert.Equal(t, http.StatusNotFound, f.image(t, m.ID, src).Code)
@@ -558,7 +739,7 @@ func TestReaderImageAfterAllow(t *testing.T) {
 	f.r.Allow(m.ID)
 	b := f.waitEmitted(t, k)
 	require.True(t, b.Remote)
-	assert.Contains(t, b.HTML, `src="`+proxied(m.ID, src)+`"`)
+	assert.Contains(t, b.HTML, `src="`+proxied(m.ID, k, src)+`"`)
 	assert.NotContains(t, b.HTML, srv.URL, "the page never sees the remote address")
 	for range 2 {
 		rec := f.image(t, m.ID, src)
@@ -571,6 +752,57 @@ func TestReaderImageAfterAllow(t *testing.T) {
 	require.Equal(t, 1, srv.hits(), "one request for the image: the second is from the cache")
 	for _, h := range []string{"Cookie", "Referer"} {
 		assert.Empty(t, srv.hdrs[0].Get(h), h)
+	}
+}
+
+// An image finishing after the same physical shell has reopened the same
+// message must neither report a failure to it nor spend its new image grant.
+func TestReaderImageInFlightAfterRebind(t *testing.T) {
+	for _, failed := range []bool{true, false} {
+		t.Run(fmt.Sprint("failed=", failed), func(t *testing.T) {
+			f := newReaderFixture(t)
+			started, resume := make(chan struct{}), make(chan struct{})
+			finish := sync.OnceFunc(func() { close(resume) })
+			start := sync.OnceFunc(func() { close(started) })
+			pic := pngOf(t, 2, 2)
+			srv := newImageServer(t, func(w http.ResponseWriter, _ *http.Request) {
+				start()
+				<-resume
+				if failed {
+					w.WriteHeader(http.StatusBadGateway)
+					return
+				}
+				_, _ = w.Write(pic)
+			})
+			t.Cleanup(finish)
+			src := srv.URL + "/picture.png"
+			m := f.remoteMail(t, "picture", src)
+			old := f.page(m.ID)
+			f.r.Allow(m.ID)
+			oldBody := f.waitEmitted(t, old)
+			require.Contains(t, oldBody.HTML, proxied(m.ID, old, src))
+			oldURL := served(m.ID, old, src)
+			done := make(chan int, 1)
+			go func() { done <- f.imageAt(t, oldURL).Code }()
+			select {
+			case <-started:
+			case code := <-done:
+				t.Fatalf("the initial request never reached the image server: %d", code)
+			}
+			key, _ := f.pages.Key(old)
+			f.r.Unbind(old, true)
+			f.pages.Unregister(key)
+			id := f.pages.Register(key, "reader")
+			f.r.Bind(id, m.ID, nil)
+			f.r.Allow(m.ID)
+			b := f.waitEmitted(t, id)
+			assert.Contains(t, b.HTML, proxied(m.ID, id, src))
+			assert.NotContains(t, b.HTML, proxied(m.ID, old, src))
+			finish()
+			assert.NotEqual(t, http.StatusOK, <-done)
+			assert.Equal(t, http.StatusNotFound, f.imageAt(t, oldURL).Code)
+			f.record(func() { assert.Empty(t, f.imgFails, "the new assignment owns no old failure") })
+		})
 	}
 }
 
@@ -669,7 +901,7 @@ func TestReaderPolicyLoadsImagesAtOnce(t *testing.T) {
 	}
 	load := func(text, src string) ReaderBody {
 		m := f.remoteMail(t, text, src)
-		b, err := f.p.Load(pageCtx(f.page(m.ID)))
+		b, err := f.load(f.page(m.ID))
 		require.NoError(t, err)
 		return b
 	}
@@ -677,7 +909,7 @@ func TestReaderPolicyLoadsImagesAtOnce(t *testing.T) {
 	src := srv.URL + "/a.png"
 	b := load("auto", src)
 	assert.True(t, b.Remote, "automatic: no asking")
-	assert.Contains(t, b.HTML, proxied(b.Message, src))
+	assert.Contains(t, b.HTML, proxied(b.Message, b.Binding, src))
 	assert.Equal(t, http.StatusOK, f.image(t, b.Message, src).Code)
 
 	setMode("trusted")
@@ -694,15 +926,15 @@ func TestReaderAllowReloads(t *testing.T) {
 	m := f.remoteMail(t, "for M", "https://img.example/m.png")
 	n := f.remoteMail(t, "for N", "https://img.example/n.png")
 	km, kn := f.page(m.ID), f.page(n.ID)
-	before, err := f.p.Load(pageCtx(km))
+	before, err := f.load(km)
 	require.NoError(t, err)
 	f.r.Allow(m.ID)
 	b := f.waitEmitted(t, km)
 	assert.True(t, b.Remote)
 	assert.Greater(t, b.Version, before.Version)
 	assert.Equal(t, m.ID, b.Message)
-	assert.Contains(t, b.HTML, `src="`+proxied(m.ID, "https://img.example/m.png")+`"`)
-	after, err := f.p.Load(pageCtx(km))
+	assert.Contains(t, b.HTML, `src="`+proxied(m.ID, km, "https://img.example/m.png")+`"`)
+	after, err := f.load(km)
 	require.NoError(t, err)
 	assert.Equal(t, b.Version, after.Version)
 	assert.True(t, after.Remote)
@@ -744,7 +976,7 @@ func TestReaderInlineImageBudgets(t *testing.T) {
 		return core.Message{HTML: h}
 	})
 	k := f.page(7)
-	b, err := f.p.Load(pageCtx(k))
+	b, err := f.load(k)
 	require.NoError(t, err)
 	assert.Equal(t, 50, strings.Count(b.HTML, `src="data:`), "50 inline images kept")
 	doc, err := html.Parse(strings.NewReader(b.HTML))
@@ -784,7 +1016,7 @@ func attr(n *html.Node, key string) string {
 // (web/src/reader/frame.ts): else it inverts a mail that styles its own dark.
 func TestReaderBodyKeepsDarkMark(t *testing.T) {
 	safe, _, _ := mail.Sanitize(`<style>@media (prefers-color-scheme: dark) { .a { color: #eee } }</style><p class="a">x</p><img src="https://img.example/a.png">`, nil, true)
-	out, tokens := prepareBody(safe, imagefetch.NewBudget(), 1, noDims)
+	out, tokens := prepareBody(safe, imagefetch.NewBudget(), 1, 1, noDims)
 	require.Len(t, tokens, 1, "the image went through the proxy: the body was written again")
 	assert.True(t, strings.HasPrefix(out, `<style data-dark="">`), out)
 }
@@ -793,17 +1025,17 @@ func TestReaderBodyKeepsDarkMark(t *testing.T) {
 func TestReaderBodyWhole(t *testing.T) {
 	t.Run("paragraphs", func(t *testing.T) {
 		in := strings.Repeat("<p>x</p>", 6000) + "<p>tail</p>"
-		out, _ := prepareBody(in, imagefetch.NewBudget(), 1, noDims)
+		out, _ := prepareBody(in, imagefetch.NewBudget(), 1, 1, noDims)
 		assert.Equal(t, in, out)
 	})
 	t.Run("cells", func(t *testing.T) {
 		in := "<table><tbody><tr>" + strings.Repeat("<td>c</td>", 3000) + "</tr></tbody></table><p>after</p>"
-		out, _ := prepareBody(in, imagefetch.NewBudget(), 1, noDims)
+		out, _ := prepareBody(in, imagefetch.NewBudget(), 1, 1, noDims)
 		assert.Equal(t, in, out)
 	})
 	t.Run("depth and inlines", func(t *testing.T) {
 		in := strings.Repeat("<div>", 30) + strings.Repeat("<b>x</b>", 25000) + strings.Repeat("</div>", 30) + "<p>after</p>"
-		out, _ := prepareBody(in, imagefetch.NewBudget(), 1, noDims)
+		out, _ := prepareBody(in, imagefetch.NewBudget(), 1, 1, noDims)
 		assert.Equal(t, in, out)
 	})
 	t.Run("reported", func(t *testing.T) {
@@ -818,7 +1050,7 @@ func TestReaderBodyWhole(t *testing.T) {
 			return core.Message{HTML: "<p>x</p>"}
 		})
 		for id, want := range map[int64]bool{1: false, 2: true, 3: false} {
-			b, err := f.p.Load(pageCtx(f.page(id)))
+			b, err := f.load(f.page(id))
 			require.NoError(t, err)
 			assert.Equal(t, want, b.Cut, "message %d", id)
 		}
@@ -849,7 +1081,7 @@ func TestReaderInlineImageBytes(t *testing.T) {
 		return core.Message{HTML: h}
 	})
 	k := f.page(1)
-	b, err := f.p.Load(pageCtx(k))
+	b, err := f.load(k)
 	require.NoError(t, err)
 	assert.Equal(t, 4, strings.Count(b.HTML, `src="data:`), "the fifth inline image is over the bytes")
 	f.r.Allow(1)
@@ -864,8 +1096,8 @@ func TestReaderEmitFollowsBinding(t *testing.T) {
 	f := newReaderFixture(t)
 	f.fakeMessage(func(id int64, _ bool) core.Message { return core.Message{HTML: fmt.Sprintf("<p>%d</p>", id)} })
 	var wrong atomic.Int64
-	f.r.d.Emit = func(page any, b ReaderBody) {
-		if f.r.bound[page] != b.Message { // the lock is held
+	f.r.d.Emit = func(page int, b ReaderBody) {
+		if f.r.bound[page] != b.Message || page != b.Binding { // the lock is held
 			wrong.Add(1)
 		}
 	}
@@ -875,8 +1107,12 @@ func TestReaderEmitFollowsBinding(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		key, _ := f.pages.Key(k)
 		for i := 0; time.Now().Before(end); i++ {
-			f.r.Bind(k, int64(1+i%2))
+			f.r.Unbind(k, true)
+			f.pages.Unregister(key)
+			k = f.pages.Register(key, "reader")
+			f.r.Bind(k, int64(1+i%2), nil)
 		}
 	}()
 	for time.Now().Before(end) {
@@ -906,9 +1142,9 @@ func TestReaderInlineImagesLoadThroughProxyOnce(t *testing.T) {
 		return nil
 	}
 	k := f.page(7)
-	b, err := f.p.Load(pageCtx(k))
+	b, err := f.load(k)
 	require.NoError(t, err)
-	assert.Contains(t, b.HTML, `src="`+proxied(7, "cid:a")+`"`)
+	assert.Contains(t, b.HTML, `src="`+proxied(7, k, "cid:a")+`"`)
 	assert.False(t, b.Remote)
 	assert.Zero(t, calls.Load(), "nothing downloads until the page asks")
 
@@ -938,10 +1174,10 @@ func TestReaderInlineImageServedBeforeTheRest(t *testing.T) {
 		return ctx.Err()
 	}
 	k := f.page(7)
-	_, err := f.p.Load(pageCtx(k))
+	_, err := f.load(k)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, f.image(t, 7, "cid:a").Code)
-	f.r.Unbind(k)
+	f.r.Unbind(k, false)
 	select {
 	case <-stopped:
 	case <-time.After(10 * time.Second):
@@ -962,7 +1198,7 @@ func TestReaderInlineImageDownloadFailureIsTold(t *testing.T) {
 		each("b", mail.Attachment{Data: []byte("not an image")})
 		return context.DeadlineExceeded
 	}
-	_, err := f.p.Load(pageCtx(f.page(7)))
+	_, err := f.load(f.page(7))
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNotFound, f.image(t, 7, "cid:c").Code)
 	f.mu.Lock()
@@ -987,11 +1223,11 @@ func TestReaderInlineImageDownloadStoppedIsNotTold(t *testing.T) {
 		return ctx.Err()
 	}
 	k := f.page(7)
-	_, err := f.p.Load(pageCtx(k))
+	_, err := f.load(k)
 	require.NoError(t, err)
 	first := make(chan int, 1)
 	go func() {
-		req, _ := http.NewRequest(http.MethodGet, served(7, "cid:a"), nil)
+		req, _ := http.NewRequest(http.MethodGet, served(7, k, "cid:a"), nil)
 		rec := httptest.NewRecorder()
 		f.r.ImageHandler().ServeHTTP(rec, req)
 		first <- rec.Code
@@ -1019,7 +1255,7 @@ func TestReaderRetryRefetchesInlineImages(t *testing.T) {
 		return nil
 	}
 	k := f.page(7)
-	_, err := f.p.Load(pageCtx(k))
+	_, err := f.load(k)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNotFound, f.image(t, 7, "cid:a").Code)
 	f.r.Allow(7)
@@ -1047,7 +1283,7 @@ func TestReaderInlineImageOverBudgetRefused(t *testing.T) {
 		}
 		return nil
 	}
-	_, err := f.p.Load(pageCtx(f.page(7)))
+	_, err := f.load(f.page(7))
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNotFound, f.image(t, 7, "cid:huge").Code)
 	assert.Equal(t, http.StatusNotFound, f.image(t, 7, "cid:big").Code, "past one image's bytes")
@@ -1068,9 +1304,9 @@ func TestReaderInlineImageCountReservedInOrder(t *testing.T) {
 		fmt.Fprintf(&in, `<img src="https://cdn.example/%d.png">`, i)
 	}
 	in.WriteString(`<img src="https://cdn.example/late.png" alt="late"><img src="cid:late" alt="late inline">`)
-	out, tokens := prepareBody(in.String(), imagefetch.NewBudget(), 7, noDims)
+	out, tokens := prepareBody(in.String(), imagefetch.NewBudget(), 7, 1, noDims)
 	assert.Len(t, tokens, imagefetch.MaxImages)
-	assert.Equal(t, 2, strings.Count(out, proxied(7, "cid:n0")), "the first inline image keeps its place, and its second use costs nothing")
+	assert.Equal(t, 2, strings.Count(out, proxied(7, 1, "cid:n0")), "the first inline image keeps its place, and its second use costs nothing")
 	assert.Contains(t, out, `<img alt="late"/>`)
 	assert.Contains(t, out, `<img alt="late inline"/>`)
 
@@ -1086,7 +1322,7 @@ func TestReaderInlineImageCountReservedInOrder(t *testing.T) {
 		}
 		return nil
 	}
-	b, err := f.p.Load(pageCtx(f.page(7)))
+	b, err := f.load(f.page(7))
 	require.NoError(t, err)
 	assert.Equal(t, imagefetch.MaxImages, strings.Count(b.HTML, ImageScheme))
 	for i := range imagefetch.MaxImages {
@@ -1104,9 +1340,9 @@ func TestReaderInlineImageEndToEnd(t *testing.T) {
 		"--b1\r\nContent-Type: image/png\r\nContent-ID: <logo>\r\nContent-Disposition: inline; filename=\"l.png\"\r\nContent-Transfer-Encoding: base64\r\n\r\n" +
 		base64.StdEncoding.EncodeToString(pic) + "\r\n--b1--\r\n"
 	m := f.deliverOne(t, []byte(raw))
-	b, err := f.p.Load(pageCtx(f.page(m.ID)))
+	b, err := f.load(f.page(m.ID))
 	require.NoError(t, err)
-	assert.Contains(t, b.HTML, proxied(m.ID, "cid:logo"))
+	assert.Contains(t, b.HTML, proxied(m.ID, b.Binding, "cid:logo"))
 	rec := f.image(t, m.ID, "cid:logo")
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, pic, rec.Body.Bytes())
@@ -1121,7 +1357,7 @@ func TestReaderInlineDataImageEndToEnd(t *testing.T) {
 		"Subject: Inline Base64 PNG\r\nMessage-ID: <b64@example.com>\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n" +
 		"<p>Inline Base64 PNG:</p>\r\n<img alt=\"Blue square\" width=\"16\" height=\"16\" src=\"data:image/png;base64," + blueSquare + "\">\r\n"
 	m := f.deliverOne(t, []byte(raw))
-	b, err := f.p.Load(pageCtx(f.page(m.ID)))
+	b, err := f.load(f.page(m.ID))
 	require.NoError(t, err)
 	assert.False(t, b.Remote)
 	assert.Zero(t, b.Blocked)
@@ -1133,15 +1369,15 @@ func TestPrepareBodyProxiesRemoteImages(t *testing.T) {
 	in := `<img src="https://cdn.example/known.png" alt="a"><img src="https://cdn.example/sized.png" width="9">` +
 		`<img src="https://cdn.example/new.png" alt="n"><img src="https://cdn.example/styled.png" style="width:50%">` +
 		`<table data-bg="https://cdn.example/bg.jpg" style="color: red"><tbody><tr><td data-bg="javascript:1">x</td></tr></tbody></table>`
-	out, tokens := prepareBody(in, imagefetch.NewBudget(), 12, dims)
+	out, tokens := prepareBody(in, imagefetch.NewBudget(), 12, 1, dims)
 	assert.NotContains(t, out, "cdn.example")
 	assert.NotContains(t, out, "data-bg")
 	assert.Len(t, tokens, 5)
-	assert.Equal(t, "https://cdn.example/bg.jpg", tokens[imagecache.Key("https://cdn.example/bg.jpg")])
-	assert.Contains(t, out, `<img src="`+proxied(12, "https://cdn.example/known.png")+`" alt="a" width="40" height="30"/>`, "the cached size reserves the space")
-	assert.Contains(t, out, `src="`+proxied(12, "https://cdn.example/sized.png")+`" width="9"/>`, "a declared size stays")
-	assert.Contains(t, out, `src="`+proxied(12, "https://cdn.example/new.png")+`" alt="n"/>`)
-	assert.Contains(t, out, `style="color: red;background-image:url(`+proxied(12, "https://cdn.example/bg.jpg")+`)"`)
+	assert.Equal(t, "https://cdn.example/bg.jpg", tokens["1-"+imagecache.Key("https://cdn.example/bg.jpg")])
+	assert.Contains(t, out, `<img src="`+proxied(12, 1, "https://cdn.example/known.png")+`" alt="a" width="40" height="30"/>`, "the cached size reserves the space")
+	assert.Contains(t, out, `src="`+proxied(12, 1, "https://cdn.example/sized.png")+`" width="9"/>`, "a declared size stays")
+	assert.Contains(t, out, `src="`+proxied(12, 1, "https://cdn.example/new.png")+`" alt="n"/>`)
+	assert.Contains(t, out, `style="color: red;background-image:url(`+proxied(12, 1, "https://cdn.example/bg.jpg")+`)"`)
 	assert.NotContains(t, out, "--godwit-bg", "no unused inversion layer is emitted")
 	assert.NotContains(t, out, "javascript")
 }
@@ -1151,14 +1387,14 @@ func TestPrepareBodyCapsRemoteImages(t *testing.T) {
 	for i := range imagefetch.MaxImages + 5 {
 		fmt.Fprintf(&in, `<img src="https://cdn.example/%d.png" alt="i%d"><img src="https://cdn.example/0.png">`, i, i)
 	}
-	out, tokens := prepareBody(in.String(), imagefetch.NewBudget(), 3, noDims)
+	out, tokens := prepareBody(in.String(), imagefetch.NewBudget(), 3, 1, noDims)
 	assert.Len(t, tokens, imagefetch.MaxImages, "the same URL again costs nothing; the ones past the count lose their src")
 	assert.Equal(t, 5, strings.Count(out, "<img alt="), "five images lost their src")
 }
 
 func TestPrepareBodyKeepsCSSSizedImages(t *testing.T) {
 	dims := func(string) (int, int, bool) { return 40, 30, true }
-	out, _ := prepareBody(`<img src="https://a.example/h.png" style="height:50px"><img src="https://a.example/w.png" style="width:50%">`, imagefetch.NewBudget(), 1, dims)
+	out, _ := prepareBody(`<img src="https://a.example/h.png" style="height:50px"><img src="https://a.example/w.png" style="width:50%">`, imagefetch.NewBudget(), 1, 1, dims)
 	assert.NotContains(t, out, `width="40"`)
 	assert.NotContains(t, out, `height="30"`)
 }
@@ -1200,7 +1436,7 @@ func TestReaderBodyCarriesCollapseQuotes(t *testing.T) {
 	f := newReaderFixture(t)
 	m := f.remoteMail(t, "Re: lunch", "https://tracker.example/pixel.png")
 	k := f.page(m.ID)
-	b, err := f.p.Load(pageCtx(k))
+	b, err := f.load(k)
 	require.NoError(t, err)
 	assert.False(t, b.CollapseQuotes, "off by default")
 
@@ -1215,7 +1451,7 @@ func TestReaderBodyCarriesCollapseQuotes(t *testing.T) {
 	emitted := f.waitEmitted(t, k)
 	assert.True(t, emitted.CollapseQuotes)
 	assert.Greater(t, emitted.Version, b.Version)
-	cached, err := f.p.Load(pageCtx(k))
+	cached, err := f.load(k)
 	require.NoError(t, err)
 	assert.True(t, cached.CollapseQuotes)
 	assert.Equal(t, emitted.Version, cached.Version)
@@ -1229,7 +1465,7 @@ func TestReaderBodyCarriesCollapseQuotes(t *testing.T) {
 	f.mu.Lock()
 	assert.Empty(t, f.emitted)
 	f.mu.Unlock()
-	cached, err = f.p.Load(pageCtx(k))
+	cached, err = f.load(k)
 	require.NoError(t, err)
 	assert.Equal(t, "dark", cached.Theme.Mode)
 
@@ -1269,14 +1505,14 @@ func TestReaderBodyCarriesCollapseQuotes(t *testing.T) {
 	// CollapseQuotes: true, while in-memory SettingsChanged already flipped to false, or vice versa)
 	// uses the latest in-memory SettingsChanged snapshot.
 	m2 := f.remoteMail(t, "Re: dinner", "https://tracker.example/pixel2.png")
-	b, err = f.p.Load(pageCtx(f.page(m2.ID)))
+	b, err = f.load(f.page(m2.ID))
 	require.NoError(t, err)
 	assert.False(t, b.CollapseQuotes, "newly started build honors pending SettingsChanged snapshot ahead of stale DB")
 
 	st.CollapseQuotes = true
 	f.r.SettingsChanged(st) // DB was not updated yet
 	m3 := f.remoteMail(t, "Re: brunch", "https://tracker.example/pixel3.png")
-	b, err = f.p.Load(pageCtx(f.page(m3.ID)))
+	b, err = f.load(f.page(m3.ID))
 	require.NoError(t, err)
 	assert.True(t, b.CollapseQuotes)
 }

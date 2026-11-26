@@ -39,7 +39,7 @@ func NewPages(pageOf func(context.Context) any) *Pages {
 }
 
 // Register makes the page with key one of role and returns its ID, new on
-// every call; Unregister it when the page is destroyed.
+// every call; Unregister it when the assignment ends.
 func (p *Pages) Register(key any, role string) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()

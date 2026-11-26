@@ -51,12 +51,9 @@ type readerPane struct {
 	// (#667). Zero while none is.
 	next [2]int64
 	// prev is the thread shown before the switch, still drawn while the
-	// new one's newest body builds unseen under it, until its page reports
-	// its height (waiting) or prevStop's time is up: no blank body between
-	// (#667). Nil while none is.
-	prev     *session
-	prevStop func()
-	visits   uint64 // the sessions it has shown, numbering each (session.visit)
+	// new one's newest body builds unseen under it, until its first frame.
+	prev   *session
+	visits uint64 // the sessions it has shown, numbering each (session.visit)
 
 	ai        map[int64]*msgAI         // by message; kept across switches so a summary runs once
 	skills    fetch[[]core.SkillInfo]  // the skill menu: skills on messages but summarize and translate
@@ -96,6 +93,7 @@ type session struct {
 	// after enters with its motion; the thread itself comes at once (#667).
 	entered bool
 	loaded  bool
+	loadErr error // a thread that could not be opened shows Retry instead of a blank pane
 	subject string
 	msgs    []core.MessageSummary // oldest first
 	// threadIDs are every message of the thread, msgs or not (a route to one
@@ -170,12 +168,16 @@ type msgBody struct {
 	ready bool
 	err   error // the last read, or making the page, failed; a retry reads again
 
-	view        ui.NativeWebView // the body's page; nil while folded, not read yet, or when it could not be made
-	close       func()           // closes view: unbinds and destroys it
-	height      int              // the page's last reported height, CSS px; 0 until it reports
-	glass       bodyGlass        // what the frosted header and floating reply card cover of the page, as last told it (BodyGlass)
-	glassSet    bool             // whether glass has been sent since the page last reported its height
-	translation *aiRun           // the translated text currently displayed by the page
+	view         ui.NativeWebView // bound to this body until release
+	close        func(reuse bool)
+	height       int       // CSS px; -1 until the page reports (an empty body can be 0)
+	painted      bool      // this binding's document has had a paint opportunity
+	staged       bool      // a previous native frame placed this binding at a measured body size
+	printPending bool      // print this binding only after its own document is ready
+	stopPaint    func()    // cancels the unresponsive page watchdog
+	glass        bodyGlass // what the frosted header and floating reply card cover of the page, as last told it (BodyGlass)
+	glassSet     bool      // whether glass has been sent since the page last reported its height
+	translation  *aiRun    // the translated text currently displayed by the page
 
 	// The remote images: allow is the user's 加载图片, which every page
 	// made for the message is told (Platform.AllowImages); remote that the
@@ -220,13 +222,25 @@ func (r *reader) sync(reread bool) {
 		k = [2]int64{}
 	}
 	switch {
+	case r.prev != nil && k == r.prev.key:
+		// Back to the thread still on screen: abandon only the unseen work.
+		r.next = [2]int64{}
+		r.read.Stop()
+		r.stopAI()
+		r.session.close()
+		r.session, r.prev = r.prev, nil
+		r.visits++
+		r.visit, r.aiCtx, r.aiStop = r.visits, nil, nil // the previous visit's fetches were cancelled
+		for id := range r.open {
+			r.expand(id)
+		}
 	case k == r.key && r.next != [2]int64{}: // back to the one shown before the switch was read
 		r.next = [2]int64{}
 		r.read.Stop() // drops the switch's read
 		if !reread {
 			return
 		}
-	case k != r.key && (k[0] == 0 || !r.loaded):
+	case k != r.key && (k[0] == 0 || len(r.msgs) == 0):
 		r.next = [2]int64{}
 		r.dropPrev()
 		r.reset(k)
@@ -235,6 +249,9 @@ func (r *reader) sync(reread bool) {
 		// replaced at once then (load). A switch while one is under way
 		// replaces it: its read is dropped.
 		if k != r.next || reread {
+			if k != r.next {
+				r.read.Stop() // do not finish querying an intermediate selection
+			}
 			r.next = k
 			r.load(k)
 		}
@@ -255,48 +272,34 @@ func (r *reader) reset(k [2]int64) {
 	r.session = r.newSession(k)
 }
 
-// prevWait is how long the thread before a switch stays at most, for a
-// page that never reports its height.
-const prevWait = time.Second
-
-// retire starts thread k in place of the one shown, which stays drawn as
-// prev, its pages open, until k's newest body has its height. A switch
-// while one is under way keeps the prev shown and closes the unseen pages.
+// retire keeps the last visible thread, not an intermediate selection.
 func (r *reader) retire(k [2]int64) {
 	if r.prev == nil {
 		r.stopAI()
 		r.prev, r.session = r.session, r.newSession(k)
-
 	} else {
 		r.reset(k)
 	}
-	if r.prevStop != nil {
-		r.prevStop()
-	}
-	r.prevStop = r.p.a.after(prevWait, r.dropPrev)
 }
 
 // dropPrev closes the thread kept from before a switch, if any.
 func (r *reader) dropPrev() {
-	if r.prevStop != nil {
-		r.prevStop()
-		r.prevStop = nil
+	if r.prev != nil {
+		r.prev.close()
+		r.prev = nil
 	}
-	if r.prev == nil {
-		return
-	}
-	r.prev.close() // what it still had under way is dropped, not applied to a session no one sees
-	r.prev = nil
 }
 
-// waiting is whether the thread is read and its newest body's page is still
-// to report its height: the thread before stays drawn till then.
 func (r *reader) waiting() bool {
-	if !r.loaded || len(r.msgs) == 0 {
+	if r.next != [2]int64{} { // a newer selection is still being read
+		return true
+	}
+	m, ok := r.last()
+	if !ok || !r.open[m.ID] {
 		return false
 	}
-	b := r.bodies[r.msgs[len(r.msgs)-1].ID]
-	return b != nil && b.err == nil && b.height == 0
+	b := r.bodies[m.ID]
+	return b != nil && b.err == nil && (!b.painted || !b.staged)
 }
 
 // load reads thread k: the one shown again, or the one to switch to
@@ -329,9 +332,14 @@ func (r *reader) load(k [2]int64) {
 			defer r.loadWhy()
 		}
 		if err != nil {
-			a.toastErr(err)
+			if r.loaded {
+				a.toastErr(err) // a refresh failed; keep the readable thread
+			} else {
+				r.loadErr = err
+			}
 			return
 		}
+		r.loadErr = nil
 		r.threadIDs, r.labels, r.thread, r.programReply = nil, labels[k[0]], th, newProgramReply(th.Drafts)
 		for _, m := range th.Messages {
 			r.threadIDs = append(r.threadIDs, m.ID)
@@ -362,6 +370,7 @@ func (r *reader) load(k [2]int64) {
 				if b := r.bodies[m.ID]; b != nil {
 					b.msg.FromName = m.FromName
 					if prev.folder != m.FolderID {
+						b.closeView(true) // a move to Junk revokes the old folder's automatic image grant
 						b.msg.MessageSummary = m
 						b.trusted = false
 						if !b.avatarAllow || b.avatarSource == "carddav" {
@@ -380,6 +389,15 @@ func (r *reader) load(k [2]int64) {
 				unread = append(unread, m)
 			}
 			if i == len(msgs)-1 { // the newest alone opens; unread older ones fold, read as the thread opens
+				// A thread and a route to one of its messages can show the very same body.
+				if prev := r.prev; prev != nil {
+					if b := prev.bodies[m.ID]; b != nil && b.view != nil && b.drawable() && b.msg.FolderID == m.FolderID && b.msg.Security.Status == m.Security.Status {
+						b.msg.MessageSummary = m
+						delete(prev.bodies, m.ID)
+						r.bodies[m.ID] = b
+						r.dropPrev()
+					}
+				}
 				r.expand(m.ID)
 			}
 		}
@@ -415,13 +433,13 @@ func (r *reader) markRead(msgs []core.MessageSummary) {
 func (r *reader) expand(id int64) {
 	r.open[id] = true
 	r.startFor(id)
-	if b := r.bodies[id]; b == nil || b.err != nil {
+	if b := r.bodies[id]; b == nil || !b.ready || b.err != nil {
 		r.loadBody(id)
 	} else {
 		if b.avatarPending() {
 			r.loadAvatar(id, b.avatarAllow)
 		}
-		r.openView(id)
+		r.openView(id, nil)
 	}
 }
 
@@ -432,7 +450,7 @@ func (r *reader) toggle(id int64) {
 		delete(r.open, id)
 		r.historyOpen[id] = true // folded in sight: not into the history beside it
 		if b := r.bodies[id]; b != nil {
-			b.closeView()
+			b.closeView(true)
 		}
 		return
 	}
@@ -472,13 +490,14 @@ func (r *reader) loadBody(id int64) {
 			return
 		}
 		if err != nil {
+			b.stopAwaitingPaint()
 			b.err = err
 			return
 		}
 		b.msg, b.ready, b.trusted = m, true, trusted
 		b.timing.readDone()
 		b.avatarBlocked = !trusted
-		r.openView(id)
+		r.openView(id, &m)
 		r.loadAvatar(id, b.avatarAllow)
 		r.loadUnsubscribe(id)
 		a.stageCached(m.Attachments)
@@ -489,7 +508,7 @@ func (r *reader) loadBody(id int64) {
 // an older message's headers may be fetched from its server first. Until
 // it answers, or when it fails, there is no 退订.
 func (r *reader) loadUnsubscribe(id int64) {
-	a, s, b := r.p.a, r.session, r.bodies[id]
+	a, b := r.p.a, r.bodies[id]
 	if b == nil { // opening its page may already have switched the reader away
 		return
 	}
@@ -498,7 +517,7 @@ func (r *reader) loadUnsubscribe(id int64) {
 		u, err = a.svc.UnsubscribeMethod(ctx, id)
 		return err
 	}, func(err error) {
-		if err == nil && r.has(s) {
+		if err == nil { // tied to b.read, even if this body moved to a new session
 			b.unsub = u
 		}
 	})
@@ -509,7 +528,7 @@ func (r *reader) loadUnsubscribe(id int64) {
 // event loop, so the reader may have moved on by its return: then the page
 // is closed at once. A page of a message whose images the user allowed is
 // told so.
-func (r *reader) openView(id int64) {
+func (r *reader) openView(id int64, initial *core.Message) {
 	b := r.bodies[id]
 	if b == nil || !b.ready || b.err != nil || !r.open[id] || b.view != nil {
 		return
@@ -518,18 +537,19 @@ func (r *reader) openView(id int64) {
 		r.dropPrev() // a message has one page: a second would share, and outlive, the first's grants
 	}
 	s, made := r.session, time.Now()
-	v, closeView, err := r.p.a.plat.NewBodyView(id)
+	v, closeView, err := r.p.a.plat.NewBodyView(id, initial)
 	if !r.has(s) || r.bodies[id] != b || !r.open[id] || b.view != nil || r.p.a.ctx.Err() != nil {
 		if err == nil {
-			closeView()
+			closeView(r.p.a.ctx.Err() == nil)
 		}
 		return
 	}
 	if err != nil {
+		b.stopAwaitingPaint()
 		b.err = err
 		return
 	}
-	b.view, b.close = v, closeView
+	b.view, b.close, b.height = v, closeView, -1
 	b.timing.viewMade(made)
 	if b.allow {
 		r.p.a.plat.AllowImages(id)
@@ -540,18 +560,57 @@ func (r *reader) openView(id int64) {
 func (b *msgBody) drop() {
 	b.read.Stop()
 	b.stopAvatar()
-	b.closeView()
+	b.closeView(true)
 }
 
-// closeView closes b's page, if it has one; what the page told goes with
-
-// it (the user's 加载图片 stays).
-func (b *msgBody) closeView() {
+// Unbinding forgets everything the page reported, but not the user's 加载图片 choice.
+func (b *msgBody) closeView(reuse bool) {
+	b.stopAwaitingPaint()
 	if b.close != nil {
-		b.close()
+		b.close(reuse)
 	}
 	b.view, b.close, b.remote, b.allowErr = nil, nil, false, nil
+	b.printPending = false
+	b.painted, b.staged, b.glassSet = false, false, false
+	b.cut, b.imgFailed, b.height = false, 0, -1
 	b.translation = nil
+}
+
+func (b *msgBody) drawable() bool { return b.painted && b.height >= 0 }
+
+func (b *msgBody) stopAwaitingPaint() {
+	if b.stopPaint != nil {
+		b.stopPaint()
+		b.stopPaint = nil
+	}
+}
+
+// A hung body gets the native Retry action, never an empty page or a stuck old thread.
+const bodyPaintTimeout = 15 * time.Second
+
+func (b *msgBody) awaitPaint(a *App) {
+	if b.stopPaint == nil && !b.drawable() && a.foreground {
+		b.stopPaint = a.after(bodyPaintTimeout, func() {
+			b.stopPaint = nil
+			if !b.drawable() && a.foreground && a.route.Page == PageMail { // background renderers may be suspended
+				b.read.Stop()
+				b.closeView(false) // retry with a fresh renderer, not the unresponsive one
+				b.err = context.DeadlineExceeded
+			}
+		})
+	}
+}
+
+// Background or hidden WebViews may suspend animation frames. Restart their
+// timeout from the first foreground placement, not the original click.
+func (r *reader) pausePaint() {
+	for _, s := range []*session{r.prev, r.session} {
+		if s != nil {
+			for _, b := range s.bodies {
+				b.stopAwaitingPaint()
+			}
+		}
+	}
 }
 
 // closeViews closes every page (the App closing).
@@ -559,7 +618,7 @@ func (r *reader) closeViews() {
 	r.forgetAvatars(true)
 	r.dropPrev()
 	for _, b := range r.bodies {
-		b.closeView()
+		b.closeView(false)
 	}
 }
 
@@ -1129,7 +1188,13 @@ func (r *reader) saveMail() {
 // printMail prints the target message's body page.
 func (r *reader) printMail() {
 	if m, ok := r.target(); ok {
-		r.p.a.plat.Print(m.ID)
+		if b := r.bodies[m.ID]; b != nil && b.view != nil {
+			if b.drawable() {
+				r.p.a.plat.Print(m.ID)
+			} else {
+				b.printPending = true // a reused shell may still contain the previous document
+			}
+		}
 	}
 }
 
@@ -1146,12 +1211,26 @@ func (r *reader) view(c *ui.Context) {
 	r.draw(c, nil)
 }
 
-// unseenBody lays out the newest body at the width it will show, unseen:
-// faded out, it is placed but cuts no hole in the window, so its page
-// builds and reports its height under the thread shown.
-func (s *session) unseenBody(c *ui.Context) {
-	if b := s.bodies[s.msgs[len(s.msgs)-1].ID]; b != nil && b.view != nil {
-		kit.WebView(c, b.view).FillWidth().Height(c.Theme().Space(6)).Opacity(0)
+// unseenBody keeps the rendering surface live at its eventual size. Never use
+// the modal snapshot here: a still cannot lay out or paint the new document.
+func (r *reader) unseenBody(c *ui.Context, s *session) {
+	if len(s.msgs) == 0 {
+		return
+	}
+	if b := s.bodies[s.msgs[len(s.msgs)-1].ID]; b != nil && b.err == nil {
+		b.awaitPaint(r.p.a)
+		if b.view == nil {
+			return
+		}
+		sized := b.height >= 0
+		page := kit.PreparingWebView(c.Key(b.view).Key(sized), b.view).Height(max(float32(b.height), c.Theme().Space(6)))
+		if !b.staged && sized {
+			// A click can build twice before presenting. Only the measured slot's
+			// previous bounds prove it was placed (not its 24 px placeholder).
+			box := page.LayoutBounds()
+			b.staged = box.W > 0 && box.H > 0
+			c.Invalidate()
+		}
 	}
 }
 
@@ -1162,6 +1241,14 @@ func (r *reader) draw(c *ui.Context, next *session) {
 	if r.key[0] == 0 { // nothing chosen: the bird
 		col.Center().Children(func() {
 			ui.Icon(c, icons.Bird).Size(theme.Watermark, theme.Watermark).TextColor(t.Border)
+		})
+		return
+	}
+	if r.loadErr != nil {
+		col.Children(func() {
+			kit.Alert(c, kit.ToneDanger, humanize(r.loadErr), func() {
+				kit.Button(c, i18n.T("common.retry"), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSm}).OnClick(func() { r.sync(true) })
+			})
 		})
 		return
 	}
@@ -1189,7 +1276,7 @@ func (r *reader) draw(c *ui.Context, next *session) {
 		// would go and come again with its motion (a grey block, a fade).
 		ui.Column(c).Absolute().Left(th.Space(7)).Right(th.Space(7)).Top(0).Children(func() {
 			if next != nil {
-				r.column(c).Padding(0, th.Space(3)).Children(func() { next.unseenBody(c) }) // inside a message's paper
+				r.column(c).Padding(0, th.Space(3)).Children(func() { r.unseenBody(c, next) }) // inside a message's paper
 			}
 		})
 		hasSum := r.hasThreadSummary()
@@ -1690,7 +1777,7 @@ func (r *reader) historyToggle(c *ui.Context, hidden []core.MessageSummary, hist
 				if r.open[m.ID] {
 					delete(r.open, m.ID)
 					if b := r.bodies[m.ID]; b != nil {
-						b.closeView()
+						b.closeView(true)
 					}
 				}
 			}
@@ -2169,7 +2256,19 @@ func (r *reader) message(c *ui.Context, m core.MessageSummary) {
 				// with its own color sits as a card; Draw's box is where the web view goes this frame.
 				// On Linux, GTK3's X11 shape-mask clipping leaves stair-stepped corner fringes, so
 				// Body.tsx rounds the iframe with CSS instead.
-				wv := kit.WebView(c, b.view).Height(max(float32(b.height), th.Space(6)))
+				var wv ui.Element
+				if !b.drawable() {
+					wv = kit.PreparingWebView(c.Key(b.view), b.view)
+					box := wv.LayoutBounds()
+					if box.W > 0 && box.H > 0 && r.pane.H > 0 && box.Y < r.pane.Y+r.pane.H && box.Y+box.H > r.pane.Y {
+						b.awaitPaint(r.p.a)
+					} else {
+						b.stopAwaitingPaint()
+					}
+				} else {
+					wv = kit.WebView(c, b.view)
+				}
+				wv.Height(max(float32(b.height), th.Space(6)))
 				if goos != "linux" {
 					wv.Radius(t.Radius.Xl).Clip()
 				}
@@ -2511,7 +2610,30 @@ func (a *App) BodyHeight(view ui.NativeWebView, message int64, px int) {
 	if b := a.readerOf(view).shown(view, message); b != nil {
 		b.height = px
 		b.glassSet = false // the page listens now: what it was told before it loaded was dropped
-		logBodyTiming(&b.timing, message)
+		a.bodyDrawable(b, message)
+	}
+}
+
+// BodyPainted follows layout and a browser paint opportunity for this binding.
+func (a *App) BodyPainted(view ui.NativeWebView, message int64) {
+	if b := a.readerOf(view).shown(view, message); b != nil {
+		b.painted = true
+		a.bodyDrawable(b, message)
+	}
+}
+
+func (a *App) bodyDrawable(b *msgBody, id int64) {
+	if !b.drawable() {
+		return
+	}
+	b.stopAwaitingPaint()
+	logBodyTiming(&b.timing, id)
+	if b.printPending {
+		b.printPending = false
+		r := a.mail.reader
+		if a.route.Page == PageMail && r.bodies[id] == b && r.next == [2]int64{} {
+			a.plat.Print(id)
+		}
 	}
 }
 

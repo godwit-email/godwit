@@ -52,6 +52,12 @@ func WebView(c *ui.Context, v ui.NativeWebView) ui.Element {
 	return ui.WebView(c, v)
 }
 
+// PreparingWebView lays out a live page invisibly, even under a modal: a
+// screenshot cannot render the first frame that the reader is waiting for.
+func PreparingWebView(c *ui.Context, v ui.NativeWebView) ui.Element {
+	return ui.WebView(c, v).AlignSelf(ui.Stretch).Opacity(0)
+}
+
 // still is v's screenshot while panels frost, asking for one the first
 // time; nil until it arrives, and when nothing frosts (which forgets them,
 // so the next panel sees the page as it is then).

@@ -1,4 +1,4 @@
-import type { ReaderBody, Theme } from "@/mygo";
+import { type ReaderBody, ReaderPage, type Theme } from "@/mygo";
 import { installFake } from "@/preview/fake";
 import { buildSrcdoc, foldQuotes, frameCSP, frameScheme, isTextHTML } from "./frame";
 
@@ -11,6 +11,7 @@ const theme = (over: Partial<Theme> = {}): Theme => ({
   ...over,
 });
 const body = (over: Partial<ReaderBody> = {}): ReaderBody => ({
+  binding: 1,
   message: 1,
   version: 1,
   // laid out (a table), not text in all but name (isTextHTML)
@@ -57,6 +58,19 @@ test.each([true, false])("font and theme parse as separate CSS rules (html: %s)"
     ).toBe(t.dark?.["--foreground"]);
   } finally {
     style.remove();
+  }
+});
+
+test("the browser preview can load a bound reader through the generated bridge", async () => {
+  installFake({
+    "ReaderPage.Binding": () => ({ id: 7, active: true }),
+    "ReaderPage.Load": (binding: number) => body({ binding }),
+  });
+  try {
+    const { id } = await ReaderPage.binding();
+    expect((await ReaderPage.load(id)).binding).toBe(7);
+  } finally {
+    delete window.mygo;
   }
 });
 

@@ -46,10 +46,13 @@ type platform struct {
 	tray           *mygo.Tray
 	windows        *webui.Windows // the compose windows
 	wit            *webui.Wit
-	roles          *webui.Pages                 // the embedded pages' roles
-	reader         *webui.Reader                // the reader pages' messages
-	sig            *webui.Signature             // the signature page's signature and flushes
-	bodies         map[*mygo.Page]*mygo.WebView // the reader pages open; UI thread
+	roles          *webui.Pages      // the embedded pages' roles
+	reader         *webui.Reader     // the reader pages' messages
+	sig            *webui.Signature  // the signature page's signature and flushes
+	bodies         map[int]*bodyView // live reader registrations; UI thread
+	idleBody       *bodyView         // physical shell for reuse; its registration is revoked
+	bodiesClosed   bool
+	makeBody       func() (readerShell, error)
 	signInCodes    []core.SignInCode
 	codeIcons      map[int64]*mygo.MenuIcon // recent codes' menu icons by message; UI thread
 	codeBanner     *signInBanner
@@ -302,39 +305,134 @@ func (p *platform) OpenCompose(draftID int64) { p.windows.Open(draftID) }
 func (p *platform) DraftDeleted(id int64)     { p.windows.CloseDraft(id) }
 func (p *platform) ComposeOpen(id int64) bool { return p.windows.IsOpen(id) }
 
-// NewBodyView makes a reader page in the main window, kept on its entry
-// (lockPage), registered as "reader" and bound to message before it
-// loads (loadAfterSetup), so that its first call finds it so; close
-// undoes each and destroys it. UI thread.
-func (p *platform) NewBodyView(message int64) (ui.NativeWebView, func(), error) {
-	// ScrollToContainer: the body fills its own height, and the wheel and
-	// touchpad over it scroll the reader's pane as over any native element
-	// of it (MyGo's own notches glide, a touchpad's moves follow), rather
-	// than a page that scrolls itself.
+// readerShell is the physical WebView. Only its first assignment loads the document.
+type readerShell interface {
+	ui.NativeWebView
+	Page() *mygo.Page
+	CapturePage() ([]byte, error)
+	load() error
+	signal(webui.ReaderBinding) error
+	Destroy()
+}
+
+type nativeReaderShell struct{ *mygo.WebView }
+
+func (s nativeReaderShell) load() error { return s.Page().LoadURL("/reader.html") }
+func (s nativeReaderShell) signal(b webui.ReaderBinding) error {
+	return webui.ReaderBound.EmitPage(s.Page(), b)
+}
+
+func (p *platform) newReaderShell() (readerShell, error) {
+	// The body fills its own height; wheel and touchpad scroll the native reader.
 	v, err := p.win.NewWebView(mygo.WebViewOptions{BackgroundColor: panelBackground(), ScrollToContainer: true})
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	page := v.Page()
-	closeView := func() {
-		delete(p.bodies, page)
-		p.reader.Unbind(page)
-		p.roles.Unregister(page)
-		v.Destroy()
+	lockPage(v.Page())
+	return nativeReaderShell{v}, nil
+}
+
+// bodyView is one assignment, also the native layout and screenshot cache key.
+type bodyView struct {
+	ui.NativeWebView
+	shell readerShell
+	id    int
+	roles *webui.Pages
+}
+
+// CapturePage may wait for the UI thread while its shell is reassigned.
+func (v *bodyView) CapturePage() ([]byte, error) {
+	if _, ok := v.roles.Key(v.id); !ok {
+		return nil, webui.ErrWrongPage
 	}
-	err = loadAfterSetup(func() {
-		lockPage(page)
-		p.roles.Register(page, "reader")
-		p.reader.Bind(page, message)
-		if p.bodies == nil {
-			p.bodies = map[*mygo.Page]*mygo.WebView{}
+	b, err := v.shell.CapturePage()
+	if _, ok := v.roles.Key(v.id); !ok {
+		return nil, webui.ErrWrongPage
+	}
+	return b, err
+}
+
+// NewBodyView assigns a shell to message. A cold shell is locked, registered
+// and bound before its first load; a warm shell only hears ReaderBound. UI thread.
+func (p *platform) NewBodyView(message int64, initial *core.Message) (ui.NativeWebView, func(bool), error) {
+	if p.bodiesClosed {
+		return nil, nil, webui.ErrWrongPage
+	}
+	var shell readerShell
+	cold := p.idleBody == nil
+	if cold {
+		var err error
+		shell, err = p.makeBody()
+		if err != nil {
+			return nil, nil, err
 		}
-		p.bodies[page] = v
-	}, func() error { return page.LoadURL("/reader.html") }, closeView)
-	if err != nil {
+		if p.bodiesClosed { // NewWebView may have run the event loop
+			shell.Destroy()
+			return nil, nil, webui.ErrWrongPage
+		}
+	} else {
+		shell, p.idleBody = p.idleBody.shell, nil
+	}
+	id := p.roles.Register(shell.Page(), "reader")
+	v := &bodyView{NativeWebView: shell, shell: shell, id: id, roles: p.roles}
+	p.reader.Bind(id, message, initial)
+	if p.bodies == nil {
+		p.bodies = map[int]*bodyView{}
+	}
+	p.bodies[id] = v
+	release := func(reuse bool) { p.releaseBody(id, reuse) }
+	if cold {
+		if err := shell.load(); err != nil {
+			release(false)
+			return nil, nil, err
+		}
+	}
+	if p.bodies[id] != v { // shut down during the load
+		return nil, nil, webui.ErrWrongPage
+	}
+	if err := shell.signal(webui.ReaderBinding{ID: id, Active: true}); err != nil {
+		release(false)
 		return nil, nil, err
 	}
-	return v, closeView, nil
+	return v, release, nil
+}
+
+func (p *platform) releaseBody(id int, reuse bool) {
+	v := p.bodies[id]
+	if v == nil {
+		return // a repeated release cannot touch a later assignment
+	}
+	delete(p.bodies, id)
+	// A retained native node must no longer place this shell. MyGo’s nil view places nothing.
+	v.NativeWebView = (*mygo.WebView)(nil)
+	keep := reuse && !p.bodiesClosed && p.idleBody == nil
+	p.reader.Unbind(id, keep)
+	p.roles.Unregister(v.shell.Page())
+	if err := v.shell.signal(webui.ReaderBinding{ID: id}); err != nil {
+		log.Printf("releasing reader page %d: %v", id, err)
+		p.reader.Unbind(id, false)
+		v.shell.Destroy()
+	} else if keep {
+		p.idleBody = v
+	} else if reuse && !p.bodiesClosed && p.win != nil {
+		// A swap can release several visible pages while building the frame.
+		// Destroy surplus after that turn, not halfway through native placement.
+		p.win.Update(v.shell.Destroy)
+	} else {
+		v.shell.Destroy()
+	}
+}
+
+func (p *platform) closeBodyViews() {
+	p.bodiesClosed = true
+	for id := range p.bodies {
+		p.releaseBody(id, false)
+	}
+	if v := p.idleBody; v != nil {
+		p.idleBody = nil
+		p.reader.Unbind(v.id, false)
+		v.shell.Destroy()
+	}
 }
 
 // NewSignatureView makes the signature page in the main window, kept on
@@ -440,21 +538,6 @@ func (p *platform) UpdatesInstallThemselves() bool {
 	return !packaged() && updater.AutomaticDownloads() // the Store's package: the Store's page installs it
 }
 
-// bodyView is the web view of the reader page page, while it is open as
-// one: in bodies, registered as "reader", and bound (to message). UI
-// thread.
-func (p *platform) bodyView(page *mygo.Page) (v *mygo.WebView, message int64, ok bool) {
-	v = p.bodies[page]
-	if v == nil {
-		return nil, 0, false
-	}
-	if role, ok := p.roles.Role(page); !ok || role != "reader" {
-		return nil, 0, false
-	}
-	message, ok = p.reader.Bound(page)
-	return v, message, ok
-}
-
 // loadAfterSetup readies an embedded page before it loads: setup
 // (lockPage, its role, its binding) runs first, then load; when load
 // fails, undo runs.
@@ -471,12 +554,13 @@ func loadAfterSetup(setup func(), load func() error, undo func()) error {
 func (p *platform) AllowImages(message int64) { p.reader.Allow(message) }
 
 func (p *platform) BodyGlass(view ui.NativeWebView, top, bottom app.BodyGlassRect) {
-	if v, ok := view.(*mygo.WebView); ok {
+	if v, ok := view.(*bodyView); ok && p.bodies[v.id] == v {
 		g := webui.ReaderGlass{
-			Top:    webui.ReaderGlassRect{X: top.X, Y: top.Y, W: top.W, H: top.H, R: top.R},
-			Bottom: webui.ReaderGlassRect{X: bottom.X, Y: bottom.Y, W: bottom.W, H: bottom.H, R: bottom.R},
+			Binding: v.id,
+			Top:     webui.ReaderGlassRect{X: top.X, Y: top.Y, W: top.W, H: top.H, R: top.R},
+			Bottom:  webui.ReaderGlassRect{X: bottom.X, Y: bottom.Y, W: bottom.W, H: bottom.H, R: bottom.R},
 		}
-		if err := webui.ReaderGlassed.EmitPage(v.Page(), g); err != nil {
+		if err := webui.ReaderGlassed.EmitPage(v.shell.Page(), g); err != nil {
 			log.Printf("the glass to a reader page: %v", err)
 		}
 	}
@@ -487,9 +571,9 @@ func (p *platform) TranslateBody(message int64, texts map[string]string) {
 }
 
 func (p *platform) Print(message int64) {
-	for page, v := range p.bodies {
-		if id, ok := p.reader.Bound(page); ok && id == message {
-			v.Page().Print()
+	for id, v := range p.bodies {
+		if m, ok := p.reader.Bound(id); ok && m == message {
+			v.shell.Page().Print()
 			return
 		}
 	}

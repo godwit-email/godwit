@@ -790,23 +790,23 @@ func TestReaderImagesOverSocket(t *testing.T) {
 	pages := webui.NewPages(func(ctx context.Context) any { return ctx.Value(readerPageKey{}) })
 	built := make(chan webui.ReaderBody, 4)
 	r := webui.NewReader(pages, webui.ReaderDeps{
-		Emit:    func(_ any, b webui.ReaderBody) { built <- b },
-		OnBuilt: func(_ any, _ webui.ReaderBody) {},
+		Emit:    func(_ int, b webui.ReaderBody) { built <- b },
+		OnBuilt: func(_ int, _ webui.ReaderBody) {},
 	})
 	r.SetService(cl)
 	rp := webui.NewReaderPage(r)
 
 	pKey := "page-1"
-	pages.Register(pKey, "reader")
-	r.Bind(pKey, msgID)
+	id := pages.Register(pKey, "reader")
+	r.Bind(id, msgID, nil)
 	pCtx := context.WithValue(ctx, readerPageKey{}, pKey)
 
-	body, err := rp.Load(pCtx)
+	body, err := rp.Load(pCtx, id)
 	require.NoError(t, err)
 
 	handler := r.ImageHandler()
-	inlineTok := imagecache.Key("cid:emb@test")
-	remoteTok := imagecache.Key(remoteURL)
+	inlineTok := fmt.Sprintf("%d-%s", id, imagecache.Key("cid:emb@test"))
+	remoteTok := fmt.Sprintf("%d-%s", id, imagecache.Key(remoteURL))
 	assert.Contains(t, body.HTML, inlineTok)
 	assert.Contains(t, body.HTML, remoteTok)
 

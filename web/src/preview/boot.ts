@@ -290,6 +290,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
     entry: () => import("@/reader/main"),
     setup() {
       const body: ReaderBody = {
+        binding: 1,
         message: 41,
         version: 1,
         html:
@@ -322,8 +323,10 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         collapseQuotes: state === "quoted",
       };
       installFake({
+        "ReaderPage.Binding": async () => ({ id: body.binding, active: true }),
         "ReaderPage.Load": async () => body,
         "ReaderPage.Height": nothing,
+        "ReaderPage.Painted": nothing,
         "ReaderPage.Navigate": nothing,
         "ReaderPage.OpenLink": nothing,
         "ReaderPage.Search": nothing,

@@ -1,9 +1,10 @@
 import { RiRefreshLine } from "@remixicon/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/button";
 import {
   ReaderPage as api,
   events,
+  type ReaderBinding,
   type ReaderBody,
   type ReaderGlassRect,
   type Theme,
@@ -21,70 +22,98 @@ let nextDocument = 0;
 const MAX_HEIGHT = 1 << 20;
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-/**
- * The reader page: one expanded message's body (role "reader"), embedded in the native reader.
- *
- * Listeners first (readerBody, theme), then load: mygo drops events sent before a listener
- * exists, and only a body newer than the one shown applies (a load resolving after a readerBody is
- * dropped). A theme event wins over the theme of a body that arrives later.
- */
+type LoadFailure = { binding: number; error: string; retry: () => void };
+
+function readerShortcuts(binding: number, win: Window) {
+  return forwardShortcuts(
+    (dir) => api.navigate(binding, dir),
+    win,
+    () => api.search(binding),
+    () => api.save(binding),
+    () => api.print(binding),
+  );
+}
+
+/** The trusted page stays loaded; each assignment owns a fresh mail document. */
 export function ReaderApp() {
-  const [body, setBody] = useState<ReaderBody>();
-  const [theme, setTheme] = useState<Theme>();
-  const [failed, setFailed] = useState<string>();
-  const load = useRef<() => void>(ignore);
+  const [page, setPage] = useState<{ view?: ReaderBody | LoadFailure; theme?: Theme }>({});
+  const latest = useRef(page); // native events can supersede a queued rAF before React commits
 
   useEffect(() => {
     let live = true;
+    let binding: ReaderBinding | undefined;
+    let request: AbortController | undefined;
     let version = 0;
-    let pushed = false; // a theme event came: newer than any body's theme
-    const apply = (b: ReaderBody) => {
-      if (!live || b.version <= version) return;
-      version = b.version;
-      setBody(b);
-      setFailed(undefined);
-      if (!pushed) setTheme(b.theme);
+    let pushed: Theme | undefined; // a theme event is newer than any body's theme
+    const show = (view?: ReaderBody | LoadFailure, theme = latest.current.theme) => {
+      latest.current = { view, theme };
+      setPage(latest.current);
     };
+    const owns = (id: number) => live && binding?.active && binding.id === id;
+    const apply = (b: ReaderBody) => {
+      if (!owns(b.binding) || b.version <= version) return;
+      version = b.version;
+      show(b, pushed ?? b.theme);
+    };
+    const load = (id: number) => {
+      if (!owns(id) || version) return;
+      request?.abort();
+      request = new AbortController();
+      const { signal } = request;
+      show();
+      api.load
+        .with({ signal })(id)
+        .then(
+          (b) => {
+            if (!signal.aborted && b.binding === id) apply(b);
+          },
+          (e) => {
+            if (!signal.aborted && owns(id) && !version)
+              show({ binding: id, error: message(e), retry: () => load(id) });
+          },
+        );
+    };
+    const assign = (next: ReaderBinding) => {
+      if (!live || (binding && next.id < binding.id)) return;
+      // Idle wins for the same id, including over a late bootstrap.
+      if (next.id === binding?.id && (!binding.active || next.active)) return;
+      binding = next;
+      version = 0;
+      if (next.active) load(next.id);
+      else {
+        request?.abort();
+        show();
+      }
+    };
+    // Listen before asking: mygo drops events sent before a listener exists.
     const offs = [
+      events.readerBinding.on(assign),
       events.readerBody.on(apply),
       events.theme.on((t) => {
-        pushed = true;
-        setTheme(t);
+        pushed = t;
+        show(latest.current.view, t);
       }),
     ];
-    load.current = () => {
-      setFailed(undefined);
-      api.load().then(apply, (e) => {
-        if (live && !version) setFailed(message(e));
-      });
-    };
-    load.current();
+    api.binding().then(assign, ignore);
     return () => {
       live = false;
+      request?.abort();
       for (const off of offs) off();
     };
   }, []);
 
-  useEffect(
-    () =>
-      forwardShortcuts(
-        (dir) => api.navigate(dir),
-        window,
-        () => api.search(),
-        () => api.save(),
-        () => api.print(),
-      ),
-    [],
-  );
+  const { view, theme } = page;
+  const current = useCallback(() => latest.current === page, [page]);
+  const id = view?.binding;
+  useEffect(() => (id === undefined ? undefined : readerShortcuts(id, window)), [id]);
   useEffect(() => (theme ? applyTheme(theme as PageTheme) : undefined), [theme]);
 
-  if (failed !== undefined)
-    return <Failed error={failed} retry={() => load.current()} locale={body?.locale} />;
-  if (!body || !theme) return <main />;
+  if (view && "error" in view) return <Failed key={view.binding} {...view} current={current} />;
+  if (!view || !theme) return <main />;
   return (
-    <main>
-      <Body body={body} theme={theme} />
-      <Glass />
+    <main key={view.binding}>
+      <Body body={view} theme={theme} current={current} />
+      <Glass binding={view.binding} />
     </main>
   );
 }
@@ -130,7 +159,7 @@ function applyBand(el: HTMLDivElement | null, r: ReaderGlassRect, prev: ReaderGl
  * mutating DOM refs directly via GPU translate3d (zero React re-renders during scroll)
  * and fading briefly during fast flings so async IPC never leaves trailing ghosts.
  */
-export function Glass() {
+export function Glass({ binding }: { binding: number }) {
   const topRef = useRef<HTMLDivElement>(null);
   const botRef = useRef<HTMLDivElement>(null);
 
@@ -150,6 +179,7 @@ export function Glass() {
     };
 
     const off = events.readerGlass.on((g) => {
+      if (g.binding !== binding) return;
       const top = g.top ?? emptyRect;
       const bot = g.bottom ?? emptyRect;
       const now = performance.now();
@@ -197,7 +227,7 @@ export function Glass() {
       off();
       if (settle !== undefined) clearTimeout(settle);
     };
-  }, []);
+  }, [binding]);
 
   return (
     <>
@@ -217,13 +247,62 @@ export function Glass() {
   );
 }
 
-function Failed({ error, retry, locale }: { error: string; retry: () => void; locale?: string }) {
-  const t = useT(locale);
+// A locale change can rewire the same mail document, but it has only one first paint.
+const painted = new WeakSet<Element>();
+
+function bodyLayout(binding: number, element: Element, current: () => boolean) {
+  let live = true;
+  let frame = 0;
+  const pending = () => live && element.isConnected && current() && !painted.has(element);
+  return {
+    async height(px: number) {
+      if (!live || !current()) return;
+      try {
+        await api.height(binding, px);
+      } catch {
+        return; // the assignment may already be released
+      }
+      // Later resizes still report, but cannot postpone the first drawable frame.
+      if (frame || !pending()) return;
+      frame = requestAnimationFrame(() => {
+        // rAF runs before paint. Leave a frame at the acknowledged size before the handoff.
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          if (!pending()) return;
+          painted.add(element);
+          api.painted(binding).catch(ignore);
+        });
+      });
+    },
+    stop() {
+      live = false;
+      cancelAnimationFrame(frame);
+    },
+  };
+}
+
+function Failed({ binding, error, retry, current }: LoadFailure & { current: () => boolean }) {
+  const t = useT();
   const ref = useRef<HTMLElement>(null);
-  useEffect(() => {
-    const px = Math.ceil(ref.current?.getBoundingClientRect().height ?? 0);
-    if (px > 0) api.height(px).catch(ignore);
-  }, []);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let last = 0;
+    const layout = bodyLayout(binding, el, () => current() && last > 0);
+    const measure = () => {
+      const px = Math.ceil(el.getBoundingClientRect().height);
+      if (px === last) return;
+      last = px;
+      if (px > 0) layout.height(px);
+    };
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    measure();
+    return () => {
+      ro.disconnect();
+      layout.stop();
+    };
+  }, [binding, current]);
   return (
     <main ref={ref} className="flex items-center gap-2 p-3 text-xs text-muted-foreground">
       <span>{t("error.unknown", error)}</span>
@@ -262,7 +341,15 @@ function useSystemDark(): boolean {
  */
 type QuoteTip = { x: number; y: number; arrowOffset: number; open: boolean };
 
-export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
+export function Body({
+  body,
+  theme,
+  current,
+}: {
+  body: ReaderBody;
+  theme: Theme;
+  current: () => boolean;
+}) {
   const systemDark = useSystemDark();
   // Every update gets a fresh document marker, so a retry also reloads identical HTML and images.
   const { srcdoc, marker } = useMemo(() => {
@@ -280,13 +367,13 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
   const dark = isDark(theme, systemDark);
   const fold = body.collapseQuotes && body.html !== ""; // plain text folds in its srcdoc
   const wire = useCallback(
-    (f: HTMLIFrameElement) => attach(f, theme, dark, labels, setTip, fold),
-    [theme, dark, labels, fold],
+    (f: HTMLIFrameElement) => attach(f, body.binding, current, theme, dark, labels, setTip, fold),
+    [body.binding, current, theme, dark, labels, fold],
   );
-  useEffect(() => {
+  useLayoutEffect(() => {
     const f = frame.current;
     if (!f) return;
-    let polling = true;
+    let poll = 0;
     let wired: Document | null = null;
     let detach = ignore;
     const onLoad = () => {
@@ -300,18 +387,17 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
       return true;
     };
     // Images can delay load; expose the parsed document as soon as its current marker is present.
-    // Polling ends at the first load: from then on load events alone track the document.
+    // about:blank or the preceding document can fire load first; only our marker ends the poll.
     const ready = () => {
-      if (polling && !onLoad()) requestAnimationFrame(ready);
+      if (!onLoad()) poll = requestAnimationFrame(ready);
     };
     const loaded = () => {
-      polling = false;
-      onLoad();
+      if (onLoad()) cancelAnimationFrame(poll);
     };
     f.addEventListener("load", loaded);
     ready();
     return () => {
-      polling = false;
+      cancelAnimationFrame(poll);
       f.removeEventListener("load", loaded);
       detach();
     };
@@ -355,6 +441,8 @@ export function Body({ body, theme }: { body: ReaderBody; theme: Theme }) {
 /** Wires a loaded body document; returns the unwiring. */
 function attach(
   frame: HTMLIFrameElement,
+  binding: number,
+  current: () => boolean,
   theme: Theme,
   darkCanvas: boolean,
   labels: { expand: string; collapse: string },
@@ -372,7 +460,6 @@ function attach(
     wrap.classList.remove("godwit-auto");
     foldQuotes(wrap);
   }
-  let live = true;
   const offs: (() => void)[] = [adaptDarkMode(frame, theme)];
   const on = <E extends Event>(
     t: EventTarget,
@@ -446,7 +533,8 @@ function attach(
   let last = -1;
   let echo = 0; // the iframe's last change made by the page
   let changed = true; // the content changed since then
-  let queued = false;
+  let queued = 0;
+  const layout = bodyLayout(binding, wrap, () => current() && frame.contentDocument === doc);
   const measure = () => {
     syncFoldControls();
     const cs = win.getComputedStyle(doc.body);
@@ -466,7 +554,7 @@ function attach(
     echo = px - frame.getBoundingClientRect().height;
     last = px;
     frame.style.height = `${px}px`;
-    api.height(px).catch(ignore);
+    layout.height(px);
   };
   const contentChanged = () => {
     changed = true;
@@ -474,23 +562,18 @@ function attach(
   };
   const schedule = () => {
     if (queued) return;
-    queued = true;
-    requestAnimationFrame(() => {
-      queued = false;
-      if (live) measure();
+    queued = requestAnimationFrame(() => {
+      queued = 0;
+      measure();
     });
   };
   const ro = new ResizeObserver(schedule);
   ro.observe(wrap);
   offs.push(() => ro.disconnect());
   let lastWidth = frame.getBoundingClientRect().width || 0;
-  on(window, "resize", () => {
-    lastWidth = frame.getBoundingClientRect().width || 0;
-    contentChanged();
-  });
-  // Updating frame.style.height fires resize on win; keep changed=false on height-only resizes so
-  // the vh echo guard holds, while still scheduling measure() to refresh fold-control contrast.
-  on(win, "resize", () => {
+  // Setting the iframe and placing the native WebView both fire resize. Only a width change
+  // defeats the vh echo guard; either resize can change fold-control contrast.
+  const resized = () => {
     const w = frame.getBoundingClientRect().width || 0;
     if (w !== lastWidth) {
       lastWidth = w;
@@ -498,7 +581,9 @@ function attach(
     } else {
       schedule();
     }
-  });
+  };
+  on(window, "resize", resized);
+  on(win, "resize", resized);
   for (const img of doc.images) {
     on(img, "load", contentChanged);
     on(img, "error", contentChanged);
@@ -605,7 +690,7 @@ function attach(
     el.setAttribute("tabindex", "0");
     el.setAttribute("role", "link");
   }
-  const open = (href: string) => void api.openLink(href).catch(ignore);
+  const open = (href: string) => void api.openLink(binding, href).catch(ignore);
   on<MouseEvent>(doc, "click", (e) => {
     const rail = (e.target as Element | null)?.closest?.(".godwit-quote-rail");
     if (rail) {
@@ -628,18 +713,11 @@ function attach(
     open(href);
   });
 
-  offs.push(
-    forwardShortcuts(
-      (dir) => api.navigate(dir),
-      win,
-      () => api.search(),
-      () => api.save(),
-      () => api.print(),
-    ),
-  );
+  offs.push(readerShortcuts(binding, win));
 
   return () => {
-    live = false;
+    cancelAnimationFrame(queued);
+    layout.stop();
     setTip(null);
     for (const off of offs) off();
   };

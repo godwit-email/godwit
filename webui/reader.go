@@ -18,7 +18,6 @@ import (
 	"github.com/godwit-email/godwit/core"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/godwit-email/godwit/internal/i18n"
-	"github.com/godwit-email/godwit/internal/imagecache"
 	"github.com/godwit-email/godwit/internal/imagefetch"
 )
 
@@ -30,8 +29,19 @@ var (
 // maxBodyHeight bounds a reported height, in CSS pixels.
 const maxBodyHeight = 1 << 20
 
+// ReaderBinding identifies one assignment of a reader shell. Releasing it
+// sends the same ID inactive; the next assignment always has a higher ID.
+type ReaderBinding struct {
+	ID     int  `json:"id"`
+	Active bool `json:"active"`
+}
+
+// ReaderBound tells a reader shell to load its new assignment or clear it.
+var ReaderBound = mygo.NewEvent[ReaderBinding]("readerBinding")
+
 // ReaderBody is a message's body as the reader page shows it.
 type ReaderBody struct {
+	Binding int   `json:"binding"`
 	Message int64 `json:"message"`
 	// Version orders the bodies of a page: it applies only a newer one, so
 	// a Load that resolves after a ReaderReload is dropped.
@@ -73,49 +83,51 @@ type ReaderGlassRect struct {
 // CSS pixels: Top for the collapsing sticky header, and Bottom for the floating
 // reply card. Used as the fallback when system native glass is unavailable.
 type ReaderGlass struct {
-	Top    ReaderGlassRect `json:"top"`
-	Bottom ReaderGlassRect `json:"bottom"`
+	Binding int             `json:"binding"`
+	Top     ReaderGlassRect `json:"top"`
+	Bottom  ReaderGlassRect `json:"bottom"`
 }
 
 // ReaderGlassed tells a reader page what the bars cover, as it scrolls.
 var ReaderGlassed = mygo.NewEvent[ReaderGlass]("readerGlass")
 
 // ReaderDeps is what Reader needs from the platform. The callbacks post to
-// the UI thread themselves. Each names the page (its key) it is about, bound
-// as the call was made: by the time the post runs the page may be closed or
-// rebound, which the UI thread checks.
+// the UI thread themselves. Each names a registration, not a physical page:
+// the UI thread drops the post if that registration has been released.
 type ReaderDeps struct {
-	// Emit sends a body to the page with key page (ReaderReload.EmitPage,
+	// Emit sends a body to the registered page (ReaderReload.EmitPage,
 	// which only queues it). It runs with the Reader's lock held, so the
 	// page is bound to b's message as it is sent: it must not block or call
 	// back into the Reader.
-	Emit func(page any, b ReaderBody)
+	Emit func(id int, b ReaderBody)
 	// OnHeight is the height of message's body in page, in CSS pixels.
-	OnHeight func(page any, message int64, px int)
+	OnHeight func(id int, message int64, px int)
+	// OnPainted acknowledges the first drawable content of the assignment.
+	OnPainted func(id int, message int64)
 	// OnLink opens a link of page's body (the native confirmation; mailto
 	// composes).
-	OnLink func(page any, url string)
+	OnLink func(id int, url string)
 	// OnNavigate goes back (-1) or forward (1), as ⌘[ and ⌘] do natively.
-	OnNavigate func(page any, dir int)
+	OnNavigate func(id int, dir int)
 	// OnSearch opens the mail list's search, as ⌘F does natively.
-	OnSearch func(page any)
+	OnSearch func(id int)
 	// OnSave saves the current message, as ⌘S does natively.
-	OnSave func(page any)
+	OnSave func(id int)
 	// OnPrint prints the current message, as ⌘P does natively.
-	OnPrint func(page any)
+	OnPrint func(id int)
 	// OnBuilt is told, for each page bound to b.Message, each body built
 	// as the message's current version: native shows the truncated notice
 	// by b.Cut and hides the remote-image notice once b.Remote. It runs
 	// with the Reader's lock held, as Emit does (so a page is told the
 	// bodies in their versions' order): it must not block or call back.
-	OnBuilt func(page any, b ReaderBody)
+	OnBuilt func(id int, b ReaderBody)
 	// OnFailed is told, for each page bound to message, that the body
 	// Allow read failed: native offers 加载图片 again. Under the lock too.
-	OnFailed func(page any, message int64, err error)
+	OnFailed func(id int, message int64, err error)
 	// OnImagesFailed is told, for each page bound to message, how many of
 	// its images the proxy could not get: native offers a retry
 	// (Allow). Under the lock too.
-	OnImagesFailed func(page any, message int64, n int)
+	OnImagesFailed func(id int, message int64, n int)
 }
 
 // Reader keeps the reader pages (role "reader"), each bound to a message:
@@ -132,17 +144,21 @@ type Reader struct {
 
 	mu       sync.Mutex
 	svc      Service
-	version  int64             // the last version given out
-	settings *core.Settings    // latest in-memory SettingsChanged snapshot (ahead of async DB saves)
-	bound    map[any]int64     // page key → its message
+	version  int64          // the last version given out
+	settings *core.Settings // latest in-memory SettingsChanged snapshot (ahead of async DB saves)
+	bound    map[int]int64  // registration ID → its message
+	idlePage any            // the one idle shell, known only to Binding
+	idleID   int
 	msgs     map[int64]*bodyOf // per message with a page bound
 }
 
 // bodyOf is a bound message's state.
 type bodyOf struct {
+	owner      int // first registration of this message lifetime; namespaces its image tokens
 	pages      int // bound to it
 	allowed    bool
 	generation int64
+	initial    *core.Message     // first open’s canonical GetMessageLazyImages(message, false)
 	body       *ReaderBody       // the current displayed body, once built
 	original   *ReaderBody       // safe, prepared original for switching without rereading mail
 	tokens     map[string]string // its image tokens (godwit-img: paths) → remote URLs
@@ -175,7 +191,7 @@ func (i *inlineImage) finish(data []byte) {
 
 // NewReader keeps the reader pages of pages; SetService opens it up.
 func NewReader(pages *Pages, d ReaderDeps) *Reader {
-	return &Reader{pages: pages, d: d, bound: map[any]int64{}, msgs: map[int64]*bodyOf{},
+	return &Reader{pages: pages, d: d, bound: map[int]int64{}, msgs: map[int64]*bodyOf{},
 		getMessage: func(ctx context.Context, svc Service, id int64, remote bool) (core.Message, error) {
 			return svc.GetMessageLazyImages(ctx, id, remote)
 		},
@@ -194,44 +210,52 @@ func (r *Reader) SetService(svc Service) {
 	r.mu.Unlock()
 }
 
-// Bind makes the page with key (registered as "reader") show message; a
-// page shows one message at a time.
-func (r *Reader) Bind(key any, message int64) {
+// Bind makes registration id (a new Pages.Register as "reader") show message.
+func (r *Reader) Bind(id int, message int64, initial *core.Message) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.unbind(key)
-	r.bound[key] = message
+	if key, ok := r.pages.Key(id); ok && key == r.idlePage {
+		r.idlePage, r.idleID = nil, 0
+	}
+	r.bound[id] = message
 	st := r.msgs[message]
 	if st == nil {
 		r.version++
-		st = &bodyOf{generation: r.version}
+		st = &bodyOf{owner: id, generation: r.version}
+		if initial != nil && initial.ID == message {
+			st.initial = initial
+		}
 		r.msgs[message] = st
 	}
 	st.pages++
 }
 
-// Bound is the message the page with key shows, while it is bound.
-func (r *Reader) Bound(key any) (message int64, ok bool) {
+// Bound is the message registration id shows, while it is bound.
+func (r *Reader) Bound(id int) (message int64, ok bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	message, ok = r.bound[key]
+	message, ok = r.bound[id]
 	return message, ok
 }
 
-// Unbind forgets the page with key; the last page of a message takes its
-// state along (allowed images, tokens).
-func (r *Reader) Unbind(key any) {
+// Unbind revokes id, before Pages.Unregister. An idle shell can query its
+// inactive ID but has no grants. Unbind(id, false) forgets it on destruction.
+func (r *Reader) Unbind(id int, idle bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.unbind(key)
-}
-
-func (r *Reader) unbind(key any) {
-	m, ok := r.bound[key]
+	if r.idleID == id {
+		r.idlePage, r.idleID = nil, 0
+	}
+	m, ok := r.bound[id]
 	if !ok {
 		return
 	}
-	delete(r.bound, key)
+	if idle {
+		if key, ok := r.pages.Key(id); ok {
+			r.idlePage, r.idleID = key, id
+		}
+	}
+	delete(r.bound, id)
 	st := r.msgs[m]
 	if st.pages--; st.pages == 0 {
 		if st.stopInline != nil {
@@ -278,7 +302,7 @@ func (r *Reader) Translate(message int64, texts map[string]string) {
 	if st.original == nil || st.body == nil {
 		return // the pending build will apply the latest translation choice
 	}
-	r.emitTranslation(message, st)
+	r.emitTranslation(st)
 }
 
 // SettingsChanged updates cached reader bodies for st and re-emits bound pages
@@ -290,7 +314,7 @@ func (r *Reader) SettingsChanged(st core.Settings) {
 	defer r.mu.Unlock()
 	cp := st
 	r.settings = &cp
-	for message, s := range r.msgs {
+	for _, s := range r.msgs {
 		// The original too while a reload is in flight: a failed reload re-emits it.
 		if s.original != nil {
 			s.original.Theme, s.original.Locale, s.original.CollapseQuotes = theme, locale, st.CollapseQuotes
@@ -307,24 +331,28 @@ func (r *Reader) SettingsChanged(st core.Settings) {
 		b.Version = r.version
 		b.CollapseQuotes = st.CollapseQuotes
 		s.body = &b
-		for k, m := range r.bound {
-			if m == message {
-				r.d.Emit(k, b)
-			}
-		}
+		r.tellPages(b, r.d.Emit)
 	}
 }
 
 // emitTranslation applies the current choice to the cached original, with r.mu held.
-func (r *Reader) emitTranslation(message int64, st *bodyOf) {
+func (r *Reader) emitTranslation(st *bodyOf) {
 	b := translateBody(*st.original, st.translations)
 	r.version++
 	b.Version = r.version
 	st.body = &b
-	for k, m := range r.bound {
-		if m == message {
-			r.d.OnBuilt(k, b)
-			r.d.Emit(k, b)
+	r.tellPages(b, func(id int, b ReaderBody) {
+		r.d.OnBuilt(id, b)
+		r.d.Emit(id, b)
+	})
+}
+
+// tellPages stamps a copy for each current registration. It runs under r.mu.
+func (r *Reader) tellPages(b ReaderBody, tell func(int, ReaderBody)) {
+	for id, m := range r.bound {
+		if m == b.Message {
+			b.Binding = id
+			tell(id, b)
 		}
 	}
 }
@@ -358,7 +386,7 @@ func (r *Reader) reload(message int64, change func(*bodyOf), prep func(Service))
 	allowed := st.allowed
 	r.version++
 	v := r.version
-	st.generation, st.body = v, nil
+	st.generation, st.body, st.initial = v, nil, nil
 	r.mu.Unlock()
 	go func() {
 		if prep != nil {
@@ -366,14 +394,14 @@ func (r *Reader) reload(message int64, change func(*bodyOf), prep func(Service))
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
-		b, err := r.build(ctx, svc, message, v, allowed)
+		_, err := r.build(ctx, svc, message, st, v, allowed, 0)
 		if err != nil {
-			log.Printf("reader: message %d: %v", message, err)
 			r.mu.Lock()
 			defer r.mu.Unlock()
 			if r.msgs[message] == st && st.generation == v {
+				log.Printf("reader: message %d: %v", message, err)
 				if st.original != nil {
-					r.emitTranslation(message, st)
+					r.emitTranslation(st)
 				}
 				for k, m := range r.bound {
 					if m == message {
@@ -381,28 +409,46 @@ func (r *Reader) reload(message int64, change func(*bodyOf), prep func(Service))
 					}
 				}
 			}
-			return
-		}
-		// Sent under the lock: a page rebound meanwhile, or a newer
-		// version, gets nothing of this body.
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		if r.msgs[message] != st || st.generation != v {
-			return
-		}
-		for k, m := range r.bound {
-			if m == message {
-				r.d.Emit(k, b)
-			}
 		}
 	}()
 }
 
-// build keeps the body only while its build generation v is current.
-func (r *Reader) build(ctx context.Context, svc Service, message, v int64, allowed bool) (ReaderBody, error) {
-	m, err := r.getMessage(ctx, svc, message, allowed)
-	if err != nil {
+var errBodyChanged = errors.New("the reader body changed during the load")
+
+// checkBuild runs under r.mu, before fetching and again before publishing.
+func (r *Reader) checkBuild(message int64, state *bodyOf, v int64, id int) error {
+	if id != 0 {
+		if _, ok := r.pages.Key(id); !ok || r.bound[id] != message {
+			return ErrWrongPage
+		}
+	}
+	if r.msgs[message] != state || state.generation != v {
+		return errBodyChanged
+	}
+	return nil
+}
+
+// build publishes only while the requesting registration (0 for a reload)
+// and message generation are still live. A revoked Load returns no content.
+func (r *Reader) build(ctx context.Context, svc Service, message int64, state *bodyOf, v int64, allowed bool, id int) (ReaderBody, error) {
+	r.mu.Lock()
+	if err := r.checkBuild(message, state, v, id); err != nil {
+		r.mu.Unlock()
 		return ReaderBody{}, err
+	}
+	initial := state.initial
+	state.initial = nil
+	r.mu.Unlock()
+	var m core.Message
+	// SanitizeLazy counts remote resources even when blocked; with none its
+	// two policies produce the same body. Allow/retries always read afresh.
+	if initial != nil && (!allowed || initial.RemoteImagesBlocked == 0) {
+		m = *initial
+	} else {
+		var err error
+		if m, err = r.getMessage(ctx, svc, message, allowed); err != nil {
+			return ReaderBody{}, err
+		}
 	}
 	st, err := svc.GetSettings(ctx)
 	if err != nil {
@@ -414,7 +460,7 @@ func (r *Reader) build(ctx context.Context, svc Service, message, v int64, allow
 	budget := imagefetch.NewBudget() // the message's images, inline and remote
 	if m.HTML != "" {
 		dims := map[string]core.ImageDims{}
-		b.HTML, tokens = prepareBody(m.HTML, budget, message, func(src string) (int, int, bool) {
+		b.HTML, tokens = prepareBody(m.HTML, budget, message, state.owner, func(src string) (int, int, bool) {
 			d, ok := dims[src]
 			if !ok {
 				d = svc.CachedImageDims(src)
@@ -432,24 +478,25 @@ func (r *Reader) build(ctx context.Context, svc Service, message, v int64, allow
 		b.Locale = i18n.Language()
 		b.CollapseQuotes = r.settings.CollapseQuotes
 	}
-	if s := r.msgs[message]; s != nil && s.generation == v {
-		if s.body == nil {
-			r.version++
-			b.Version = r.version
-			original := b
-			s.original = &original
-			b = translateBody(b, s.translations)
-			s.body, s.tokens = &b, tokens
-			s.pixels, s.charged = budget, map[string]bool{}
-		} else {
-			b = *s.body
-		}
-		for k, m := range r.bound {
-			if m == message {
-				r.d.OnBuilt(k, b)
-			}
-		}
+	if err := r.checkBuild(message, state, v, id); err != nil {
+		return ReaderBody{}, err
 	}
+	if state.body == nil {
+		r.version++
+		b.Version = r.version
+		original := b
+		state.original = &original
+		b = translateBody(b, state.translations)
+		cached := b
+		state.body, state.tokens = &cached, tokens
+		state.pixels, state.charged = budget, map[string]bool{}
+		r.tellPages(b, r.d.OnBuilt)
+	}
+	b = *state.body
+	if id == 0 {
+		r.tellPages(b, r.d.Emit)
+	}
+	b.Binding = id
 	return b, nil
 }
 
@@ -460,89 +507,107 @@ type ReaderPage struct{ r *Reader }
 // NewReaderPage is the bound facade of r.
 func NewReaderPage(r *Reader) *ReaderPage { return &ReaderPage{r: r} }
 
-// caller is the calling page's message, if it is a reader page bound to
-// one, and the service.
-func (r *Reader) caller(ctx context.Context) (message int64, svc Service, err error) {
-	_, message, svc, err = r.callerKey(ctx)
-	return message, svc, err
-}
-
-// callerKey is caller with the page's key.
-func (r *Reader) callerKey(ctx context.Context) (key any, message int64, svc Service, err error) {
-	id, err := r.pages.Caller(ctx, "reader")
-	if err != nil {
-		return nil, 0, nil, err
-	}
-	key, ok := r.pages.Key(id)
-	if !ok {
-		return nil, 0, nil, ErrWrongPage
-	}
+// Binding bootstraps a page after it subscribes to ReaderBound. Only the
+// one idle shell can query its revoked ID; unrelated callers get no access.
+func (p *ReaderPage) Binding(ctx context.Context) (ReaderBinding, error) {
+	r := p.r
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	message, ok = r.bound[key]
-	if !ok {
-		return nil, 0, nil, ErrWrongPage
+	if r.idleID != 0 && r.pages.pageOf(ctx) == r.idlePage {
+		return ReaderBinding{ID: r.idleID}, nil
 	}
-	if r.svc == nil {
-		return nil, 0, nil, ErrNotReady
+	id, err := r.pages.Caller(ctx, "reader")
+	if _, ok := r.bound[id]; err != nil || !ok {
+		return ReaderBinding{}, ErrWrongPage
 	}
-	return key, message, r.svc, nil
+	return ReaderBinding{ID: id, Active: true}, nil
 }
 
-// Load is the caller's message's body, as of its version.
-func (p *ReaderPage) Load(ctx context.Context) (ReaderBody, error) {
-	message, svc, err := p.r.caller(ctx)
-	if err != nil {
-		return ReaderBody{}, err
+func (r *Reader) caller(ctx context.Context, id int) (int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.callerLocked(ctx, id)
+}
+
+// The ID supplied by the page must match the physical IPC caller.
+func (r *Reader) callerLocked(ctx context.Context, id int) (int64, error) {
+	actual, err := r.pages.Caller(ctx, "reader")
+	message, ok := r.bound[actual]
+	if err != nil || actual != id || !ok {
+		return 0, ErrWrongPage
 	}
-	p.r.mu.Lock()
-	st := p.r.msgs[message]
-	if st == nil { // unbound since
-		p.r.mu.Unlock()
-		return ReaderBody{}, ErrWrongPage
+	if r.svc == nil {
+		return 0, ErrNotReady
 	}
-	if st.body != nil {
-		b := *st.body
-		p.r.mu.Unlock()
-		return b, nil
-	}
-	v, allowed := st.generation, st.allowed
-	p.r.mu.Unlock()
-	if !allowed { // the setting may let them load at once (core decides)
-		ok, err := svc.ImagesAllowed(ctx, message)
+	return message, nil
+}
+
+// Load returns only the body for this assignment, even across a slow read.
+func (p *ReaderPage) Load(ctx context.Context, id int) (ReaderBody, error) {
+	r := p.r
+	for {
+		r.mu.Lock()
+		message, err := r.callerLocked(ctx, id)
 		if err != nil {
+			r.mu.Unlock()
 			return ReaderBody{}, err
 		}
-		if ok {
-			p.r.mu.Lock()
-			if p.r.msgs[message] == st && st.generation == v {
-				st.allowed = true
+		st, svc := r.msgs[message], r.svc
+		if st.body != nil {
+			b := *st.body
+			b.Binding = id
+			r.mu.Unlock()
+			return b, nil
+		}
+		v, allowed := st.generation, st.allowed
+		r.mu.Unlock()
+		if !allowed { // the setting may let them load at once (core decides)
+			allowed, err = svc.ImagesAllowed(ctx, message)
+			if err != nil {
+				return ReaderBody{}, err
 			}
-			allowed = st.allowed
-			p.r.mu.Unlock()
+			if allowed {
+				r.mu.Lock()
+				if r.bound[id] == message && r.msgs[message] == st && st.generation == v {
+					st.allowed = true
+				}
+				r.mu.Unlock()
+			}
+		}
+		b, err := r.build(ctx, svc, message, st, v, allowed, id)
+		if err != errBodyChanged { // a concurrent Allow superseded the build; read its version
+			return b, err
 		}
 	}
-	return p.r.build(ctx, svc, message, v, allowed)
 }
 
 // Height is the body's height in CSS pixels, for the native layout.
-func (p *ReaderPage) Height(ctx context.Context, px int) error {
-	key, message, _, err := p.r.callerKey(ctx)
+func (p *ReaderPage) Height(ctx context.Context, id, px int) error {
+	message, err := p.r.caller(ctx, id)
 	if err != nil {
 		return err
 	}
 	if px < 0 || px > maxBodyHeight {
 		return ErrBadHeight
 	}
-	p.r.d.OnHeight(key, message, px)
+	p.r.d.OnHeight(id, message, px)
 	return nil
+}
+
+// Painted is the page's acknowledgement of drawable content for id.
+func (p *ReaderPage) Painted(ctx context.Context, id int) error {
+	message, err := p.r.caller(ctx, id)
+	if err == nil {
+		p.r.d.OnPainted(id, message)
+	}
+	return err
 }
 
 // OpenLink opens a link of the body (its data-href) natively: an http or
 // https one after the confirmation, a mailto one in a compose window. Any
 // other is ErrBadLink.
-func (p *ReaderPage) OpenLink(ctx context.Context, link string) error {
-	key, _, _, err := p.r.callerKey(ctx)
+func (p *ReaderPage) OpenLink(ctx context.Context, id int, link string) error {
+	_, err := p.r.caller(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -555,56 +620,56 @@ func (p *ReaderPage) OpenLink(ctx context.Context, link string) error {
 	default:
 		return ErrBadLink
 	}
-	p.r.d.OnLink(key, link)
+	p.r.d.OnLink(id, link)
 	return nil
 }
 
 // Navigate goes back (-1) or forward (1), as ⌘[ and ⌘] do natively.
-func (p *ReaderPage) Navigate(ctx context.Context, dir int) error {
-	key, _, _, err := p.r.callerKey(ctx)
+func (p *ReaderPage) Navigate(ctx context.Context, id, dir int) error {
+	_, err := p.r.caller(ctx, id)
 	if err != nil {
 		return err
 	}
 	if dir != -1 && dir != 1 {
 		return ErrBadDirection
 	}
-	p.r.d.OnNavigate(key, dir)
+	p.r.d.OnNavigate(id, dir)
 	return nil
 }
 
 // Search opens the mail list's search, as ⌘F does natively: a page that
 // has the keyboard misses the native shortcut.
-func (p *ReaderPage) Search(ctx context.Context) error {
-	key, _, _, err := p.r.callerKey(ctx)
+func (p *ReaderPage) Search(ctx context.Context, id int) error {
+	_, err := p.r.caller(ctx, id)
 	if err != nil {
 		return err
 	}
-	p.r.d.OnSearch(key)
+	p.r.d.OnSearch(id)
 	return nil
 }
 
 // Save saves the message, as ⌘S does natively: a page that has the
 // keyboard misses the native shortcut.
-func (p *ReaderPage) Save(ctx context.Context) error {
-	key, _, _, err := p.r.callerKey(ctx)
+func (p *ReaderPage) Save(ctx context.Context, id int) error {
+	_, err := p.r.caller(ctx, id)
 	if err != nil {
 		return err
 	}
 	if p.r.d.OnSave != nil {
-		p.r.d.OnSave(key)
+		p.r.d.OnSave(id)
 	}
 	return nil
 }
 
 // Print prints the message, as ⌘P does natively: a page that has the
 // keyboard misses the native shortcut.
-func (p *ReaderPage) Print(ctx context.Context) error {
-	key, _, _, err := p.r.callerKey(ctx)
+func (p *ReaderPage) Print(ctx context.Context, id int) error {
+	_, err := p.r.caller(ctx, id)
 	if err != nil {
 		return err
 	}
 	if p.r.d.OnPrint != nil {
-		p.r.d.OnPrint(key)
+		p.r.d.OnPrint(id)
 	}
 	return nil
 }
@@ -721,7 +786,7 @@ func (r *Reader) inlineImage(st *bodyOf, message int64, svc Service, src string)
 			stopped := errors.Is(ctx.Err(), context.Canceled)
 			for src, i := range images {
 				if !i.done && !stopped {
-					r.imageFailedLocked(message, imagecache.Key(src))
+					r.imageFailedLocked(message, imageToken(st.owner, src))
 				}
 				i.finish(nil)
 			}
@@ -762,7 +827,7 @@ func (r *Reader) chargeInline(message int64, token string, size, px int64) bool 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	st := r.msgs[message]
-	if st == nil || st.pixels == nil {
+	if st == nil || st.tokens[token] == "" || st.pixels == nil {
 		return false
 	}
 	if st.charged[token] {
@@ -820,7 +885,7 @@ func (r *Reader) imageFailed(message int64, token string) {
 
 func (r *Reader) imageFailedLocked(message int64, token string) {
 	st := r.msgs[message]
-	if st == nil || st.failed[token] {
+	if st == nil || st.tokens[token] == "" || st.failed[token] {
 		return
 	}
 	if st.failed == nil {
@@ -840,7 +905,7 @@ func (r *Reader) chargePixels(message int64, token string, width, height int) bo
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	st := r.msgs[message]
-	if st == nil || st.pixels == nil {
+	if st == nil || st.tokens[token] == "" || st.pixels == nil {
 		return false
 	}
 	if st.charged[token] {

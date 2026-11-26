@@ -11,13 +11,15 @@ export function installFake(handlers: Record<string, Handler>, platform: Platfor
     listeners.set(name, set.add(l));
     return () => void set.delete(l);
   };
+  const callWith = async (method: string, args: unknown[]) => {
+    const h = handlers[method];
+    if (!h) throw new Error(`preview: ${method} is not faked`);
+    return (h as (...a: unknown[]) => unknown)(...args);
+  };
   const noop = async () => {};
   const rt = {
-    call: async (method: string, ...args: unknown[]) => {
-      const h = handlers[method];
-      if (!h) throw new Error(`preview: ${method} is not faked`);
-      return (h as (...a: unknown[]) => unknown)(...args);
-    },
+    call: (method: string, ...args: unknown[]) => callWith(method, args),
+    callWith,
     channel: () => {
       throw new Error("preview: channels are not faked");
     },
