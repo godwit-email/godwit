@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/godwit-email/godwit/core/internal/testllm"
 	"github.com/godwit-email/godwit/core/mail"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -143,4 +144,37 @@ func TestInlineImageCountsTowardSizeLimit(t *testing.T) {
 	t.Cleanup(func() { attachLimit = old })
 	attachLimit = int64(len(d.HTML) + a.Size - 1)
 	assert.ErrorIs(t, e.s.Send(bg, d.ID), ErrTooLarge)
+}
+
+// Wit's rewrites keep the draft's images: a whole-body update and a selection
+// rewrite elsewhere in a body that shows one (#907 review).
+func TestInlineImageKeptThroughWitRewrite(t *testing.T) {
+	e := newAssistEnv(t)
+	d := e.replyDraft(t, "<p>See the form below.</p>")
+	a, err := e.s.AddAttachment(t.Context(), d.ID, imageFile(t, "form.png", logo(t, 8)), true)
+	require.NoError(t, err)
+	img := `<img src="cid:` + a.ContentID + `"/>`
+	d = e.getDraft(t, d.ID)
+	_, q, sig := parts(t, d.HTML)
+	d.HTML = mail.JoinDraft("<p>See the form below.</p>"+img, q, sig)
+	_, err = e.s.SaveDraft(t.Context(), d)
+	require.NoError(t, err)
+
+	e.accept(t, e.propose(t, d.ID, "<p>Please see the signed form below.</p>"+img).Approvals[0])
+	ed, _, _ := parts(t, e.getDraft(t, d.ID).HTML)
+	assert.Equal(t, "<p>Please see the signed form below.</p>"+img, ed)
+
+	d = e.getDraft(t, d.ID)
+	sel := selectionOf(t, d, "signed form")
+	e.srv.Script(testllm.Turn{Calls: []testllm.Call{{Name: "update_selection", Args: `{"html":"completed form"}`}}},
+		testllm.Turn{Text: []string{"Done."}})
+	ch, err := e.s.RewriteSelection(t.Context(), d.ID, sel, "say completed")
+	require.NoError(t, err)
+	evs := drainWit(t, ch)
+	last := evs[len(evs)-1]
+	require.Equal(t, "interrupted", last.Kind, "%+v", last.Err)
+	require.Len(t, last.Approvals, 1)
+	e.accept(t, last.Approvals[0])
+	ed, _, _ = parts(t, e.getDraft(t, d.ID).HTML)
+	assert.Equal(t, "<p>Please see the completed form below.</p>"+img, ed)
 }
