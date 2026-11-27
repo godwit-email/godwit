@@ -8,9 +8,9 @@ import {
 import { LinkPlugin } from "@platejs/link/react";
 import { ListPlugin, TaskListPlugin } from "@platejs/list-classic/react";
 import { type AnyPluginConfig, createSlatePlugin, NodeApi } from "platejs";
-import { createPlatePlugin } from "platejs/react";
-import React from "react";
-import { deserialize, safeHref, toHTML } from "./html";
+import { createPlatePlugin, PlateElement, type PlateElementProps } from "platejs/react";
+import React, { createContext, useContext } from "react";
+import { CID_SRC, deserialize, safeHref, toHTML } from "./html";
 
 /**
  * Owns paste and drop: nothing reaches Plate's parsers or Slate's fragment insert. A Slate
@@ -105,10 +105,51 @@ export const FontFamilyPlugin = createPlatePlugin({
   },
 });
 
+/** The draft's images as data: URLs by Content-ID (Go's ComposeState.Images), for DraftImagePlugin. */
+export const DraftImages = createContext<Record<string, string>>({});
+
+/** A draft image (`url` its cid:): shown from DraftImages; one not there yet shows as an empty box. */
+function DraftImageElement(props: PlateElementProps) {
+  const url = useContext(DraftImages)[String(props.element.url).slice("cid:".length)];
+  return React.createElement(
+    PlateElement,
+    props,
+    url
+      ? React.createElement("img", {
+          src: url,
+          alt: "",
+          contentEditable: false,
+          className: "max-w-full select-none",
+        })
+      : React.createElement("span", {
+          contentEditable: false,
+          className: "block h-16 w-24 rounded-md bg-muted",
+        }),
+    props.children,
+  );
+}
+
+/** An image in the body: an <img> whose src is CID_SRC, a void block. */
+export const DraftImagePlugin = createPlatePlugin({
+  key: "img",
+  node: { isElement: true, isVoid: true, component: DraftImageElement },
+  parsers: {
+    html: {
+      deserializer: {
+        rules: [{ validNodeName: "IMG" }],
+        parse: ({ element }) => {
+          const url = element.getAttribute("src") ?? "";
+          return CID_SRC.test(url) ? { type: "img", url } : undefined;
+        },
+      },
+    },
+  },
+});
+
 /**
  * The compose page formats: paragraph (core), bold, italic, underline, strikethrough,
  * font size, font family, link, bulleted and numbered list (list-classic ul/ol/li/lic),
- * block quote.
+ * block quote, the draft's images.
  */
 export const plugins: AnyPluginConfig[] = [
   BoldPlugin,
@@ -120,6 +161,7 @@ export const plugins: AnyPluginConfig[] = [
   linkPlugin,
   ListPlugin.configurePlugin(TaskListPlugin, { enabled: false }),
   BlockquotePlugin,
+  DraftImagePlugin,
   SafePastePlugin,
   HeldPlugin,
 ];

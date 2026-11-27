@@ -2,8 +2,10 @@ package webui
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"log"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -258,10 +260,15 @@ func (p *ComposePage) Load(ctx context.Context) (ComposeState, error) {
 	}
 	out := ComposeState{SignatureHTML: sig, Wit: wit, DraftID: d.ID, Accounts: accs, From: d.AccountID, To: nz(d.To), Cc: nz(d.Cc), Bcc: nz(d.Bcc),
 		ReplyTo: d.ReplyTo, Subject: d.Subject, Body: editable, Quote: mail.HTMLToText(s.quote),
-		Attachments: attachments(d), Revision: d.Revision,
+		Attachments: attachments(d), Images: map[string]string{}, Revision: d.Revision,
 		UpdatedAt: d.UpdatedAt.UnixMilli(), Theme: ThemeOf(st), Locale: i18n.Language(), FromProgram: d.FromProgram}
 	if !d.ScheduledFor.IsZero() {
 		out.ScheduledFor = d.ScheduledFor.UnixMilli()
+	}
+	if len(d.Attachments) > len(out.Attachments) { // it has images for the body
+		if out.Images, err = svc.DraftImages(ctx, d.ID); err != nil {
+			return ComposeState{}, err
+		}
 	}
 	return out, nil
 }
@@ -347,15 +354,16 @@ func (p *ComposePage) SetAccount(ctx context.Context, id, revision int64) (Chang
 
 // AddAttachments asks for files in a dialog on the calling window and adds
 // each to its draft, if the draft is at revision (else Conflict, without the
-// dialog). A file over the limit or failing is reported, not an error; a
-// write from elsewhere stops the adding with Conflict, the files added so
-// far in Attachments.
+// dialog). With inline, each is an image for the body (core.Service
+// AddAttachment's inline), listed in Images, or in NotImage if it is none. A
+// file over the limit or failing is reported, not an error; a write from
+// elsewhere stops the adding with Conflict, the files added so far in
+// Attachments.
 //
 // The dialog runs without the session lock: Release does not wait for it
 // (AppKit gives no promise a sheet on a closed window ever ends), and once
 // the window is released the files are dropped (ErrNoDraft).
-func (p *ComposePage) AddAttachments(ctx context.Context, revision int64) (AttachResult, error) {
-	res := AttachResult{TooLarge: []string{}, Failed: []string{}}
+func (p *ComposePage) AddAttachments(ctx context.Context, revision int64, inline bool) (AttachResult, error) {
 	win, svc, s, err := p.open(ctx)
 	if err != nil {
 		return AttachResult{}, err
@@ -366,8 +374,7 @@ func (p *ComposePage) AddAttachments(ctx context.Context, revision int64) (Attac
 		return AttachResult{}, err
 	}
 	if d.Revision != revision {
-		res.Change = conflict
-		return res, nil
+		return AttachResult{Change: conflict, TooLarge: []string{}, Failed: []string{}, Images: []InlineImage{}, NotImage: []string{}}, nil
 	}
 	if p.d.PickFiles == nil {
 		return AttachResult{}, ErrNoPicker
@@ -376,14 +383,46 @@ func (p *ComposePage) AddAttachments(ctx context.Context, revision int64) (Attac
 	if err != nil {
 		return AttachResult{}, err
 	}
-	_, svc, s, err = p.open(ctx)
+	return p.add(ctx, revision, paths, inline)
+}
+
+// AddImage adds an image the page has the bytes of (pasted or dropped on the
+// body), data in base64 and name its file name, as AddAttachments with
+// inline does.
+func (p *ComposePage) AddImage(ctx context.Context, revision int64, name, data string) (AttachResult, error) {
+	b, err := base64.StdEncoding.DecodeString(data)
+	if err != nil {
+		return AttachResult{}, err
+	}
+	dir, err := os.MkdirTemp("", "godwit-image")
+	if err != nil {
+		return AttachResult{}, err
+	}
+	defer os.RemoveAll(dir)
+	// The name the attachment keeps: a base name only, never a path.
+	name = filepath.Base(name)
+	if name == "." || name == "/" || name == ".." {
+		name = "image"
+	}
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		return AttachResult{}, err
+	}
+	return p.add(ctx, revision, []string{path}, true)
+}
+
+// add adds the files at paths to the calling window's draft from revision
+// on, for AddAttachments and AddImage.
+func (p *ComposePage) add(ctx context.Context, revision int64, paths []string, inline bool) (AttachResult, error) {
+	res := AttachResult{TooLarge: []string{}, Failed: []string{}, Images: []InlineImage{}, NotImage: []string{}}
+	_, svc, s, err := p.open(ctx)
 	if err != nil {
 		return AttachResult{}, err
 	}
 	defer s.mu.Unlock()
 	rev, stale := revision, false
 	for _, path := range paths {
-		_, now, err := svc.AddAttachmentAt(ctx, s.draftID, rev, path)
+		a, now, err := svc.AddAttachmentAt(ctx, s.draftID, rev, path, inline)
 		if now != 0 {
 			rev = now
 		}
@@ -392,15 +431,29 @@ func (p *ComposePage) AddAttachments(ctx context.Context, revision int64) (Attac
 			stale = true
 		case errors.Is(err, core.ErrTooLarge):
 			res.TooLarge = append(res.TooLarge, filepath.Base(path))
+		case errors.Is(err, core.ErrInlineImage):
+			res.NotImage = append(res.NotImage, filepath.Base(path))
 		case err != nil:
 			log.Printf("attaching %s to draft %d: %v", path, s.draftID, err)
 			res.Failed = append(res.Failed, filepath.Base(path))
+		case a.ContentID != "":
+			res.Images = append(res.Images, InlineImage{CID: a.ContentID})
 		}
 		if stale {
 			break
 		}
 	}
-	if d, err = svc.GetDraft(ctx, s.draftID); err != nil {
+	if len(res.Images) > 0 {
+		urls, err := svc.DraftImages(ctx, s.draftID)
+		if err != nil {
+			return AttachResult{}, err
+		}
+		for i, img := range res.Images {
+			res.Images[i].URL = urls[img.CID]
+		}
+	}
+	d, err := svc.GetDraft(ctx, s.draftID)
+	if err != nil {
 		return AttachResult{}, err
 	}
 	if res.Change, err = changeOf(ctx, svc, d); err != nil {
@@ -533,11 +586,14 @@ func changeOf(ctx context.Context, svc Service, d core.Draft) (Change, error) {
 		UpdatedAt: d.UpdatedAt.UnixMilli()}, err
 }
 
-// attachments is d's attachments for the page, never nil.
+// attachments is d's attachments for the page, never nil: its files, the
+// images for its body shown in the body instead.
 func attachments(d core.Draft) []Attachment {
 	out := []Attachment{}
 	for _, a := range d.Attachments {
-		out = append(out, Attachment{ID: a.ID, Filename: a.Filename, Size: a.Size})
+		if a.ContentID == "" {
+			out = append(out, Attachment{ID: a.ID, Filename: a.Filename, Size: a.Size})
+		}
 	}
 	return out
 }

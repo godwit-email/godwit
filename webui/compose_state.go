@@ -35,8 +35,11 @@ type ComposeState struct {
 	// for none: the page shows it as is, read-only.
 	Quote         string `json:"quote"`
 	SignatureHTML string `json:"signatureHtml"`
-	// Attachments are the draft's files.
-	Attachments []Attachment `json:"attachments"`
+	// Attachments are the draft's files, its images in the body not among
+	// them; Images are those images as data: URLs by Content-ID, for showing
+	// the Body's cid: sources (core.Service.DraftImages).
+	Attachments []Attachment      `json:"attachments"`
+	Images      map[string]string `json:"images"`
 	// Revision is what the next save must pass; Theme styles the page.
 	Revision int64 `json:"revision"`
 	Theme    Theme `json:"theme"`
@@ -95,6 +98,18 @@ type AttachResult struct {
 	// for another reason (logged).
 	TooLarge []string `json:"tooLarge"`
 	Failed   []string `json:"failed"`
+	// Images are the images added for the body, in order; NotImage the files
+	// refused for it, not being a png, jpeg, gif or webp.
+	Images   []InlineImage `json:"images"`
+	NotImage []string      `json:"notImage"`
+}
+
+// InlineImage is an image the draft's body may show.
+type InlineImage struct {
+	// CID is its Content-ID: the body shows it as <img src="cid:CID">. URL
+	// is it as a data: URL, for showing only (never saved).
+	CID string `json:"cid"`
+	URL string `json:"url"`
 }
 
 // SendWarning is a plugin's word about the draft.

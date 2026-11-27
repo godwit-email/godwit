@@ -38,6 +38,13 @@ describe("html", () => {
     expect(sanitize(src).querySelectorAll("img")).toHaveLength(0);
   });
 
+  it("keeps a draft's cid: image on load and save, never on paste", () => {
+    const img = `<img src="cid:img-${"0".repeat(32)}@godwit">`;
+    const src = `<p>a</p>${img}<img src="cid:sig-${"0".repeat(32)}@godwit"><img src="data:image/png;base64,iVBORw0KGgo="><p>b</p>`;
+    expect(toHTML(fromHTML(editor(), src, true))).toBe(`<p>a</p>${img}<p>b</p>`);
+    expect(round(src)).toBe("<p>a</p><p>b</p>");
+  });
+
   it("reads the native page's richtext.ToHTML output, line breaks kept", () => {
     // From internal/richtext TestToHTMLRoundTrip's source, as ToHTML writes it (plus a trailing break).
     const native =

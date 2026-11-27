@@ -16,6 +16,10 @@ const (
 // drafts, and RequestMCPSend, whose outcome core decides by the user's 通过 MCP 发送 setting. Nothing else
 // sends, and nothing here deletes, changes accounts, address books, settings,
 // extensions or model services, decides approvals or downloads attachments.
+// AddAttachmentAt only with inline: it reads the file at a path the program
+// names into a draft as an image for its body, and only a png, jpeg, gif or
+// webp (sniffed, stored without its metadata); never any other file, and
+// nothing is fetched from a URL.
 // SetThreadDeadline sets or clears one conversation's 期限 on this device
 // only, as the program source: it sends nothing, changes no mail, and cannot
 // replace or clear one the user set (core checks the message it cites).
@@ -24,7 +28,7 @@ var mcpMethods = map[string]bool{
 	"ListMessages": true, "GetMessageText": true, "Search": true, "SearchContacts": true,
 	"ListDrafts": true, "GetDraft": true, "NewDraft": true, "SaveDraft": true,
 	"SavedViews": true, "ViewContents": true, "ViewGroupPage": true,
-	"RequestMCPSend": true, "SetThreadDeadline": true,
+	"RequestMCPSend": true, "SetThreadDeadline": true, "AddAttachmentAt": true,
 }
 
 // mcpDraftModes are the NewDraft modes the mcp role may use; forward is not
@@ -39,6 +43,10 @@ func MCPAllowed(method string, params []json.RawMessage) bool {
 	if method == "NewDraft" {
 		var mode string
 		return len(params) >= 2 && json.Unmarshal(params[1], &mode) == nil && mcpDraftModes[mode]
+	}
+	if method == "AddAttachmentAt" { // draftID, revision, srcPath, inline
+		var inline bool
+		return len(params) == 4 && json.Unmarshal(params[3], &inline) == nil && inline
 	}
 	return true
 }

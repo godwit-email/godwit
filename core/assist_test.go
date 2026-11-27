@@ -804,7 +804,7 @@ func TestAttachmentChangeStalesProposal(t *testing.T) {
 	require.NoError(t, os.WriteFile(src, []byte("%PDF"), 0o600))
 
 	a := e.propose(t, d.ID, "<p>Please find the invoice attached.</p>").Approvals[0]
-	att, err := e.s.AddAttachment(t.Context(), d.ID, src)
+	att, err := e.s.AddAttachment(t.Context(), d.ID, src, false)
 	require.NoError(t, err)
 	assert.Greater(t, e.getDraft(t, d.ID).Revision, d.Revision)
 	require.ErrorIs(t, e.s.ResolveApproval(t.Context(), a.ID, true), ErrStaleDraft)

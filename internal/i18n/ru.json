@@ -64,6 +64,8 @@
   "compose_attach": "Прикрепить файлы",
   "compose_attach_failed": "Не удалось прикрепить: {arg1}",
   "compose_attach_too_large": "Максимальный размер вложений — {arg1}",
+  "compose_image": "Вставить изображение",
+  "compose_image_invalid": "В письмо можно вставить только изображение PNG, JPEG, GIF или WebP: {arg1}",
   "compose_bcc": "Скрытая копия",
   "compose_bcc_input": "Добавить получателей скрытой копии",
   "compose_body": "Текст письма",

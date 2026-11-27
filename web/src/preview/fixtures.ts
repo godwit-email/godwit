@@ -59,6 +59,7 @@ export const compose = (mode: "light" | "dark", withBody: boolean): ComposeState
     "Following up on our call last week, I put together a draft proposal for the Q4 partnership…",
   signatureHtml: "",
   attachments: [],
+  images: {},
   revision: 1,
   theme: theme(mode),
   updatedAt: new Date().setHours(9, 52, 0, 0),

@@ -28,7 +28,7 @@ func TestDraftsSurviveRestart(t *testing.T) {
 	require.NoError(t, err)
 	src := filepath.Join(t.TempDir(), "notes.txt")
 	require.NoError(t, os.WriteFile(src, []byte("n"), 0o600))
-	_, err = s.AddAttachment(ctx, d.ID, src)
+	_, err = s.AddAttachment(ctx, d.ID, src, false)
 	require.NoError(t, err)
 	other, err := s.NewDraft(ctx, acc.ID, "new", 0)
 	require.NoError(t, err)

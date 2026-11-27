@@ -44,7 +44,7 @@ func TestProgramDraftMarked(t *testing.T) {
 	d, err = e.Svc.GetDraft(ctx, d.ID)
 	require.NoError(t, err)
 	assert.False(t, d.FromProgram)
-	_, _, err = e.Svc.AddAttachmentAt(core.WithExternalSource(ctx, core.AuditLocalAPI), d.ID, d.Revision, attachSrc(t, "b.txt"))
+	_, _, err = e.Svc.AddAttachmentAt(core.WithExternalSource(ctx, core.AuditLocalAPI), d.ID, d.Revision, attachSrc(t, "b.txt"), false)
 	require.NoError(t, err)
 	d, err = e.Svc.GetDraft(ctx, d.ID)
 	require.NoError(t, err)

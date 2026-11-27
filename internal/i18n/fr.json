@@ -64,6 +64,8 @@
   "compose_attach": "Joindre des fichiers",
   "compose_attach_failed": "Impossible de joindre : {arg1}",
   "compose_attach_too_large": "Les pièces jointes ne peuvent pas dépasser {arg1}",
+  "compose_image": "Insérer une image",
+  "compose_image_invalid": "Seule une image PNG, JPEG, GIF ou WebP peut aller dans le message : {arg1}",
   "compose_bcc": "Cci",
   "compose_bcc_input": "Ajouter des destinataires en Cci",
   "compose_body": "Corps du message",

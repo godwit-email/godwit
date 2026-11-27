@@ -15,8 +15,13 @@ const BLOCK = new Set([...BLOCKISH, "P", "UL", "OL", "LI", "BLOCKQUOTE"]);
 /** A signature image's source: the data: URL Go's SignaturePage gives (sniffed png, jpeg, gif, webp). */
 export const IMAGE_SRC = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/;
 
-const keptImage = (el: Element) =>
-  el.tagName === "IMG" && IMAGE_SRC.test(el.getAttribute("src") ?? "");
+/** A draft image's source: cid: of an image added to the draft (Go's core inlineImage names it). */
+export const CID_SRC = /^cid:img-[0-9a-f]{32}@godwit$/;
+
+const keptImage = (el: Element) => {
+  const src = el.getAttribute("src") ?? "";
+  return el.tagName === "IMG" && (IMAGE_SRC.test(src) || CID_SRC.test(src));
+};
 
 const SAFE_CSS_VALUE = /^([a-z0-9#%.,/\s'"\-+_]|rgba?\([0-9.,\s%]*\))+$/i;
 
@@ -31,7 +36,7 @@ function inSizeRange(v: string): boolean {
 /**
  * Parses html on an inert DOMParser document (no script runs, nothing loads) and returns its body
  * with every loader element removed and every attribute dropped but <a href> and safe font styles.
- * With images (the signature editor's load), an <img> whose src is IMAGE_SRC stays, with its src only.
+ * With images (an editor's load), an <img> whose src is IMAGE_SRC or CID_SRC stays, with its src only.
  */
 export function sanitize(html: string, images = false): HTMLElement {
   const body = new DOMParser().parseFromString(html, "text/html").body;
@@ -93,7 +98,7 @@ export function deserialize(editor: SlateEditor, html: string, images = false): 
 
 /**
  * Loads html into editor (normalized, outside undo history) and returns the editor's value; with
- * images, its IMAGE_SRC images too (the editor needs an "img" plugin).
+ * images, its IMAGE_SRC or CID_SRC images too (the editor's "img" plugin takes the ones it shows).
  */
 export function fromHTML(editor: SlateEditor, html: string, images = false): Value {
   const nodes = deserialize(editor, html, images);
@@ -161,7 +166,7 @@ function item(n: Descendant): string {
   return `<li>${n.children.every(isInline) ? para(n.children) : blocks(n.children)}</li>`;
 }
 
-// Writes only the format set (and the signature's images); any other node (or one out of place)
+// Writes only the format set (and the signature's or the draft's images); any other node (or one out of place)
 // becomes a paragraph of its text, or nothing when it has none (a rule).
 function block(n: Descendant): string {
   if (isText(n)) return para([n]);
@@ -169,7 +174,7 @@ function block(n: Descendant): string {
   switch (n.type) {
     case "img": {
       const src = String(n.url ?? "");
-      return IMAGE_SRC.test(src) ? `<img src="${src}">` : "";
+      return IMAGE_SRC.test(src) || CID_SRC.test(src) ? `<img src="${src}">` : "";
     }
     case "p":
     case "lic":

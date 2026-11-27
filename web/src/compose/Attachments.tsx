@@ -10,11 +10,15 @@ const kind = (name: string) => {
   return dot < 0 ? "" : name.slice(dot + 1, dot + 5);
 };
 
-/** The draft's attachments, each removable, the names refused for size and those that failed. */
+/**
+ * The draft's attachments, each removable, the names refused for size, those that failed, and those
+ * refused for the body as no image it can show.
+ */
 export function Attachments({
   items,
   tooLarge,
   failed = [],
+  notImage = [],
   frozen,
   onRemove,
   t,
@@ -22,6 +26,7 @@ export function Attachments({
   items: Attachment[];
   tooLarge: string[];
   failed?: string[];
+  notImage?: string[];
   frozen: boolean;
   onRemove(id: number): void;
   t: T;
@@ -68,6 +73,11 @@ export function Attachments({
       {failed.length > 0 && (
         <p role="alert" className="text-xs text-destructive">
           {t("compose.attach.failed", failed.join(", "))}
+        </p>
+      )}
+      {notImage.length > 0 && (
+        <p role="alert" className="text-xs text-destructive">
+          {t("compose.image.invalid", notImage.join(", "))}
         </p>
       )}
     </div>

@@ -506,7 +506,7 @@ func (s *Service) ruleDraftReply(ctx context.Context, acc, msgID int64) (string,
 		return RuleFailUnknown, nil
 	}
 	_, quote, sig := mail.SplitDraft(d.HTML)
-	if d.HTML, err = s.sanitizeDraft(ctx, mail.JoinDraft(cleanHTML(r.RestoreHTML(r.Text)), quote, sig)); err == nil {
+	if d.HTML, err = s.sanitizeDraft(ctx, d.ID, mail.JoinDraft(cleanHTML(r.RestoreHTML(r.Text)), quote, sig)); err == nil {
 		_, err = s.SaveDraft(ctx, d)
 	}
 	if err != nil {

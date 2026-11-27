@@ -25,8 +25,8 @@ func (cl *Client) AddAddressBook(ctx context.Context, in core.AddressBookInput) 
 	return call[core.AddressBook](cl, ctx, "AddAddressBook", in)
 }
 
-func (cl *Client) AddAttachmentAt(ctx context.Context, draftID int64, revision int64, srcPath string) (core.DraftAttachment, int64, error) {
-	return call2[core.DraftAttachment, int64](cl, ctx, "AddAttachmentAt", draftID, revision, srcPath)
+func (cl *Client) AddAttachmentAt(ctx context.Context, draftID int64, revision int64, srcPath string, inline bool) (core.DraftAttachment, int64, error) {
+	return call2[core.DraftAttachment, int64](cl, ctx, "AddAttachmentAt", draftID, revision, srcPath, inline)
 }
 
 func (cl *Client) AddLocalArchive(ctx context.Context, name string) (core.Account, error) {
@@ -271,6 +271,10 @@ func (cl *Client) DraftForApproval(ctx context.Context, approvalID int64) (int64
 
 func (cl *Client) DraftFromQuickReply(ctx context.Context, messageID int64, r core.QuickReply) (core.Draft, error) {
 	return call[core.Draft](cl, ctx, "DraftFromQuickReply", messageID, r)
+}
+
+func (cl *Client) DraftImages(ctx context.Context, draftID int64) (map[string]string, error) {
+	return call[map[string]string](cl, ctx, "DraftImages", draftID)
 }
 
 func (cl *Client) EditProposedRule(ctx context.Context, id int64) (core.Rule, error) {

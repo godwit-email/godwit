@@ -83,7 +83,7 @@ func cacheFiles(dataDir string) int {
 	return n
 }
 
-var allTools = []string{"create_draft", "get_draft", "get_message", "get_thread", "list_accounts", "list_drafts",
+var allTools = []string{"add_draft_image", "create_draft", "get_draft", "get_message", "get_thread", "list_accounts", "list_drafts",
 	"list_folders", "list_threads", "list_view_threads", "list_views", "search", "search_contacts", "send_draft", "set_reply_deadline", "show_draft", "show_mail", "update_draft"}
 
 func TestMCPListTools(t *testing.T) {
@@ -104,7 +104,7 @@ func TestMCPListTools(t *testing.T) {
 	}
 	assert.Equal(t, map[string]bool{"list_accounts": true, "list_folders": true, "list_threads": true, "get_thread": true,
 		"get_message": true, "list_views": true, "list_view_threads": true, "search": true, "search_contacts": true, "list_drafts": true, "get_draft": true, "show_draft": true, "show_mail": true,
-		"create_draft": false, "update_draft": false, "send_draft": false, "set_reply_deadline": false}, readOnly)
+		"create_draft": false, "update_draft": false, "add_draft_image": false, "send_draft": false, "set_reply_deadline": false}, readOnly)
 	assert.Contains(t, cs.InitializeResult().Instructions, "untrusted_email")
 	assert.NotContains(t, cs.InitializeResult().Instructions, "cannot send")
 	assert.Contains(t, cs.InitializeResult().Instructions, "Send through MCP")
@@ -557,6 +557,47 @@ func TestMCPUpdateDraftPartial(t *testing.T) {
 	assert.Equal(t, quote0, quote)
 	assert.Empty(t, last.Cc)
 	assert.Equal(t, "Re: Lunch, Tuesday", last.Subject)
+}
+
+// add_draft_image puts an image in the body, after the text, keeping the draft
+// a program's; update_draft keeps it; anything but an image is refused.
+func TestMCPAddDraftImage(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	ctx := t.Context()
+	acc := e.AddAccount(t, "alice@example.com")
+	cs, c := bridge(t, e)
+	ok(t, cs, "create_draft", map[string]any{"to": []string{"bob@example.com"}, "subject": "Form", "body": "See below"})
+	ds, err := e.Svc.ListDrafts(ctx, acc.ID)
+	require.NoError(t, err)
+	d := ds[0]
+	dir := t.TempDir()
+	png := filepath.Join(dir, "shot.png")
+	require.NoError(t, os.WriteFile(png, []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x00\x00\x00\x00\x3a\x7e\x9b\x55\x00\x00\x00\x0aIDATx\x9cc\x60\x00\x00\x00\x02\x00\x01\x48\xaf\xa4\x71\x00\x00\x00\x00IEND\xaeB\x60\x82"), 0o600))
+	text := filepath.Join(dir, "secret.txt")
+	require.NoError(t, os.WriteFile(text, []byte("not an image"), 0o600))
+
+	out, isErr := call(t, cs, "add_draft_image", map[string]any{"draft_id": d.ID, "revision": d.Revision, "path": text})
+	assert.True(t, isErr, out)
+	out = ok(t, cs, "add_draft_image", map[string]any{"draft_id": d.ID, "revision": d.Revision, "path": png})
+	assert.Contains(t, out, "image in the body")
+	got, err := e.Svc.GetDraft(ctx, d.ID)
+	require.NoError(t, err)
+	assert.True(t, got.FromProgram, "still a program's draft (ADR 0043)")
+	require.Len(t, got.Attachments, 1)
+	id := got.Attachments[0].ContentID
+	ed, _, _ := mail.SplitDraft(got.HTML)
+	assert.Equal(t, `<p>See below</p><img src="cid:`+id+`"/>`, ed)
+
+	ok(t, cs, "update_draft", map[string]any{"draft_id": d.ID, "revision": got.Revision, "body": "See the form below"})
+	got, err = e.Svc.GetDraft(ctx, d.ID)
+	require.NoError(t, err)
+	ed, _, _ = mail.SplitDraft(got.HTML)
+	assert.Equal(t, `<p>See the form below</p><img src="cid:`+id+`"/>`, ed)
+
+	// The role adds images only: never a file as an attachment.
+	var re *rpc.RemoteError
+	require.ErrorAs(t, c.Call(ctx, "AddAttachmentAt", nil, d.ID, got.Revision, text, false), &re)
+	assert.Equal(t, rpc.CodeForbidden, re.Code)
 }
 
 func TestMCPUpdateDraftStale(t *testing.T) {

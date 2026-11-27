@@ -511,3 +511,59 @@ describe("Editor", () => {
     }
   });
 });
+
+describe("draft images", () => {
+  const cid = `img-${"a".repeat(32)}@godwit`;
+  const url = "data:image/png;base64,iVBORw0KGgo=";
+
+  it("shows a loaded cid: image from images, and keeps it as cid: in the HTML", async () => {
+    const onChange = vi.fn();
+    const ref = createRef<EditorHandle>();
+    render(
+      <Editor
+        ref={ref}
+        initial={`<p>see</p><img src="cid:${cid}">`}
+        readOnly={false}
+        placeholder="p"
+        onChange={onChange}
+        onComposing={() => {}}
+        t={t}
+        images={{ [cid]: url }}
+      />,
+    );
+    const box = screen.getByLabelText("body");
+    expect(box.querySelector("img")?.getAttribute("src")).toBe(url);
+    act(() => ref.current?.insertImages([cid.replace("a", "b")]));
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    const html = onChange.mock.lastCall?.[0] as string;
+    expect(html).toContain(`<img src="cid:${cid}">`);
+    expect(html).toContain(`<img src="cid:${cid.replace("a", "b")}"><p><br></p>`);
+    expect(html).not.toContain("data:");
+  });
+
+  it("hands pasted image files to onImageFiles, not text that carries a picture", () => {
+    const onImageFiles = vi.fn();
+    render(
+      <Editor
+        initial="<p>x</p>"
+        readOnly={false}
+        placeholder="p"
+        onChange={() => {}}
+        onComposing={() => {}}
+        t={t}
+        onImageFiles={onImageFiles}
+      />,
+    );
+    const box = screen.getByLabelText("body");
+    const png = new File([new Uint8Array([0x89, 0x50])], "shot.png", { type: "image/png" });
+    const clip = (text: string) => ({
+      files: [png],
+      getData: (k: string) => (k === "text/plain" ? text : ""),
+      types: ["Files"],
+    });
+    fireEvent.paste(box, { clipboardData: clip("from Word") });
+    expect(onImageFiles).not.toHaveBeenCalled();
+    fireEvent.paste(box, { clipboardData: clip("") });
+    expect(onImageFiles).toHaveBeenCalledWith([png]);
+  });
+});

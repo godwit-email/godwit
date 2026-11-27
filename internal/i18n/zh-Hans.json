@@ -64,6 +64,8 @@
   "compose_attach": "添加附件",
   "compose_attach_failed": "未能添加：{arg1}",
   "compose_attach_too_large": "附件超过了 {arg1} 的上限",
+  "compose_image": "插入图片",
+  "compose_image_invalid": "正文中只能插入 PNG、JPEG、GIF 或 WebP 图片：{arg1}",
   "compose_bcc": "密送",
   "compose_bcc_input": "添加密送",
   "compose_body": "正文",

@@ -64,6 +64,8 @@
   "compose_attach": "파일 첨부",
   "compose_attach_failed": "첨부하지 못했습니다: {arg1}",
   "compose_attach_too_large": "첨부 파일이 최대 크기({arg1})를 초과했습니다",
+  "compose_image": "이미지 삽입",
+  "compose_image_invalid": "본문에는 PNG, JPEG, GIF, WebP 이미지만 넣을 수 있습니다: {arg1}",
   "compose_bcc": "숨은 참조",
   "compose_bcc_input": "숨은 참조 추가",
   "compose_body": "메일 본문",

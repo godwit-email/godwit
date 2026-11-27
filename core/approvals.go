@@ -454,7 +454,7 @@ func (s *Service) editedDraftArgs(ctx context.Context, recorded, edited json.Raw
 		var old string
 		_ = json.Unmarshal(rec["html"], &old)
 		_, quote, sig := mail.SplitDraft(old)
-		h, err := s.sanitizeDraft(ctx, mail.JoinDraft(textHTML(*ed.HTML), quote, sig))
+		h, err := s.sanitizeDraft(ctx, 0, mail.JoinDraft(textHTML(*ed.HTML), quote, sig))
 		if err != nil {
 			return nil, err
 		}

@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"io"
+	"maps"
 	"mime"
 	netmail "net/mail"
 	"os"
@@ -51,6 +53,10 @@ type DraftAttachment struct {
 	ID                    int64
 	Filename, ContentType string
 	Size                  int
+	// ContentID is set for an image added inline (AddAttachment's inline):
+	// the body shows it as <img src="cid:ContentID">, and it is sent inline
+	// in multipart/related only while the body does. "" for a file attached.
+	ContentID string
 }
 
 // afterDraftLoad, when set, runs in Send right after the draft is read. Tests use
@@ -270,7 +276,7 @@ func (s *Service) copyAttachments(ctx context.Context, draftID, messageID int64)
 		if err != nil {
 			return err
 		}
-		if _, _, err := s.addAttachment(ctx, draftID, -1, info.Filename, info.ContentType, data); err != nil {
+		if _, _, err := s.addAttachment(ctx, draftID, -1, info.Filename, info.ContentType, "", data); err != nil {
 			return err
 		}
 	}
@@ -327,7 +333,7 @@ func (s *Service) saveDraft(ctx context.Context, d Draft) (out Draft, err error)
 	// Draft changes and Send never interleave.
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
-	html, err := s.sanitizeDraft(ctx, d.HTML) // stored safe, so every read of a draft is safe
+	html, err := s.sanitizeDraft(ctx, d.ID, d.HTML) // stored safe, so every read of a draft is safe
 	if err != nil {
 		return Draft{}, err
 	}
@@ -431,16 +437,16 @@ func (s *Service) GetDraft(ctx context.Context, id int64) (Draft, error) {
 		To: jsonList(store.Str(r[3])), Cc: jsonList(store.Str(r[4])), Bcc: jsonList(store.Str(r[5])),
 		ReplyTo: store.Str(r[6]), Subject: store.Str(r[7]), UpdatedAt: time.Unix(store.Int(r[9]), 0), Revision: store.Int(r[10]),
 		FromProgram: store.Int(r[11]) != 0, ScheduledFor: unixMilli(r[12])}
-	if d.HTML, err = s.sanitizeDraft(ctx, store.Str(r[8])); err != nil {
+	if d.HTML, err = s.sanitizeDraft(ctx, id, store.Str(r[8])); err != nil {
 		return Draft{}, err
 	}
-	ar, err := s.db.Query(ctx, "SELECT id, filename, content_type, size FROM draft_attachments WHERE draft_id = ? ORDER BY id", id)
+	ar, err := s.db.Query(ctx, "SELECT id, filename, content_type, size, cid FROM draft_attachments WHERE draft_id = ? ORDER BY id", id)
 	if err != nil {
 		return Draft{}, err
 	}
 	for _, a := range ar.Values {
 		d.Attachments = append(d.Attachments, DraftAttachment{ID: store.Int(a[0]), Filename: store.Str(a[1]),
-			ContentType: store.Str(a[2]), Size: int(store.Int(a[3]))})
+			ContentType: store.Str(a[2]), Size: int(store.Int(a[3])), ContentID: store.Str(a[4])})
 	}
 	return d, nil
 }
@@ -449,36 +455,63 @@ func (s *Service) draftDir(id int64) string {
 	return filepath.Join(s.dataDir, "drafts", strconv.FormatInt(id, 10))
 }
 
-// AddAttachment copies the file at srcPath into the draft.
-func (s *Service) AddAttachment(ctx context.Context, draftID int64, srcPath string) (DraftAttachment, error) {
-	a, _, err := s.addAttachmentFile(ctx, draftID, -1, srcPath)
+// AddAttachment copies the file at srcPath into the draft. With inline, it
+// must be a png, jpeg, gif or webp image (by its content, else
+// ErrInlineImage), which is stored without its metadata (EXIF with GPS,
+// XMP, text) for the body to show as cid:<ContentID>: SaveDraft keeps such
+// an <img> and the message sends it inline (multipart/related). Its size
+// counts toward the message's limit like any attachment's. The same image
+// added again is the attachment it already is.
+func (s *Service) AddAttachment(ctx context.Context, draftID int64, srcPath string, inline bool) (DraftAttachment, error) {
+	if err := s.auditMCPDraft(ctx, "AddAttachment", draftID); err != nil {
+		return DraftAttachment{}, err
+	}
+	a, _, err := s.addAttachmentFile(ctx, draftID, -1, srcPath, inline)
 	return a, err
 }
 
 // addAttachmentFile is AddAttachment; a rev >= 0 adds only to that revision
 // (else ErrStaleDraft). It returns the draft's revision after it.
-func (s *Service) addAttachmentFile(ctx context.Context, draftID, rev int64, srcPath string) (DraftAttachment, int64, error) {
-	st, err := os.Stat(srcPath)
+func (s *Service) addAttachmentFile(ctx context.Context, draftID, rev int64, srcPath string, inline bool) (DraftAttachment, int64, error) {
+	f, err := os.Open(srcPath)
 	if err != nil {
 		return DraftAttachment{}, 0, err
 	}
-	if st.Size() > attachLimit {
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return DraftAttachment{}, 0, err
+	}
+	if !st.Mode().IsRegular() { // a device or pipe has no size to check: /dev/zero never ends
+		return DraftAttachment{}, 0, fmt.Errorf("%s is not a regular file", filepath.Base(srcPath))
+	}
+	// One read, capped: a file that grows after the size check cannot slip past it.
+	data, err := io.ReadAll(io.LimitReader(f, attachLimit+1))
+	if err != nil {
+		return DraftAttachment{}, 0, err
+	}
+	if int64(len(data)) > attachLimit {
 		return DraftAttachment{}, 0, ErrTooLarge
 	}
-	data, err := os.ReadFile(srcPath)
-	if err != nil {
-		return DraftAttachment{}, 0, err
+	if inline {
+		ct, clean, cid, err := inlineImage(data)
+		if err != nil {
+			return DraftAttachment{}, 0, err
+		}
+		return s.addAttachment(ctx, draftID, rev, filepath.Base(srcPath), ct, cid, clean)
 	}
 	ct := mime.TypeByExtension(filepath.Ext(srcPath))
 	if ct == "" {
 		ct = "application/octet-stream"
 	}
-	return s.addAttachment(ctx, draftID, rev, filepath.Base(srcPath), ct, data)
+	return s.addAttachment(ctx, draftID, rev, filepath.Base(srcPath), ct, "", data)
 }
 
 // addAttachment adds the file, to revision rev only if rev >= 0 (else
 // ErrStaleDraft), and returns the draft's revision after it (0 if unchanged).
-func (s *Service) addAttachment(ctx context.Context, draftID, rev int64, filename, contentType string, data []byte) (DraftAttachment, int64, error) {
+// A cid makes it an inline image; one the draft has already is returned as
+// it is, the draft unchanged.
+func (s *Service) addAttachment(ctx context.Context, draftID, rev int64, filename, contentType, cid string, data []byte) (DraftAttachment, int64, error) {
 	if int64(len(data)) > attachLimit {
 		return DraftAttachment{}, 0, ErrTooLarge
 	}
@@ -487,8 +520,20 @@ func (s *Service) addAttachment(ctx context.Context, draftID, rev int64, filenam
 	if err := s.checkRevision(ctx, draftID, rev); err != nil {
 		return DraftAttachment{}, 0, err
 	}
-	rs, err := s.db.Transaction(ctx, []sqlite.Statement{{SQL: "INSERT INTO draft_attachments(draft_id, filename, content_type, size) VALUES (?, ?, ?, ?)",
-		Args: []any{draftID, filename, contentType, len(data)}}, bumpRevision(ctx, draftID)})
+	if cid != "" {
+		rows, err := s.db.Query(ctx, "SELECT id, filename, content_type, size FROM draft_attachments WHERE draft_id = ? AND cid = ?", draftID, cid)
+		if err != nil {
+			return DraftAttachment{}, 0, err
+		}
+		if len(rows.Values) > 0 {
+			r := rows.Values[0]
+			now, err := s.draftRevision(ctx, draftID)
+			return DraftAttachment{ID: store.Int(r[0]), Filename: store.Str(r[1]), ContentType: store.Str(r[2]),
+				Size: int(store.Int(r[3])), ContentID: cid}, now, err
+		}
+	}
+	rs, err := s.db.Transaction(ctx, []sqlite.Statement{{SQL: "INSERT INTO draft_attachments(draft_id, filename, content_type, size, cid) VALUES (?, ?, ?, ?, ?)",
+		Args: []any{draftID, filename, contentType, len(data), nullText([]byte(cid))}}, bumpRevision(ctx, draftID)})
 	if err != nil {
 		return DraftAttachment{}, 0, err
 	}
@@ -507,7 +552,7 @@ func (s *Service) addAttachment(ctx context.Context, draftID, rev int64, filenam
 	}
 	now, err := s.draftRevision(ctx, draftID)
 	s.programChanged(ctx, err)
-	return DraftAttachment{ID: id, Filename: filename, ContentType: contentType, Size: len(data)}, now, err
+	return DraftAttachment{ID: id, Filename: filename, ContentType: contentType, Size: len(data), ContentID: cid}, now, err
 }
 
 // draftRevision is the draft's stored revision.
@@ -762,6 +807,11 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 	if err != nil {
 		return err
 	}
+	own, err := s.draftImages(ctx, draftID)
+	if err != nil {
+		return err
+	}
+	maps.Copy(imgs, own)
 	var related []mail.Attachment
 	total := int64(len(d.HTML))
 	for _, id := range mail.CIDs(d.HTML) {
@@ -772,7 +822,9 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 		}
 	}
 	for _, a := range d.Attachments {
-		total += int64(a.Size)
+		if a.ContentID == "" { // an inline image counts, and goes, only if the body shows it
+			total += int64(a.Size)
+		}
 	}
 	if total > attachLimit {
 		return ErrTooLarge
@@ -811,7 +863,7 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 			}
 		}
 	}
-	atts, err := s.db.Query(ctx, "SELECT filename, content_type, path FROM draft_attachments WHERE draft_id = ? ORDER BY id", draftID)
+	atts, err := s.db.Query(ctx, "SELECT filename, content_type, path FROM draft_attachments WHERE draft_id = ? AND cid IS NULL ORDER BY id", draftID)
 	if err != nil {
 		return err
 	}

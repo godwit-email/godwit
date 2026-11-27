@@ -21,7 +21,7 @@ func attachFile(t *testing.T, s *core.Service, draftID int64, name, body string)
 	t.Helper()
 	src := filepath.Join(t.TempDir(), name)
 	require.NoError(t, os.WriteFile(src, []byte(body), 0o600))
-	_, err := s.AddAttachment(ctx, draftID, src)
+	_, err := s.AddAttachment(ctx, draftID, src, false)
 	require.NoError(t, err)
 }
 
@@ -271,9 +271,9 @@ func TestAttachmentAtRevision(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "a.txt")
 	require.NoError(t, os.WriteFile(src, []byte("a"), 0o600))
 
-	_, _, err = e.Svc.AddAttachmentAt(ctx, d.ID, d.Revision-1, src)
+	_, _, err = e.Svc.AddAttachmentAt(ctx, d.ID, d.Revision-1, src, false)
 	assert.ErrorIs(t, err, core.ErrStaleDraft)
-	a, rev, err := e.Svc.AddAttachmentAt(ctx, d.ID, d.Revision, src)
+	a, rev, err := e.Svc.AddAttachmentAt(ctx, d.ID, d.Revision, src, false)
 	require.NoError(t, err)
 	assert.Equal(t, d.Revision+1, rev)
 

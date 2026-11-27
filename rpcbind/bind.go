@@ -107,6 +107,7 @@ var table = []Error{
 	{Code: "closed", Err: core.ErrClosed},
 	{Code: "signature_image", Err: core.ErrSignatureImage},
 	{Code: "signature_image_count", Err: core.ErrSignatureImageCount},
+	{Code: "inline_image", Err: core.ErrInlineImage},
 	{Code: "signature_not_found", Err: core.ErrSignatureNotFound},
 	{Code: "signature_name", Err: core.ErrSignatureName},
 	{Code: "invalid_rule", Err: core.ErrInvalidRule},

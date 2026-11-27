@@ -1,7 +1,11 @@
 package webui
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -283,7 +287,7 @@ func TestComposeBoundSurface(t *testing.T) {
 		names = append(names, typ.Method(i).Name)
 	}
 	sort.Strings(names)
-	assert.Equal(t, []string{"AddAttachments", "Answer", "Ask", "CheckCited", "Closed", "Decide", "DecideAll", "DecideWithArgs", "Finish", "Follow", "Latest", "Load",
+	assert.Equal(t, []string{"AddAttachments", "AddImage", "Answer", "Ask", "CheckCited", "Closed", "Decide", "DecideAll", "DecideWithArgs", "Finish", "Follow", "Latest", "Load",
 		"Models", "OpenCited", "OpenLink", "OpenModels", "PopupMenu", "RemoveAttachment", "Review", "Rewrite", "Save", "SearchContacts", "SearchMail", "Send", "SendLater", "SetAccount",
 		"SetModel", "Skill", "Stop", "TitleBar", "Toast", "ToastBar", "Undo", "WitInfo"}, names)
 }
@@ -417,7 +421,7 @@ func TestComposeAttachments(t *testing.T) {
 	require.NoError(t, fh.Truncate(26<<20)) // sparse
 	require.NoError(t, fh.Close())
 	f.pick = func() ([]string, error) { return []string{small, big}, nil }
-	res, err := f.page.AddAttachments(f.ctx(1), d.Revision)
+	res, err := f.page.AddAttachments(f.ctx(1), d.Revision, false)
 	require.NoError(t, err)
 	assert.False(t, res.Conflict)
 	require.Len(t, res.Attachments, 1)
@@ -436,7 +440,7 @@ func TestComposeAttachments(t *testing.T) {
 	assert.Equal(t, f.stored(t, d.ID).UpdatedAt.UnixMilli(), ch.UpdatedAt)
 
 	f.pick = func() ([]string, error) { return nil, nil } // cancelled
-	res, err = f.page.AddAttachments(f.ctx(1), ch.Revision)
+	res, err = f.page.AddAttachments(f.ctx(1), ch.Revision, false)
 	require.NoError(t, err)
 	assert.Equal(t, ch.Revision, res.Revision)
 	assert.Empty(t, res.Attachments)
@@ -447,7 +451,7 @@ func TestComposeAttachStale(t *testing.T) {
 	d := f.draft(t, "new", 0)
 	f.c.Attach(1, d.ID)
 	f.pick = func() ([]string, error) { t.Fatal("no dialog for a stale revision"); return nil, nil }
-	res, err := f.page.AddAttachments(f.ctx(1), d.Revision+1)
+	res, err := f.page.AddAttachments(f.ctx(1), d.Revision+1, false)
 	require.NoError(t, err)
 	assert.True(t, res.Conflict)
 	ch, err := f.page.RemoveAttachment(f.ctx(1), 1, d.Revision+1)
@@ -463,7 +467,7 @@ func TestComposeAttachPartial(t *testing.T) {
 	ok := filepath.Join(dir, "ok.txt")
 	require.NoError(t, os.WriteFile(ok, []byte("ok"), 0o600))
 	f.pick = func() ([]string, error) { return []string{ok, filepath.Join(dir, "missing.txt")}, nil }
-	res, err := f.page.AddAttachments(f.ctx(1), d.Revision)
+	res, err := f.page.AddAttachments(f.ctx(1), d.Revision, false)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"missing.txt"}, res.Failed)
 	assert.Empty(t, res.TooLarge)
@@ -620,7 +624,7 @@ func TestComposeReleaseDeletesEmpty(t *testing.T) {
 	withAttachment := f.draft(t, "new", 0)
 	src := filepath.Join(t.TempDir(), "a.txt")
 	require.NoError(t, os.WriteFile(src, []byte("a"), 0o600))
-	_, err := f.e.Svc.AddAttachment(t.Context(), withAttachment.ID, src)
+	_, err := f.e.Svc.AddAttachment(t.Context(), withAttachment.ID, src, false)
 	require.NoError(t, err)
 	deleted := map[string]core.Draft{
 		"new":              f.draft(t, "new", 0),
@@ -680,7 +684,7 @@ func TestComposeAttachExternalEditConflicts(t *testing.T) {
 			require.NoError(t, err)
 			return picked, nil
 		}
-		res, err := f.page.AddAttachments(f.ctx(1), cur.Revision)
+		res, err := f.page.AddAttachments(f.ctx(1), cur.Revision, false)
 		require.NoError(t, err)
 		assert.True(t, res.Conflict, "%v", picked)
 		assert.Empty(t, f.stored(t, d.ID).Attachments)
@@ -704,7 +708,7 @@ func TestComposeReleaseDuringDialog(t *testing.T) {
 		f.pick = func() ([]string, error) { close(inDialog); <-picked; return []string{src}, nil }
 		done := make(chan error)
 		go func() {
-			_, err := f.page.AddAttachments(f.ctx(win), d.Revision)
+			_, err := f.page.AddAttachments(f.ctx(win), d.Revision, false)
 			done <- err
 		}()
 		<-inDialog
@@ -770,4 +774,49 @@ func TestComposePopupMenu(t *testing.T) {
 	id, err = p.PopupMenu(t.Context(), entries, 0, 0)
 	assert.ErrorIs(t, err, ErrNoDraft)
 	assert.Equal(t, "", id)
+}
+
+// An image for the body: picked or pasted, it is shown from Images, never
+// listed with the files, and survives a save and a reopen as cid:.
+func TestComposeInlineImages(t *testing.T) {
+	f := newFixture(t)
+	d := f.draft(t, "new", 0)
+	f.c.Attach(1, d.ID)
+	var b bytes.Buffer
+	require.NoError(t, png.Encode(&b, image.NewGray(image.Rect(0, 0, 2, 2))))
+	dir := t.TempDir()
+	shot, notes := filepath.Join(dir, "shot.png"), filepath.Join(dir, "notes.txt")
+	require.NoError(t, os.WriteFile(shot, b.Bytes(), 0o600))
+	require.NoError(t, os.WriteFile(notes, []byte("notes"), 0o600))
+	f.pick = func() ([]string, error) { return []string{shot, notes}, nil }
+	res, err := f.page.AddAttachments(f.ctx(1), d.Revision, true)
+	require.NoError(t, err)
+	assert.False(t, res.Conflict)
+	assert.Equal(t, []string{"notes.txt"}, res.NotImage)
+	require.Len(t, res.Images, 1)
+	img := res.Images[0]
+	assert.Equal(t, "data:image/png;base64,"+base64.StdEncoding.EncodeToString(b.Bytes()), img.URL)
+	assert.Empty(t, res.Attachments, "shown in the body, not listed")
+
+	var g bytes.Buffer
+	require.NoError(t, png.Encode(&g, image.NewGray(image.Rect(0, 0, 3, 3))))
+	pasted, err := f.page.AddImage(f.ctx(1), res.Revision, "../../Pasted.png", base64.StdEncoding.EncodeToString(g.Bytes()))
+	require.NoError(t, err)
+	require.Len(t, pasted.Images, 1)
+	assert.Equal(t, pasted.Revision, f.stored(t, d.ID).Revision)
+	names := []string{}
+	for _, a := range f.stored(t, d.ID).Attachments {
+		names = append(names, a.Filename)
+	}
+	assert.Equal(t, []string{"shot.png", "Pasted.png"}, names, "a base name only")
+
+	body := `<p>See:</p><img src="cid:` + img.CID + `"><img src="cid:` + pasted.Images[0].CID + `">`
+	saved, err := f.page.Save(f.ctx(1), ComposeEdit{To: []string{"bob@example.com"}, Body: body, Revision: pasted.Revision})
+	require.NoError(t, err)
+	assert.False(t, saved.Conflict)
+	st, err := f.page.Load(f.ctx(1))
+	require.NoError(t, err)
+	assert.Equal(t, []string{img.CID, pasted.Images[0].CID}, mail.CIDs(st.Body))
+	assert.Equal(t, map[string]string{img.CID: img.URL, pasted.Images[0].CID: pasted.Images[0].URL}, st.Images)
+	assert.Empty(t, st.Attachments)
 }

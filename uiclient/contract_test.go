@@ -389,7 +389,7 @@ func TestContractComposeAndSendWarnings(t *testing.T) {
 		d, err := svc.NewDraft(ctx, acc.ID, "new", 0)
 		require.NoError(t, err)
 
-		att, rev, err := svc.AddAttachmentAt(ctx, d.ID, d.Revision, srcFile)
+		att, rev, err := svc.AddAttachmentAt(ctx, d.ID, d.Revision, srcFile, false)
 		require.NoError(t, err)
 		out["addedAtt"] = att
 		rev, err = svc.RemoveAttachmentAt(ctx, d.ID, att.ID, rev)

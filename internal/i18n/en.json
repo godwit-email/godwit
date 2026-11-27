@@ -102,6 +102,15 @@
       }
     }
   },
+  "compose_image": "Insert image",
+  "compose_image_invalid": "Only a PNG, JPEG, GIF or WebP image can go in the message: {arg1}",
+  "@compose_image_invalid": {
+    "placeholders": {
+      "arg1": {
+        "type": "String"
+      }
+    }
+  },
   "compose_bcc": "Bcc",
   "compose_bcc_input": "Add Bcc recipients",
   "compose_body": "Message body",
