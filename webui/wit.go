@@ -565,15 +565,16 @@ type BodyChange struct {
 	// are the draft's as stored, as in ComposeState: a program may have
 	// changed them too, and the page sends the revision it adopts, so it
 	// must show them. Accounts lists the senders anew: From may be one
-	// added since the window opened.
-	Accounts []Account `json:"accounts"`
-	From     int64     `json:"from"`
-	Quote    string    `json:"quote"`
-	To       []string  `json:"to"`
-	Cc       []string  `json:"cc"`
-	Bcc      []string  `json:"bcc"`
-	ReplyTo  string    `json:"replyTo"`
-	Subject  string    `json:"subject"`
+	// added since the window opened; Signatures, the signatures to pick from.
+	Accounts   []Account         `json:"accounts"`
+	Signatures []SignatureChoice `json:"signatures"`
+	From       int64             `json:"from"`
+	Quote      string            `json:"quote"`
+	To         []string          `json:"to"`
+	Cc         []string          `json:"cc"`
+	Bcc        []string          `json:"bcc"`
+	ReplyTo    string            `json:"replyTo"`
+	Subject    string            `json:"subject"`
 	// Body is the editable HTML as stored.
 	Body string `json:"body"`
 	// FromProgram is core.Draft.FromProgram as stored: a Wit edit marks the
@@ -749,8 +750,12 @@ func bodyChange(ctx context.Context, svc Service, s *session, err error) (BodyCh
 	if err != nil {
 		return BodyChange{}, keyed(err)
 	}
+	sigs, err := signatureChoices(ctx, svc)
+	if err != nil {
+		return BodyChange{}, keyed(err)
+	}
 	body := s.adopt(d)
-	return BodyChange{Change: ch, Accounts: accs, From: d.AccountID, Quote: mail.HTMLToText(s.quote), To: nz(d.To), Cc: nz(d.Cc),
+	return BodyChange{Change: ch, Accounts: accs, Signatures: sigs, From: d.AccountID, Quote: mail.HTMLToText(s.quote), To: nz(d.To), Cc: nz(d.Cc),
 		Bcc: nz(d.Bcc), ReplyTo: d.ReplyTo, Subject: d.Subject, Body: body, FromProgram: d.FromProgram}, nil
 }
 

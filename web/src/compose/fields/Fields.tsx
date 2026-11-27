@@ -2,8 +2,8 @@ import { RiArrowDownSLine } from "@remixicon/react";
 import { type ReactNode, type Ref, useId, useImperativeHandle, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { type PopupMenu, popupUnder } from "@/components/wit-menu";
-import type { Account, ContactHit } from "@/mygo";
+import { type PopupMenu, popupUnder, separator } from "@/components/wit-menu";
+import type { Account, ContactHit, SignatureChoice } from "@/mygo";
 import type { T } from "@/shared/i18n";
 import { AddressInput } from "./AddressInput";
 import { commit, invalid } from "./address";
@@ -39,6 +39,8 @@ export function Fields({
   accounts,
   from,
   onFrom,
+  signatures,
+  onSignature,
   menu,
   to,
   cc,
@@ -54,6 +56,9 @@ export function Fields({
   accounts: Account[];
   from: number;
   onFrom(id: number): void;
+  /** The signatures a draft can take, and the one chosen (0 for none) to put in it. */
+  signatures: SignatureChoice[];
+  onSignature(id: number): void;
   /** Shows the accounts as the system's menu (the pages' PopupMenu). */
   menu: PopupMenu;
   to: string[];
@@ -221,6 +226,31 @@ export function Fields({
           <RiArrowDownSLine className="size-3.5 shrink-0" />
         </button>,
       )}
+      {signatures.length > 0 &&
+        row(
+          "signature",
+          t("compose.signature"),
+          // The signature to put in this mail, whatever the account's default is: the system's menu
+          // lists them, then none. The body shows the one in place.
+          <button
+            type="button"
+            id={`${id}signature`}
+            aria-label={t("compose.signature.select")}
+            disabled={frozen}
+            className="flex h-6 min-w-0 items-center gap-1 rounded-md bg-(--hover-tint) px-2 font-medium text-xs transition-colors hover:bg-(--tint-2) focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50"
+            onClick={async (e) => {
+              const chosen = await popupUnder(menu, e.currentTarget, [
+                ...signatures.map((s) => ({ id: String(s.id), label: s.name })),
+                separator,
+                { id: "0", label: t("compose.signature.none") },
+              ]);
+              if (chosen && !frozenNow.current) onSignature(Number(chosen)); // "0" is none
+            }}
+          >
+            <span className="min-w-0 truncate">{t("compose.signature.select")}</span>
+            <RiArrowDownSLine className="size-3.5 shrink-0" />
+          </button>,
+        )}
     </div>
   );
 }

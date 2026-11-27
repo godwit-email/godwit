@@ -805,6 +805,10 @@ func (cl *Client) SetDraftModel(ctx context.Context, draftID int64, model string
 	return callErr(cl, ctx, "SetDraftModel", draftID, model)
 }
 
+func (cl *Client) SetDraftSignature(ctx context.Context, id int64, signatureID int64, revision int64) (core.Draft, error) {
+	return call[core.Draft](cl, ctx, "SetDraftSignature", id, signatureID, revision)
+}
+
 func (cl *Client) SetFlags(ctx context.Context, ids []int64, add []string, remove []string) error {
 	return callErr(cl, ctx, "SetFlags", ids, add, remove)
 }

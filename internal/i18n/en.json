@@ -126,6 +126,9 @@
   "compose_format": "Formatting",
   "compose_from": "From",
   "compose_from_select": "Sending account",
+  "compose_signature": "Signature",
+  "compose_signature_select": "Signature to use",
+  "compose_signature_none": "No signature",
   "compose_invalid": "Invalid address: {arg1}",
   "@compose_invalid": {
     "placeholders": {

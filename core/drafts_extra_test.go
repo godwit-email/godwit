@@ -96,6 +96,53 @@ func TestSetDraftAccount(t *testing.T) {
 	assert.Empty(t, e.Sent(a.ID))
 }
 
+// A draft takes any signature, not only its account's default, and none.
+func TestSetDraftSignature(t *testing.T) {
+	e := coretest.New(t, coretest.WithoutAutoSync())
+	a := e.AddAccount(t, "alice@example.com")
+	personal, err := e.Svc.CreateSignature(ctx, "Personal")
+	require.NoError(t, err)
+	work, err := e.Svc.CreateSignature(ctx, "Work")
+	require.NoError(t, err)
+	for sig, text := range map[int64]string{personal.ID: "Alice A.", work.ID: "Alice A., Acme Corp"} {
+		_, err := e.Svc.UpdateSignature(ctx, sig, core.SignaturePatch{HTML: &text})
+		require.NoError(t, err)
+	}
+	_, err = e.Svc.UpdateAccount(ctx, a.ID, core.AccountPatch{SignatureID: &personal.ID})
+	require.NoError(t, err)
+	d, err := e.Svc.NewDraft(ctx, a.ID, "new", 0)
+	require.NoError(t, err)
+	d.HTML = "<p>body text</p>" + `<blockquote data-godwit="quote">earlier mail</blockquote>` + d.HTML
+	d, err = e.Svc.SaveDraft(ctx, d)
+	require.NoError(t, err)
+	d, err = e.Svc.GetDraft(ctx, d.ID)
+	require.NoError(t, err)
+	require.Contains(t, d.HTML, "Alice A.")
+	require.NotContains(t, d.HTML, "Acme Corp")
+
+	got, err := e.Svc.SetDraftSignature(ctx, d.ID, work.ID, d.Revision)
+	require.NoError(t, err)
+	assert.Equal(t, a.ID, got.AccountID, "the sender stays")
+	assert.Equal(t, d.Revision+1, got.Revision)
+	ed, quote, sig := mail.SplitDraft(got.HTML)
+	assert.Contains(t, ed, "body text")
+	assert.Contains(t, quote, "earlier mail")
+	assert.Contains(t, sig, "Acme Corp")
+	assert.Equal(t, 1, strings.Count(got.HTML, `data-godwit="signature"`), "one signature, in place of the old")
+	assert.Less(t, strings.Index(got.HTML, "Acme Corp"), strings.Index(got.HTML, "earlier mail"), "signature above the quote")
+
+	_, err = e.Svc.SetDraftSignature(ctx, d.ID, personal.ID, d.Revision)
+	assert.ErrorIs(t, err, core.ErrStaleDraft)
+	_, err = e.Svc.SetDraftSignature(ctx, d.ID, 999, got.Revision)
+	assert.ErrorIs(t, err, core.ErrSignatureNotFound)
+
+	none, err := e.Svc.SetDraftSignature(ctx, d.ID, 0, got.Revision)
+	require.NoError(t, err)
+	assert.NotContains(t, none.HTML, "Acme Corp")
+	assert.NotContains(t, none.HTML, `data-godwit="signature"`)
+	assert.Contains(t, none.HTML, "body text")
+}
+
 func TestSendRevisionStale(t *testing.T) {
 	e := coretest.New(t, coretest.WithoutAutoSync())
 	acc := e.AddAccount(t, "alice@example.com")

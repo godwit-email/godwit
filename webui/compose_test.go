@@ -289,7 +289,7 @@ func TestComposeBoundSurface(t *testing.T) {
 	sort.Strings(names)
 	assert.Equal(t, []string{"AddAttachments", "AddImage", "Answer", "Ask", "AttachDropped", "CheckCited", "Closed", "Decide", "DecideAll", "DecideWithArgs", "Finish", "Follow", "Latest", "Load",
 		"Models", "OpenCited", "OpenLink", "OpenModels", "PopupMenu", "RemoveAttachment", "Review", "Rewrite", "Save", "SearchContacts", "SearchMail", "Send", "SendLater", "SetAccount",
-		"SetModel", "Skill", "Stop", "TitleBar", "Toast", "ToastBar", "Undo", "WitInfo"}, names)
+		"SetModel", "SetSignature", "Skill", "Stop", "TitleBar", "Toast", "ToastBar", "Undo", "WitInfo"}, names)
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -407,6 +407,40 @@ func TestComposeSetAccountStale(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, ch.Conflict)
 	assert.Equal(t, f.acc.ID, f.stored(t, d.ID).AccountID)
+}
+
+func TestComposeSetSignature(t *testing.T) {
+	f := newFixture(t)
+	work, err := f.e.Svc.CreateSignature(t.Context(), "Work")
+	require.NoError(t, err)
+	_, err = f.e.Svc.UpdateSignature(t.Context(), work.ID, core.SignaturePatch{HTML: ptr("Acme\nCorp")})
+	require.NoError(t, err)
+	d := f.replyDraft(t)
+	f.c.Attach(1, d.ID)
+	st, err := f.page.Load(f.ctx(1))
+	require.NoError(t, err)
+	assert.Contains(t, st.Signatures, SignatureChoice{ID: work.ID, Name: "Work"})
+	res, err := f.page.Save(f.ctx(1), ComposeEdit{Body: "<p>B</p>", Revision: st.Revision})
+	require.NoError(t, err)
+
+	ch, err := f.page.SetSignature(f.ctx(1), work.ID, res.Revision)
+	require.NoError(t, err)
+	assert.False(t, ch.Conflict)
+	assert.Contains(t, ch.SignatureHTML, "Acme")
+	assert.NotContains(t, ch.SignatureHTML, "Godwit")
+	stored := f.stored(t, d.ID)
+	assert.Equal(t, f.acc.ID, stored.AccountID, "the sender stays")
+	ed, _, _ := splitOf(stored.HTML)
+	assert.Equal(t, "<p>B</p>", ed)
+	// The next save keeps the chosen signature.
+	_, err = f.page.Save(f.ctx(1), ComposeEdit{Body: "<p>B2</p>", Revision: ch.Revision})
+	require.NoError(t, err)
+	_, _, sig := splitOf(f.stored(t, d.ID).HTML)
+	assert.Contains(t, sig, "Acme")
+
+	stale, err := f.page.SetSignature(f.ctx(1), 0, res.Revision)
+	require.NoError(t, err)
+	assert.True(t, stale.Conflict)
 }
 
 func TestComposeAttachments(t *testing.T) {

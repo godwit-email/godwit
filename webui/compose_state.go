@@ -7,6 +7,13 @@ type Account struct {
 	Email string `json:"email"`
 }
 
+// SignatureChoice is a signature the page can put in the draft.
+type SignatureChoice struct {
+	// ID and Name identify the signature; Name is the user's.
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
 // Attachment is a file attached to the draft.
 type Attachment struct {
 	// ID names it to RemoveAttachment; Size is in bytes.
@@ -20,6 +27,8 @@ type ComposeState struct {
 	// DraftID is the window's draft; Accounts are the senders to pick from.
 	DraftID  int64     `json:"draftId"`
 	Accounts []Account `json:"accounts"`
+	// Signatures are the signatures to pick from, oldest first.
+	Signatures []SignatureChoice `json:"signatures"`
 	// From is the sending account's ID.
 	From int64 `json:"from"`
 	// To, Cc, Bcc, ReplyTo and Subject are the header fields as stored.

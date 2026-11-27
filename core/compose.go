@@ -195,7 +195,7 @@ func (s *Service) buildDraft(ctx context.Context, accountID int64, mode string, 
 }
 
 // withSignature is body with acc's signature in place of its own, above the
-// quote (mail.JoinDraft); NewDraft and SetDraftAccount both sign through it.
+// quote (mail.JoinDraft); NewDraft, SetDraftAccount and SetDraftSignature sign through it.
 func withSignature(body string, acc Account, cids map[string]bool, delim bool) string {
 	ed, quote, _ := mail.SplitDraft(body)
 	return mail.JoinDraft(ed, quote, signatureHTML(acc.Signature, cids, delim))

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createRef, type Ref, useState } from "react";
-import type { ContactHit, MenuEntry } from "@/mygo";
+import type { ContactHit, MenuEntry, SignatureChoice } from "@/mygo";
 import { makeT } from "@/shared/i18n";
 import { Fields, type FieldsEdit, type FieldsHandle } from "./Fields";
 
@@ -20,6 +20,8 @@ function Host({
   frozen,
   onChange,
   onFrom,
+  onSignature,
+  signatures,
   onSearch,
   fieldsRef,
 }: {
@@ -28,6 +30,8 @@ function Host({
   onSearch?: (q: string) => Promise<ContactHit[]>;
   onChange: (e: FieldsEdit) => void;
   onFrom: (id: number) => void;
+  onSignature: (id: number) => void;
+  signatures: SignatureChoice[];
   fieldsRef: Ref<FieldsHandle>;
 }) {
   const [v, setV] = useState({ to: [], cc: [], bcc: [], replyTo: "", subject: "", ...init });
@@ -37,6 +41,8 @@ function Host({
       accounts={accounts}
       from={1}
       onFrom={onFrom}
+      signatures={signatures}
+      onSignature={onSignature}
       menu={menu}
       frozen={frozen}
       onSearch={onSearch}
@@ -54,9 +60,11 @@ function setup(
   init: Init = {},
   frozen = false,
   onSearch: ((q: string) => Promise<ContactHit[]>) | undefined = undefined,
+  signatures: SignatureChoice[] = [],
 ) {
   const onChange = vi.fn();
   const onFrom = vi.fn();
+  const onSignature = vi.fn();
   const ref = createRef<FieldsHandle>();
   render(
     <Host
@@ -64,11 +72,13 @@ function setup(
       frozen={frozen}
       onChange={onChange}
       onFrom={onFrom}
+      onSignature={onSignature}
+      signatures={signatures}
       onSearch={onSearch}
       fieldsRef={ref}
     />,
   );
-  return { onChange, onFrom, ref };
+  return { onChange, onFrom, onSignature, ref };
 }
 
 // The system's menu: picks the entry labelled pick.
@@ -161,6 +171,37 @@ test("choosing another account calls onFrom", async () => {
   expect(onFrom).toHaveBeenCalledWith(2);
 });
 
+const sigs = [
+  { id: 4, name: "Personal" },
+  { id: 5, name: "Work" },
+];
+
+test("no signature row while there are no signatures", () => {
+  setup();
+  expect(screen.queryByRole("button", { name: "要使用的签名" })).toBeNull();
+});
+
+test("choosing a signature calls onSignature, and none calls it with 0", async () => {
+  const { onSignature } = setup({}, false, undefined, sigs);
+  const button = screen.getByRole("button", { name: "要使用的签名" });
+  pick = "Work";
+  await userEvent.click(button);
+  // the system's menu lists every signature, then none after a separator
+  expect(menu.mock.lastCall?.[0]).toEqual([
+    { id: "4", label: "Personal" },
+    { id: "5", label: "Work" },
+    { id: "", label: "", separator: true },
+    { id: "0", label: "无签名" },
+  ]);
+  expect(onSignature).toHaveBeenLastCalledWith(5);
+  pick = "无签名";
+  await userEvent.click(button);
+  expect(onSignature).toHaveBeenLastCalledWith(0);
+  pick = ""; // a menu closed without a choice changes nothing
+  await userEvent.click(button);
+  expect(onSignature).toHaveBeenCalledTimes(2);
+});
+
 test("subject edits", async () => {
   const { onChange } = setup();
   await userEvent.type(screen.getByRole("textbox", { name: "主题" }), "Hi");
@@ -199,7 +240,15 @@ test("frozen: read-only, nothing committed, removed or switched", async () => {
 test("a menu left open when the fields freeze switches nothing", async () => {
   const onFrom = vi.fn();
   const host = (frozen: boolean) => (
-    <Host init={{}} frozen={frozen} onChange={vi.fn()} onFrom={onFrom} fieldsRef={createRef()} />
+    <Host
+      init={{}}
+      frozen={frozen}
+      onChange={vi.fn()}
+      onFrom={onFrom}
+      onSignature={vi.fn()}
+      signatures={[]}
+      fieldsRef={createRef()}
+    />
   );
   const { rerender } = render(host(false));
   let choose = (_: string) => {};
@@ -229,6 +278,8 @@ test("rows read 收件人, 抄送 · 密送's, 主题, then 发件人", () => {
       accounts={accounts}
       from={1}
       onFrom={vi.fn()}
+      signatures={[]}
+      onSignature={vi.fn()}
       menu={menu}
       to={[]}
       cc={["c@x.com"]}
