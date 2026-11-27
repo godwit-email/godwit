@@ -62,6 +62,7 @@
   "common_retry": "再試行",
   "common_save": "保存",
   "compose_attach": "ファイルを添付",
+  "compose_attach_drop": "ドロップしてファイルを添付",
   "compose_attach_failed": "添付できませんでした：{arg1}",
   "compose_attach_too_large": "添付ファイルの上限（{arg1}）を超えています",
   "compose_image": "画像を挿入",

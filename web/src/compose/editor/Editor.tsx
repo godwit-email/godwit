@@ -1,3 +1,4 @@
+import { isMyGo } from "mygo-runtime";
 import { isHotkey, RangeApi, type TRange } from "platejs";
 import { createPlatePlugin, Plate, PlateContent, usePlateEditor } from "platejs/react";
 import {
@@ -85,7 +86,7 @@ export type EditorHandle = { setValue(html: string): void; insertImages(cids: st
 
 // The image files of a paste or drop, the ones the page may put in the body (Go sniffs them again).
 const imageFiles = (d: DataTransfer | null) =>
-  [...(d?.files ?? [])].filter((f) => f.type.startsWith("image/"));
+  [...(d?.files ?? [])].filter((f) => /^image\/(png|jpeg|gif|webp)$/.test(f.type));
 
 /**
  * The compose body: a Plate editor over the native page's formats, loaded from `initial` (read at
@@ -270,7 +271,8 @@ export function Editor(props: {
                 onImageFiles(files);
               }}
               onDrop={(e) => {
-                const files = imageFiles(e.dataTransfer);
+                // In Godwit's window the file manager's drops come by path (the page's useFileDrop).
+                const files = isMyGo() ? [] : imageFiles(e.dataTransfer);
                 if (readOnly || !onImageFiles || !files.length) return;
                 e.preventDefault();
                 const at = editor.api.findEventRange(e);

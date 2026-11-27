@@ -86,6 +86,7 @@
   "common_retry": "Retry",
   "common_save": "Save",
   "compose_attach": "Attach files",
+  "compose_attach_drop": "Drop files to attach",
   "compose_attach_failed": "Couldn''t attach: {arg1}",
   "@compose_attach_failed": {
     "placeholders": {

@@ -62,6 +62,7 @@
   "common_retry": "Tentar novamente",
   "common_save": "Salvar",
   "compose_attach": "Anexar arquivos",
+  "compose_attach_drop": "Solte os arquivos para anexar",
   "compose_attach_failed": "Não foi possível anexar: {arg1}",
   "compose_attach_too_large": "Os anexos podem ter no máximo {arg1}",
   "compose_image": "Inserir imagem",

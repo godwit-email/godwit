@@ -33,6 +33,7 @@ import { ProgramBanner, WitBanner } from "./Banner";
 import { type CmdKSelection, Editor, type EditorHandle } from "./editor/Editor";
 import { IdleToolbar } from "./editor/Toolbar";
 import { Fields, type FieldsEdit, type FieldsHandle } from "./fields/Fields";
+import { useFileDrop } from "./fileDrop";
 import { Notices } from "./Notices";
 import { CmdK } from "./review/CmdK";
 import { BODY, Review, reviewSummary, Static } from "./review/Review";
@@ -203,6 +204,9 @@ const pendingEdit = (a: Approval) =>
   a.state === "pending" && (a.tool === "update_draft" || a.tool === "update_selection");
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** A file the body can show, by its name (Go sniffs its content again). */
+const IMAGE_PATH = /\.(png|jpe?g|gif|webp)$/i;
 
 /** A file's bytes in base64, as ComposePage.AddImage takes them. */
 const base64 = (f: Blob) =>
@@ -663,6 +667,17 @@ function Compose({
       await change((rev) => base64(file).then((data) => api.addImage(rev, file.name, data)));
     }
   };
+  // Files dropped on the window are attached as the attach button's are, and only when it is enabled.
+  // Image files dropped on the body go in it (#812), as a pasted one does; the rest are attached.
+  const dragging = useFileDrop(!locked && !witLocked, ({ paths, x, y }) => {
+    const onBody = !!document.elementFromPoint?.(x, y)?.closest("[data-body]");
+    const images = onBody ? paths.filter((p) => IMAGE_PATH.test(p)) : [];
+    const rest = paths.filter((p) => !images.includes(p));
+    void (async () => {
+      if (images.length) await change((rev) => api.attachDropped(rev, images, true));
+      if (rest.length) await change((rev) => api.attachDropped(rev, rest, false));
+    })();
+  });
   // A body operation (a decision, undo) in the saver's queue; its BodyChange is adopted at once.
   const bodyOp = async (op: () => Promise<BodyChange>) => {
     if (!sv) return null;
@@ -994,6 +1009,7 @@ function Compose({
                 <div
                   data-locked={running || undefined}
                   hidden={!!reviewing}
+                  data-body
                   className={`${BODY} data-locked:bg-sidebar`}
                   onMouseDown={(e) => {
                     if (e.target !== e.currentTarget) return;
@@ -1195,6 +1211,16 @@ function Compose({
           </ResizablePanel>
         )}
       </ResizablePanelGroup>
+      {dragging && (
+        // Shows where files go without taking the drop: the editor's own drop still reaches it.
+        <div
+          role="status"
+          className="pointer-events-none fixed inset-2 z-50 flex items-center justify-center gap-2 rounded-xl border-2 border-primary border-dashed bg-background/85 text-primary text-sm"
+        >
+          <RiAttachment2 className="size-4" aria-hidden />
+          {t("compose.attach.drop")}
+        </div>
+      )}
       <NativeToasts api={api} bar={dock.bar} input={dock.send} />
     </main>
   );

@@ -908,8 +908,8 @@ test("a language change keeps the draft and the panel's unsent question", async 
   let change: (p: { locale: string; dir: string }) => void = () => {};
   vi.stubGlobal("mygo", {
     locale: "zh-Hans",
-    on: (_name: string, listener: typeof change) => {
-      change = listener;
+    on: (name: string, listener: typeof change) => {
+      if (name === "mygo:locale") change = listener; // not the page's other events (file drops)
       return () => {};
     },
   });

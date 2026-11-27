@@ -16,6 +16,7 @@ vi.mock("@/mygo", () => ({
     setAccount: vi.fn(),
     addAttachments: vi.fn(),
     addImage: vi.fn(),
+    attachDropped: vi.fn(),
     removeAttachment: vi.fn(),
     send: vi.fn(),
     popupMenu: vi.fn(),
@@ -90,6 +91,7 @@ vi.mock("./editor/Editor", async () => {
 });
 
 import { ComposePage as api, type ComposeState as ComposeStateT } from "@/mygo";
+import { installFake } from "@/preview/fake";
 
 const theme = { mode: "light", light: {}, dark: {}, fontSize: 14, bodyFontSize: 14 };
 const state = {
@@ -856,6 +858,116 @@ test("a conflict stopping the adding part way still lists the files added", asyn
   await userEvent.click(screen.getByRole("button", { name: "添加附件" }));
   expect(screen.getByText("a.pdf")).toBeInTheDocument();
   expect(screen.getByText("草稿在别处被修改")).toBeInTheDocument();
+});
+
+describe("files dropped from the file manager", () => {
+  let emit: (name: string, payload: unknown) => void;
+  beforeEach(() => {
+    emit = installFake({});
+  });
+  afterEach(() => {
+    delete window.mygo;
+  });
+  const drag = (type: "dragEnter" | "dragLeave" | "drop", types = ["Files"]) =>
+    fireEvent[type](document.body, { dataTransfer: { types } });
+  const overlay = () => screen.queryByText("松开以添加附件");
+
+  test("are attached together, the refused named; a drop target shows while dragging", async () => {
+    const paths = ["/d/a.pdf", "/d/b.png", "/d/big.zip", "/d/Photos"];
+    vi.mocked(api.attachDropped).mockResolvedValue({
+      revision: 9,
+      attachments: [
+        { id: 3, filename: "a.pdf", size: 1024 },
+        { id: 4, filename: "b.png", size: 2048 },
+      ],
+      conflict: false,
+      signatureHtml: "<p>-- me</p>",
+      tooLarge: ["big.zip"],
+      failed: ["Photos"],
+      images: [],
+      notImage: [],
+      updatedAt: 0,
+    });
+    render(<ComposePage />);
+    await body();
+    drag("dragEnter");
+    drag("dragEnter"); // into a child: still over the page
+    expect(overlay()).toHaveAttribute("role", "status");
+    drag("dragLeave");
+    expect(overlay()).toBeInTheDocument();
+    drag("dragLeave");
+    expect(overlay()).not.toBeInTheDocument();
+    drag("dragEnter");
+    drag("drop");
+    expect(overlay()).not.toBeInTheDocument();
+    await act(async () => emit("mygo:file-drop", { paths, x: 10, y: 10 }));
+    expect(api.attachDropped).toHaveBeenCalledWith(7, paths, false); // not on the body
+    expect(screen.getByText("a.pdf")).toBeInTheDocument();
+    expect(screen.getByText("b.png")).toBeInTheDocument();
+    expect(screen.getByText("big.zip")).toBeInTheDocument();
+    expect(screen.getByText("未能添加：Photos")).toBeInTheDocument();
+    expect(api.addAttachments).not.toHaveBeenCalled();
+  });
+
+  test("image files dropped on the body go in it; the other files are attached", async () => {
+    const cid = `img-${"d".repeat(32)}@godwit`;
+    const result = {
+      conflict: false,
+      signatureHtml: "<p>-- me</p>",
+      tooLarge: [],
+      failed: [],
+      notImage: [],
+      updatedAt: 0,
+    };
+    vi.mocked(api.attachDropped)
+      .mockResolvedValueOnce({
+        ...result,
+        revision: 8,
+        attachments: [],
+        images: [{ cid, url: "data:image/png;base64,AA==" }],
+      })
+      .mockResolvedValueOnce({
+        ...result,
+        revision: 9,
+        attachments: [{ id: 3, filename: "a.pdf", size: 1024 }],
+        images: [],
+      });
+    render(<ComposePage />);
+    const el = await body();
+    document.elementFromPoint = () => el;
+    try {
+      await act(async () =>
+        emit("mygo:file-drop", { paths: ["/d/a.pdf", "/d/Shot.PNG"], x: 5, y: 5 }),
+      );
+    } finally {
+      delete (document as { elementFromPoint?: unknown }).elementFromPoint;
+    }
+    expect(api.attachDropped).toHaveBeenNthCalledWith(1, 7, ["/d/Shot.PNG"], true);
+    await waitFor(() =>
+      expect(api.attachDropped).toHaveBeenNthCalledWith(2, 8, ["/d/a.pdf"], false),
+    );
+    expect(el).toHaveValue(`正文<img src="cid:${cid}">`);
+    expect(await screen.findByText("a.pdf")).toBeInTheDocument();
+  });
+
+  test("a drag of text shows no drop target", async () => {
+    render(<ComposePage />);
+    await body();
+    drag("dragEnter", ["text/plain"]);
+    expect(overlay()).not.toBeInTheDocument();
+  });
+
+  test("are not taken while the page is locked, as the attach button is not", async () => {
+    vi.mocked(api.send).mockImplementation(() => new Promise(() => {})); // sending until the end
+    render(<ComposePage />);
+    await body();
+    await userEvent.click(screen.getByRole("button", { name: "发送" }));
+    expect(screen.getByRole("button", { name: "添加附件" })).toBeDisabled();
+    drag("dragEnter");
+    expect(overlay()).not.toBeInTheDocument();
+    await act(async () => emit("mygo:file-drop", { paths: ["/d/a.pdf"], x: 0, y: 0 }));
+    expect(api.attachDropped).not.toHaveBeenCalled();
+  });
 });
 
 test("conflict resolution runs once at a time, frozen, and use-latest drops pending input", async () => {
