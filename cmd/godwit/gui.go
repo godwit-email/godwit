@@ -118,8 +118,10 @@ func gui(ctx context.Context, dataDir, open string) int {
 	var leaveBackend atomic.Bool // the quit under way is closeExit's: the backend stays
 	var plat *platform
 	var a *app.App
-	var clicked []string  // notification clicks before the App exists, as the one that launched it
-	var launched []string // what second instances asked to open before the App existed
+	var setup sync.WaitGroup // the wait for the backend, which WhenReady starts
+	quitStarted := false     // OnQuit ran: the backend that answers later is stopped
+	var clicked []string     // notification clicks before the App exists, as the one that launched it
+	var launched []string    // what second instances asked to open before the App existed
 	mygo.App.OnSecondInstance(func(args []string, _ string) {
 		if a == nil {
 			launched = append(launched, openArg(args))
@@ -281,25 +283,28 @@ func gui(ctx context.Context, dataDir, open string) int {
 		if preferred := mygo.App.PreferredLanguages(); len(preferred) > 0 {
 			lang = preferred[0]
 		}
+		// Off the main thread, so the app stays responsive while the backend
+		// starts; a quit meanwhile still stops the backend it started.
+		setup.Add(1)
 		go func() {
-			var r connected
-			select {
-			case r = <-backendc:
-			case <-ctx.Done():
-				return
-			}
+			defer setup.Done()
+			r := <-backendc
 			var st core.Settings
 			var stErr error
 			if r.err == nil {
 				st, stErr = r.c.GetSettings(ctx)
 			}
-			mygo.RunOnMain(func() {
-				if ctx.Err() != nil {
-					if r.c != nil {
-						stopBackend(r.c)
-					}
+			adopted := false
+			defer func() {
+				if !adopted && r.c != nil {
+					stopBackend(r.c)
+				}
+			}()
+			mygo.RunOnMain(func() { // dropped after the quit, or run while mygo shuts down
+				if quitStarted {
 					return
 				}
+				adopted = true
 				var err error
 				client, err = r.c, r.err
 				if err != nil {
@@ -605,6 +610,7 @@ func gui(ctx context.Context, dataDir, open string) int {
 	// After BeforeClose saved the App's writes; before a relaunch starts the
 	// next Godwit, whose backend needs dataDir's lock.
 	mygo.App.OnQuit(func() {
+		quitStarted = true
 		if client != nil {
 			quitting.Store(true)
 			if leaveBackend.Load() {
@@ -617,6 +623,8 @@ func gui(ctx context.Context, dataDir, open string) int {
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)
 	}
+	cancel()
+	setup.Wait() // a quit before the backend answered: it stops once it does
 	return code
 }
 

@@ -8,7 +8,7 @@ import (
 func signInCodeMaterial(w *mygo.Window) {
 	w.SetVibrancy(mygo.VibrancyPopover)
 	mygo.RunOnMain(func() {
-		if w == nil || w.IsDestroyed() {
+		if w.IsDestroyed() {
 			return
 		}
 		handle := w.NativeHandle()
