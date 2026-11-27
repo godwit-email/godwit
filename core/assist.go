@@ -135,6 +135,16 @@ func textHTML(h string) string {
 // signature markers become plain content, then it is sanitized.
 func cleanHTML(h string) string { return mail.SanitizeCompose(mail.StripMarkers(h)) }
 
+// cleanDraft is cleanHTML keeping the images draft draftID may show
+// (draftCIDs): a rewrite that keeps one of its images in the body keeps it.
+func (s *Service) cleanDraft(ctx context.Context, draftID int64) (func(string) string, error) {
+	cids, err := s.draftCIDs(ctx, draftID)
+	if err != nil {
+		return nil, err
+	}
+	return func(h string) string { return mail.SanitizeDraft(mail.StripMarkers(h), cids) }, nil
+}
+
 var selectionSpec = ai.ToolSpec{Name: "update_selection",
 	Description: "Replace the selected part of the draft with html. The user reviews the change.",
 	Schema:      object(map[string]any{"html": map[string]any{"type": "string", "description": "Replacement HTML (paragraphs in <p>, line breaks with <br>)."}}, "html")}
@@ -432,24 +442,31 @@ func (s *Service) correspondence(ctx context.Context, accountID int64, addrs []s
 }
 
 // proposeUpdate prepares an update of the draft's editable part: edit gets the
-// editable part and revision now and returns the new part; the proposal binds
-// that revision.
-func (s *Service) proposeUpdate(ctx context.Context, draftID int64, edit func(old string, revision int64) (string, error)) (prepared, error) {
+// editable part and revision now, and clean (cleanDraft's), and returns the
+// new part; the proposal binds that revision.
+func (s *Service) proposeUpdate(ctx context.Context, draftID int64, edit func(old string, revision int64, clean func(string) string) (string, error)) (prepared, error) {
 	return s.proposeUpdateWithSubject(ctx, draftID, nil, edit)
 }
 
-func (s *Service) proposeUpdateWithSubject(ctx context.Context, draftID int64, subject *string, edit func(old string, revision int64) (string, error)) (prepared, error) {
+func (s *Service) proposeUpdateWithSubject(ctx context.Context, draftID int64, subject *string, edit func(old string, revision int64, clean func(string) string) (string, error)) (prepared, error) {
 	d, err := s.GetDraft(ctx, draftID)
 	if err != nil {
 		return prepared{}, err
 	}
+	clean, err := s.cleanDraft(ctx, draftID)
+	if err != nil {
+		return prepared{}, err
+	}
 	old, _, _ := mail.SplitDraft(d.HTML)
-	h, err := edit(old, d.Revision)
+	h, err := edit(old, d.Revision, clean)
 	if err != nil {
 		return prepared{}, err
 	}
 	newSubject := subject != nil && strings.TrimSpace(*subject) != "" && *subject != d.Subject // a blank subject would erase it unseen
-	if !mail.Blank(old) && !newSubject && sameHTML(old, h) {
+	// The same sanitized HTML: a change of formatting alone (bold, a link) is a
+	// change, and so is whitespace (<pre> and white-space styles show it) and an
+	// image of the draft added or removed.
+	if !mail.Blank(old) && !newSubject && clean(old) == clean(h) {
 		b, err := json.Marshal(updateArgs{DraftID: d.ID, Revision: d.Revision, Old: old, HTML: h})
 		if err != nil {
 			return prepared{}, err
@@ -496,7 +513,9 @@ func (s *Service) prepareUpdate(ctx context.Context, conv Conversation, args jso
 	if err := json.Unmarshal(args, &in); err != nil {
 		return prepared{}, err
 	}
-	return s.proposeUpdateWithSubject(ctx, conv.DraftID, in.Subject, func(string, int64) (string, error) { return cleanHTML(ensureHTML(in.HTML)), nil })
+	return s.proposeUpdateWithSubject(ctx, conv.DraftID, in.Subject, func(_ string, _ int64, clean func(string) string) (string, error) {
+		return clean(ensureHTML(in.HTML)), nil
+	})
 }
 
 // applyUpdate writes the approved editable part between the draft's own quote
@@ -579,7 +598,11 @@ func (s *Service) ApplyEditedProposal(ctx context.Context, approvalID int64, edi
 	if err := json.Unmarshal(a.Args, &in); err != nil {
 		return err
 	}
-	in.HTML = cleanHTML(ensureHTML(edited))
+	clean, err := s.cleanDraft(ctx, in.DraftID)
+	if err != nil {
+		return err
+	}
+	in.HTML = clean(ensureHTML(edited))
 	b, err := json.Marshal(in)
 	if err != nil {
 		return err
@@ -662,12 +685,12 @@ func boundary(h string, p int) bool {
 
 // spliceSelection replaces sel in editable with the model's fragment. Only
 // the range changes: the fragment goes in as HTML if the result is already
-// clean as it is, else as plain text, else the call fails.
-func spliceSelection(editable string, sel Selection, fragment string) (string, error) {
-	h := cleanHTML(fragment)
-	text := cleanHTML(strings.ReplaceAll(html.EscapeString(mail.HTMLToText(h)), "\n", "<br>"))
+// clean (by clean, cleanDraft's) as it is, else as plain text, else the call fails.
+func spliceSelection(editable string, sel Selection, fragment string, clean func(string) string) (string, error) {
+	h := clean(fragment)
+	text := clean(strings.ReplaceAll(html.EscapeString(mail.HTMLToText(h)), "\n", "<br>"))
 	for _, c := range []string{h, text} {
-		if out := editable[:sel.Start] + c + editable[sel.End:]; mail.SanitizeCompose(out) == out {
+		if out := editable[:sel.Start] + c + editable[sel.End:]; clean(out) == out {
 			return out, nil
 		}
 	}
@@ -721,11 +744,11 @@ func (s *Service) rewriteSelection(ctx context.Context, end func(), draftID int6
 			if err != nil {
 				return prepared{}, err
 			}
-			return s.proposeUpdate(ctx, conv.DraftID, func(old string, rev int64) (string, error) {
+			return s.proposeUpdate(ctx, conv.DraftID, func(old string, rev int64, clean func(string) string) (string, error) {
 				if rev != sel.Revision {
 					return "", ErrStaleDraft
 				}
-				return spliceSelection(old, sel, h)
+				return spliceSelection(old, sel, h, clean)
 			})
 		}}}
 	before, after := []rune(editable[:sel.Start]), []rune(editable[sel.End:])
@@ -905,14 +928,14 @@ func (s *Service) assistSkill(ctx context.Context, end func(), draftID int64, na
 			outText = body
 		}
 		outText = m.RestoreHTML(outText)
-		p, err := s.proposeUpdateWithSubject(ctx, d.ID, newSubj, func(old string, rev int64) (string, error) {
+		p, err := s.proposeUpdateWithSubject(ctx, d.ID, newSubj, func(old string, rev int64, clean func(string) string) (string, error) {
 			if sel == nil {
-				return cleanHTML(outText), nil
+				return clean(outText), nil
 			}
 			if rev != sel.Revision {
 				return "", ErrStaleDraft
 			}
-			return spliceSelection(old, *sel, outText)
+			return spliceSelection(old, *sel, outText, clean)
 		})
 		if err == nil && name == "translate-draft" {
 			p.Summary = kindTranslate
@@ -1028,11 +1051,6 @@ func changeKind(ctx context.Context, old, new string) (string, error) {
 	}
 	return kindPartial, nil
 }
-
-// sameHTML reports whether two editable parts are the same sanitized HTML: a
-// change of formatting alone (bold, a link) is a change, and so is whitespace,
-// which <pre> and white-space styles show.
-func sameHTML(a, b string) bool { return cleanHTML(a) == cleanHTML(b) }
 
 func words(h string) []string {
 	var out []string

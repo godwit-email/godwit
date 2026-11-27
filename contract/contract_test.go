@@ -294,7 +294,7 @@ var sentinels = map[string]error{
 	"model_not_found": core.ErrModelNotFound, "model_auth": core.ErrModelAuth, "base_url_invalid": core.ErrBaseURLInvalid,
 	"base_url_scheme": core.ErrBaseURLScheme, "no_model_list": ai.ErrNoModelList, "model_forbidden": ai.ErrModelForbidden, "key_needs_confirm": core.ErrKeyNeedsConfirm,
 	"unknown_flow": core.ErrUnknownFlow, "invalid_state": core.ErrInvalidState, "skill_disabled": core.ErrSkillDisabled,
-	"signature_image": core.ErrSignatureImage, "signature_image_count": core.ErrSignatureImageCount,
+	"signature_image": core.ErrSignatureImage, "signature_image_count": core.ErrSignatureImageCount, "inline_image": core.ErrInlineImage,
 	"signature_not_found": core.ErrSignatureNotFound, "signature_name": core.ErrSignatureName,
 	"not_grantable":   core.ErrNotGrantable,
 	"needs_answer":    core.ErrNeedsAnswer,

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -755,6 +756,67 @@ func TestTimeZonePropagatesOverSocket(t *testing.T) {
 	raw, err := json.Marshal(reqs[len(reqs)-1])
 	require.NoError(t, err)
 	assert.Contains(t, string(raw), "JST")
+}
+
+// Valid draft images can exceed the socket's response limit in aggregate. The
+// native compose page reads their files locally on insert and reopen (ADR 0038).
+func TestComposeImagesOverSocket(t *testing.T) {
+	env := coretest.New(t, coretest.WithoutAutoSync())
+	_, cl, _ := startUIServer(t, env.Svc)
+	ctx := t.Context()
+	acc := env.AddAccount(t, "alice@example.com")
+	d, err := cl.NewDraft(ctx, acc.ID, "new", 0)
+	require.NoError(t, err)
+	compose := webui.NewCompose()
+	compose.SetService(cl)
+	compose.Attach(1, d.ID)
+	page := webui.NewComposePage(compose, webui.PageDeps{WinOf: func(context.Context) (int, bool) { return 1, true }})
+
+	// A missing, unshown file must not prevent inserting or reopening other images.
+	orphan, err := page.AddImage(ctx, d.Revision, "unused.png", base64.StdEncoding.EncodeToString(makePNG(t, 1, 1)))
+	require.NoError(t, err)
+	require.Len(t, orphan.Images, 1)
+	files, err := cl.DraftImageFiles(ctx, d.ID, []string{orphan.Images[0].CID})
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+	require.NoError(t, os.Remove(files[0].Path))
+
+	var paths []string
+	img := image.NewGray(image.Rect(0, 0, 2560, 2560))
+	enc := png.Encoder{CompressionLevel: png.NoCompression}
+	for i := range 2 {
+		img.Pix[0] = byte(i)
+		var b bytes.Buffer
+		require.NoError(t, enc.Encode(&b, img))
+		path := filepath.Join(t.TempDir(), "image.png")
+		require.NoError(t, os.WriteFile(path, b.Bytes(), 0o600))
+		paths = append(paths, path)
+	}
+	compose.Dropped(1, paths)
+	added, err := page.AttachDropped(ctx, orphan.Revision, paths, true)
+	require.NoError(t, err)
+	require.Len(t, added.Images, 2)
+	expected := map[string]string{}
+	var body strings.Builder
+	var size int
+	for _, img := range added.Images {
+		require.True(t, strings.HasPrefix(img.URL, "data:image/png;base64,"))
+		expected[img.CID] = img.URL
+		fmt.Fprintf(&body, `<img src="cid:%s">`, img.CID)
+		size += len(img.URL)
+	}
+	require.Greater(t, size, rpc.MaxMessage)
+	saved, err := page.Save(ctx, webui.ComposeEdit{Body: body.String(), Revision: added.Revision})
+	require.NoError(t, err)
+	require.False(t, saved.Conflict)
+	compose.Attach(2, d.ID)
+	reopened := webui.NewComposePage(compose, webui.PageDeps{WinOf: func(context.Context) (int, bool) { return 2, true }})
+	state, err := reopened.Load(ctx)
+	require.NoError(t, err)
+	require.Len(t, state.Images, len(expected))
+	for cid, url := range expected {
+		require.True(t, state.Images[cid] == url, "reopened preview for %s", cid)
+	}
 }
 
 type readerPageKey struct{}

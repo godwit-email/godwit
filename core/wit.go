@@ -866,7 +866,7 @@ func (s *Service) prepareDraft(ctx context.Context, _ Conversation, args json.Ra
 	if err != nil {
 		return prepared{}, err
 	}
-	if in.HTML, err = s.sanitizeDraft(ctx, mail.StripMarkers(ensureHTML(in.HTML))+d.HTML); err != nil {
+	if in.HTML, err = s.sanitizeDraft(ctx, 0, mail.StripMarkers(ensureHTML(in.HTML))+d.HTML); err != nil {
 		return prepared{}, err
 	}
 	b, err := json.Marshal(in)
@@ -1397,7 +1397,7 @@ func (s *Service) prepareReplyMail(ctx context.Context, _ Conversation, raw json
 		return prepared{}, err
 	}
 	bodyHTML := mail.StripMarkers(ensureHTML(in.HTML)) + d.HTML
-	sanitized, err := s.sanitizeDraft(ctx, bodyHTML)
+	sanitized, err := s.sanitizeDraft(ctx, 0, bodyHTML)
 	if err != nil {
 		return prepared{}, err
 	}
@@ -1459,7 +1459,7 @@ func (s *Service) prepareForwardMail(ctx context.Context, _ Conversation, raw js
 		return prepared{}, err
 	}
 	bodyHTML := mail.StripMarkers(ensureHTML(in.HTML)) + d.HTML
-	sanitized, err := s.sanitizeDraft(ctx, bodyHTML)
+	sanitized, err := s.sanitizeDraft(ctx, 0, bodyHTML)
 	if err != nil {
 		return prepared{}, err
 	}

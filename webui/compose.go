@@ -2,8 +2,10 @@ package webui
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"log"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -289,7 +291,29 @@ func (p *ComposePage) Load(ctx context.Context) (ComposeState, error) {
 	if !d.ScheduledFor.IsZero() {
 		out.ScheduledFor = d.ScheduledFor.UnixMilli()
 	}
+	if out.Images, err = draftImageURLs(ctx, svc, d.ID, mail.CIDs(editable)); err != nil {
+		return ComposeState{}, err
+	}
 	return out, nil
+}
+
+func draftImageURLs(ctx context.Context, svc Service, draftID int64, cids []string) (map[string]string, error) {
+	urls := map[string]string{}
+	if len(cids) == 0 {
+		return urls, nil
+	}
+	files, err := svc.DraftImageFiles(ctx, draftID, cids)
+	if err != nil {
+		return nil, err
+	}
+	for _, img := range files {
+		data, err := os.ReadFile(img.Path)
+		if err != nil {
+			return nil, err
+		}
+		urls[img.CID] = "data:" + img.ContentType + ";base64," + base64.StdEncoding.EncodeToString(data)
+	}
+	return urls, nil
 }
 
 // senders are the accounts a draft can be sent from.
@@ -373,15 +397,16 @@ func (p *ComposePage) SetAccount(ctx context.Context, id, revision int64) (Chang
 
 // AddAttachments asks for files in a dialog on the calling window and adds
 // each to its draft, if the draft is at revision (else Conflict, without the
-// dialog). A file over the limit or failing is reported, not an error; a
-// write from elsewhere stops the adding with Conflict, the files added so
-// far in Attachments.
+// dialog). With inline, each is an image for the body (core.Service
+// AddAttachment's inline), listed in Images, or in NotImage if it is none. A
+// file over the limit or failing is reported, not an error; a write from
+// elsewhere stops the adding with Conflict, the files added so far in
+// Attachments.
 //
 // The dialog runs without the session lock: Release does not wait for it
 // (AppKit gives no promise a sheet on a closed window ever ends), and once
 // the window is released the files are dropped (ErrNoDraft).
-func (p *ComposePage) AddAttachments(ctx context.Context, revision int64) (AttachResult, error) {
-	res := AttachResult{TooLarge: []string{}, Failed: []string{}}
+func (p *ComposePage) AddAttachments(ctx context.Context, revision int64, inline bool) (AttachResult, error) {
 	win, svc, s, err := p.open(ctx)
 	if err != nil {
 		return AttachResult{}, err
@@ -392,6 +417,7 @@ func (p *ComposePage) AddAttachments(ctx context.Context, revision int64) (Attac
 		return AttachResult{}, err
 	}
 	if d.Revision != revision {
+		res := newAttachResult()
 		res.Change = conflict
 		return res, nil
 	}
@@ -402,15 +428,46 @@ func (p *ComposePage) AddAttachments(ctx context.Context, revision int64) (Attac
 	if err != nil {
 		return AttachResult{}, err
 	}
-	return p.attach(ctx, revision, paths, res)
+	return p.attach(ctx, revision, paths, inline, newAttachResult())
+}
+
+// newAttachResult is an AttachResult with every list empty, not nil.
+func newAttachResult() AttachResult {
+	return AttachResult{TooLarge: []string{}, Failed: []string{}, Images: []InlineImage{}, NotImage: []string{}}
+}
+
+// AddImage adds an image the page has the bytes of (pasted or dropped on the
+// body), data in base64 and name its file name, as AddAttachments with
+// inline does.
+func (p *ComposePage) AddImage(ctx context.Context, revision int64, name, data string) (AttachResult, error) {
+	b, err := base64.StdEncoding.DecodeString(data)
+	if err != nil {
+		return AttachResult{}, err
+	}
+	dir, err := os.MkdirTemp("", "godwit-image")
+	if err != nil {
+		return AttachResult{}, err
+	}
+	defer os.RemoveAll(dir)
+	// The name the attachment keeps: a base name only, never a path.
+	name = filepath.Base(name)
+	if name == "." || name == "/" || name == ".." {
+		name = "image"
+	}
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		return AttachResult{}, err
+	}
+	return p.attach(ctx, revision, []string{path}, true, newAttachResult())
 }
 
 // AttachDropped adds the files at paths, dropped on the calling window
 // (Compose.Dropped), to its draft as AddAttachments does with the files
-// picked; a path not dropped there is Failed, so a page attaches no file
-// the user did not hand it. A folder is Failed too.
-func (p *ComposePage) AttachDropped(ctx context.Context, revision int64, paths []string) (AttachResult, error) {
-	res := AttachResult{TooLarge: []string{}, Failed: []string{}}
+// picked, as images for the body with inline; a path not dropped there is
+// Failed, so a page attaches no file the user did not hand it. A folder is
+// Failed too.
+func (p *ComposePage) AttachDropped(ctx context.Context, revision int64, paths []string, inline bool) (AttachResult, error) {
+	res := newAttachResult()
 	win, ok := p.d.WinOf(ctx)
 	if !ok {
 		return AttachResult{}, ErrNoDraft
@@ -424,20 +481,22 @@ func (p *ComposePage) AttachDropped(ctx context.Context, revision int64, paths [
 			res.Failed = append(res.Failed, filepath.Base(path))
 		}
 	}
-	return p.attach(ctx, revision, take, res)
+	return p.attach(ctx, revision, take, inline, res)
 }
 
 // attach adds the files at paths to the calling window's draft from
-// revision on, reporting into res.
-func (p *ComposePage) attach(ctx context.Context, revision int64, paths []string, res AttachResult) (AttachResult, error) {
+// revision on, as images for the body with inline (AddAttachments),
+// reporting into res.
+func (p *ComposePage) attach(ctx context.Context, revision int64, paths []string, inline bool, res AttachResult) (AttachResult, error) {
 	_, svc, s, err := p.open(ctx)
 	if err != nil {
 		return AttachResult{}, err
 	}
 	defer s.mu.Unlock()
 	rev, stale := revision, false
+	var cids []string
 	for _, path := range paths {
-		_, now, err := svc.AddAttachmentAt(ctx, s.draftID, rev, path)
+		a, now, err := svc.AddAttachmentAt(ctx, s.draftID, rev, path, inline)
 		if now != 0 {
 			rev = now
 		}
@@ -446,13 +505,24 @@ func (p *ComposePage) attach(ctx context.Context, revision int64, paths []string
 			stale = true
 		case errors.Is(err, core.ErrTooLarge):
 			res.TooLarge = append(res.TooLarge, filepath.Base(path))
+		case errors.Is(err, core.ErrInlineImage):
+			res.NotImage = append(res.NotImage, filepath.Base(path))
 		case err != nil:
 			log.Printf("attaching %s to draft %d: %v", path, s.draftID, err)
 			res.Failed = append(res.Failed, filepath.Base(path))
+		case a.ContentID != "":
+			cids = append(cids, a.ContentID)
 		}
 		if stale {
 			break
 		}
+	}
+	urls, err := draftImageURLs(ctx, svc, s.draftID, cids)
+	if err != nil {
+		return AttachResult{}, err
+	}
+	for _, cid := range cids {
+		res.Images = append(res.Images, InlineImage{CID: cid, URL: urls[cid]})
 	}
 	d, err := svc.GetDraft(ctx, s.draftID)
 	if err != nil {
@@ -588,11 +658,14 @@ func changeOf(ctx context.Context, svc Service, d core.Draft) (Change, error) {
 		UpdatedAt: d.UpdatedAt.UnixMilli()}, err
 }
 
-// attachments is d's attachments for the page, never nil.
+// attachments is d's attachments for the page, never nil: its files, the
+// images for its body shown in the body instead.
 func attachments(d core.Draft) []Attachment {
 	out := []Attachment{}
 	for _, a := range d.Attachments {
-		out = append(out, Attachment{ID: a.ID, Filename: a.Filename, Size: a.Size})
+		if a.ContentID == "" {
+			out = append(out, Attachment{ID: a.ID, Filename: a.Filename, Size: a.Size})
+		}
 	}
 	return out
 }

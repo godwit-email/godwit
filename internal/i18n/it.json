@@ -65,6 +65,8 @@
   "compose_attach_drop": "Rilascia i file per allegarli",
   "compose_attach_failed": "Impossibile allegare: {arg1}",
   "compose_attach_too_large": "Gli allegati possono essere al massimo di {arg1}",
+  "compose_image": "Inserisci immagine",
+  "compose_image_invalid": "Nel messaggio può andare solo un’immagine PNG, JPEG, GIF o WebP: {arg1}",
   "compose_bcc": "Ccn",
   "compose_bcc_input": "Aggiungi destinatari in Ccn",
   "compose_body": "Corpo del messaggio",

@@ -1,8 +1,12 @@
 package webui
 
 import (
+	"bytes"
 	"encoding/json"
+	"image"
+	"image/png"
 	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -157,4 +161,44 @@ func TestComposeAskAfterRewriteRunsAssist(t *testing.T) {
 	}
 	assert.Equal(t, []string{"更具体一点"}, assist, "the free input ran in the Assist conversation")
 	assert.Len(t, cmdk, 1, "the ⌘K run kept its own conversation")
+}
+
+// ⌘K in a body showing one of the draft's images: the image is no line of
+// the text (as the page's toText), the rewrite starts, and the image stays.
+func TestComposeRewriteSelectionWithImage(t *testing.T) {
+	f, d, llm := witFixture(t, "<p>x</p>")
+	var b bytes.Buffer
+	require.NoError(t, png.Encode(&b, image.NewGray(image.Rect(0, 0, 2, 2))))
+	src := filepath.Join(t.TempDir(), "form.png")
+	require.NoError(t, os.WriteFile(src, b.Bytes(), 0o600))
+	a, err := f.e.Svc.AddAttachment(t.Context(), d.ID, src, true)
+	require.NoError(t, err)
+	img := `<img src="cid:` + a.ContentID + `"/>`
+	res, err := f.page.Save(f.ctx(1), ComposeEdit{Body: "<p>before</p>" + img + "<p>after</p>", Revision: f.stored(t, d.ID).Revision})
+	require.NoError(t, err)
+	st, err := f.page.Load(f.ctx(1))
+	require.NoError(t, err)
+	require.Contains(t, st.Body, img)
+	text, _, _ := plainText(st.Body)
+	require.Equal(t, "before\nafter", text)
+
+	llm.Script(coretest.Turn{Calls: []coretest.Call{{ID: "c1", Name: "update_selection", Args: `{"html":"later"}`}}})
+	n := len(f.events(1))
+	rs, err := f.page.Rewrite(f.ctx(1), res.Revision, text, 7, 12, "更具体一点")
+	require.NoError(t, err)
+	require.False(t, rs.Conflict, "the page's text is the stored one")
+	var ap int64
+	require.Eventually(t, func() bool {
+		for _, ev := range f.events(1)[n:] {
+			if ev.Kind == "interrupted" && len(ev.Approvals) == 1 {
+				ap = ev.Approvals[0].ID
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 5*time.Millisecond, "events %v", kinds(f.events(1)[n:]))
+	bc, err := f.page.Decide(f.ctx(1), ap, true)
+	require.NoError(t, err)
+	assert.Equal(t, "<p>before</p>"+img+"<p>later</p>", bc.Body)
+	f.doneAfter(t, n, rs.Run)
 }

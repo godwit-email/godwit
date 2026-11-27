@@ -76,7 +76,7 @@ func (s *Service) SetDraftAccount(ctx context.Context, id, accountID, revision i
 	if d.Revision != revision {
 		return Draft{}, ErrStaleDraft
 	}
-	cids, err := s.signatureCIDs(ctx)
+	cids, err := s.draftCIDs(ctx, id) // the draft's own images stay in its body
 	if err != nil {
 		return Draft{}, err
 	}
@@ -216,9 +216,13 @@ func (s *Service) DeleteDraftIfEmpty(ctx context.Context, id, revision int64) (d
 }
 
 // AddAttachmentAt is AddAttachment for exactly that revision of the draft
-// (else ErrStaleDraft, nothing added); it returns the new revision.
-func (s *Service) AddAttachmentAt(ctx context.Context, draftID, revision int64, srcPath string) (DraftAttachment, int64, error) {
-	return s.addAttachmentFile(ctx, draftID, max(revision, 0), srcPath)
+// (else ErrStaleDraft, nothing added); it returns the new revision. With
+// inline, it adds an image for the body to show (AddAttachment).
+func (s *Service) AddAttachmentAt(ctx context.Context, draftID, revision int64, srcPath string, inline bool) (DraftAttachment, int64, error) {
+	if err := s.auditMCPDraft(ctx, "AddAttachmentAt", draftID); err != nil {
+		return DraftAttachment{}, 0, err
+	}
+	return s.addAttachmentFile(ctx, draftID, max(revision, 0), srcPath, inline)
 }
 
 // RemoveAttachmentAt is RemoveAttachment for exactly that revision of the

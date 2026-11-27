@@ -14,7 +14,7 @@ from `theme.json`, a copy of `webui.ThemeOf` at font size 14; zh-Hans text comes
 | signature | `filled`                                                                                                                                                                                                                                                                                                                                                            |
 | reader    | `basic`, `neutral`, `colored`, `natural-dark`, `author-dark`, `fallback`, `media`, `gradients`, `mixed`, `large-paragraphs`, `large-cells`, `large-nested`                                                                                                                                                                                                          |
 
-Example: `/preview.html?page=compose&state=inline&theme=dark`.
+Example: `/preview.html?page=compose&state=inline&theme=dark`. To compare a proposal that removes only the inline logo, open `/preview.html?page=compose&state=image-review` and choose 对比原文.
 
 用 `/preview.html?page=compose&state=reschedule` 打开取回的定时草稿，点发送选项可查看预填的原定时间。
 

@@ -38,7 +38,7 @@ func mcpSendHarness(t *testing.T) (*harness, core.Account) {
 	if err := os.WriteFile(f, make([]byte, 2048), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.env.Svc.AddAttachment(ctx, d.ID, f); err != nil {
+	if _, err := h.env.Svc.AddAttachment(ctx, d.ID, f, false); err != nil {
 		t.Fatal(err)
 	}
 	if d, err = h.env.Svc.GetDraft(ctx, d.ID); err != nil {
@@ -199,7 +199,7 @@ func TestMCPSendConfirmReplaced(t *testing.T) {
 	if err := os.WriteFile(f, make([]byte, 2048), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.env.Svc.AddAttachment(ctx, d.ID, f); err != nil {
+	if _, err := h.env.Svc.AddAttachment(ctx, d.ID, f, false); err != nil {
 		t.Fatal(err)
 	}
 	if d, err = h.env.Svc.GetDraft(ctx, d.ID); err != nil {

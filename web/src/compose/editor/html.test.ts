@@ -3,7 +3,7 @@ import { createPlateEditor } from "platejs/react";
 // The ⌘K contract's cases, shared with webui's plainText (Go).
 import shared from "../../../../webui/testdata/selection.json?raw";
 import { fromHTML, offsetOf, safeHref, sanitize, toHTML, toText } from "./html";
-import { plugins } from "./plugins";
+import { plugins, SafePastePlugin } from "./plugins";
 
 const editor = () => createPlateEditor({ plugins });
 const round = (s: string) => toHTML(fromHTML(editor(), s));
@@ -36,6 +36,13 @@ describe("html", () => {
     const kept = [...sanitize(src, true).querySelectorAll("img")];
     expect(kept.map((i) => i.outerHTML)).toEqual([`<img src="${png}">`]);
     expect(sanitize(src).querySelectorAll("img")).toHaveLength(0);
+  });
+
+  it("keeps a draft's cid: image on load and save, never on paste", () => {
+    const img = `<img src="cid:img-${"0".repeat(32)}@godwit">`;
+    const src = `<p>a</p>${img}<img src="cid:sig-${"0".repeat(32)}@godwit"><img src="data:image/png;base64,iVBORw0KGgo="><p>b</p>`;
+    expect(toHTML(fromHTML(editor(), src, true))).toBe(`<p>a</p>${img}<p>b</p>`);
+    expect(round(src)).toBe("<p>a</p><p>b</p>");
   });
 
   it("reads the native page's richtext.ToHTML output, line breaks kept", () => {
@@ -163,8 +170,9 @@ function data(d: { html?: string; text?: string; fragment?: unknown }): DataTran
 }
 
 describe("paste", () => {
-  const paste = (d: Parameters<typeof data>[0]) => {
+  const paste = (d: Parameters<typeof data>[0], images: Record<string, string> = {}) => {
     const e = editor();
+    e.setOption(SafePastePlugin, "images", images);
     fromHTML(e, "<p>x</p>");
     e.tf.select(e.api.end([]));
     // slate-react's onPaste/onDrop call the editor's legacy insertData, which Plate binds to tf.
@@ -179,6 +187,22 @@ describe("paste", () => {
 
   it("plain text becomes paragraphs", () => {
     expect(paste({ text: "a\r\nb" })).toBe("<p>xa</p><p>b</p>");
+  });
+
+  it("accepts only this draft's CID images from a Slate fragment", () => {
+    const cid = `img-${"0".repeat(32)}@godwit`;
+    const png = "data:image/png;base64,iVBORw0KGgo=";
+    const images = { [cid]: png };
+    const sources = [`cid:${cid}`, `cid:${cid.replace("0", "1")}`, png, "https://t/x.png"];
+    const html = sources.map((src) => `<img src="${src}">`).join("");
+    expect(paste({ html, text: "fallback" }, images)).toBe("<p>xfallback</p>");
+    const fragment = sources.map((url) => ({ type: "img", url, children: [{ text: "" }] }));
+    expect(paste({ fragment, html }, images)).toBe(`<p>x</p><img src="cid:${cid}">`);
+    const encoded = btoa(encodeURIComponent(JSON.stringify(fragment)));
+    expect(paste({ html: `<span data-slate-fragment="${encoded}">${html}</span>` }, images)).toBe(
+      `<p>x</p><img src="cid:${cid}">`,
+    );
+    expect(paste({ fragment, text: "fallback" })).toBe("<p>xfallback</p>");
   });
 
   it("a Slate fragment is held to the format set", () => {
@@ -206,7 +230,7 @@ describe("⌘K plain text", () => {
     JSON.parse(shared);
 
   it.each(cases.map((c) => [c.name, c]))("%s: toText and offsets agree with Go", (_, c) => {
-    const value: Value = fromHTML(editor(), c.html);
+    const value: Value = fromHTML(editor(), c.html, true); // as Editor loads a draft
     const text = toText(value);
     expect(text).toBe(c.text);
     const offs = new Set<number>();

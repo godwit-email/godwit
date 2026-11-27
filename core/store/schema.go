@@ -902,6 +902,10 @@ var Migrations = [][]string{{
 	// before, which compare by set_at and archived_at.
 	`ALTER TABLE thread_deadlines ADD COLUMN set_version INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE archive_marks ADD COLUMN archived_version INTEGER NOT NULL DEFAULT 0`,
+}, {
+	// An image in the draft's body (#812): its Content-ID, shown as
+	// cid:<cid> and sent inline in multipart/related. NULL for a file attached.
+	`ALTER TABLE draft_attachments ADD COLUMN cid TEXT`,
 }}
 
 // HistoryRowsVersion is the schema version that keeps a conversation's

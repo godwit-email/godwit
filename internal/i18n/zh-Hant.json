@@ -65,6 +65,8 @@
   "compose_attach_drop": "放開以加入附件",
   "compose_attach_failed": "未能加入：{arg1}",
   "compose_attach_too_large": "附件超過了 {arg1} 的上限",
+  "compose_image": "插入圖片",
+  "compose_image_invalid": "內文中只能插入 PNG、JPEG、GIF 或 WebP 圖片：{arg1}",
   "compose_bcc": "密件副本",
   "compose_bcc_input": "加入密件副本",
   "compose_body": "內文",

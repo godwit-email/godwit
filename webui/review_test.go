@@ -1,8 +1,13 @@
 package webui
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"image"
+	"image/png"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -89,6 +94,31 @@ func TestComposeReviewInlinePartial(t *testing.T) {
 	assert.NotContains(t, e, "Warm")
 	assert.NotContains(t, e, "Monday")
 	assert.Equal(t, e, bc.Body)
+}
+
+// A body showing the draft's image is reviewed whole: per-change decisions
+// would rebuild it from the review's text, so they are refused, and
+// accepting keeps the image.
+func TestComposeReviewWithImageIsWhole(t *testing.T) {
+	f, d, llm := witFixture(t, "<p>x</p>")
+	var b bytes.Buffer
+	require.NoError(t, png.Encode(&b, image.NewGray(image.Rect(0, 0, 2, 2))))
+	src := filepath.Join(t.TempDir(), "form.png")
+	require.NoError(t, os.WriteFile(src, b.Bytes(), 0o600))
+	at, err := f.e.Svc.AddAttachment(t.Context(), d.ID, src, true)
+	require.NoError(t, err)
+	img := `<img src="cid:` + at.ContentID + `"/>`
+	_, err = f.page.Save(f.ctx(1), ComposeEdit{Body: inlineOld + img, Revision: f.stored(t, d.ID).Revision})
+	require.NoError(t, err)
+	a := f.propose(t, llm, inlineNew+img)
+	r, err := f.page.Review(f.ctx(1), a.ID)
+	require.NoError(t, err)
+	assert.False(t, r.Inline)
+	_, err = f.page.Finish(f.ctx(1), a.ID, []int{1, -1})
+	assert.ErrorIs(t, err, ErrBadDecisions)
+	_, err = f.page.Decide(f.ctx(1), a.ID, true)
+	require.NoError(t, err)
+	assert.Equal(t, inlineNew+img, f.editable(t, d.ID))
 }
 
 func TestComposeReviewLinkOnlyChangeShown(t *testing.T) {

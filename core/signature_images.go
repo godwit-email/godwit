@@ -32,6 +32,8 @@ const (
 var (
 	// ErrSignatureImage is an image that is not png, jpeg, gif or webp, or is over SignatureImageMax.
 	ErrSignatureImage = errors.New("a signature image must be a png, jpeg, gif or webp of at most 512 KB")
+	// ErrInlineImage is an image for a draft's body that is not png, jpeg, gif or webp.
+	ErrInlineImage = errors.New("an image in the body must be a png, jpeg, gif or webp")
 	// ErrSignatureImageCount is a signature with more than SignatureImagesMax images.
 	ErrSignatureImageCount = errors.New("a signature has at most 4 images")
 )
@@ -45,6 +47,22 @@ func signatureImageType(data []byte) (string, error) {
 		return "", ErrSignatureImage
 	}
 	return ct, nil
+}
+
+// inlineImage is data as an image of a draft's body (#812), with the
+// signature images' hygiene: sniffed png, jpeg, gif or webp, metadata
+// stripped, content-addressed as img-<hash>@godwit. Its size counts toward
+// the message's limit only (attachLimit). Anything else is ErrInlineImage.
+func inlineImage(data []byte) (ct string, clean []byte, cid string, err error) {
+	ct = http.DetectContentType(data)
+	if len(data) == 0 || !signatureImageTypes[ct] {
+		return "", nil, "", ErrInlineImage
+	}
+	if clean, err = stripImageMetadata(ct, data); err != nil {
+		return "", nil, "", ErrInlineImage
+	}
+	sum := sha256.Sum256(clean)
+	return ct, clean, "img-" + hex.EncodeToString(sum[:16]) + "@godwit", nil
 }
 
 // SignatureImageURL is data as a data: URL for the signature editor, or ErrSignatureImage.
@@ -117,56 +135,93 @@ var unusedSignatureImages = sqlite.Statement{SQL: `DELETE FROM signature_images
 	WHERE instr(COALESCE((SELECT html FROM signatures WHERE id = signature_images.signature_id), ''), cid) = 0
 	AND NOT EXISTS (SELECT 1 FROM drafts d WHERE instr(d.body_html, signature_images.cid) > 0)`}
 
-// signatureImages are the stored images by Content-ID; with data false,
-// without their bytes.
-func (s *Service) signatureImages(ctx context.Context, data bool) (map[string]mail.Attachment, error) {
-	q := "SELECT cid, content_type, NULL FROM signature_images GROUP BY cid"
-	if data {
-		q = "SELECT cid, content_type, data FROM signature_images GROUP BY cid" // content-addressed: any copy
+// signatureImages looks up only the referenced signature images. With data false
+// SQLite reports blob lengths without loading the bytes.
+func (s *Service) signatureImages(ctx context.Context, cids []string, data bool) (map[string]mail.Attachment, error) {
+	out := map[string]mail.Attachment{}
+	if len(cids) == 0 {
+		return out, nil
 	}
-	rows, err := s.db.Query(ctx, q)
+	blob := "NULL"
+	if data {
+		blob = "data"
+	}
+	rows, err := s.db.Query(ctx, "SELECT cid, content_type, length(data), "+blob+" FROM signature_images WHERE cid IN (SELECT value FROM json_each(?)) GROUP BY cid", encodeList(cids))
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[string]mail.Attachment, len(rows.Values))
 	for _, r := range rows.Values {
-		b, _ := r[2].([]byte)
 		id := store.Str(r[0])
-		out[id] = mail.Attachment{ContentID: id, ContentType: store.Str(r[1]), Data: b, Size: len(b), Inline: true}
+		b, _ := r[3].([]byte)
+		out[id] = mail.Attachment{ContentID: id, ContentType: store.Str(r[1]), Data: b, Size: int(store.Int(r[2])), Inline: true}
 	}
 	return out, nil
 }
 
 // signatureCIDs is the set of the stored images' Content-IDs.
 func (s *Service) signatureCIDs(ctx context.Context) (map[string]bool, error) {
-	imgs, err := s.signatureImages(ctx, false)
+	rows, err := s.db.Query(ctx, "SELECT DISTINCT cid FROM signature_images")
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[string]bool, len(imgs))
-	for id := range imgs {
-		out[id] = true
+	out := make(map[string]bool, len(rows.Values))
+	for _, r := range rows.Values {
+		out[store.Str(r[0])] = true
 	}
 	return out, nil
 }
 
-// sanitizeDraft is mail.SanitizeDraft keeping the signature images.
-func (s *Service) sanitizeDraft(ctx context.Context, html string) (string, error) {
+// draftCIDs are the images a draft may show: the stored signature images
+// and, for a draftID not 0, the draft's own (its inline attachments).
+func (s *Service) draftCIDs(ctx context.Context, draftID int64) (map[string]bool, error) {
 	cids, err := s.signatureCIDs(ctx)
+	if err != nil || draftID == 0 {
+		return cids, err
+	}
+	rows, err := s.db.Query(ctx, "SELECT cid FROM draft_attachments WHERE draft_id = ? AND cid IS NOT NULL", draftID)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows.Values {
+		cids[store.Str(r[0])] = true
+	}
+	return cids, nil
+}
+
+// sanitizeDraft is mail.SanitizeDraft keeping the images draftCIDs has for
+// draftID (0: the signature images only).
+func (s *Service) sanitizeDraft(ctx context.Context, draftID int64, html string) (string, error) {
+	cids, err := s.draftCIDs(ctx, draftID)
 	if err != nil {
 		return "", err
 	}
 	return mail.SanitizeDraft(html, cids), nil
 }
 
+// DraftImageFiles returns the stored files for the requested inline images
+// belonging to this draft. The native interface reads them locally (ADR 0038).
+func (s *Service) DraftImageFiles(ctx context.Context, draftID int64, cids []string) ([]InlineImage, error) {
+	rows, err := s.db.Query(ctx, `SELECT cid, path, content_type FROM draft_attachments
+		WHERE draft_id = ? AND cid IN (SELECT value FROM json_each(?))`, draftID, encodeList(cids))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]InlineImage, 0, len(rows.Values))
+	for _, r := range rows.Values {
+		out = append(out, InlineImage{CID: store.Str(r[0]), Path: store.Str(r[1]), ContentType: store.Str(r[2])})
+	}
+	return out, nil
+}
+
 // InlineSignatureImages is html (sanitized compose HTML: a draft, a
 // signature) with its signature images as data: URLs, for showing only:
 // never save it as a draft, as saving drops data: sources.
 func (s *Service) InlineSignatureImages(ctx context.Context, html string) (string, error) {
-	if len(mail.CIDs(html)) == 0 {
+	cids := mail.CIDs(html)
+	if len(cids) == 0 {
 		return html, nil
 	}
-	imgs, err := s.signatureImages(ctx, true)
+	imgs, err := s.signatureImages(ctx, cids, true)
 	if err != nil {
 		return "", err
 	}
@@ -186,7 +241,7 @@ func (s *Service) SignatureShown(ctx context.Context, block string) (string, err
 	if strings.TrimSpace(block) == "" {
 		return "", nil
 	}
-	clean, err := s.sanitizeDraft(ctx, mail.StripMarkers(block))
+	clean, err := s.sanitizeDraft(ctx, 0, mail.StripMarkers(block))
 	if err != nil {
 		return "", err
 	}

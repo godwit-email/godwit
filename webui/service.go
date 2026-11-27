@@ -11,7 +11,7 @@ import (
 
 // Service is the subset of the mail engine the web UI pages call.
 type Service interface {
-	AddAttachmentAt(ctx context.Context, draftID, revision int64, srcPath string) (core.DraftAttachment, int64, error)
+	AddAttachmentAt(ctx context.Context, draftID, revision int64, srcPath string, inline bool) (core.DraftAttachment, int64, error)
 	AnswerQuestion(ctx context.Context, id int64, round int, answers [][]string) error
 	ApplyEditedProposal(ctx context.Context, approvalID int64, edited string) error
 	AskAgain(ctx context.Context, conversationID int64, turn string, input string, quoted []int64) (<-chan core.WitEvent, error)
@@ -25,6 +25,7 @@ type Service interface {
 	CompactConversation(ctx context.Context, id int64) error
 	DeleteDraftIfEmpty(ctx context.Context, id, revision int64) (deleted bool, err error)
 	DraftForApproval(ctx context.Context, approvalID int64) (int64, error)
+	DraftImageFiles(ctx context.Context, draftID int64, cids []string) ([]core.InlineImage, error)
 	EditProposedRule(ctx context.Context, id int64) (core.Rule, error)
 	FailQuestion(ctx context.Context, conv int64, question string, quoted []int64, reason string) error
 	ForgetImageFailure(urls []string)

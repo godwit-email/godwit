@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -45,8 +46,10 @@ var tools = []tool{
 		draftArgs, getDraft},
 	{"create_draft", "Create a draft for the user to review and send; it is not sent. For a reply give reply_to_message_id (and reply_all to answer everyone): the draft is in that message's account, addressed and quoted for you, and to, cc and subject override only if given. A new draft needs to and subject and uses account_id or the default account. body is plain text.", false,
 		`{"type":"object","properties":{"to":{"type":"array","items":{"type":"string"}},"cc":{"type":"array","items":{"type":"string"}},"subject":{"type":"string"},"body":{"type":"string"},"account_id":{"type":"integer","minimum":1},"reply_to_message_id":{"type":"integer","minimum":1},"reply_all":{"type":"boolean"}},"required":["body"],"additionalProperties":false}`, createDraft},
-	{"update_draft", "Change a draft's subject, to, cc or plain-text body; fields left out stay as they are, and the quote and signature are kept. revision is the draft's from get_draft: if the draft changed since, nothing is saved; read it again.", false,
+	{"update_draft", "Change a draft's subject, to, cc or plain-text body; fields left out stay as they are, and the quote and signature are kept, as are the images in the body (after the new text). revision is the draft's from get_draft: if the draft changed since, nothing is saved; read it again.", false,
 		`{"type":"object","properties":{"draft_id":{"type":"integer","minimum":1},"revision":{"type":"integer","minimum":1},"subject":{"type":"string"},"to":{"type":"array","items":{"type":"string"}},"cc":{"type":"array","items":{"type":"string"}},"body":{"type":"string"}},"required":["draft_id","revision"],"additionalProperties":false}`, updateDraft},
+	{"add_draft_image", "Read an image file on this computer and put it in a draft's body, after the text and before the quote and signature, for the user to review; it is not sent. path is the file's path. Only a png, jpeg, gif or webp (by its content) is taken, stored without its metadata (location, camera, text); nothing is fetched from a URL. The image counts toward the message's size limit and is sent inline with the message. revision is the draft's from get_draft: if the draft changed since, nothing is added; read it again.", false,
+		`{"type":"object","properties":{"draft_id":{"type":"integer","minimum":1},"revision":{"type":"integer","minimum":1},"path":{"type":"string","minLength":1}},"required":["draft_id","revision","path"],"additionalProperties":false}`, addDraftImage},
 	{"send_draft", "Ask Godwit to send a draft as it is at revision (from get_draft). The user's Send through MCP setting decides: off fails; confirm (the default) returns at once while Godwit asks the user, who may decline; direct queues it in the outbox. If the draft changed since revision, nothing is sent; read it again.", false,
 		`{"type":"object","properties":{"draft_id":{"type":"integer","minimum":1},"revision":{"type":"integer","minimum":1}},"required":["draft_id","revision"],"additionalProperties":false}`, sendDraft},
 	{"set_reply_deadline", "Sets or clears the date by which the sender wants your reply to a conversation that is waiting on you. Needs the message that asks for it; a quote must appear word for word in that message. Stored only on this device and shown with its source; it reorders the user's views and never sends, moves or changes mail. It cannot replace or clear a date the user set.", false,
@@ -461,10 +464,17 @@ func (e edit) apply(d *core.Draft) {
 		d.Subject = *e.Subject
 	}
 	if e.Body != nil {
-		_, quote, sig := mail.SplitDraft(d.HTML)
-		d.HTML = mail.JoinDraft(paragraphs(*e.Body), quote, sig)
+		ed, quote, sig := mail.SplitDraft(d.HTML)
+		body := paragraphs(*e.Body)
+		for _, id := range mail.CIDs(ed) { // add_draft_image's images stay, after the text
+			body += image(id)
+		}
+		d.HTML = mail.JoinDraft(body, quote, sig)
 	}
 }
+
+// image is the body's <img> of Content-ID id.
+func image(id string) string { return `<img src="cid:` + html.EscapeString(id) + `">` }
 
 func createDraft(ctx context.Context, c *rpc.Client, args json.RawMessage) (string, error) {
 	var a struct {
@@ -529,6 +539,51 @@ func updateDraft(ctx context.Context, c *rpc.Client, args json.RawMessage) (stri
 		return "", errors.New("invalid argument: revision (expected integer ≥ 1)")
 	}
 	return save(ctx, c, a.DraftID, a.Revision, a.edit)
+}
+
+// addDraftImage adds the image to the draft at revision (AddAttachmentAt,
+// inline) and shows it at the end of the body's editable part.
+func addDraftImage(ctx context.Context, c *rpc.Client, args json.RawMessage) (string, error) {
+	var a struct {
+		DraftID  int64  `json:"draft_id"`
+		Revision int64  `json:"revision"`
+		Path     string `json:"path"`
+	}
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
+	path, err := filepath.Abs(a.Path) // relative to where godwit mcp runs, not Godwit
+	if err != nil {
+		return "", err
+	}
+	var raw []json.RawMessage
+	if err := c.Call(ctx, "AddAttachmentAt", &raw, a.DraftID, a.Revision, path, true); err != nil {
+		return "", err
+	}
+	var at core.DraftAttachment
+	var rev int64
+	if len(raw) != 2 || json.Unmarshal(raw[0], &at) != nil || json.Unmarshal(raw[1], &rev) != nil || at.ContentID == "" {
+		return "", errors.New("unexpected reply to AddAttachmentAt")
+	}
+	var d core.Draft
+	if err := c.Call(ctx, "GetDraft", &d, a.DraftID); err != nil {
+		return "", err
+	}
+	if d.Revision != rev { // changed since: the image is stored but not shown, so never sent
+		return "", core.ErrStaleDraft
+	}
+	ed, quote, sig := mail.SplitDraft(d.HTML)
+	if !slices.Contains(mail.CIDs(ed), at.ContentID) {
+		ed += image(at.ContentID)
+	}
+	d.HTML = mail.JoinDraft(ed, quote, sig)
+	if err := c.Call(ctx, "SaveDraft", &d, d); err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	b.WriteString("image added to the body; it is not sent\n")
+	draft(&b, d, true)
+	return b.String(), nil
 }
 
 // sendDraft relays the request; Godwit's core decides by the setting.
@@ -633,7 +688,11 @@ func draft(b *strings.Builder, d core.Draft, full bool) {
 	untrusted(b, id, "quote", mail.HTMLToText(quote))
 	untrusted(b, id, "signature", mail.HTMLToText(sig))
 	for _, at := range d.Attachments {
-		fmt.Fprintf(b, "attachment %d · %d bytes\n", at.ID, at.Size)
+		fmt.Fprintf(b, "attachment %d · %d bytes", at.ID, at.Size)
+		if at.ContentID != "" {
+			b.WriteString(" · image in the body")
+		}
+		b.WriteByte('\n')
 		untrusted(b, id, "attachment_name", at.Filename)
 		untrusted(b, id, "attachment_type", at.ContentType)
 	}

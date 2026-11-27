@@ -1,4 +1,4 @@
-import { RiArrowRightSLine, RiAttachment2, RiRefreshLine } from "@remixicon/react";
+import { RiArrowRightSLine, RiAttachment2, RiImageLine, RiRefreshLine } from "@remixicon/react";
 import { cn } from "cn";
 import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
@@ -205,6 +205,21 @@ const pendingEdit = (a: Approval) =>
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+/** A file the body can show, by its name (Go sniffs its content again). */
+const IMAGE_PATH = /\.(png|jpe?g|gif|webp)$/i;
+
+/** A file's bytes in base64, as ComposePage.AddImage takes them. */
+const base64 = (f: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => {
+      const url = String(r.result);
+      resolve(url.slice(url.indexOf(",") + 1));
+    };
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(f);
+  });
+
 /** update_draft's HTML from its call's JSON arguments; "" for none. */
 function draftHTML(args: string): string {
   try {
@@ -304,6 +319,10 @@ function Compose({
   const [attachments, setAttachments] = useState<Attachment[]>(state.attachments);
   const [tooLarge, setTooLarge] = useState<string[]>([]);
   const [failed, setFailed] = useState<string[]>([]);
+  const [notImage, setNotImage] = useState<string[]>([]);
+  // The draft's images by Content-ID, as data: URLs: the body shows them. A draft only gains images.
+  const [images, setImages] = useState<Record<string, string>>(state.images);
+  const addImages = (more: Record<string, string>) => setImages((m) => ({ ...m, ...more }));
   // at: the Send later time (unix ms) the warnings were for; 0 for a send of now.
   const [warnings, setWarnings] = useState<{ list: SendWarning[]; digest: string; at: number }>({
     list: [],
@@ -420,6 +439,7 @@ function Compose({
       setSignature(sigOf(l));
       setQuote(l.quote);
       setAttachments(l.attachments);
+      if ("images" in l) addImages(l.images);
       setSavedAt(fmt(new Date(l.updatedAt)));
     });
     editorRef.current?.setValue(l.body);
@@ -632,14 +652,32 @@ function Compose({
       }
       setTooLarge(r.tooLarge ?? []);
       setFailed(r.failed ?? []);
+      setNotImage(r.notImage ?? []);
+      if (r.images?.length) {
+        flushSync(() => addImages(Object.fromEntries(r.images.map((i) => [i.cid, i.url]))));
+        editorRef.current?.insertImages(r.images.map((i) => i.cid)); // the body's save follows
+      }
     } catch (e) {
       failure(e);
     }
   };
+  // Image files pasted or dropped on the body, added one after the other.
+  const onImageFiles = async (files: File[]) => {
+    for (const file of files) {
+      await change((rev) => base64(file).then((data) => api.addImage(rev, file.name, data)));
+    }
+  };
   // Files dropped on the window are attached as the attach button's are, and only when it is enabled.
-  const dragging = useFileDrop(!locked && !witLocked, ({ paths }) =>
-    change((rev) => api.attachDropped(rev, paths)),
-  );
+  // Image files dropped on the body go in it (#812), as a pasted one does; the rest are attached.
+  const dragging = useFileDrop(!locked && !witLocked, ({ paths, x, y }) => {
+    const onBody = !!document.elementFromPoint?.(x, y)?.closest("[data-body]");
+    const images = onBody ? paths.filter((p) => IMAGE_PATH.test(p)) : [];
+    const rest = paths.filter((p) => !images.includes(p));
+    void (async () => {
+      if (images.length) await change((rev) => api.attachDropped(rev, images, true));
+      if (rest.length) await change((rev) => api.attachDropped(rev, rest, false));
+    })();
+  });
   // A body operation (a decision, undo) in the saver's queue; its BodyChange is adopted at once.
   const bodyOp = async (op: () => Promise<BodyChange>) => {
     if (!sv) return null;
@@ -770,6 +808,7 @@ function Compose({
         setSignature(sigOf(l));
         setQuote(l.quote);
         setAttachments(l.attachments);
+        addImages(l.images);
       });
       if (mine) {
         await sv.keepMine(l.revision);
@@ -801,9 +840,21 @@ function Compose({
       className="size-7 rounded-md text-foreground/80 disabled:opacity-100"
       aria-label={t("compose.attach")}
       disabled={locked || witLocked} // an attachment bumps the revision: a waiting edit would go stale
-      onClick={() => change((rev) => api.addAttachments(rev))}
+      onClick={() => change((rev) => api.addAttachments(rev, false))}
     >
       <RiAttachment2 className="size-3.75" />
+    </Button>
+  );
+  const insertImage = (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      className="size-7 rounded-md text-foreground/80 disabled:opacity-100"
+      aria-label={t("compose.image")}
+      disabled={locked || witLocked}
+      onClick={() => change((rev) => api.addAttachments(rev, true))}
+    >
+      <RiImageLine className="size-3.75" />
     </Button>
   );
   const title = f.subject.trim() || t("compose.new");
@@ -946,6 +997,7 @@ function Compose({
                   <Review
                     key={reviewing.approval}
                     review={reviewing}
+                    images={images}
                     busy={deciding}
                     onDecide={(accept) => decide((id) => api.decide(id, accept), accept)}
                     onFinish={(ds) => decide((id) => api.finish(id, ds), ds.includes(1))}
@@ -958,6 +1010,7 @@ function Compose({
                 <div
                   data-locked={running || undefined}
                   hidden={!!reviewing}
+                  data-body
                   className={`${BODY} data-locked:bg-sidebar`}
                   onMouseDown={(e) => {
                     if (e.target !== e.currentTarget) return;
@@ -982,7 +1035,14 @@ function Compose({
                           : undefined
                       }
                       toolbarSlot={showEditor ? toolbarSlot : null}
-                      attach={attach}
+                      attach={
+                        <>
+                          {insertImage}
+                          {attach}
+                        </>
+                      }
+                      images={images}
+                      onImageFiles={locked || witLocked ? undefined : (fs) => void onImageFiles(fs)}
                       popover={
                         cmdk &&
                         !locked &&
@@ -1004,12 +1064,17 @@ function Compose({
                   items={attachments}
                   tooLarge={tooLarge}
                   failed={failed}
+                  notImage={notImage}
                   frozen={locked}
                   onRemove={(id) =>
                     change((rev) =>
-                      api
-                        .removeAttachment(id, rev)
-                        .then((c) => ({ ...c, tooLarge: [], failed: [] })),
+                      api.removeAttachment(id, rev).then((c) => ({
+                        ...c,
+                        tooLarge: [],
+                        failed: [],
+                        images: [],
+                        notImage: [],
+                      })),
                     )
                   }
                   t={t}

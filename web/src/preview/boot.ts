@@ -29,6 +29,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
       "streaming",
       "inline",
       "rewrite",
+      "image-review",
       "applied",
       "cmdk",
       "signature",
@@ -56,6 +57,10 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
         "reschedule",
       ].includes(state);
       const scheduledFor = state === "reschedule" ? Date.now() + 86_400_000 : 0;
+      // The proposal removes just the image: the comparison must show what would disappear.
+      const cid = "img-0123456789abcdef0123456789abcdef@godwit";
+      const caption = "<p>Here is our logo.</p>";
+      const illustrated = `${caption}<img src="cid:${cid}" alt="Company logo">`;
       let revision = 1;
       let followed = false;
       const body = () => (revision > 1 || withBody ? fx.compose(mode, true).body : "");
@@ -84,7 +89,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
           ? fx.streaming()
           : state === "applied"
             ? fx.applied()
-            : state === "inline" || state === "rewrite"
+            : state === "inline" || state === "rewrite" || state === "image-review"
               ? fx.pending(state === "inline")
               : state === "cmdk"
                 ? fx.applied()
@@ -94,6 +99,7 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
           ...fx.compose(mode, withBody),
           revision,
           scheduledFor,
+          ...(state === "image-review" && { body: illustrated, images: { [cid]: fx.logo } }),
           ...(state === "translate" && {
             wit: { ...fx.compose(mode, withBody).wit, translateOnly: true },
           }),
@@ -126,7 +132,10 @@ const pages: Record<string, { states: string[]; entry: () => Promise<unknown>; s
           }
           return history();
         },
-        "ComposePage.Review": async () => fx.review(state === "inline"),
+        "ComposePage.Review": async () => ({
+          ...fx.review(state === "inline"),
+          ...(state === "image-review" && { old: illustrated, new: caption }),
+        }),
         "ComposePage.Save": async (e: { revision: number }) => ({
           revision: e.revision,
           conflict: false,

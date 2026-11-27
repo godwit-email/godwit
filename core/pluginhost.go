@@ -204,7 +204,8 @@ func (h *pluginHost) MailUpdateDraft(ctx context.Context, u plugins.DraftUpdate)
 			return errStalePluginDraft
 		}
 		_, q, sig := mail.SplitDraft(d.HTML)
-		d.HTML = mail.JoinDraft(cleanHTML(u.HTML), q, sig)
+		// SaveDraft sanitizes, keeping the draft's own images.
+		d.HTML = mail.JoinDraft(mail.StripMarkers(u.HTML), q, sig)
 		d, err = h.s.SaveDraft(ctx, d) // d.Revision makes it a compare-and-swap
 		if errors.Is(err, ErrStaleDraft) {
 			return errStalePluginDraft

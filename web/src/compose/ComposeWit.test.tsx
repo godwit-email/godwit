@@ -508,6 +508,42 @@ test("rewrite: the new version, compare toggles to 原文 | 新版本", async ()
   expect(screen.queryByRole("region", { name: "原文" })).toBeNull();
 });
 
+const moved = "img-0123456789abcdef0123456789abcdef@godwit";
+const removed = "img-fedcba9876543210fedcba9876543210@godwit";
+const images = { [moved]: "data:image/png;base64,AAAA", [removed]: "data:image/gif;base64,BBBB" };
+
+test("whole-body review shows moved and removed draft images in their original and proposed positions", async () => {
+  const text = "<p>Caption</p>";
+  const unknown = "img-00000000000000000000000000000000@godwit";
+  const untrusted = `<img src="cid:${unknown}"><img src="data:image/png;base64,CCCC"><img src="https://example.org/other.png">`;
+  vi.mocked(api.load).mockResolvedValue({ ...state, images });
+  vi.mocked(api.review).mockResolvedValue({
+    ...inline,
+    inline: false,
+    blocks: [],
+    old: `<img src="cid:${removed}">${text}<img src="cid:${moved}">`,
+    new: `<img src="cid:${moved}" srcset="https://example.org/other.png 2x">${text}${untrusted}`,
+  });
+  await setup(withPending);
+  const blocks = (caption: HTMLElement) =>
+    Array.from(
+      caption.parentElement?.children ?? [],
+      (el) => el.getAttribute("src") ?? el.textContent,
+    );
+  const proposal = await screen.findByText("Caption");
+  expect(blocks(proposal)).toEqual([images[moved], "Caption"]);
+  expect(proposal.parentElement?.querySelector("[srcset]")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "对比原文" }));
+  const original = screen.getByRole("region", { name: "原文" });
+  const revised = screen.getByRole("region", { name: "新版本" });
+  expect(blocks(within(original).getByText("Caption"))).toEqual([
+    images[removed],
+    "Caption",
+    images[moved],
+  ]);
+  expect(blocks(within(revised).getByText("Caption"))).toEqual([images[moved], "Caption"]);
+});
+
 test("locked while running: typing in the body toasts once", async () => {
   vi.mocked(api.ask).mockResolvedValue(rs(7));
   await setup();
@@ -527,13 +563,13 @@ test("locked while running: typing in the body toasts once", async () => {
 });
 
 test("a run on a blank body shows update_draft's text in the read-only body as it comes", async () => {
-  vi.mocked(api.load).mockResolvedValue({ ...state, body: "<p><br></p>" });
+  vi.mocked(api.load).mockResolvedValue({ ...state, body: "<p><br></p>", images });
   vi.mocked(api.ask).mockResolvedValue(rs(7));
   await setup();
   await userEvent.type(screen.getByRole("textbox", { name: "告诉 Wit 你想怎么回" }), "写{Enter}");
   expect(await screen.findByText("助手正在写入正文，暂时不能编辑")).toBeInTheDocument();
   expect(screen.queryByRole("textbox", { name: "正文" })).toBeNull();
-  const html = "<p>Hi <b>Lena</b></p><p>Thanks <img src=x></p>";
+  const html = `<p>Hi <b>Lena</b></p><p>Thanks <img src="cid:${moved}"><img src="${images[moved]}"></p>`;
   emit({
     kind: "tool_call",
     call: { id: "c1", name: "update_draft", args: JSON.stringify({ html }) },

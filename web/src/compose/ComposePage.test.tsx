@@ -15,6 +15,7 @@ vi.mock("@/mygo", () => ({
     latest: vi.fn(),
     setAccount: vi.fn(),
     addAttachments: vi.fn(),
+    addImage: vi.fn(),
     attachDropped: vi.fn(),
     removeAttachment: vi.fn(),
     send: vi.fn(),
@@ -43,7 +44,7 @@ vi.mock("@/mygo", () => ({
 // Plate has its own tests; here the body is a textarea that, like Plate, reads `initial` at mount
 // and takes no input while read-only.
 vi.mock("./editor/Editor", async () => {
-  const { useImperativeHandle, useState } = await import("react");
+  const { useImperativeHandle, useRef, useState } = await import("react");
   return {
     Editor(p: {
       initial: string;
@@ -51,10 +52,25 @@ vi.mock("./editor/Editor", async () => {
       onChange(html: string): void;
       t(k: string): string;
       attach?: React.ReactNode;
-      ref?: React.Ref<{ setValue(html: string): void }>;
+      ref?: React.Ref<{ setValue(html: string): void; insertImages(cids: string[]): void }>;
     }) {
       const [v, setV] = useState(p.initial);
-      useImperativeHandle(p.ref, () => ({ setValue: setV }), []);
+      const now = useRef(v);
+      now.current = v;
+      const on = useRef(p.onChange);
+      on.current = p.onChange;
+      useImperativeHandle(
+        p.ref,
+        () => ({
+          setValue: setV,
+          insertImages(cids: string[]) {
+            const next = now.current + cids.map((c) => `<img src="cid:${c}">`).join("");
+            setV(next);
+            on.current(next);
+          },
+        }),
+        [],
+      );
       return (
         <div>
           {p.attach}
@@ -94,6 +110,7 @@ const state = {
   quote: "> 原文",
   signatureHtml: "<p>-- me</p>",
   attachments: [],
+  images: {},
   revision: 7,
   updatedAt: new Date(2026, 9, 10, 9, 5).getTime(),
   scheduledFor: 0,
@@ -672,6 +689,8 @@ test("attachments: add reports oversize, × removes", async () => {
     conflict: false,
     signatureHtml: "<p>-- me</p>",
     tooLarge: ["big.zip"],
+    images: [],
+    notImage: [],
     failed: ["bad.bin"],
     updatedAt: new Date(2026, 9, 10, 11, 43).getTime(),
   });
@@ -685,7 +704,7 @@ test("attachments: add reports oversize, × removes", async () => {
   render(<ComposePage />);
   await body();
   await userEvent.click(screen.getByRole("button", { name: "添加附件" }));
-  expect(api.addAttachments).toHaveBeenCalledWith(7);
+  expect(api.addAttachments).toHaveBeenCalledWith(7, false);
   expect(screen.getByText("a.pdf")).toBeInTheDocument();
   expect(screen.getByText("big.zip")).toBeInTheDocument();
   expect(screen.getByText("未能添加：bad.bin")).toBeInTheDocument();
@@ -693,6 +712,33 @@ test("attachments: add reports oversize, × removes", async () => {
   await userEvent.click(screen.getByRole("button", { name: "移除 a.pdf" }));
   expect(api.removeAttachment).toHaveBeenCalledWith(3, 9);
   expect(screen.queryByText("a.pdf")).not.toBeInTheDocument();
+});
+
+test("insert image: adds one for the body and saves it there; a file no image is said", async () => {
+  const cid = `img-${"c".repeat(32)}@godwit`;
+  vi.mocked(api.addAttachments).mockResolvedValue({
+    revision: 8,
+    attachments: [],
+    conflict: false,
+    signatureHtml: "<p>-- me</p>",
+    tooLarge: [],
+    failed: [],
+    images: [{ cid, url: "data:image/png;base64,AA==" }],
+    notImage: ["scan.heic"],
+    updatedAt: 0,
+  });
+  vi.mocked(api.save).mockResolvedValue({ revision: 9, conflict: false });
+  render(<ComposePage />);
+  await body();
+  await userEvent.click(screen.getByRole("button", { name: "插入图片" }));
+  expect(api.addAttachments).toHaveBeenCalledWith(7, true);
+  expect(
+    screen.getByText("正文中只能插入 PNG、JPEG、GIF 或 WebP 图片：scan.heic"),
+  ).toBeInTheDocument();
+  await act(async () => h.closing?.(3));
+  expect(api.save).toHaveBeenCalledWith(
+    expect.objectContaining({ body: `正文<img src="cid:${cid}">`, revision: 8 }),
+  );
 });
 
 const conflictBySend = async () => {
@@ -804,6 +850,8 @@ test("a conflict stopping the adding part way still lists the files added", asyn
     updatedAt: 0,
     tooLarge: [],
     failed: [],
+    images: [],
+    notImage: [],
   });
   render(<ComposePage />);
   await body();
@@ -836,6 +884,8 @@ describe("files dropped from the file manager", () => {
       signatureHtml: "<p>-- me</p>",
       tooLarge: ["big.zip"],
       failed: ["Photos"],
+      images: [],
+      notImage: [],
       updatedAt: 0,
     });
     render(<ComposePage />);
@@ -851,12 +901,53 @@ describe("files dropped from the file manager", () => {
     drag("drop");
     expect(overlay()).not.toBeInTheDocument();
     await act(async () => emit("mygo:file-drop", { paths, x: 10, y: 10 }));
-    expect(api.attachDropped).toHaveBeenCalledWith(7, paths);
+    expect(api.attachDropped).toHaveBeenCalledWith(7, paths, false); // not on the body
     expect(screen.getByText("a.pdf")).toBeInTheDocument();
     expect(screen.getByText("b.png")).toBeInTheDocument();
     expect(screen.getByText("big.zip")).toBeInTheDocument();
     expect(screen.getByText("未能添加：Photos")).toBeInTheDocument();
     expect(api.addAttachments).not.toHaveBeenCalled();
+  });
+
+  test("image files dropped on the body go in it; the other files are attached", async () => {
+    const cid = `img-${"d".repeat(32)}@godwit`;
+    const result = {
+      conflict: false,
+      signatureHtml: "<p>-- me</p>",
+      tooLarge: [],
+      failed: [],
+      notImage: [],
+      updatedAt: 0,
+    };
+    vi.mocked(api.attachDropped)
+      .mockResolvedValueOnce({
+        ...result,
+        revision: 8,
+        attachments: [],
+        images: [{ cid, url: "data:image/png;base64,AA==" }],
+      })
+      .mockResolvedValueOnce({
+        ...result,
+        revision: 9,
+        attachments: [{ id: 3, filename: "a.pdf", size: 1024 }],
+        images: [],
+      });
+    render(<ComposePage />);
+    const el = await body();
+    document.elementFromPoint = () => el;
+    try {
+      await act(async () =>
+        emit("mygo:file-drop", { paths: ["/d/a.pdf", "/d/Shot.PNG"], x: 5, y: 5 }),
+      );
+    } finally {
+      delete (document as { elementFromPoint?: unknown }).elementFromPoint;
+    }
+    expect(api.attachDropped).toHaveBeenNthCalledWith(1, 7, ["/d/Shot.PNG"], true);
+    await waitFor(() =>
+      expect(api.attachDropped).toHaveBeenNthCalledWith(2, 8, ["/d/a.pdf"], false),
+    );
+    expect(el).toHaveValue(`正文<img src="cid:${cid}">`);
+    expect(await screen.findByText("a.pdf")).toBeInTheDocument();
   });
 
   test("a drag of text shows no drop target", async () => {

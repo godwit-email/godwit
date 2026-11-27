@@ -189,6 +189,24 @@ func TestMCPAllowedDraftModes(t *testing.T) {
 	}
 }
 
+// The mcp role adds an image for a draft's body, never a file attachment.
+func TestMCPAllowedInlineAttachmentOnly(t *testing.T) {
+	p := func(inline string) []json.RawMessage {
+		return []json.RawMessage{json.RawMessage(`1`), json.RawMessage(`2`), json.RawMessage(`"/tmp/a.png"`), json.RawMessage(inline)}
+	}
+	if !rpc.MCPAllowed("AddAttachmentAt", p(`true`)) {
+		t.Error("an inline image refused")
+	}
+	for _, inline := range []string{`false`, `"true"`, `1`, `null`} {
+		if rpc.MCPAllowed("AddAttachmentAt", p(inline)) {
+			t.Errorf("AddAttachmentAt with inline %s allowed", inline)
+		}
+	}
+	if rpc.MCPAllowed("AddAttachmentAt", p(`true`)[:3]) || rpc.MCPAllowed("AddAttachment", p(`true`)) {
+		t.Error("an attachment without inline allowed")
+	}
+}
+
 func TestStaleSocket(t *testing.T) {
 	dir := shortDir(t)
 	path := filepath.Join(dir, rpc.SocketName)

@@ -274,13 +274,18 @@ func fontAttrs(n *html.Node, s *Inline) {
 
 var imageData = regexp.MustCompile(`^data:image/(png|jpeg|gif|webp)[;,]`)
 
+// draftImage is an image a draft added to its body (core's inline images, #812).
+var draftImage = regexp.MustCompile(`^cid:img-[0-9a-f]{32}@godwit$`)
+
 func (c *conv) image(n *html.Node, x ctx) {
 	src, alt := strings.TrimSpace(attr(n, "src")), attr(n, "alt")
 	l := strings.ToLower(src)
-	if c.compose && !imageData.MatchString(l) { // a draft shows only its signature images, as data:
-		return
-	}
-	if !imageData.MatchString(l) && !strings.HasPrefix(l, "http://") && !strings.HasPrefix(l, "https://") {
+	if c.compose {
+		// A draft shows its signature images, as data:, and its own, as cid:.
+		if !imageData.MatchString(l) && !draftImage.MatchString(l) {
+			return
+		}
+	} else if !imageData.MatchString(l) && !strings.HasPrefix(l, "http://") && !strings.HasPrefix(l, "https://") {
 		c.text(alt, x)
 		return
 	}

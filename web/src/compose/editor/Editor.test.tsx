@@ -1,6 +1,7 @@
 import { act, createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createRef } from "react";
+import { SignatureEditor } from "@/signature/Signature";
 import { Editor, type EditorHandle } from "./Editor";
 
 // jsdom lacks isContentEditable, which Slate checks on every event target.
@@ -509,5 +510,137 @@ describe("Editor", () => {
       await waitFor(() => expect(last(onChange)).toBe(want));
       unmount();
     }
+  });
+});
+
+describe("draft images", () => {
+  const cid = `img-${"a".repeat(32)}@godwit`;
+  const url = "data:image/png;base64,iVBORw0KGgo=";
+
+  it("shows a loaded cid: image from images, and keeps it as cid: in the HTML", async () => {
+    const onChange = vi.fn();
+    const ref = createRef<EditorHandle>();
+    render(
+      <Editor
+        ref={ref}
+        initial={`<p>see</p><img src="cid:${cid}">`}
+        readOnly={false}
+        placeholder="p"
+        onChange={onChange}
+        onComposing={() => {}}
+        t={t}
+        images={{ [cid]: url }}
+      />,
+    );
+    const box = screen.getByLabelText("body");
+    expect(box.querySelector("img")?.getAttribute("src")).toBe(url);
+    act(() => ref.current?.insertImages([cid.replace("a", "b")]));
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    const html = onChange.mock.lastCall?.[0] as string;
+    expect(html).toContain(`<img src="cid:${cid}">`);
+    expect(html).toContain(`<img src="cid:${cid.replace("a", "b")}"><p><br></p>`);
+    expect(html).not.toContain("data:");
+  });
+
+  it.each([false, true])(
+    "cuts and pastes a draft image (with surrounding text: %s)",
+    async (mixed) => {
+      const onChange = vi.fn();
+      const image = `<img src="cid:${cid}">`;
+      const initial = `<p>left</p>${image}<p><strong>right</strong></p>`;
+      const ui = (images: Record<string, string>) => (
+        <Editor
+          initial={initial}
+          readOnly={false}
+          placeholder="p"
+          onChange={onChange}
+          onComposing={() => {}}
+          t={t}
+          images={images}
+        />
+      );
+      const { rerender } = render(ui({}));
+      rerender(ui({ [cid]: url })); // the image was added after the editor mounted
+      const box = screen.getByLabelText("body");
+      const texts = box.querySelectorAll("[data-slate-string]");
+      const spacer = box.querySelector("[data-slate-void] [data-slate-zero-width]")
+        ?.firstChild as Node;
+      await act(async () => {
+        box.focus();
+        const r = document.createRange();
+        r.setStart(mixed ? (texts[0].firstChild as Node) : spacer, mixed ? 2 : 0);
+        r.setEnd(mixed ? (texts[1].firstChild as Node) : spacer, mixed ? 2 : 0);
+        window.getSelection()?.removeAllRanges();
+        window.getSelection()?.addRange(r);
+        document.dispatchEvent(new Event("selectionchange"));
+        await new Promise((res) => setTimeout(res, 150));
+      });
+      const values = new Map<string, string>();
+      const clipboardData = {
+        files: [],
+        get types() {
+          return [...values.keys()];
+        },
+        getData: (type: string) => values.get(type) ?? "",
+        setData: (type: string, value: string) => values.set(type, value),
+      };
+      fireEvent.cut(box, { clipboardData });
+      await waitFor(() => expect(box.querySelector("img")).toBeNull());
+      await select(box, 1, mixed ? 1 : 0);
+      fireEvent.paste(box, { clipboardData });
+      const want = mixed
+        ? `<p>lft</p>${image}<p><strong>right</strong></p>`
+        : `<p>l</p>${image}<p>eft</p><p><strong>right</strong></p>`;
+      await waitFor(() => expect(last(onChange)).toBe(want));
+    },
+  );
+
+  it("drops clipboard images in the signature editor while retaining formatted text", async () => {
+    const onChange = vi.fn();
+    render(
+      <SignatureEditor initial="<p>sig</p>" onChange={onChange} pickImage={async () => ""} t={t} />,
+    );
+    const box = screen.getByLabelText("settings.account.signature.label");
+    await select(box, 3, 0);
+    const fragment = [
+      { type: "p", children: [{ text: "!", bold: true }] },
+      ...[url, `cid:${cid}`].map((url) => ({ type: "img", url, children: [{ text: "" }] })),
+    ];
+    const format = "application/x-slate-fragment";
+    fireEvent.paste(box, {
+      clipboardData: {
+        files: [],
+        types: [format],
+        getData: (key: string) =>
+          key === format ? btoa(encodeURIComponent(JSON.stringify(fragment))) : "",
+      },
+    });
+    await waitFor(() => expect(last(onChange)).toBe("<p>sig<strong>!</strong></p>"));
+  });
+
+  it("hands pasted image files to onImageFiles, not text that carries a picture", () => {
+    const onImageFiles = vi.fn();
+    render(
+      <Editor
+        initial="<p>x</p>"
+        readOnly={false}
+        placeholder="p"
+        onChange={() => {}}
+        onComposing={() => {}}
+        t={t}
+        onImageFiles={onImageFiles}
+      />,
+    );
+    const box = screen.getByLabelText("body");
+    const png = new File([new Uint8Array([0x89, 0x50])], "shot.png", { type: "image/png" });
+    const clip = (text: string) => ({
+      files: [png],
+      getData: (k: string) => (k === "text/plain" ? text : ""),
+      types: ["Files"],
+    });
+    fireEvent.paste(box, { clipboardData: clip("from Word") });
+    expect(onImageFiles).not.toHaveBeenCalled();
+    fireEvent.paste(box, { clipboardData: clip("") });
+    expect(onImageFiles).toHaveBeenCalledWith([png]);
   });
 });
