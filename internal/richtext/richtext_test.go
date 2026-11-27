@@ -80,11 +80,14 @@ func TestFromComposeHTML(t *testing.T) {
 }
 
 func TestFromComposeHTMLImages(t *testing.T) {
-	d := FromComposeHTML(`<p>a</p><img src="data:image/png;base64,AAAA"><img src="https://t.example/p.png" alt="x"><img src="cid:sig-a@godwit">`)
+	own := "cid:img-" + strings.Repeat("0", 32) + "@godwit"
+	d := FromComposeHTML(`<p>a</p><img src="data:image/png;base64,AAAA"><img src="https://t.example/p.png" alt="x"><img src="cid:sig-a@godwit"><img src="` + own + `">`)
 	assert.Equal(t, []Block{
 		{Kind: Paragraph, Inlines: []Inline{{Text: "a"}}},
 		{Kind: ImageBlock, Image: &Image{Src: "data:image/png;base64,AAAA"}},
-	}, d.Blocks, "only data: images, as a draft's signature images are shown")
+		{Kind: ImageBlock, Image: &Image{Src: own}},
+	}, d.Blocks, "data: images (a signature's as shown) and the draft's own cid: images")
+	assert.Equal(t, d, FromComposeHTML(ToHTML(d)), "kept through the review's round trip")
 }
 
 func TestTables(t *testing.T) {

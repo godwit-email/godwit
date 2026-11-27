@@ -178,3 +178,22 @@ func TestInlineImageKeptThroughWitRewrite(t *testing.T) {
 	ed, _, _ = parts(t, e.getDraft(t, d.ID).HTML)
 	assert.Equal(t, "<p>Please see the completed form below.</p>"+img, ed)
 }
+
+// An image removed by Wit, the text unchanged, is a change, not no_change.
+func TestInlineImageRemovalIsAChange(t *testing.T) {
+	e := newAssistEnv(t)
+	d := e.replyDraft(t, "<p>See below.</p>")
+	a, err := e.s.AddAttachment(t.Context(), d.ID, imageFile(t, "x.png", logo(t, 9)), true)
+	require.NoError(t, err)
+	d = e.getDraft(t, d.ID)
+	_, q, sig := parts(t, d.HTML)
+	d.HTML = mail.JoinDraft(`<p>See below.</p><img src="cid:`+a.ContentID+`"/>`, q, sig)
+	_, err = e.s.SaveDraft(t.Context(), d)
+	require.NoError(t, err)
+
+	p := e.propose(t, d.ID, "<p>See below.</p>").Approvals[0]
+	assert.NotEqual(t, kindNoChange, p.Summary)
+	e.accept(t, p)
+	ed, _, _ := parts(t, e.getDraft(t, d.ID).HTML)
+	assert.Equal(t, "<p>See below.</p>", ed)
+}

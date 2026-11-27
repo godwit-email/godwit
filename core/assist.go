@@ -463,7 +463,10 @@ func (s *Service) proposeUpdateWithSubject(ctx context.Context, draftID int64, s
 		return prepared{}, err
 	}
 	newSubject := subject != nil && strings.TrimSpace(*subject) != "" && *subject != d.Subject // a blank subject would erase it unseen
-	if !mail.Blank(old) && !newSubject && sameHTML(old, h) {
+	// The same sanitized HTML: a change of formatting alone (bold, a link) is a
+	// change, and so is whitespace (<pre> and white-space styles show it) and an
+	// image of the draft added or removed.
+	if !mail.Blank(old) && !newSubject && clean(old) == clean(h) {
 		b, err := json.Marshal(updateArgs{DraftID: d.ID, Revision: d.Revision, Old: old, HTML: h})
 		if err != nil {
 			return prepared{}, err
@@ -1048,11 +1051,6 @@ func changeKind(ctx context.Context, old, new string) (string, error) {
 	}
 	return kindPartial, nil
 }
-
-// sameHTML reports whether two editable parts are the same sanitized HTML: a
-// change of formatting alone (bold, a link) is a change, and so is whitespace,
-// which <pre> and white-space styles show.
-func sameHTML(a, b string) bool { return cleanHTML(a) == cleanHTML(b) }
 
 func words(h string) []string {
 	var out []string
