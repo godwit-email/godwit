@@ -1379,6 +1379,7 @@
   "settings_show_tray_icon_help": "登入驗證碼橫幅和最近的驗證碼需要此圖示。隱藏後，請從 Dock 或工作列開啟 Godwit。",
   "settings_unread_in_menu_bar": "在選單列顯示未讀數",
   "settings_unread_on_app_icon": "在應用程式圖示顯示未讀數",
+  "settings_unread_on_app_icon_help": "主視窗關閉時不顯示：此時 Godwit 只留在選單列，不佔 Dock 圖示。",
   "shell_back": "返回",
   "shell_forward": "前進",
   "shell_nav_back_to": "返回{arg1}",

@@ -1379,6 +1379,7 @@
   "settings_show_tray_icon_help": "Biểu ngữ mã đăng nhập và các mã gần đây cần biểu tượng này. Khi ẩn, hãy mở Godwit từ Dock hoặc thanh tác vụ.",
   "settings_unread_in_menu_bar": "Hiện số thư chưa đọc trên thanh menu",
   "settings_unread_on_app_icon": "Hiện số thư chưa đọc trên biểu tượng ứng dụng",
+  "settings_unread_on_app_icon_help": "Không hiện khi cửa sổ chính đã đóng: lúc đó Godwit chỉ ở trên thanh menu, không có biểu tượng trên Dock.",
   "shell_back": "Quay lại",
   "shell_forward": "Tiếp theo",
   "shell_nav_back_to": "Quay lại {arg1}",

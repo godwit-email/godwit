@@ -1379,6 +1379,7 @@
   "settings_show_tray_icon_help": "Oturum açma kodu başlıkları ve son kodlar bu simgeyi gerektirir. Simge olmadan Godwit’i Dock’tan veya görev çubuğundan açın.",
   "settings_unread_in_menu_bar": "Okunmamış sayısını menü çubuğunda göster",
   "settings_unread_on_app_icon": "Okunmamış sayısını uygulama simgesinde göster",
+  "settings_unread_on_app_icon_help": "Ana pencere kapalıyken gösterilmez: Godwit o sırada Dock simgesi olmadan yalnızca menü çubuğunda kalır.",
   "shell_back": "Geri",
   "shell_forward": "İleri",
   "shell_nav_back_to": "{arg1} görünümüne dön",

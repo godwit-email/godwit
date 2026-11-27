@@ -375,6 +375,8 @@ func gui(ctx context.Context, dataDir, open string) int {
 				a.OnUI(func() {
 					if mc.closed && !quitAsked && windows.Count() == 0 {
 						mc.close() // decided again, now that none is open
+					} else if windows.Count() > 0 {
+						mc.redock() // a compose window opened from the tray needs its Dock tile
 					}
 				})
 				go reportOrRetry()
@@ -419,6 +421,10 @@ func gui(ctx context.Context, dataDir, open string) int {
 				},
 				hidden: func() bool { return !win.IsVisible() || win.IsMinimized() },
 				busy:   a.Busy,
+				offDock: func() bool {
+					return hidesDock(runtime.GOOS, a.TrayIconShown(), windows.Count())
+				},
+				dock: plat.showInDock,
 				after: func(d time.Duration, f func()) func() bool {
 					return time.AfterFunc(d, func() { a.OnUI(f) }).Stop
 				},

@@ -1379,6 +1379,7 @@
   "settings_show_tray_icon_help": "Banners met inlogcodes en recente codes hebben dit pictogram nodig. Zonder pictogram open je Godwit via het Dock of de taakbalk.",
   "settings_unread_in_menu_bar": "Aantal ongelezen berichten tonen in de menubalk",
   "settings_unread_on_app_icon": "Aantal ongelezen berichten tonen op het app-pictogram",
+  "settings_unread_on_app_icon_help": "Niet zichtbaar als het hoofdvenster gesloten is: Godwit staat dan alleen in de menubalk, zonder Dock-symbool.",
   "shell_back": "Terug",
   "shell_forward": "Vooruit",
   "shell_nav_back_to": "Terug naar {arg1}",

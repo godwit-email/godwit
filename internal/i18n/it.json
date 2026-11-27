@@ -1379,6 +1379,7 @@
   "settings_show_tray_icon_help": "I banner dei codici di accesso e i codici recenti richiedono questa icona. Senza di essa, apri Godwit dal Dock o dalla barra delle applicazioni.",
   "settings_unread_in_menu_bar": "Mostra il conteggio dei non letti nella barra dei menu",
   "settings_unread_on_app_icon": "Mostra il conteggio dei non letti sull’icona dell’app",
+  "settings_unread_on_app_icon_help": "Non visibile con la finestra principale chiusa: Godwit resta allora solo nella barra dei menu, senza icona nel Dock.",
   "shell_back": "Indietro",
   "shell_forward": "Avanti",
   "shell_nav_back_to": "Torna a {arg1}",
