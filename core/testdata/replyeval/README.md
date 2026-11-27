@@ -5,9 +5,10 @@ conversations, and the date by which the newest email wants the user's reply.
 The eval delivers each conversation to a test IMAP server, syncs it, runs the
 real `summarize` skill with `replyByFormat` (`core/threaddigest.go`) appended
 to its prompt, reads the two lines with `parseReplyBy` and checks them with
-`replyBy.check`, as the product will (#852). It scores what is left against
-the dates here, with no model as referee. Production summaries do not ask for
-the lines.
+`replyBy.check`, as the product does (#852). It scores what is left against
+the dates here, with no model as referee. 收到就总结, which would find dates
+in the background, stays hidden behind `GODWIT_SUMMARY_ON_ARRIVAL=1` until
+this eval passes.
 
 The cases here are synthetic, one per hard case: relative dates, explicit
 times, time zones, the sender's own deadline, pay-not-reply, quoted and older
@@ -26,7 +27,7 @@ Written down before the first run, in `replyeval_harness_test.go`:
   label has one (a time the label has not is fine). A missed date (none where
   there is one) is reported but is not a wrong reply date.
 - Lines that do not read or do not pass the check count as none, as the product
-  will treat them, and are also counted as "dropped".
+  treats them, and are also counted as "dropped".
 - The summary itself must not get worse: a person reads the samples (below)
   and compares them.
 
