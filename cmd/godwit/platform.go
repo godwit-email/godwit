@@ -862,8 +862,9 @@ func (fs *composeFrames) set(win int, f *app.ComposeFrame) {
 // closing is always prevented and asked of ws, and the page never leaves
 // its entry nor opens windows. Native draws the window: its title bar, the
 // page's web view under it and the toasts over it (app.ComposeFrame, by view);
-// frames keeps the frame while the window is open.
-func newComposeWindow(ws *webui.Windows, cas *cascade, frames *composeFrames, view func(*app.ComposeFrame) func(*ui.Context)) webui.Window {
+// frames keeps the frame while the window is open. Files dropped on it are
+// told to pages, the only paths its page may attach.
+func newComposeWindow(ws *webui.Windows, pages *webui.Compose, cas *cascade, frames *composeFrames, view func(*app.ComposeFrame) func(*ui.Context)) webui.Window {
 	opts := composeWindowOptions(runtime.GOOS)
 	entry := opts.URL
 	// Set after NewWindow, which called off the main thread returns while the
@@ -890,6 +891,7 @@ func newComposeWindow(ws *webui.Windows, cas *cascade, frames *composeFrames, vi
 		v.Focus()
 		w.Invalidate()
 	}
+	w.OnFileDrop(func(e *mygo.FileDropEvent) { pages.Dropped(w.ID(), e.Paths) })
 	w.OnClose(func(e *mygo.CloseEvent) {
 		e.PreventDefault()
 		ws.RequestClose(w.ID())

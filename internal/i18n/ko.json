@@ -62,6 +62,7 @@
   "common_retry": "다시 시도",
   "common_save": "저장",
   "compose_attach": "파일 첨부",
+  "compose_attach_drop": "놓아서 파일 첨부",
   "compose_attach_failed": "첨부하지 못했습니다: {arg1}",
   "compose_attach_too_large": "첨부 파일이 최대 크기({arg1})를 초과했습니다",
   "compose_bcc": "숨은 참조",

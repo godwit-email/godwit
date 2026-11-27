@@ -35,8 +35,9 @@ type session struct {
 	draftID          int64
 	quote, signature string // HTML, kept as loaded
 	loaded           bool
-	closed           bool // released: calls get ErrNoDraft
-	gone             bool // sent: calls get ErrNoDraft, nothing to release
+	closed           bool            // released: calls get ErrNoDraft
+	gone             bool            // sent: calls get ErrNoDraft, nothing to release
+	dropped          map[string]bool // paths dropped on the window (Compose.Dropped); guarded by Compose.mu
 }
 
 // adopt keeps d's quote and signature as the ones the page does not edit.
@@ -112,6 +113,31 @@ func (c *Compose) Release(winID int) {
 	if err != nil {
 		log.Printf("releasing compose window %d: %v", winID, err)
 	}
+}
+
+// Dropped records paths as dropped on window winID from the file manager:
+// the only paths AttachDropped takes from its page.
+func (c *Compose) Dropped(winID int, paths []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	s := c.sessions[winID]
+	if s == nil {
+		return
+	}
+	if s.dropped == nil {
+		s.dropped = map[string]bool{}
+	}
+	for _, p := range paths {
+		s.dropped[p] = true
+	}
+}
+
+// wasDropped reports whether path was dropped on window winID.
+func (c *Compose) wasDropped(winID int, path string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	s := c.sessions[winID]
+	return s != nil && s.dropped[path]
 }
 
 // exists reports whether draft id is still stored.
@@ -376,7 +402,35 @@ func (p *ComposePage) AddAttachments(ctx context.Context, revision int64) (Attac
 	if err != nil {
 		return AttachResult{}, err
 	}
-	_, svc, s, err = p.open(ctx)
+	return p.attach(ctx, revision, paths, res)
+}
+
+// AttachDropped adds the files at paths, dropped on the calling window
+// (Compose.Dropped), to its draft as AddAttachments does with the files
+// picked; a path not dropped there is Failed, so a page attaches no file
+// the user did not hand it. A folder is Failed too.
+func (p *ComposePage) AttachDropped(ctx context.Context, revision int64, paths []string) (AttachResult, error) {
+	res := AttachResult{TooLarge: []string{}, Failed: []string{}}
+	win, ok := p.d.WinOf(ctx)
+	if !ok {
+		return AttachResult{}, ErrNoDraft
+	}
+	var take []string
+	for _, path := range paths {
+		if p.c.wasDropped(win, path) {
+			take = append(take, path)
+		} else {
+			log.Printf("attaching %s: not dropped on window %d", path, win)
+			res.Failed = append(res.Failed, filepath.Base(path))
+		}
+	}
+	return p.attach(ctx, revision, take, res)
+}
+
+// attach adds the files at paths to the calling window's draft from
+// revision on, reporting into res.
+func (p *ComposePage) attach(ctx context.Context, revision int64, paths []string, res AttachResult) (AttachResult, error) {
+	_, svc, s, err := p.open(ctx)
 	if err != nil {
 		return AttachResult{}, err
 	}
@@ -400,7 +454,8 @@ func (p *ComposePage) AddAttachments(ctx context.Context, revision int64) (Attac
 			break
 		}
 	}
-	if d, err = svc.GetDraft(ctx, s.draftID); err != nil {
+	d, err := svc.GetDraft(ctx, s.draftID)
+	if err != nil {
 		return AttachResult{}, err
 	}
 	if res.Change, err = changeOf(ctx, svc, d); err != nil {

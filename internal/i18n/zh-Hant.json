@@ -62,6 +62,7 @@
   "common_retry": "重試",
   "common_save": "儲存",
   "compose_attach": "加入附件",
+  "compose_attach_drop": "放開以加入附件",
   "compose_attach_failed": "未能加入：{arg1}",
   "compose_attach_too_large": "附件超過了 {arg1} 的上限",
   "compose_bcc": "密件副本",
