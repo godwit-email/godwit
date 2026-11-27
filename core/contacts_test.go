@@ -1,6 +1,7 @@
 package core
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -478,4 +479,48 @@ func TestBareFromAddressBookFallback(t *testing.T) {
 	gm3, err := e.s.GetMessageLazyImages(bg, bareID, false)
 	require.NoError(t, err)
 	assert.Equal(t, "", gm3.FromName)
+}
+
+// enabledCardComponentOf must find, from one address, exactly the component the
+// full merge does: chains across cards and books, but never through own
+// addresses, empty keys or disabled collections.
+func TestEnabledCardComponentOfMatchesFullMerge(t *testing.T) {
+	f := newAvatarFixture(t, http.NotFound)
+	ctx := t.Context()
+	for _, q := range []string{
+		`INSERT INTO address_books(id, url, sort_order) VALUES (1, 'https://a.example', 0), (2, 'https://b.example', 1)`,
+		`INSERT INTO address_book_collections(id, address_book_id, href, enabled) VALUES (1, 1, '/1', 1), (2, 1, '/2', 0), (3, 2, '/3', 1)`,
+		`INSERT INTO address_book_cards(id, collection_id, href) VALUES
+			(1, 1, 'a'), (2, 1, 'b'), (3, 1, 'c'), (4, 1, 'd'), (5, 1, 'e'), (6, 1, 'f'),
+			(7, 2, 'g'), (8, 3, 'h'), (9, 3, 'i'), (10, 3, 'j')`,
+		`INSERT INTO address_book_emails(card_id, pos, addr_key) VALUES
+			(1, 0, 'a@x.example'), (1, 1, 'b@x.example'),
+			(2, 0, 'c@x.example'), (2, 1, 'b@x.example'),
+			(3, 0, 'me@example.com'), (3, 1, 'd@x.example'),
+			(4, 0, 'd@x.example'),
+			(5, 0, 'e@x.example'), (5, 1, 'me@example.com'),
+			(6, 0, 'me@example.com'),
+			(7, 0, 'c@x.example'), (7, 1, 'off@x.example'),
+			(8, 0, 'h@x.example'), (8, 1, 'a@x.example'), (8, 2, ''),
+			(9, 0, 'off@x.example'), (9, 1, 'i@x.example'),
+			(10, 0, 'h@x.example')`,
+	} {
+		_, err := f.s.db.Execute(ctx, q)
+		require.NoError(t, err)
+	}
+	own, err := f.s.ownAddrSet(ctx)
+	require.NoError(t, err)
+	comps, addrToComp, err := f.s.enabledCardComponents(ctx, own)
+	require.NoError(t, err)
+	require.Len(t, comps, 4) // {a,b,c,h}, {d}, {e}, {off,i}
+	for addr, idx := range addrToComp {
+		addrs, cardIDs, err := f.s.enabledCardComponentOf(ctx, addr, own)
+		require.NoError(t, err)
+		assert.ElementsMatch(t, comps[idx].addrs, addrs, addr)
+		assert.ElementsMatch(t, comps[idx].cardIDs, cardIDs, addr)
+	}
+	addrs, cardIDs, err := f.s.enabledCardComponentOf(ctx, "nobody@x.example", own)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"nobody@x.example"}, addrs)
+	assert.Empty(t, cardIDs)
 }

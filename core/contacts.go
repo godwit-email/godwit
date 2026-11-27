@@ -334,6 +334,42 @@ func (s *Service) enabledCardComponents(ctx context.Context, skip map[string]boo
 	return comps, addrToComp, nil
 }
 
+// enabledCardComponentOf is the enabledCardComponents component holding email
+// (a non-own AddrKey), found from email's cards outward instead of merging
+// every card: its addresses and card IDs, or just email and no cards when no
+// enabled card has it. Cards join only through non-own addresses, as there.
+func (s *Service) enabledCardComponentOf(ctx context.Context, email string, skip map[string]bool) ([]string, []int64, error) {
+	addrs := []string{email}
+	seen := map[string]bool{email: true}
+	var cardIDs []int64
+	seenCard := map[int64]bool{}
+	for next := addrs; len(next) > 0; {
+		nb, _ := json.Marshal(next)
+		rows, err := s.db.Query(ctx, `SELECT e.card_id, e.addr_key
+			FROM address_book_emails e
+			JOIN address_book_cards c ON c.id = e.card_id
+			JOIN address_book_collections col ON col.id = c.collection_id AND col.enabled = 1
+			WHERE e.card_id IN (SELECT card_id FROM address_book_emails WHERE addr_key IN (SELECT value FROM json_each(?)))
+			ORDER BY e.card_id ASC, e.pos ASC`, string(nb))
+		if err != nil {
+			return nil, nil, err
+		}
+		next = nil
+		for _, r := range rows.Values {
+			if cid := store.Int(r[0]); !seenCard[cid] {
+				seenCard[cid] = true
+				cardIDs = append(cardIDs, cid)
+			}
+			if key := store.Str(r[1]); key != "" && !skip[key] && !seen[key] {
+				seen[key] = true
+				addrs = append(addrs, key)
+				next = append(next, key)
+			}
+		}
+	}
+	return addrs, cardIDs, nil
+}
+
 // contacts gathers the contacts of accountID's mail (0: every account's plus
 // zero-mail enabled address-book contacts).
 func (s *Service) contacts(ctx context.Context, accountID int64) ([]Contact, error) {

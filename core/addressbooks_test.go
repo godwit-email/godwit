@@ -30,7 +30,7 @@ import (
 	"github.com/zalando/go-keyring"
 )
 
-func makePNGBytes(t *testing.T, w, h int) []byte {
+func makePNGBytes(t testing.TB, w, h int) []byte {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
 	img.Set(0, 0, color.RGBA{R: 20, G: 120, B: 220, A: 255})
@@ -39,7 +39,7 @@ func makePNGBytes(t *testing.T, w, h int) []byte {
 	return buf.Bytes()
 }
 
-func newCardDAVService(t *testing.T, dir string, autoSync bool) *Service {
+func newCardDAVService(t testing.TB, dir string, autoSync bool) *Service {
 	t.Helper()
 	SerializeKeyringForTest()
 	keyring.MockInit()
