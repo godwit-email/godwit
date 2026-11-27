@@ -281,306 +281,326 @@ func gui(ctx context.Context, dataDir, open string) int {
 		if preferred := mygo.App.PreferredLanguages(); len(preferred) > 0 {
 			lang = preferred[0]
 		}
-		r := <-backendc
-		var err error
-		client, err = r.c, r.err
-		if err != nil {
-			log.Printf("starting the backend: %v", err)
-			i18n.SetLanguage(lang)
-			var msg string
-			msg, code = startupFailure(err)
-			mygo.Dialog.Error("Godwit", msg)
-			mygo.App.Quit()
-			return
-		}
-		watchBackend(client, &quitting, func() {
+		go func() {
+			var r connected
+			select {
+			case r = <-backendc:
+			case <-ctx.Done():
+				return
+			}
+			var st core.Settings
+			var stErr error
+			if r.err == nil {
+				st, stErr = r.c.GetSettings(ctx)
+			}
 			mygo.RunOnMain(func() {
-				mygo.Dialog.Error("Godwit", i18n.T("app.backend_lost"))
-				os.Exit(1) // nothing left to save to; the next start starts a backend again
-			})
-		})
-		pages.SetService(client)
-		wit.SetService(client)
-		reader.SetService(client)
-		sig.SetService(client)
-		uiLang := "" // keep the database preference authoritative over MyGo's saved locale
-		st, err := client.GetSettings(ctx)
-		start := func() {
-			if err != nil {
-				log.Printf("reading settings: %v; the menus use the system language", err)
-				st.ShowTrayIcon = true // the default: an unreadable preference must not take the icon away
-			} else {
-				uiLang = st.UILanguage
-				// Before the window opens: its material and controls follow this, not the system's.
-				mygo.Theme.SetSource(mygo.ThemeSource(st.Theme))
-			}
-			setLanguage := func(tag string) {
-				if os.Getenv("MYGO_LOCALE") == "" {
-					mygo.App.SetLocale(uiLocale(tag, lang))
-				}
-			}
-			setLanguage(uiLang)
-			i18n.SetLanguage(mygo.App.Locale())
-
-			opts := windowOptions(runtime.GOOS)
-			bench.configureWindow(&opts)
-			quitAsked := false // a quit closes the compose windows: their going is not the window's close
-			var mc *mainClose  // set below, before any compose window opens
-			plat = &platform{
-				dataDir: dataDir,
-				svc:     client,
-				windows: windows,
-				wit:     wit,
-				roles:   roles,
-				reader:  reader,
-				sig:     sig,
-			}
-			var win *mygo.Window
-			a = app.New(app.Deps{Svc: client, Platform: plat, Settings: st, Post: func(f func()) { win.Update(f) },
-				SystemLanguage: lang, SetLanguage: setLanguage, Quit: mygo.App.Quit, ExternalAlways: !client.RPC().Hello().UIStarted,
-				Vibrancy: opts.Vibrancy != mygo.VibrancyNone, Dev: mygo.IsDev()})
-			var composeMu sync.Mutex
-			reportCompose := func() error { // the backend's 直接发送 leaves these drafts alone
-				composeMu.Lock()
-				defer composeMu.Unlock()
-				rctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-				defer cancel()
-				err := client.SetComposeOpen(rctx, windows.OpenDrafts())
-				if err != nil {
-					log.Printf("reporting the compose windows: %v", err)
-				}
-				return err
-			}
-			// A report that failed is tried again until one lands (the window opens
-			// meanwhile: it cannot wait for a backend that does not answer).
-			var retrying atomic.Bool
-			reportOrRetry := func() {
-				if reportCompose() == nil || !retrying.CompareAndSwap(false, true) {
+				if ctx.Err() != nil {
+					if r.c != nil {
+						stopBackend(r.c)
+					}
 					return
 				}
-				go func() {
-					defer retrying.Store(false)
-					for range 30 {
-						time.Sleep(time.Second)
-						if ctx.Err() != nil || reportCompose() == nil {
-							return
+				var err error
+				client, err = r.c, r.err
+				if err != nil {
+					log.Printf("starting the backend: %v", err)
+					i18n.SetLanguage(lang)
+					var msg string
+					msg, code = startupFailure(err)
+					mygo.Dialog.Error("Godwit", msg)
+					mygo.App.Quit()
+					return
+				}
+				watchBackend(client, &quitting, func() {
+					mygo.RunOnMain(func() {
+						mygo.Dialog.Error("Godwit", i18n.T("app.backend_lost"))
+						os.Exit(1) // nothing left to save to; the next start starts a backend again
+					})
+				})
+				pages.SetService(client)
+				wit.SetService(client)
+				reader.SetService(client)
+				sig.SetService(client)
+				uiLang := "" // keep the database preference authoritative over MyGo's saved locale
+				err = stErr
+				start := func() {
+					if err != nil {
+						log.Printf("reading settings: %v; the menus use the system language", err)
+						st.ShowTrayIcon = true // the default: an unreadable preference must not take the icon away
+					} else {
+						uiLang = st.UILanguage
+						// Before the window opens: its material and controls follow this, not the system's.
+						mygo.Theme.SetSource(mygo.ThemeSource(st.Theme))
+					}
+					setLanguage := func(tag string) {
+						if os.Getenv("MYGO_LOCALE") == "" {
+							mygo.App.SetLocale(uiLocale(tag, lang))
 						}
 					}
-				}()
-			}
-			// Before the editor exists, so no send slips in while it opens.
-			windows.OnOpening = reportOrRetry
-			windows.OnChange = func() { // no window is open yet
-				a.OnUI(a.ComposeWindowsChanged)
-				a.OnUI(func() {
-					if mc.closed && !quitAsked && windows.Count() == 0 {
-						mc.close() // decided again, now that none is open
-					} else if windows.Count() > 0 {
-						mc.redock() // a compose window opened from the tray needs its Dock tile
-					}
-				})
-				go reportOrRetry()
-			}
-			opts.Content = bench.view(a)
-			win = mygo.NewWindow(opts)
-			plat.win, plat.makeBody = win, plat.newReaderShell
-			// The Wit page is registered before it loads (loadAfterSetup):
-			// its first call finds its role.
-			if v, err := win.NewWebView(mygo.WebViewOptions{Transparent: true}); err != nil {
-				log.Printf("the Wit page: %v", err) // the Ask page shows no content
-			} else if err := loadAfterSetup(func() {
-				lockPage(v.Page())
-				roles.Register(v.Page(), "wit")
-			}, func() error { return v.Page().LoadURL(witURL(opts.Vibrancy != mygo.VibrancyNone)) }, func() {
-				roles.Unregister(v.Page())
-				v.Destroy()
-			}); err != nil {
-				log.Printf("the Wit page: %v", err)
-			} else {
-				witView, witOrigin = v, a.WitOrigin
-				a.SetWitPage(v, wit.SetConversation, wit.SetCreated)
-				a.SetWitAsk(wit.Handoff)
-			}
-			mc = &mainClose{
-				action: func(expired bool) closeAction {
-					return mainCloseAction(a.KeepInBackground(), expired, windows.Count(), runtime.GOOS, a.TrayIconShown())
-				},
-				do: func(act closeAction) {
-					switch act {
-					case closeExit:
-						win.Hide()
-						leaveBackend.Store(true)
-						mygo.App.Quit()
-					case closeHide:
-						win.Hide()
-					case closeMinimize:
-						win.Minimize()
-					case closeQuit:
-						mygo.App.Quit()
-					}
-				},
-				hidden: func() bool { return !win.IsVisible() || win.IsMinimized() },
-				busy:   a.Busy,
-				offDock: func() bool {
-					return hidesDock(runtime.GOOS, a.TrayIconShown(), windows.Count())
-				},
-				dock: plat.showInDock,
-				after: func(d time.Duration, f func()) func() bool {
-					return time.AfterFunc(d, func() { a.OnUI(f) }).Stop
-				},
-			}
-			win.OnFocus(func() {
-				mc.shown() // every way back (tray, Dock, notification, App.Open) shows and focuses it
-				if !quitAsked {
-					// A quit the user kept (a failed save asked) is over. The focus a
-					// quit's own question brings (BeforeClose shows the window) is not.
-					leaveBackend.Store(false)
-				}
-				quitAsked = false
-				a.SetForeground(true)
-			})
-			win.OnBlur(func() { a.SetForeground(false) })
-			mygo.App.OnActivate(func(visible bool) {
-				if !visible && bench == nil {
-					plat.ShowWindow()
-				}
-			})
+					setLanguage(uiLang)
+					i18n.SetLanguage(mygo.App.Locale())
 
-			compose := func(*mygo.MenuItem, *mygo.Window) { a.Compose() }
-			updateMenu := func() {
-				openSettings := func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow(); a.OpenSettings() }
-				if runtime.GOOS == "darwin" {
-					// The Mail menu stands in for File, which on macOS holds Close (⌘W).
-					mailMenu := []*mygo.MenuItem{{Label: i18n.T("mail.compose"), Accelerator: "CmdOrCtrl+N", Click: compose},
-						mygo.Separator(), {Role: mygo.RoleClose}}
-					appMenu := []*mygo.MenuItem{
-						{Role: mygo.RoleAbout},
-						mygo.Separator(),
-						{Label: i18n.T("shell.nav.settings") + "…", Accelerator: "CmdOrCtrl+,", Click: openSettings},
-						mygo.Separator(),
-						{Role: mygo.RoleServices},
-						mygo.Separator(),
-						{Role: mygo.RoleHide},
-						{Role: mygo.RoleHideOthers},
-						{Role: mygo.RoleUnhide},
-						mygo.Separator(),
-						{Role: mygo.RoleQuit},
+					opts := windowOptions(runtime.GOOS)
+					bench.configureWindow(&opts)
+					quitAsked := false // a quit closes the compose windows: their going is not the window's close
+					var mc *mainClose  // set below, before any compose window opens
+					plat = &platform{
+						dataDir: dataDir,
+						svc:     client,
+						windows: windows,
+						wit:     wit,
+						roles:   roles,
+						reader:  reader,
+						sig:     sig,
 					}
-					if !packaged() { // the Store updates the MSIX
-						appMenu = slices.Insert(appMenu, 3, updater.MenuItem())
+					var win *mygo.Window
+					a = app.New(app.Deps{Svc: client, Platform: plat, Settings: st, Post: func(f func()) { win.Update(f) },
+						SystemLanguage: lang, SetLanguage: setLanguage, Quit: mygo.App.Quit, ExternalAlways: !client.RPC().Hello().UIStarted,
+						Vibrancy: opts.Vibrancy != mygo.VibrancyNone, Dev: mygo.IsDev()})
+					var composeMu sync.Mutex
+					reportCompose := func() error { // the backend's 直接发送 leaves these drafts alone
+						composeMu.Lock()
+						defer composeMu.Unlock()
+						rctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+						defer cancel()
+						err := client.SetComposeOpen(rctx, windows.OpenDrafts())
+						if err != nil {
+							log.Printf("reporting the compose windows: %v", err)
+						}
+						return err
 					}
-					mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
-						{Label: "Godwit", Submenu: appMenu}, // the first menu is the app's, named by the bundle
-						{Label: i18n.T("shell.nav.mail"), Submenu: mailMenu},
-						{Role: mygo.RoleEditMenu},
-						{Role: mygo.RoleWindowMenu},
-					}))
-				} else {
-					// Windows and Linux (invoked via Alt / F10): standard File / Edit / View / Godwit menu.
-					fileMenu := []*mygo.MenuItem{
-						{Label: i18n.T("mail.compose"), Accelerator: "CmdOrCtrl+N", Click: compose},
-						{Label: i18n.T("shell.sync.all"), Click: func(*mygo.MenuItem, *mygo.Window) { a.SyncAll() }},
-						mygo.Separator(),
-						{Label: i18n.T("shell.nav.settings") + "…", Accelerator: "CmdOrCtrl+,", Click: openSettings},
-						mygo.Separator(),
-						{Role: mygo.RoleClose},
-						{Role: mygo.RoleQuit},
+					// A report that failed is tried again until one lands (the window opens
+					// meanwhile: it cannot wait for a backend that does not answer).
+					var retrying atomic.Bool
+					reportOrRetry := func() {
+						if reportCompose() == nil || !retrying.CompareAndSwap(false, true) {
+							return
+						}
+						go func() {
+							defer retrying.Store(false)
+							for range 30 {
+								time.Sleep(time.Second)
+								if ctx.Err() != nil || reportCompose() == nil {
+									return
+								}
+							}
+						}()
 					}
-					viewMenu := []*mygo.MenuItem{
-						{Label: i18n.T("shell.sidebar.collapse"), Click: func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow(); a.ToggleSidebar() }},
-						mygo.Separator(),
-						{Role: mygo.RoleToggleFullScreen},
+					// Before the editor exists, so no send slips in while it opens.
+					windows.OnOpening = reportOrRetry
+					windows.OnChange = func() { // no window is open yet
+						a.OnUI(a.ComposeWindowsChanged)
+						a.OnUI(func() {
+							if mc.closed && !quitAsked && windows.Count() == 0 {
+								mc.close() // decided again, now that none is open
+							} else if windows.Count() > 0 {
+								mc.redock() // a compose window opened from the tray needs its Dock tile
+							}
+						})
+						go reportOrRetry()
 					}
-					aboutMenu := []*mygo.MenuItem{
-						{Label: i18n.T("settings.about"), Click: func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow(); a.OpenAbout() }},
+					opts.Content = bench.view(a)
+					win = mygo.NewWindow(opts)
+					plat.win, plat.makeBody = win, plat.newReaderShell
+					// The Wit page is registered before it loads (loadAfterSetup):
+					// its first call finds its role.
+					if v, err := win.NewWebView(mygo.WebViewOptions{Transparent: true}); err != nil {
+						log.Printf("the Wit page: %v", err) // the Ask page shows no content
+					} else if err := loadAfterSetup(func() {
+						lockPage(v.Page())
+						roles.Register(v.Page(), "wit")
+					}, func() error { return v.Page().LoadURL(witURL(opts.Vibrancy != mygo.VibrancyNone)) }, func() {
+						roles.Unregister(v.Page())
+						v.Destroy()
+					}); err != nil {
+						log.Printf("the Wit page: %v", err)
+					} else {
+						witView, witOrigin = v, a.WitOrigin
+						a.SetWitPage(v, wit.SetConversation, wit.SetCreated)
+						a.SetWitAsk(wit.Handoff)
 					}
-					if !packaged() {
-						aboutMenu = append([]*mygo.MenuItem{updater.MenuItem(), mygo.Separator()}, aboutMenu...)
+					mc = &mainClose{
+						action: func(expired bool) closeAction {
+							return mainCloseAction(a.KeepInBackground(), expired, windows.Count(), runtime.GOOS, a.TrayIconShown())
+						},
+						do: func(act closeAction) {
+							switch act {
+							case closeExit:
+								win.Hide()
+								leaveBackend.Store(true)
+								mygo.App.Quit()
+							case closeHide:
+								win.Hide()
+							case closeMinimize:
+								win.Minimize()
+							case closeQuit:
+								mygo.App.Quit()
+							}
+						},
+						hidden: func() bool { return !win.IsVisible() || win.IsMinimized() },
+						busy:   a.Busy,
+						offDock: func() bool {
+							return hidesDock(runtime.GOOS, a.TrayIconShown(), windows.Count())
+						},
+						dock: plat.showInDock,
+						after: func(d time.Duration, f func()) func() bool {
+							return time.AfterFunc(d, func() { a.OnUI(f) }).Stop
+						},
 					}
-					mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
-						{Role: mygo.RoleFileMenu, Submenu: fileMenu},
-						{Role: mygo.RoleEditMenu},
-						{Role: mygo.RoleViewMenu, Submenu: viewMenu},
-						{Label: "Godwit", Submenu: aboutMenu},
-					}))
-				}
-				mygo.App.Dock.SetMenu(mygo.NewMenu([]*mygo.MenuItem{ // no-op off macOS
-					{Label: i18n.T("tray.sync_all"), Click: func(*mygo.MenuItem, *mygo.Window) { a.SyncAll() }},
-					{Label: i18n.T("mail.compose"), Click: compose},
-				}))
-			}
-			updateMenu() // the tray is the backend's
-			mygo.App.OnLocaleChanged(func(locale string) {
-				i18n.SetLanguage(locale)
-				updateMenu()
-			})
+					win.OnFocus(func() {
+						mc.shown() // every way back (tray, Dock, notification, App.Open) shows and focuses it
+						if !quitAsked {
+							// A quit the user kept (a failed save asked) is over. The focus a
+							// quit's own question brings (BeforeClose shows the window) is not.
+							leaveBackend.Store(false)
+						}
+						quitAsked = false
+						a.SetForeground(true)
+					})
+					win.OnBlur(func() { a.SetForeground(false) })
+					mygo.App.OnActivate(func(visible bool) {
+						if !visible && bench == nil {
+							plat.ShowWindow()
+						}
+					})
 
-			// Closing the window while the App keeps running in the background
-			// hides it; hidden for hiddenExitAfter, the interface exits, the
-			// backend staying, once no compose window is open; otherwise closing
-			// quits (mainCloseAction, mainClose). Every quit goes through
-			// quitHook: first the compose windows close, each flushing its page,
-			// then nq waits for the main window's writes (a failed or slow one
-			// asks first) and quits again. Hiding needs no save.
-			closeApp := func() { // the App drops events from here on: the backend starts another interface for its requests
-				rctx, cancel := context.WithTimeout(ctx, time.Second)
-				defer cancel()
-				_ = client.SetUIReady(rctx, false)
-				plat.closeBodyViews()
-				a.Close()
-			}
-			nq := &nativeQuit{beforeClose: a.BeforeClose, close: closeApp, quit: func() { go quitAgain() }} // mygo's calls are goroutine-safe
-			win.OnClose(func(e *mygo.CloseEvent) {
-				if nq.flushed {
-					return // the quit's last step closes it
+					compose := func(*mygo.MenuItem, *mygo.Window) { a.Compose() }
+					updateMenu := func() {
+						openSettings := func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow(); a.OpenSettings() }
+						if runtime.GOOS == "darwin" {
+							// The Mail menu stands in for File, which on macOS holds Close (⌘W).
+							mailMenu := []*mygo.MenuItem{{Label: i18n.T("mail.compose"), Accelerator: "CmdOrCtrl+N", Click: compose},
+								mygo.Separator(), {Role: mygo.RoleClose}}
+							appMenu := []*mygo.MenuItem{
+								{Role: mygo.RoleAbout},
+								mygo.Separator(),
+								{Label: i18n.T("shell.nav.settings") + "…", Accelerator: "CmdOrCtrl+,", Click: openSettings},
+								mygo.Separator(),
+								{Role: mygo.RoleServices},
+								mygo.Separator(),
+								{Role: mygo.RoleHide},
+								{Role: mygo.RoleHideOthers},
+								{Role: mygo.RoleUnhide},
+								mygo.Separator(),
+								{Role: mygo.RoleQuit},
+							}
+							if !packaged() { // the Store updates the MSIX
+								appMenu = slices.Insert(appMenu, 3, updater.MenuItem())
+							}
+							mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
+								{Label: "Godwit", Submenu: appMenu}, // the first menu is the app's, named by the bundle
+								{Label: i18n.T("shell.nav.mail"), Submenu: mailMenu},
+								{Role: mygo.RoleEditMenu},
+								{Role: mygo.RoleWindowMenu},
+							}))
+						} else {
+							// Windows and Linux (invoked via Alt / F10): standard File / Edit / View / Godwit menu.
+							fileMenu := []*mygo.MenuItem{
+								{Label: i18n.T("mail.compose"), Accelerator: "CmdOrCtrl+N", Click: compose},
+								{Label: i18n.T("shell.sync.all"), Click: func(*mygo.MenuItem, *mygo.Window) { a.SyncAll() }},
+								mygo.Separator(),
+								{Label: i18n.T("shell.nav.settings") + "…", Accelerator: "CmdOrCtrl+,", Click: openSettings},
+								mygo.Separator(),
+								{Role: mygo.RoleClose},
+								{Role: mygo.RoleQuit},
+							}
+							viewMenu := []*mygo.MenuItem{
+								{Label: i18n.T("shell.sidebar.collapse"), Click: func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow(); a.ToggleSidebar() }},
+								mygo.Separator(),
+								{Role: mygo.RoleToggleFullScreen},
+							}
+							aboutMenu := []*mygo.MenuItem{
+								{Label: i18n.T("settings.about"), Click: func(*mygo.MenuItem, *mygo.Window) { plat.ShowWindow(); a.OpenAbout() }},
+							}
+							if !packaged() {
+								aboutMenu = append([]*mygo.MenuItem{updater.MenuItem(), mygo.Separator()}, aboutMenu...)
+							}
+							mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
+								{Role: mygo.RoleFileMenu, Submenu: fileMenu},
+								{Role: mygo.RoleEditMenu},
+								{Role: mygo.RoleViewMenu, Submenu: viewMenu},
+								{Label: "Godwit", Submenu: aboutMenu},
+							}))
+						}
+						mygo.App.Dock.SetMenu(mygo.NewMenu([]*mygo.MenuItem{ // no-op off macOS
+							{Label: i18n.T("tray.sync_all"), Click: func(*mygo.MenuItem, *mygo.Window) { a.SyncAll() }},
+							{Label: i18n.T("mail.compose"), Click: compose},
+						}))
+					}
+					updateMenu() // the tray is the backend's
+					mygo.App.OnLocaleChanged(func(locale string) {
+						i18n.SetLanguage(locale)
+						updateMenu()
+					})
+
+					// Closing the window while the App keeps running in the background
+					// hides it; hidden for hiddenExitAfter, the interface exits, the
+					// backend staying, once no compose window is open; otherwise closing
+					// quits (mainCloseAction, mainClose). Every quit goes through
+					// quitHook: first the compose windows close, each flushing its page,
+					// then nq waits for the main window's writes (a failed or slow one
+					// asks first) and quits again. Hiding needs no save.
+					closeApp := func() { // the App drops events from here on: the backend starts another interface for its requests
+						rctx, cancel := context.WithTimeout(ctx, time.Second)
+						defer cancel()
+						_ = client.SetUIReady(rctx, false)
+						plat.closeBodyViews()
+						a.Close()
+					}
+					nq := &nativeQuit{beforeClose: a.BeforeClose, close: closeApp, quit: func() { go quitAgain() }} // mygo's calls are goroutine-safe
+					win.OnClose(func(e *mygo.CloseEvent) {
+						if nq.flushed {
+							return // the quit's last step closes it
+						}
+						e.PreventDefault()
+						mc.close()
+					})
+					hook := quitHook(windows, nq.onQuit, nq.reset, func() { a.OnUI(func() { quitAsked = false; a.QuitCancelled() }) })
+					mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) {
+						quitAsked = true
+						if e.SessionEnding { // no second, flushed quit when the OS ends the session
+							plat.closeBodyViews()
+						}
+						hook(e)
+					})
+					a.Start(ctx)
+					a.SetForeground(win.IsFocused())
+					bench.bindWindow(win, a)
+					if open != app.OpenWindow { // the window shows already
+						a.Open(open)
+					}
+					for _, id := range clicked { // the App takes them once it has loaded; the last one wins
+						a.NotificationClicked(id)
+					}
+					clicked = nil
+					for _, what := range launched {
+						a.Open(what)
+					}
+					launched = nil
+					go func() { // the backend's tray and notification clicks may come here now
+						rctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+						defer cancel()
+						if err := client.SetUIReady(rctx, true); err != nil {
+							log.Printf("telling the backend the interface is ready: %v", err)
+						}
+					}()
 				}
-				e.PreventDefault()
-				mc.close()
-			})
-			hook := quitHook(windows, nq.onQuit, nq.reset, func() { a.OnUI(func() { quitAsked = false; a.QuitCancelled() }) })
-			mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) {
-				quitAsked = true
-				if e.SessionEnding { // no second, flushed quit when the OS ends the session
-					plat.closeBodyViews()
-				}
-				hook(e)
-			})
-			a.Start(ctx)
-			a.SetForeground(win.IsFocused())
-			bench.bindWindow(win, a)
-			if open != app.OpenWindow { // the window shows already
-				a.Open(open)
-			}
-			for _, id := range clicked { // the App takes them once it has loaded; the last one wins
-				a.NotificationClicked(id)
-			}
-			clicked = nil
-			for _, what := range launched {
-				a.Open(what)
-			}
-			launched = nil
-			go func() { // the backend's tray and notification clicks may come here now
-				rctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-				defer cancel()
-				if err := client.SetUIReady(rctx, true); err != nil {
-					log.Printf("telling the backend the interface is ready: %v", err)
-				}
-			}()
-		}
-		if backendOnlyAtLogin(wasOpenedAtLogin(), st, err) {
-			// The backend stays under 一直继续 (StopUIBackend refuses), with its
-			// tray; unless the user opened Godwit while this one started. Their
-			// launch is queued on the main thread: decided behind it.
-			go mygo.RunOnMain(func() {
-				if len(launched) == 0 {
-					mygo.App.Quit()
+				if backendOnlyAtLogin(wasOpenedAtLogin(), st, err) {
+					// The backend stays under 一直继续 (StopUIBackend refuses), with its
+					// tray; unless the user opened Godwit while this one started. Their
+					// launch is queued on the main thread: decided behind it.
+					go mygo.RunOnMain(func() {
+						if len(launched) == 0 {
+							mygo.App.Quit()
+							return
+						}
+						start()
+					})
 					return
 				}
 				start()
 			})
-			return
-		}
-		start()
+		}()
 	})
 	// After BeforeClose saved the App's writes; before a relaunch starts the
 	// next Godwit, whose backend needs dataDir's lock.

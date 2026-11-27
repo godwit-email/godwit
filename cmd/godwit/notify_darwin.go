@@ -76,6 +76,9 @@ var communicationAuthorized = sync.OnceValue(func() bool {
 		return false
 	}
 	defer release(uintptr(value))
+	if !objc.Send[bool](value, objc.RegisterName("respondsToSelector:"), objc.RegisterName("boolValue")) {
+		return false
+	}
 	return objc.Send[bool](value, objc.RegisterName("boolValue"))
 })
 
