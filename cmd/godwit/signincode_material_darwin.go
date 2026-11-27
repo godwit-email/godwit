@@ -8,9 +8,22 @@ import (
 func signInCodeMaterial(w *mygo.Window) {
 	w.SetVibrancy(mygo.VibrancyPopover)
 	mygo.RunOnMain(func() {
-		view := objc.ID(w.NativeHandle()).Send(objc.RegisterName("contentView"))
+		if w.IsDestroyed() {
+			return
+		}
+		handle := w.NativeHandle()
+		if handle == 0 {
+			return
+		}
+		view := objc.ID(handle).Send(objc.RegisterName("contentView"))
+		if view == 0 {
+			return
+		}
 		view.Send(objc.RegisterName("setWantsLayer:"), true)
 		layer := view.Send(objc.RegisterName("layer"))
+		if layer == 0 {
+			return
+		}
 		objc.Send[objc.ID](layer, objc.RegisterName("setCornerRadius:"), float64(16))
 		layer.Send(objc.RegisterName("setMasksToBounds:"), true)
 	})

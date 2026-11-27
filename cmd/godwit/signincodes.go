@@ -476,7 +476,12 @@ func (p *platform) ShowSignInCode(code *core.SignInCode) {
 	if p.svc != nil {
 		go func() {
 			if img := signInAvatar(ctx, p.svc, code.MessageID); img != nil && ctx.Err() == nil {
-				b.win.Update(func() { b.avatar = img })
+				mygo.RunOnMain(func() {
+					if ctx.Err() != nil || p.codeBanner != b || b.win == nil || b.win.IsDestroyed() {
+						return
+					}
+					b.win.Update(func() { b.avatar = img })
+				})
 			}
 		}()
 	}

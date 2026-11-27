@@ -25,7 +25,10 @@ export default {
     icon: "assets/AppIcon.icon", // compiled with actool, which needs Xcode 26+; without it the app keeps icon's .icns
     // Set both only for a signed build with an authorized profile (.github/actions/macos-sign/README.md).
     provisioningProfile,
-    infoPlist: { NSUserActivityTypes: ["INSendMessageIntent"] },
+    infoPlist: {
+      NSUserActivityTypes: ["INSendMessageIntent"],
+      NSSupportsAutomaticTermination: false,
+    },
     signingIdentity: env.MACOS_SIGNING_IDENTITY || "-",
     // Native plugins are libraries other developers sign: the hardened runtime
     // loads them only with library validation off (docs/adr/0017-macos-library-validation.md).
