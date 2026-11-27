@@ -264,16 +264,11 @@ func (s *Service) carddavAvatar(ctx context.Context, email string, allowOwn bool
 		return scanCardDAVPhoto(rows.Values[0]), nil, true, nil
 	}
 
-	comps, addrToComp, err := s.enabledCardComponents(ctx, own)
-	if err != nil {
-		return Avatar{}, nil, false, err
+	addrs, cardIDs, err := s.enabledCardComponentOf(ctx, email, own)
+	if err != nil || len(cardIDs) == 0 {
+		return Avatar{}, addrs, false, err
 	}
-	idx, ok := addrToComp[email]
-	if !ok {
-		return Avatar{}, []string{email}, false, nil
-	}
-	comp := comps[idx]
-	cb, _ := json.Marshal(comp.cardIDs)
+	cb, _ := json.Marshal(cardIDs)
 	pRows, err := s.db.Query(ctx, `SELECT c.photo, c.photo_format, c.photo_width, c.photo_height
 		FROM address_book_cards c
 		JOIN address_book_collections col ON col.id = c.collection_id
@@ -282,7 +277,7 @@ func (s *Service) carddavAvatar(ctx context.Context, email string, allowOwn bool
 		ORDER BY `+abPriority+`, col.id ASC, c.href ASC
 		LIMIT 1`, string(cb))
 	if err != nil || len(pRows.Values) == 0 {
-		return Avatar{}, comp.addrs, false, err
+		return Avatar{}, addrs, false, err
 	}
-	return scanCardDAVPhoto(pRows.Values[0]), comp.addrs, false, nil
+	return scanCardDAVPhoto(pRows.Values[0]), addrs, false, nil
 }
