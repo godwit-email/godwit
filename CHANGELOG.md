@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.41.0](https://github.com/godwit-email/godwit/compare/v1.40.2...v1.41.0) (2026-11-27)
+
+
+### Features
+
+* **compose:** attach files dropped on the compose window ([#906](https://github.com/godwit-email/godwit/issues/906)) ([b115075](https://github.com/godwit-email/godwit/commit/b115075f2dccd7b0bff7f804b81700c4ce443716)), closes [#892](https://github.com/godwit-email/godwit/issues/892)
+* **compose:** pick the signature of a mail ([#911](https://github.com/godwit-email/godwit/issues/911)) ([166807e](https://github.com/godwit-email/godwit/commit/166807e72b7bea6abb364cc8eac4a1ea99287145))
+* **compose:** put images in the message body ([#907](https://github.com/godwit-email/godwit/issues/907)) ([0f97add](https://github.com/godwit-email/godwit/commit/0f97add7f984c0912cb923e7add8e588dce2fa4a))
+* **macos:** leave the Dock while the main window is closed ([#904](https://github.com/godwit-email/godwit/issues/904)) ([38de639](https://github.com/godwit-email/godwit/commit/38de6398d6e8d805184fb41215ff13e8222064d2)), closes [#898](https://github.com/godwit-email/godwit/issues/898)
+* **reader:** reply with ⌘R and reply all with ⇧⌘R ([#910](https://github.com/godwit-email/godwit/issues/910)) ([ce19ee2](https://github.com/godwit-email/godwit/commit/ce19ee24583adc9509fcf30d24fe84433d703544))
+
+
+### Bug Fixes
+
+* **macos:** avoid main-thread launch block and ObjC/window lifecycle crashes ([#912](https://github.com/godwit-email/godwit/issues/912)) ([87aa3a0](https://github.com/godwit-email/godwit/commit/87aa3a0ac4849e68c21409f691f9a0ea8d7b7d78))
+
+
+### Performance Improvements
+
+* **avatars:** look up a sender's address-book component by address ([#903](https://github.com/godwit-email/godwit/issues/903)) ([128ef49](https://github.com/godwit-email/godwit/commit/128ef49d701b07b81935db3cec732bbf6732de06)), closes [#864](https://github.com/godwit-email/godwit/issues/864)
+
 ## [1.40.2](https://github.com/godwit-email/godwit/compare/v1.40.1...v1.40.2) (2026-11-26)
 
 
