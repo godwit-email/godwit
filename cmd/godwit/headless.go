@@ -92,6 +92,7 @@ func mygoHeadlessDesktop() *headlessDesktop {
 		run: func(ctx context.Context, ready func(stop func())) (bool, error) {
 			mygo.App.SetName("Godwit")
 			mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
+			disableAutomaticTermination()
 			offClosed := mygo.App.OnWindowAllClosed(func() {}) // temporary PDF or banner windows close without quitting
 			defer offClosed()
 			offLocale := mygo.App.OnLocaleChanged(func(locale string) {

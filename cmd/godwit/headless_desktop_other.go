@@ -10,3 +10,5 @@ import (
 func hasGraphicalSession() bool {
 	return runtime.GOOS == "linux" && linuxHasDisplay(os.Getenv)
 }
+
+func disableAutomaticTermination() {}

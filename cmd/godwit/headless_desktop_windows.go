@@ -36,3 +36,5 @@ func hasGraphicalSession() bool {
 	)
 	return ok != 0 && f.flags&wsfVisible != 0
 }
+
+func disableAutomaticTermination() {}
