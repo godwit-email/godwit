@@ -97,6 +97,53 @@ func (s *Service) SetDraftAccount(ctx context.Context, id, accountID, revision i
 	return s.GetDraft(ctx, id)
 }
 
+// SetDraftSignature puts signature signatureID in the body in place of the
+// one it has, whatever the account sends it: 0 leaves the draft without one.
+// The account and the rest stay, and the revision grows by one. revision must
+// be the stored one (ErrStaleDraft).
+func (s *Service) SetDraftSignature(ctx context.Context, id, signatureID, revision int64) (Draft, error) {
+	s.sigMu.Lock() // the signature read stays the one stored, its images with it (NewDraft)
+	defer s.sigMu.Unlock()
+	var sig Signature
+	if signatureID != 0 {
+		var err error
+		if sig, err = s.signature(ctx, signatureID); err != nil {
+			return Draft{}, err
+		}
+	}
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
+	d, err := s.GetDraft(ctx, id)
+	if err != nil {
+		return Draft{}, err
+	}
+	if err := s.checkWritable(ctx, id); err != nil {
+		return Draft{}, err
+	}
+	if d.Revision != revision {
+		return Draft{}, ErrStaleDraft
+	}
+	cids, err := s.signatureCIDs(ctx)
+	if err != nil {
+		return Draft{}, err
+	}
+	st, err := s.loadSettings(ctx)
+	if err != nil {
+		return Draft{}, err
+	}
+	body := mail.SanitizeDraft(withSignature(d.HTML, Account{Signature: sig.HTML}, cids, st.SignatureDelimiter), cids)
+	r, err := s.db.Execute(ctx, `UPDATE drafts SET body_html = ?, updated_at = ?, revision = revision + 1,
+		from_program = MAX(from_program, ?) WHERE id = ? AND revision = ?`, body, time.Now().Unix(), fromProgram(ctx), id, revision)
+	if err != nil {
+		return Draft{}, err
+	}
+	if r.Changes == 0 {
+		return Draft{}, fmt.Errorf("draft %d changed or was deleted meanwhile", id)
+	}
+	s.programChanged(ctx, nil)
+	return s.GetDraft(ctx, id)
+}
+
 // SendRevision is Send for exactly that revision of the draft: if the stored
 // one differs, nothing is sent and the error is ErrStaleDraft.
 func (s *Service) SendRevision(ctx context.Context, draftID, revision int64) error {

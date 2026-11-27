@@ -297,6 +297,7 @@ function Compose({
   const [fieldsKey, setFieldsKey] = useState(0); // remounts the fields
   const [from, setFrom] = useState(state.from);
   const [accounts, setAccounts] = useState(state.accounts);
+  const [signatures, setSignatures] = useState(state.signatures);
   const [fromProgram, setFromProgram] = useState(state.fromProgram); // ADR 0043: check before sending
   const [signature, setSignature] = useState(sigOf(state));
   const [quote, setQuote] = useState(state.quote);
@@ -620,6 +621,17 @@ function Compose({
       failure(e);
     }
   };
+  const onSignature = async (id: number) => {
+    if (!sv) return;
+    try {
+      const r = await sv.run((rev) => api.setSignature(id, rev));
+      if (!r || r.conflict) return;
+      setSignature(sigOf(r));
+      setSavedAt(fmt(new Date(r.updatedAt)));
+    } catch (e) {
+      failure(e);
+    }
+  };
   const change = async (op: (rev: number) => ReturnType<typeof api.addAttachments>) => {
     if (!sv) return;
     try {
@@ -765,6 +777,7 @@ function Compose({
       setLatestFailed(false);
       flushSync(() => {
         setAccounts(l.accounts);
+        setSignatures(l.signatures);
         setFrom(l.from);
         setFromProgram(l.fromProgram);
         setSignature(sigOf(l));
@@ -898,6 +911,8 @@ function Compose({
                 menu={api.popupMenu}
                 from={from}
                 onFrom={onFrom}
+                signatures={signatures}
+                onSignature={onSignature}
                 to={f.to}
                 cc={f.cc}
                 bcc={f.bcc}

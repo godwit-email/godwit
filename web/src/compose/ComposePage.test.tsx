@@ -84,6 +84,7 @@ const state = {
     { id: 1, email: "me@x.com" },
     { id: 2, email: "work@x.com" },
   ],
+  signatures: [],
   from: 1,
   to: ["a@x.com"],
   cc: [],

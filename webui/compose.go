@@ -282,7 +282,11 @@ func (p *ComposePage) Load(ctx context.Context) (ComposeState, error) {
 	if err != nil {
 		return ComposeState{}, err
 	}
-	out := ComposeState{SignatureHTML: sig, Wit: wit, DraftID: d.ID, Accounts: accs, From: d.AccountID, To: nz(d.To), Cc: nz(d.Cc), Bcc: nz(d.Bcc),
+	sigs, err := signatureChoices(ctx, svc)
+	if err != nil {
+		return ComposeState{}, err
+	}
+	out := ComposeState{SignatureHTML: sig, Signatures: sigs, Wit: wit, DraftID: d.ID, Accounts: accs, From: d.AccountID, To: nz(d.To), Cc: nz(d.Cc), Bcc: nz(d.Bcc),
 		ReplyTo: d.ReplyTo, Subject: d.Subject, Body: editable, Quote: mail.HTMLToText(s.quote),
 		Attachments: attachments(d), Revision: d.Revision,
 		UpdatedAt: d.UpdatedAt.UnixMilli(), Theme: ThemeOf(st), Locale: i18n.Language(), FromProgram: d.FromProgram}
@@ -303,6 +307,19 @@ func senders(ctx context.Context, svc Service) ([]Account, error) {
 		if a.Kind != core.KindLocalArchive && !a.ReceiveOnly { // no sender
 			out = append(out, Account{ID: a.ID, Email: a.Email})
 		}
+	}
+	return out, nil
+}
+
+// signatureChoices are the signatures a draft can be signed with.
+func signatureChoices(ctx context.Context, svc Service) ([]SignatureChoice, error) {
+	sigs, err := svc.ListSignatures(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SignatureChoice, 0, len(sigs))
+	for _, s := range sigs {
+		out = append(out, SignatureChoice{ID: s.ID, Name: s.Name})
 	}
 	return out, nil
 }
@@ -361,6 +378,25 @@ func (p *ComposePage) SetAccount(ctx context.Context, id, revision int64) (Chang
 	}
 	defer s.mu.Unlock()
 	d, err := svc.SetDraftAccount(ctx, s.draftID, id, revision)
+	if errors.Is(err, core.ErrStaleDraft) {
+		return conflict, nil
+	}
+	if err != nil {
+		return Change{}, err
+	}
+	s.adopt(d)
+	return changeOf(ctx, svc, d)
+}
+
+// SetSignature puts signature id (0 for none) in the calling window's draft
+// in place of the one it has; revision must be the stored one, else Conflict.
+func (p *ComposePage) SetSignature(ctx context.Context, id, revision int64) (Change, error) {
+	_, svc, s, err := p.open(ctx)
+	if err != nil {
+		return Change{}, err
+	}
+	defer s.mu.Unlock()
+	d, err := svc.SetDraftSignature(ctx, s.draftID, id, revision)
 	if errors.Is(err, core.ErrStaleDraft) {
 		return conflict, nil
 	}

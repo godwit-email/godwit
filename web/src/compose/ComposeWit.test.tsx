@@ -126,6 +126,7 @@ const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const state: ComposeState = {
   draftId: 1,
   accounts: [{ id: 1, email: "me@x.com" }],
+  signatures: [],
   from: 1,
   to: ["a@x.com"],
   cc: [],

@@ -35,6 +35,7 @@ type Service interface {
 	ImagesAllowed(ctx context.Context, message int64) (bool, error)
 	InlineImages(ctx context.Context, id int64, each func(cid string, a mail.Attachment)) error
 	ListAccounts(ctx context.Context) ([]core.Account, error)
+	ListSignatures(ctx context.Context) ([]core.Signature, error)
 	ListApprovals(ctx context.Context, conversationID int64) ([]core.Approval, error)
 	ListConversations(ctx context.Context, kind string) ([]core.Conversation, error)
 	ListModelServices(ctx context.Context) ([]core.ModelService, error)
@@ -61,6 +62,7 @@ type Service interface {
 	SenderAvatar(ctx context.Context, messageID int64, allowRemote bool) (core.Avatar, error)
 	SetConversationModel(ctx context.Context, id int64, ref, effort string) error
 	SetDraftAccount(ctx context.Context, id, accountID, revision int64) (core.Draft, error)
+	SetDraftSignature(ctx context.Context, id, signatureID, revision int64) (core.Draft, error)
 	SetDraftModel(ctx context.Context, draftID int64, model string) error
 	SignatureEditor(ctx context.Context, id int64) (string, error)
 	SignatureShown(ctx context.Context, block string) (string, error)
