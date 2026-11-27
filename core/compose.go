@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"html"
 	"io"
-	"maps"
 	"mime"
 	netmail "net/mail"
 	"os"
@@ -803,28 +802,22 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 	if err != nil {
 		return err
 	}
-	imgs, err := s.signatureImages(ctx, true) // an unknown cid was dropped by GetDraft
+	cids := mail.CIDs(d.HTML)
+	imgs, err := s.signatureImages(ctx, cids, false)
 	if err != nil {
 		return err
 	}
-	own, err := s.draftImages(ctx, draftID)
+	atts, err := s.db.Query(ctx, `SELECT filename, content_type, path, cid, size FROM draft_attachments
+		WHERE draft_id = ? AND (cid IS NULL OR cid IN (SELECT value FROM json_each(?))) ORDER BY id`, draftID, encodeList(cids))
 	if err != nil {
 		return err
 	}
-	maps.Copy(imgs, own)
-	var related []mail.Attachment
 	total := int64(len(d.HTML))
-	for _, id := range mail.CIDs(d.HTML) {
-		if a, ok := imgs[id]; ok {
-			delete(imgs, id) // each once
-			related = append(related, a)
-			total += int64(a.Size)
-		}
+	for _, a := range imgs {
+		total += int64(a.Size)
 	}
-	for _, a := range d.Attachments {
-		if a.ContentID == "" { // an inline image counts, and goes, only if the body shows it
-			total += int64(a.Size)
-		}
+	for _, a := range atts.Values {
+		total += store.Int(a[4])
 	}
 	if total > attachLimit {
 		return ErrTooLarge
@@ -837,7 +830,7 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 		return ErrReceiveOnly
 	}
 	o := mail.Outgoing{From: (&netmail.Address{Name: acc.Name, Address: acc.Email}).String(), ReplyTo: d.ReplyTo,
-		To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, HTML: d.HTML, Related: related}
+		To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, HTML: d.HTML}
 	var stmts []sqlite.Statement
 	if rs != nil {
 		stmts = rs.stmts
@@ -863,16 +856,30 @@ func (s *Service) enqueue(ctx context.Context, draftID, rev int64, checked []str
 			}
 		}
 	}
-	atts, err := s.db.Query(ctx, "SELECT filename, content_type, path FROM draft_attachments WHERE draft_id = ? AND cid IS NULL ORDER BY id", draftID)
-	if err != nil {
-		return err
+	if len(imgs) > 0 {
+		if imgs, err = s.signatureImages(ctx, cids, true); err != nil {
+			return err
+		}
 	}
 	for _, a := range atts.Values {
 		data, err := os.ReadFile(store.Str(a[2]))
 		if err != nil {
 			return err
 		}
-		o.Attachments = append(o.Attachments, mail.Attachment{Filename: store.Str(a[0]), ContentType: store.Str(a[1]), Data: data})
+		part := mail.Attachment{ContentType: store.Str(a[1]), Data: data}
+		if cid := store.Str(a[3]); cid != "" {
+			part.ContentID, part.Inline = cid, true
+			imgs[cid] = part
+		} else {
+			part.Filename = store.Str(a[0])
+			o.Attachments = append(o.Attachments, part)
+		}
+	}
+	for _, cid := range cids {
+		if part, ok := imgs[cid]; ok {
+			o.Related = append(o.Related, part)
+			delete(imgs, cid) // each once, in body order
+		}
 	}
 	now := s.clk().Now()
 	sendAfter, date, sendAt := now.Add(UndoSendWindow), now, any(nil)

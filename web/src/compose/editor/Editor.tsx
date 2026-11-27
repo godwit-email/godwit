@@ -9,13 +9,14 @@ import {
   useContext,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
 import type { T } from "@/shared/i18n";
 import { deserialize, fromHTML, offsetOf, toHTML, toText } from "./html";
-import { DraftImages, plugins } from "./plugins";
+import { DraftImages, plugins, SafePastePlugin } from "./plugins";
 import { Toolbar } from "./Toolbar";
 
 /** A ⌘K on a selection: the body's plain text (toText) and the selection's [start, end) in it. */
@@ -120,6 +121,9 @@ export function Editor(props: {
     plugins: [...plugins, HeldBlockPlugin],
     value: (e) => fromHTML(e, initial, true),
   });
+  useLayoutEffect(() => {
+    editor.setOption(SafePastePlugin, "images", images ?? {});
+  }, [editor, images]);
   // The body setValue made, the page's own and no edit. Slate reports changes a microtask later, so the
   // next report is matched against it, never assumed to be it.
   const set = useRef<string | null>(null);

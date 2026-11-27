@@ -11,6 +11,7 @@ ContactAvatar
 CountUnrepliedToSummarize
 DevPreviewSignInCode
 DownloadRecognitionModelStream
+DraftImageFiles
 ExportAccountsFile
 FetchAttachmentsStream
 ForgetImageFailure

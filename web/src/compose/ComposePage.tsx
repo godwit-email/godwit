@@ -997,6 +997,7 @@ function Compose({
                   <Review
                     key={reviewing.approval}
                     review={reviewing}
+                    images={images}
                     busy={deciding}
                     onDecide={(accept) => decide((id) => api.decide(id, accept), accept)}
                     onFinish={(ds) => decide((id) => api.finish(id, ds), ds.includes(1))}

@@ -273,8 +273,8 @@ func (cl *Client) DraftFromQuickReply(ctx context.Context, messageID int64, r co
 	return call[core.Draft](cl, ctx, "DraftFromQuickReply", messageID, r)
 }
 
-func (cl *Client) DraftImages(ctx context.Context, draftID int64) (map[string]string, error) {
-	return call[map[string]string](cl, ctx, "DraftImages", draftID)
+func (cl *Client) DraftImageFiles(ctx context.Context, draftID int64, cids []string) ([]core.InlineImage, error) {
+	return call[[]core.InlineImage](cl, ctx, "DraftImageFiles", draftID, cids)
 }
 
 func (cl *Client) EditProposedRule(ctx context.Context, id int64) (core.Rule, error) {

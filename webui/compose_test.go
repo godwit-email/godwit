@@ -867,6 +867,6 @@ func TestComposeInlineImages(t *testing.T) {
 	st, err := f.page.Load(f.ctx(1))
 	require.NoError(t, err)
 	assert.Equal(t, []string{img.CID, pasted.Images[0].CID}, mail.CIDs(st.Body))
-	assert.Equal(t, map[string]string{img.CID: img.URL, pasted.Images[0].CID: pasted.Images[0].URL, drop.Images[0].CID: drop.Images[0].URL}, st.Images)
+	assert.Equal(t, map[string]string{img.CID: img.URL, pasted.Images[0].CID: pasted.Images[0].URL}, st.Images)
 	assert.Empty(t, st.Attachments)
 }

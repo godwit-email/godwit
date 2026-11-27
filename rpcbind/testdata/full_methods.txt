@@ -64,7 +64,6 @@ DeleteView
 DetectProvider
 DraftForApproval
 DraftFromQuickReply
-DraftImages
 EditProposedRule
 EmptyFolder
 ExportAccounts

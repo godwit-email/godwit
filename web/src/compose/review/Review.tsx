@@ -3,7 +3,7 @@ import { Button } from "@/components/button";
 import type { ReviewBlock, ReviewOp, Review as ReviewT, ReviewToken } from "@/mygo";
 import type { T } from "@/shared/i18n";
 import { WitBanner } from "../Banner";
-import { sanitize } from "../editor/html";
+import { CID_SRC, sanitize } from "../editor/html";
 
 /** The panel card's line for a review: how many changes, or how much was rewritten. */
 export function reviewSummary(r: ReviewT, t: T): string {
@@ -14,9 +14,15 @@ export function reviewSummary(r: ReviewT, t: T): string {
     : t("wit.compose.review.rewrite_plain");
 }
 
-// Editable HTML shown read-only: sanitized (no loader, no attribute but href), links inert.
-function inert(html: string): string {
-  const body = sanitize(html);
+// Images in a review may refer only to images already in the draft.
+function inert(html: string, images?: Record<string, string>): string {
+  const body = sanitize(html, !!images);
+  for (const img of body.querySelectorAll("img")) {
+    const src = img.getAttribute("src") ?? "";
+    const url = CID_SRC.test(src) && images?.[src.slice("cid:".length)];
+    if (url) img.src = url;
+    else img.remove();
+  }
   for (const a of body.querySelectorAll("a")) {
     const s = body.ownerDocument.createElement("span");
     s.className = "text-primary underline";
@@ -36,11 +42,13 @@ const CARET =
 /** Editable HTML shown read-only (sanitized, links inert); `caret` while Wit writes it. */
 export function Static({
   html,
+  images,
   label,
   className = "text-sm",
   caret = false,
 }: {
   html: string;
+  images?: Record<string, string>;
   label?: string;
   className?: string;
   caret?: boolean;
@@ -49,8 +57,8 @@ export function Static({
     <section
       aria-label={label}
       className={`${className} ${caret ? CARET : ""} leading-[1.75] [&>*+*]:mt-3 [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6`}
-      // biome-ignore lint/security/noDangerouslySetInnerHtml: inert() keeps only the format set's tags, no attribute, no link
-      dangerouslySetInnerHTML={{ __html: inert(html) }}
+      // biome-ignore lint/security/noDangerouslySetInnerHtml: inert() sanitizes the HTML, resolves draft images, and disables links
+      dangerouslySetInnerHTML={{ __html: inert(html, images) }}
     />
   );
 }
@@ -121,6 +129,7 @@ function blockClass(b: ReviewBlock): string {
  */
 export function Review({
   review: r,
+  images,
   busy,
   onDecide,
   onFinish,
@@ -128,6 +137,7 @@ export function Review({
   t,
 }: {
   review: ReviewT;
+  images: Record<string, string>;
   busy: boolean;
   after?: ReactNode;
   onDecide(accept: boolean): void;
@@ -312,7 +322,7 @@ export function Review({
                   <span>{r.old_subject || t("mail.no_subject")}</span>
                 </div>
               )}
-              <Static html={r.old} label={t("wit.compose.original")} className="text-sm" />
+              <Static html={r.old} images={images} label={t("wit.compose.original")} />
             </div>
             <div className="flex flex-col gap-2 border-l-[0.5px] pl-4">
               <h2 className="font-semibold text-xs">{t("wit.compose.new")}</h2>
@@ -324,11 +334,11 @@ export function Review({
                   <span className="font-medium text-foreground">{r.subject}</span>
                 </div>
               )}
-              <Static html={r.new} label={t("wit.compose.new")} className="text-sm" />
+              <Static html={r.new} images={images} label={t("wit.compose.new")} />
             </div>
           </div>
         ) : (
-          <Static html={r.new} />
+          <Static html={r.new} images={images} />
         )}
         {!compare && after}
       </section>

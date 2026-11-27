@@ -52,17 +52,17 @@ func TestInlineImageSavedAndSentRelated(t *testing.T) {
 	assert.NotContains(t, d.HTML, "data:")
 	assert.NotContains(t, d.HTML, "example.com")
 
-	// Reopened: the body still shows it, and the page gets its bytes, stripped.
+	// Reopening keeps the body CID. Only its file is needed for sending.
 	d, err = e.s.GetDraft(bg, d.ID)
 	require.NoError(t, err)
 	assert.Contains(t, d.HTML, `src="cid:`+a.ContentID+`"`)
-	imgs, err := e.s.DraftImages(bg, d.ID)
+	orphan, err := e.s.DraftImageFiles(bg, d.ID, []string{unshown.ContentID})
 	require.NoError(t, err)
-	require.Contains(t, imgs, a.ContentID)
-	assert.Contains(t, imgs, unshown.ContentID)
+	require.Len(t, orphan, 1)
+	// The orphan is still listed, but sending must never open it.
+	require.NoError(t, os.Remove(orphan[0].Path))
 	stored, err := stripImageMetadata("image/png", shot)
 	require.NoError(t, err)
-	assert.Equal(t, dataURL("image/png", stored), imgs[a.ContentID])
 
 	require.NoError(t, e.s.Send(bg, d.ID))
 	e.clock.Advance(UndoSendWindow)
@@ -125,6 +125,9 @@ func TestInlineImageBelongsToItsDraft(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, mail.CIDs(d2.HTML))
 	assert.NotContains(t, d2.HTML, a.ContentID)
+	files, err := e.s.DraftImageFiles(bg, d2.ID, []string{a.ContentID})
+	require.NoError(t, err)
+	assert.Empty(t, files)
 }
 
 // A shown image counts toward the message's limit, as an attachment does.
@@ -140,6 +143,10 @@ func TestInlineImageCountsTowardSizeLimit(t *testing.T) {
 	d.To, d.HTML = []string{"bob@example.com"}, `<img src="cid:`+a.ContentID+`">`+d.HTML
 	d, err = e.s.SaveDraft(bg, d)
 	require.NoError(t, err)
+	files, err := e.s.DraftImageFiles(bg, d.ID, []string{a.ContentID})
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+	require.NoError(t, os.Remove(files[0].Path)) // an over-limit draft is refused before reading this image
 	old := attachLimit
 	t.Cleanup(func() { attachLimit = old })
 	attachLimit = int64(len(d.HTML) + a.Size - 1)

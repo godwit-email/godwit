@@ -37,7 +37,7 @@ type ComposeState struct {
 	SignatureHTML string `json:"signatureHtml"`
 	// Attachments are the draft's files, its images in the body not among
 	// them; Images are those images as data: URLs by Content-ID, for showing
-	// the Body's cid: sources (core.Service.DraftImages).
+	// the Body's cid: sources (core.Service.DraftImageFiles).
 	Attachments []Attachment      `json:"attachments"`
 	Images      map[string]string `json:"images"`
 	// Revision is what the next save must pass; Theme styles the page.

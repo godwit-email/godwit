@@ -286,17 +286,34 @@ func (p *ComposePage) Load(ctx context.Context) (ComposeState, error) {
 	}
 	out := ComposeState{SignatureHTML: sig, Wit: wit, DraftID: d.ID, Accounts: accs, From: d.AccountID, To: nz(d.To), Cc: nz(d.Cc), Bcc: nz(d.Bcc),
 		ReplyTo: d.ReplyTo, Subject: d.Subject, Body: editable, Quote: mail.HTMLToText(s.quote),
-		Attachments: attachments(d), Images: map[string]string{}, Revision: d.Revision,
+		Attachments: attachments(d), Revision: d.Revision,
 		UpdatedAt: d.UpdatedAt.UnixMilli(), Theme: ThemeOf(st), Locale: i18n.Language(), FromProgram: d.FromProgram}
 	if !d.ScheduledFor.IsZero() {
 		out.ScheduledFor = d.ScheduledFor.UnixMilli()
 	}
-	if len(d.Attachments) > len(out.Attachments) { // it has images for the body
-		if out.Images, err = svc.DraftImages(ctx, d.ID); err != nil {
-			return ComposeState{}, err
-		}
+	if out.Images, err = draftImageURLs(ctx, svc, d.ID, mail.CIDs(editable)); err != nil {
+		return ComposeState{}, err
 	}
 	return out, nil
+}
+
+func draftImageURLs(ctx context.Context, svc Service, draftID int64, cids []string) (map[string]string, error) {
+	urls := map[string]string{}
+	if len(cids) == 0 {
+		return urls, nil
+	}
+	files, err := svc.DraftImageFiles(ctx, draftID, cids)
+	if err != nil {
+		return nil, err
+	}
+	for _, img := range files {
+		data, err := os.ReadFile(img.Path)
+		if err != nil {
+			return nil, err
+		}
+		urls[img.CID] = "data:" + img.ContentType + ";base64," + base64.StdEncoding.EncodeToString(data)
+	}
+	return urls, nil
 }
 
 // senders are the accounts a draft can be sent from.
@@ -477,6 +494,7 @@ func (p *ComposePage) attach(ctx context.Context, revision int64, paths []string
 	}
 	defer s.mu.Unlock()
 	rev, stale := revision, false
+	var cids []string
 	for _, path := range paths {
 		a, now, err := svc.AddAttachmentAt(ctx, s.draftID, rev, path, inline)
 		if now != 0 {
@@ -493,20 +511,18 @@ func (p *ComposePage) attach(ctx context.Context, revision int64, paths []string
 			log.Printf("attaching %s to draft %d: %v", path, s.draftID, err)
 			res.Failed = append(res.Failed, filepath.Base(path))
 		case a.ContentID != "":
-			res.Images = append(res.Images, InlineImage{CID: a.ContentID})
+			cids = append(cids, a.ContentID)
 		}
 		if stale {
 			break
 		}
 	}
-	if len(res.Images) > 0 {
-		urls, err := svc.DraftImages(ctx, s.draftID)
-		if err != nil {
-			return AttachResult{}, err
-		}
-		for i, img := range res.Images {
-			res.Images[i].URL = urls[img.CID]
-		}
+	urls, err := draftImageURLs(ctx, svc, s.draftID, cids)
+	if err != nil {
+		return AttachResult{}, err
+	}
+	for _, cid := range cids {
+		res.Images = append(res.Images, InlineImage{CID: cid, URL: urls[cid]})
 	}
 	d, err := svc.GetDraft(ctx, s.draftID)
 	if err != nil {
