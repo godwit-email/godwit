@@ -14,6 +14,7 @@ vi.mock("@/mygo", () => ({
     closed: vi.fn(),
     latest: vi.fn(),
     setAccount: vi.fn(),
+    setSignature: vi.fn(),
     addAttachments: vi.fn(),
     attachDropped: vi.fn(),
     removeAttachment: vi.fn(),
@@ -626,6 +627,29 @@ test("account switch keeps body", async () => {
   expect(sig?.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,AAAA");
   expect(el).toHaveValue("正文!");
   await waitFor(() => expect(api.titleBar).toHaveBeenLastCalledWith("你好", "草稿已保存 · 11:42"));
+});
+
+test("picking a signature saves the body first and shows the new one", async () => {
+  vi.mocked(api.load).mockResolvedValue({ ...state, signatures: [{ id: 5, name: "Work" }] });
+  vi.mocked(api.setSignature).mockResolvedValue({
+    revision: 9,
+    attachments: [],
+    conflict: false,
+    signatureHtml: "<p>-- work sig</p>",
+    updatedAt: new Date(2026, 9, 10, 11, 42).getTime(),
+  });
+  render(<ComposePage />);
+  const el = await body();
+  fireEvent.change(el, { target: { value: "正文!" } });
+  vi.mocked(api.popupMenu).mockImplementationOnce(
+    async (entries) => entries.find((e) => e.label === "Work")?.id ?? "",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "要使用的签名" }));
+  await waitFor(() => expect(api.setSignature).toHaveBeenCalledWith(5, 8));
+  expect(order(vi.mocked(api.save))).toBeLessThan(order(vi.mocked(api.setSignature)));
+  expect(await screen.findByText("-- work sig")).toBeInTheDocument();
+  expect(screen.queryByText("-- me")).not.toBeInTheDocument();
+  expect(el).toHaveValue("正文!");
 });
 
 test("a signature laid out with a table shows as its HTML, table kept", async () => {

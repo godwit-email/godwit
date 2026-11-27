@@ -416,6 +416,7 @@ function Compose({
     flushSync(() => {
       setF(cur.current);
       setAccounts(l.accounts); // the account may be one added since the window opened
+      setSignatures(l.signatures);
       setFrom(l.from);
       setFromProgram(l.fromProgram);
       setSignature(sigOf(l));

@@ -64,37 +64,7 @@ func (s *Service) SetDraftAccount(ctx context.Context, id, accountID, revision i
 	if acc.ReceiveOnly {
 		return Draft{}, ErrReceiveOnly
 	}
-	s.editMu.Lock()
-	defer s.editMu.Unlock()
-	d, err := s.GetDraft(ctx, id)
-	if err != nil {
-		return Draft{}, err
-	}
-	if err := s.checkWritable(ctx, id); err != nil {
-		return Draft{}, err
-	}
-	if d.Revision != revision {
-		return Draft{}, ErrStaleDraft
-	}
-	cids, err := s.signatureCIDs(ctx)
-	if err != nil {
-		return Draft{}, err
-	}
-	st, err := s.loadSettings(ctx)
-	if err != nil {
-		return Draft{}, err
-	}
-	body := mail.SanitizeDraft(withSignature(d.HTML, acc, cids, st.SignatureDelimiter), cids)
-	r, err := s.db.Execute(ctx, `UPDATE drafts SET account_id = ?, body_html = ?, updated_at = ?, revision = revision + 1,
-		from_program = MAX(from_program, ?) WHERE id = ? AND revision = ?`, accountID, body, time.Now().Unix(), fromProgram(ctx), id, revision)
-	if err != nil {
-		return Draft{}, err
-	}
-	if r.Changes == 0 {
-		return Draft{}, fmt.Errorf("draft %d changed or was deleted meanwhile", id)
-	}
-	s.programChanged(ctx, nil)
-	return s.GetDraft(ctx, id)
+	return s.resign(ctx, id, revision, accountID, acc.Signature)
 }
 
 // SetDraftSignature puts signature signatureID in the body in place of the
@@ -111,6 +81,12 @@ func (s *Service) SetDraftSignature(ctx context.Context, id, signatureID, revisi
 			return Draft{}, err
 		}
 	}
+	return s.resign(ctx, id, revision, 0, sig.HTML)
+}
+
+// resign stores draft id at revision signed with sig (as stored, "" for none)
+// and, if accountID is not 0, moved to that account. The caller holds sigMu.
+func (s *Service) resign(ctx context.Context, id, revision, accountID int64, sig string) (Draft, error) {
 	s.editMu.Lock()
 	defer s.editMu.Unlock()
 	d, err := s.GetDraft(ctx, id)
@@ -131,9 +107,10 @@ func (s *Service) SetDraftSignature(ctx context.Context, id, signatureID, revisi
 	if err != nil {
 		return Draft{}, err
 	}
-	body := mail.SanitizeDraft(withSignature(d.HTML, Account{Signature: sig.HTML}, cids, st.SignatureDelimiter), cids)
-	r, err := s.db.Execute(ctx, `UPDATE drafts SET body_html = ?, updated_at = ?, revision = revision + 1,
-		from_program = MAX(from_program, ?) WHERE id = ? AND revision = ?`, body, time.Now().Unix(), fromProgram(ctx), id, revision)
+	body := mail.SanitizeDraft(withSignature(d.HTML, Account{Signature: sig}, cids, st.SignatureDelimiter), cids)
+	r, err := s.db.Execute(ctx, `UPDATE drafts SET account_id = COALESCE(NULLIF(?, 0), account_id), body_html = ?, updated_at = ?,
+		revision = revision + 1, from_program = MAX(from_program, ?) WHERE id = ? AND revision = ?`,
+		accountID, body, time.Now().Unix(), fromProgram(ctx), id, revision)
 	if err != nil {
 		return Draft{}, err
 	}
