@@ -1629,6 +1629,29 @@ func TestReaderAvatarMoveDropsOldBodyRead(t *testing.T) {
 	}
 }
 
+// ⌘R and ⇧⌘R start a reply and a reply-all of the open mail, as the title bar's buttons do.
+func TestReaderReplyShortcuts(t *testing.T) {
+	h, accs := mailHarness(t, nil, "alice@example.com")
+	acc := accs[0]
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Reply Shortcut Test", "Body contents here"))
+	h.openThread(m.ThreadID)
+	h.seeBody(m.ID)
+
+	opened := func() int {
+		n := 0
+		for _, c := range h.plat.Calls() {
+			if strings.HasPrefix(c, "OpenCompose ") {
+				n++
+			}
+		}
+		return n
+	}
+	for i, mods := range []ui.Modifiers{ui.Cmd, ui.Cmd | ui.Shift} {
+		h.tt.Key(mods, ui.KeyR)
+		h.until("compose window", func() bool { return opened() == i+1 })
+	}
+}
+
 func TestReaderSaveAndPrint(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	acc := accs[0]

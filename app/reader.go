@@ -1605,6 +1605,14 @@ func (p *mailPage) titleActions(c *ui.Context) {
 		return
 	}
 	t, th := theme.Of(c), c.Theme()
+	// ⌘R and ⇧⌘R are the reply group's first two buttons.
+	if p.reader.prev == nil {
+		if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyR) {
+			r.draft("reply_all")
+		} else if c.Shortcut(ui.Cmd, ui.KeyR) {
+			r.draft("reply")
+		}
+	}
 	// While a switch builds, the pane keeps the thread before it and ignores input; so do its actions.
 	ui.Row(c).Shrink(0).AlignItems(ui.Center).IgnoreInput(p.reader.prev != nil).Children(func() {
 		kit.ButtonGroup(c,
