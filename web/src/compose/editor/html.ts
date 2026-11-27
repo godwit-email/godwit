@@ -197,6 +197,8 @@ export function toHTML(value: Value): string {
 
 // A line of the plain text: a block of inline nodes (a paragraph, a list item's text).
 const isLine = (n: Descendant) => isText(n) || n.children.every(isInline);
+// An image block is no line: webui's plainText reads no text in an <img>.
+const isImage = (n: Descendant) => !isText(n) && n.type === "img";
 
 /**
  * The value's plain text, the ⌘K contract webui's plainText keeps: blocks joined by "\n", a soft
@@ -204,7 +206,9 @@ const isLine = (n: Descendant) => isText(n) || n.children.every(isInline);
  */
 export function toText(value: Value): string {
   const lines = (ns: Descendant[]): string[] =>
-    ns.flatMap((n) => (isLine(n) ? [textOf(n)] : lines((n as TElement).children)));
+    ns.flatMap((n) =>
+      isImage(n) ? [] : isLine(n) ? [textOf(n)] : lines((n as TElement).children),
+    );
   return lines(value).join("\n");
 }
 
@@ -217,6 +221,11 @@ export function offsetOf(value: Value, point: { path: number[]; offset: number }
   const walk = (ns: Descendant[], path: number[], line: boolean): number | undefined => {
     for (const [i, n] of ns.entries()) {
       const at = [...path, i];
+      if (isImage(n)) {
+        // A point on the image (its void text) falls where the text is: before the next line.
+        if (at.every((x, j) => x === point.path[j])) return pos;
+        continue;
+      }
       if (!line && isLine(n) && lines++ > 0) pos++; // the "\n" before a line
       if (isText(n)) {
         if (same(at)) return pos + point.offset;

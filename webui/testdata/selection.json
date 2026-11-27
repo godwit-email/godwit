@@ -20,5 +20,6 @@
   {"name": "format switch before", "html": "<p><i>X</i><b>AB</b>C</p>", "text": "XABC", "selected": "ABC", "start": 1, "end": 4, "range": "<b>AB</b>C"},
   {"name": "format switch after", "html": "<p>A<b>BC</b><i>X</i></p>", "text": "ABCX", "selected": "ABC", "start": 0, "end": 3, "range": "A<b>BC</b>"},
   {"name": "nested", "html": "<p>a <b><i>bold italic</i></b> z</p>", "text": "a bold italic z", "selected": "a bold italic", "start": 0, "end": 13, "range": "a <b><i>bold italic</i></b>"},
+  {"name": "image between", "html": "<p>before</p><img src=\"cid:img-00000000000000000000000000000000@godwit\"><p>after</p>", "text": "before\nafter", "selected": "after", "start": 7, "end": 12, "range": "after"},
   {"name": "next to link", "html": "<p><a href=\"https://x.org\">doc</a><b>s</b> here</p>", "text": "docs here", "selected": "docs", "start": 0, "end": 4, "range": "<a href=\"https://x.org\">doc</a><b>s</b>"}
 ]

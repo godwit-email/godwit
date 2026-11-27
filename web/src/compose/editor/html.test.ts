@@ -213,7 +213,7 @@ describe("⌘K plain text", () => {
     JSON.parse(shared);
 
   it.each(cases.map((c) => [c.name, c]))("%s: toText and offsets agree with Go", (_, c) => {
-    const value: Value = fromHTML(editor(), c.html);
+    const value: Value = fromHTML(editor(), c.html, true); // as Editor loads a draft
     const text = toText(value);
     expect(text).toBe(c.text);
     const offs = new Set<number>();
