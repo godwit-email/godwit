@@ -283,7 +283,7 @@ func TestComposeBoundSurface(t *testing.T) {
 		names = append(names, typ.Method(i).Name)
 	}
 	sort.Strings(names)
-	assert.Equal(t, []string{"AddAttachments", "Answer", "Ask", "CheckCited", "Closed", "Decide", "DecideAll", "DecideWithArgs", "Finish", "Follow", "Latest", "Load",
+	assert.Equal(t, []string{"AddAttachments", "Answer", "Ask", "AttachDropped", "CheckCited", "Closed", "Decide", "DecideAll", "DecideWithArgs", "Finish", "Follow", "Latest", "Load",
 		"Models", "OpenCited", "OpenLink", "OpenModels", "PopupMenu", "RemoveAttachment", "Review", "Rewrite", "Save", "SearchContacts", "SearchMail", "Send", "SendLater", "SetAccount",
 		"SetModel", "Skill", "Stop", "TitleBar", "Toast", "ToastBar", "Undo", "WitInfo"}, names)
 }
@@ -440,6 +440,44 @@ func TestComposeAttachments(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, ch.Revision, res.Revision)
 	assert.Empty(t, res.Attachments)
+}
+
+// TestComposeAttachDropped checks that files dropped on the window are
+// attached as picked ones are, and that a folder, a file over the limit and
+// a path never dropped there are refused by name.
+func TestComposeAttachDropped(t *testing.T) {
+	f := newFixture(t)
+	d := f.draft(t, "new", 0)
+	f.c.Attach(1, d.ID)
+	f.c.Attach(2, f.draft(t, "new", 0).ID)
+	dir := t.TempDir()
+	a, b, big, folder := filepath.Join(dir, "a.txt"), filepath.Join(dir, "b.png"), filepath.Join(dir, "big.bin"), filepath.Join(dir, "Photos")
+	require.NoError(t, os.WriteFile(a, []byte("aa"), 0o600))
+	require.NoError(t, os.WriteFile(b, []byte("bbb"), 0o600))
+	require.NoError(t, os.Mkdir(folder, 0o700))
+	fh, err := os.Create(big)
+	require.NoError(t, err)
+	require.NoError(t, fh.Truncate(26<<20)) // sparse
+	require.NoError(t, fh.Close())
+	f.c.Dropped(1, []string{a, b, big, folder})
+	f.c.Dropped(2, []string{"/etc/hosts"}) // another window's drop is not this one's
+
+	res, err := f.page.AttachDropped(f.ctx(1), d.Revision, []string{a, b, big, folder, "/etc/hosts"})
+	require.NoError(t, err)
+	assert.False(t, res.Conflict)
+	var names []string
+	for _, x := range res.Attachments {
+		names = append(names, x.Filename)
+	}
+	assert.Equal(t, []string{"a.txt", "b.png"}, names)
+	assert.Equal(t, []string{"big.bin"}, res.TooLarge)
+	assert.Equal(t, []string{"hosts", "Photos"}, res.Failed)
+	assert.Equal(t, f.stored(t, d.ID).Revision, res.Revision)
+
+	stale, err := f.page.AttachDropped(f.ctx(1), d.Revision, []string{a})
+	require.NoError(t, err)
+	assert.True(t, stale.Conflict)
+	assert.Len(t, f.stored(t, d.ID).Attachments, 2)
 }
 
 func TestComposeAttachStale(t *testing.T) {

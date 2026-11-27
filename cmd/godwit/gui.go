@@ -275,7 +275,7 @@ func gui(ctx context.Context, dataDir, open string) int {
 			}
 		}
 	}
-	windows = webui.NewWindows(pages, func(int64) webui.Window { return newComposeWindow(windows, &cas, &frames, composeView) }, askUnsaved)
+	windows = webui.NewWindows(pages, func(int64) webui.Window { return newComposeWindow(windows, pages, &cas, &frames, composeView) }, askUnsaved)
 	mygo.App.WhenReady(func() {
 		lang := "en"
 		if preferred := mygo.App.PreferredLanguages(); len(preferred) > 0 {

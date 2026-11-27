@@ -33,6 +33,7 @@ import { ProgramBanner, WitBanner } from "./Banner";
 import { type CmdKSelection, Editor, type EditorHandle } from "./editor/Editor";
 import { IdleToolbar } from "./editor/Toolbar";
 import { Fields, type FieldsEdit, type FieldsHandle } from "./fields/Fields";
+import { useFileDrop } from "./fileDrop";
 import { Notices } from "./Notices";
 import { CmdK } from "./review/CmdK";
 import { BODY, Review, reviewSummary, Static } from "./review/Review";
@@ -635,6 +636,10 @@ function Compose({
       failure(e);
     }
   };
+  // Files dropped on the window are attached as the attach button's are, and only when it is enabled.
+  const dragging = useFileDrop(!locked && !witLocked, ({ paths }) =>
+    change((rev) => api.attachDropped(rev, paths)),
+  );
   // A body operation (a decision, undo) in the saver's queue; its BodyChange is adopted at once.
   const bodyOp = async (op: () => Promise<BodyChange>) => {
     if (!sv) return null;
@@ -1142,6 +1147,16 @@ function Compose({
           </ResizablePanel>
         )}
       </ResizablePanelGroup>
+      {dragging && (
+        // Shows where files go without taking the drop: the editor's own drop still reaches it.
+        <div
+          role="status"
+          className="pointer-events-none fixed inset-2 z-50 flex items-center justify-center gap-2 rounded-xl border-2 border-primary border-dashed bg-background/85 text-primary text-sm"
+        >
+          <RiAttachment2 className="size-4" aria-hidden />
+          {t("compose.attach.drop")}
+        </div>
+      )}
       <NativeToasts api={api} bar={dock.bar} input={dock.send} />
     </main>
   );
