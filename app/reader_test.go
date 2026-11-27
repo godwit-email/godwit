@@ -1629,26 +1629,38 @@ func TestReaderAvatarMoveDropsOldBodyRead(t *testing.T) {
 	}
 }
 
-// ⌘R and ⇧⌘R start a reply and a reply-all of the open mail, as the title bar's buttons do.
+// ⌘R and ⇧⌘R start a reply and a reply-all of the open mail, as the title
+// bar's buttons do; ⌘R held drafts once, not once per auto-repeat.
 func TestReaderReplyShortcuts(t *testing.T) {
 	h, accs := mailHarness(t, nil, "alice@example.com")
 	acc := accs[0]
-	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Reply Shortcut Test", "Body contents here"))
+	m := h.deliverOne(acc, coretest.Msg("bob@example.com", acc.Email, "Reply Shortcut Test", "Body contents here", coretest.Header("Cc: carol@example.com")))
 	h.openThread(m.ThreadID)
 	h.seeBody(m.ID)
 
 	opened := func() int {
-		n := 0
-		for _, c := range h.plat.Calls() {
-			if strings.HasPrefix(c, "OpenCompose ") {
-				n++
-			}
-		}
-		return n
+		return len(slices.DeleteFunc(h.plat.Calls(), func(c string) bool { return !strings.HasPrefix(c, "OpenCompose ") }))
 	}
-	for i, mods := range []ui.Modifiers{ui.Cmd, ui.Cmd | ui.Shift} {
-		h.tt.Key(mods, ui.KeyR)
-		h.until("compose window", func() bool { return opened() == i+1 })
+	h.tt.Key(ui.Cmd, ui.KeyR)
+	reply := h.composeOpened(0)
+	for range 3 {
+		h.tt.KeyRepeat(ui.Cmd, ui.KeyR)
+	}
+	h.tt.Key(ui.Cmd|ui.Shift, ui.KeyR)
+	all := h.composeOpened(reply)
+	if d := h.draft(reply); slices.Contains(d.Cc, "carol@example.com") {
+		t.Errorf("⌘R drafted a reply-all: cc %q", d.Cc)
+	}
+	if d := h.draft(all); !slices.Contains(d.Cc, "carol@example.com") {
+		t.Errorf("⇧⌘R drafted a reply: cc %q", d.Cc)
+	}
+	for range 50 { // a repeat's draft would have started before ⇧⌘R's
+		h.drain()
+		h.tt.Frame()
+		time.Sleep(2 * time.Millisecond)
+	}
+	if n := opened(); n != 2 {
+		t.Errorf("%d compose windows opened, want 2: a held ⌘R drafted again", n)
 	}
 }
 

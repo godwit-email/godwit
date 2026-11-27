@@ -1605,12 +1605,13 @@ func (p *mailPage) titleActions(c *ui.Context) {
 		return
 	}
 	t, th := theme.Of(c), c.Theme()
-	// ⌘R and ⇧⌘R are the reply group's first two buttons.
+	// ⌘R and ⇧⌘R are the reply group's first two buttons; a held key drafts once.
 	if p.reader.prev == nil {
-		if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyR) {
-			r.draft("reply_all")
-		} else if c.Shortcut(ui.Cmd, ui.KeyR) {
+		if c.Shortcut(ui.Cmd, ui.KeyR) && !c.ShortcutRepeated() {
 			r.draft("reply")
+		}
+		if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyR) && !c.ShortcutRepeated() {
+			r.draft("reply_all")
 		}
 	}
 	// While a switch builds, the pane keeps the thread before it and ignores input; so do its actions.
