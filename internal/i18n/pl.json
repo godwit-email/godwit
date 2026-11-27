@@ -1385,6 +1385,7 @@
   "settings_show_tray_icon_help": "Banery z kodami logowania i ostatnie kody wymagają tej ikony. Bez niej otwieraj Godwita z Docka lub paska zadań.",
   "settings_unread_in_menu_bar": "Pokazuj liczbę nieprzeczytanych na pasku menu",
   "settings_unread_on_app_icon": "Pokazuj liczbę nieprzeczytanych na ikonie aplikacji",
+  "settings_unread_on_app_icon_help": "Niewidoczne, gdy okno główne jest zamknięte: Godwit zostaje wtedy tylko na pasku menu, bez ikony w Docku.",
   "shell_back": "Wstecz",
   "shell_forward": "Dalej",
   "shell_nav_back_to": "Wróć do: {arg1}",

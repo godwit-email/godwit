@@ -1380,6 +1380,7 @@
   "settings_show_tray_icon_help": "Os banners de códigos de login e os códigos recentes precisam deste ícone. Sem ele, abra o Godwit pelo Dock ou pela barra de tarefas.",
   "settings_unread_in_menu_bar": "Mostrar contagem de não lidos na barra de menus",
   "settings_unread_on_app_icon": "Mostrar contagem de não lidos no ícone do aplicativo",
+  "settings_unread_on_app_icon_help": "Não aparece com a janela principal fechada: o Godwit fica então só na barra de menus, sem ícone no Dock.",
   "shell_back": "Voltar",
   "shell_forward": "Avançar",
   "shell_nav_back_to": "Voltar para {arg1}",

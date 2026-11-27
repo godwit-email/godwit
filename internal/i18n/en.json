@@ -2479,6 +2479,7 @@
   "settings_show_tray_icon_help": "Sign-in code banners and recent codes need this icon. Without it, open Godwit from the Dock or taskbar.",
   "settings_unread_in_menu_bar": "Show the unread count in the menu bar",
   "settings_unread_on_app_icon": "Show the unread count on the app icon",
+  "settings_unread_on_app_icon_help": "Not shown while the main window is closed: Godwit then stays in the menu bar only, without a Dock icon.",
   "shell_back": "Back",
   "shell_forward": "Forward",
   "shell_nav_back_to": "Back to {arg1}",

@@ -60,6 +60,7 @@ type platform struct {
 	setTrayVisible func(visible bool)
 	trayQuitStop   bool        // 退出并停止收信 shows; UI thread
 	trayUp         atomic.Bool // tray is set: read off the UI thread (TrayShown)
+	appUnread      int         // the app icon's badge (SetAppUnread); UI thread
 
 	dataDir      string
 	svc          backendService
@@ -283,7 +284,22 @@ func (p *platform) SetTrayUnread(n int) {
 
 // SetAppUnread badges the app icon; the badge goes with the interface process,
 // leaving only the backend's tray count while no interface runs (ADR 0038).
-func (*platform) SetAppUnread(n int) { mygo.App.SetBadgeCount(n) }
+func (p *platform) SetAppUnread(n int) {
+	p.appUnread = n
+	mygo.App.SetBadgeCount(n)
+}
+
+// showInDock shows or removes Godwit's Dock tile (macOS's activation policy,
+// hidesDock). The badge is set again on its return: AppKit may drop it with
+// the tile; mygo v0.10.0 sets no Dock icon back, but Godwit sets none of its own.
+func (p *platform) showInDock(show bool) {
+	if !show {
+		mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
+		return
+	}
+	mygo.App.SetActivationPolicy(mygo.ActivationPolicyRegular)
+	mygo.App.SetBadgeCount(p.appUnread)
+}
 func (p *platform) ShowWindow() {
 	if p.win.IsMinimized() {
 		p.win.Restore()
@@ -613,6 +629,13 @@ type trayBox struct{ w, h, inkW float32 }
 // can bring back a hidden window, and a minimized one keeps its taskbar entry.
 func closeMinimizes(goos string, hasTray bool) bool { return !hasTray && goos != "darwin" }
 
+// hidesDock reports whether hiding the closed main window also takes Godwit
+// off the Dock, the tray staying the way back (#898): macOS only, with the
+// tray icon, and with no compose window open, which the Dock must keep findable.
+func hidesDock(goos string, hasTray bool, compose int) bool {
+	return goos == "darwin" && hasTray && compose == 0
+}
+
 // hiddenExitAfter is how long the main window stays hidden after its close
 // before the interface exits, the backend and its tray staying: reopening
 // sooner is instant, later a cold start, but the interface's memory is freed
@@ -657,8 +680,11 @@ type mainClose struct {
 	hidden  func() bool                                        // the main window is hidden or minimized
 	busy    func() bool                                        // work runs that the exit would end (App.Busy); nil: none
 	after   func(d time.Duration, f func()) (stop func() bool) // app.Clock.AfterFunc
+	offDock func() bool                                        // a hide takes Godwit off the Dock (hidesDock now); nil: never
+	dock    func(show bool)                                    // shows or removes the Dock tile
 	closed  bool                                               // the window closed and has not shown since
 	expired bool
+	undock  bool // the Dock tile is gone (offDock)
 	stop    func() bool
 	gen     int // voids a timer that fired after shown stopped it
 }
@@ -688,6 +714,10 @@ func (m *mainClose) close() {
 		})
 	}
 	m.do(act)
+	if act == closeHide && !m.undock && m.offDock != nil && m.offDock() {
+		m.undock = true
+		m.dock(false)
+	}
 }
 
 // shown is the window showing again: the interface stays.
@@ -698,6 +728,16 @@ func (m *mainClose) shown() {
 	}
 	m.closed, m.expired = false, false
 	m.gen++
+	m.redock()
+}
+
+// redock brings the Dock tile back if a hide took it: the window shows, or a
+// compose window opens while it is closed.
+func (m *mainClose) redock() {
+	if m.undock {
+		m.undock = false
+		m.dock(true)
+	}
 }
 
 func trayBoxFor(goos string) trayBox {

@@ -1385,6 +1385,7 @@
   "settings_show_tray_icon_help": "Anmeldecode-Banner und die letzten Codes benötigen dieses Symbol. Ohne es öffnest du Godwit über das Dock oder die Taskleiste.",
   "settings_unread_in_menu_bar": "Ungelesene Nachrichten in der Menüleiste anzeigen",
   "settings_unread_on_app_icon": "Ungelesene Nachrichten im Dock-Symbol anzeigen",
+  "settings_unread_on_app_icon_help": "Wird bei geschlossenem Hauptfenster nicht angezeigt: Godwit bleibt dann nur in der Menüleiste, ohne Dock-Symbol.",
   "shell_back": "Zurück",
   "shell_forward": "Vorwärts",
   "shell_nav_back_to": "Zurück zu {arg1}",

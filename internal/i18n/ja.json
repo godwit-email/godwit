@@ -1380,6 +1380,7 @@
   "settings_show_tray_icon_help": "サインインコードのバナーと最近のコードにはこのアイコンが必要です。非表示の場合は Dock またはタスクバーから Godwit を開きます。",
   "settings_unread_in_menu_bar": "メニューバーに未読数を表示",
   "settings_unread_on_app_icon": "アプリアイコンに未読数を表示",
+  "settings_unread_on_app_icon_help": "メインウインドウを閉じている間は表示されません。その間 Godwit は Dock から外れ、メニューバーにのみ表示されます。",
   "shell_back": "戻る",
   "shell_forward": "進む",
   "shell_nav_back_to": "{arg1}に戻る",

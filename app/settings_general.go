@@ -113,6 +113,15 @@ func (a *App) settingsEffects(old, st core.Settings) {
 	}
 }
 
+// unreadOnAppIconHelp says the badge goes with the Dock tile, which macOS
+// leaves while the main window is closed if the tray icon is on (#898).
+func unreadOnAppIconHelp(tray bool) string {
+	if goos != "darwin" || !tray {
+		return ""
+	}
+	return i18n.T("settings.unread_on_app_icon.help")
+}
+
 // opensAtLogin reports whether st wants Godwit's one login item: for the
 // interface (开机时自动启动) or for the backend (一直继续), which Linux
 // leaves to the user's own service (README: Receive mail from login on Linux).
@@ -323,7 +332,7 @@ func (p *settingsPage) generalView(c *ui.Context) {
 			}
 			return el
 		}),
-		sw(&st.UnreadOnAppIcon, i18n.T("settings.unread_on_app_icon"), ""),
+		sw(&st.UnreadOnAppIcon, i18n.T("settings.unread_on_app_icon"), unreadOnAppIconHelp(st.ShowTrayIcon)),
 		sw(&st.ShowTrayIcon, i18n.T("settings.show_tray_icon"), i18n.T("settings.show_tray_icon.help")),
 	}
 	if st.ShowTrayIcon {

@@ -1380,6 +1380,7 @@
   "settings_show_tray_icon_help": "Los avisos de códigos de inicio de sesión y los códigos recientes necesitan este icono. Sin él, abre Godwit desde el Dock o la barra de tareas.",
   "settings_unread_in_menu_bar": "Mostrar el contador de no leídos en la barra de menús",
   "settings_unread_on_app_icon": "Mostrar el contador de no leídos en el icono de la aplicación",
+  "settings_unread_on_app_icon_help": "No se muestra con la ventana principal cerrada: Godwit queda entonces solo en la barra de menús, sin icono en el Dock.",
   "shell_back": "Atrás",
   "shell_forward": "Adelante",
   "shell_nav_back_to": "Volver a {arg1}",

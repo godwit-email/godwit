@@ -1380,6 +1380,7 @@
   "settings_show_tray_icon_help": "登录验证码横幅和最近的验证码需要此图标。隐藏后，请从程序坞或任务栏打开 Godwit。",
   "settings_unread_in_menu_bar": "在菜单栏显示未读数",
   "settings_unread_on_app_icon": "在应用图标显示未读数",
+  "settings_unread_on_app_icon_help": "主窗口关闭时不显示：此时 Godwit 只留在菜单栏，不占程序坞图标。",
   "shell_back": "后退",
   "shell_forward": "前进",
   "shell_nav_back_to": "返回{arg1}",

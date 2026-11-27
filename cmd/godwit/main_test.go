@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/godwit-email/godwit/internal/theme"
 	"image/png"
+	"slices"
 	"testing"
 	"time"
 
@@ -150,7 +151,9 @@ type mainCloseHarness struct {
 	keep    bool
 	compose int
 	visible bool
+	noTray  bool
 	did     []closeAction
+	docked  []bool // the Dock tile's changes, shown or removed
 	timer   fakeTimer
 	m       *mainClose
 }
@@ -159,7 +162,7 @@ func newMainCloseHarness(keep bool) *mainCloseHarness {
 	h := &mainCloseHarness{keep: keep, visible: true}
 	h.m = &mainClose{
 		action: func(expired bool) closeAction {
-			return mainCloseAction(h.keep, expired, h.compose, "darwin", true)
+			return mainCloseAction(h.keep, expired, h.compose, "darwin", !h.noTray)
 		},
 		do: func(act closeAction) {
 			h.did = append(h.did, act)
@@ -167,8 +170,10 @@ func newMainCloseHarness(keep bool) *mainCloseHarness {
 				h.visible = false
 			}
 		},
-		hidden: func() bool { return !h.visible },
-		after:  h.timer.after,
+		hidden:  func() bool { return !h.visible },
+		after:   h.timer.after,
+		offDock: func() bool { return hidesDock("darwin", !h.noTray, h.compose) },
+		dock:    func(show bool) { h.docked = append(h.docked, show) },
 	}
 	return h
 }
@@ -270,6 +275,87 @@ func TestMainCloseQuitsWithoutKeep(t *testing.T) {
 	h.m.close()
 	if h.last() != closeQuit || h.timer.started != 0 {
 		t.Errorf("did %v with %d timers, want the quit and none", h.did, h.timer.started)
+	}
+}
+
+func TestHidesDock(t *testing.T) {
+	for _, tc := range []struct {
+		goos    string
+		hasTray bool
+		compose int
+		want    bool
+	}{
+		{"darwin", true, 0, true},
+		{"darwin", false, 0, false}, // the Dock tile is the only way back
+		{"darwin", true, 1, false},  // the compose window stays findable
+		{"windows", true, 0, false},
+		{"linux", true, 0, false},
+	} {
+		if got := hidesDock(tc.goos, tc.hasTray, tc.compose); got != tc.want {
+			t.Errorf("hidesDock(%q, %v, %d) = %v", tc.goos, tc.hasTray, tc.compose, got)
+		}
+	}
+}
+
+// On macOS with the tray, closing the main window takes Godwit off the Dock
+// at once, and showing it again brings the tile back, once (#898).
+func TestMainCloseLeavesDock(t *testing.T) {
+	h := newMainCloseHarness(true)
+	h.m.close()
+	if !slices.Equal(h.docked, []bool{false}) {
+		t.Fatalf("close: Dock %v, want the tile removed", h.docked)
+	}
+	h.m.close() // decided again while closed
+	if len(h.docked) != 1 {
+		t.Errorf("second close: Dock %v, want no change", h.docked)
+	}
+	h.visible = true
+	h.m.shown()
+	h.m.shown() // every focus calls it
+	if !slices.Equal(h.docked, []bool{false, true}) {
+		t.Errorf("shown: Dock %v, want the tile back once", h.docked)
+	}
+}
+
+// Without the tray the Dock tile is the way back: closing keeps it.
+func TestMainCloseKeepsDockWithoutTray(t *testing.T) {
+	h := newMainCloseHarness(true)
+	h.noTray = true
+	h.m.close()
+	h.m.shown()
+	if h.last() != closeHide || len(h.docked) != 0 {
+		t.Errorf("did %v, Dock %v; want a hide and the tile kept", h.did, h.docked)
+	}
+}
+
+// A compose window keeps the tile while it is open; once the last closes,
+// the window's close is decided again and the tile goes. One opening while
+// the window is closed brings the tile back.
+func TestMainCloseDockWaitsForCompose(t *testing.T) {
+	h := newMainCloseHarness(true)
+	h.compose = 1
+	h.m.close()
+	if len(h.docked) != 0 {
+		t.Fatalf("close with a compose window: Dock %v, want the tile kept", h.docked)
+	}
+	h.compose = 0
+	h.m.close()
+	if !slices.Equal(h.docked, []bool{false}) {
+		t.Fatalf("last compose window closed: Dock %v, want the tile removed", h.docked)
+	}
+	h.compose = 1
+	h.m.redock()
+	if !slices.Equal(h.docked, []bool{false, true}) {
+		t.Errorf("compose opened: Dock %v, want the tile back", h.docked)
+	}
+}
+
+// Closing that quits leaves the Dock alone: the process ends.
+func TestMainCloseQuitKeepsDock(t *testing.T) {
+	h := newMainCloseHarness(false)
+	h.m.close()
+	if len(h.docked) != 0 {
+		t.Errorf("Dock %v, want no change", h.docked)
 	}
 }
 
